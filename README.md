@@ -4,7 +4,7 @@ Kor Code is the documentation project for a Linear-first engineering environment
 
 The design gives one control plane to read project intent from Linear, choose models and agents, run isolated Claude Code sessions, use an account-aware subscription gateway, and write evidence back to Linear.
 
-This repository contains documentation only. It does not claim that the external integrations, provider paths, or Claude Code Mods are installed or validated.
+This repository contains the foundation monorepo and documentation. The foundation exposes typed integration boundaries and runnable Phase 0 probes; later phases remain unimplemented until their contracts are validated.
 
 ## Read first
 
@@ -34,3 +34,7 @@ Linear is the source of truth for intent. GitHub is the source of truth for vers
 - **Validated** means a local or integration check supports the statement.
 - **Blocked** means an external account, provider, or product behaviour prevents validation.
 - **Illustrative** means a mock value or UI state, not live telemetry.
+
+## Foundation
+
+The TypeScript pnpm workspace contains `core`, `jev`, `gateway-adapter`, `linear`, `controller`, and `claude-plugin` packages. Run `pnpm probe` for the external contract checks and read the [Phase 0 probe record](docs/phase-0-probe.md). Use `scripts/sandbox.sh` to load the Claude Code plugin in a disposable `CLAUDE_CONFIG_DIR`; it never installs the plugin globally or changes the existing Claude Code configuration.
