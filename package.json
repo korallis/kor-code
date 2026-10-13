@@ -5,12 +5,15 @@
   "description": "Kor Code foundation monorepo",
   "type": "module",
   "packageManager": "pnpm@12.9.1",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "build": "pnpm -r --if-present build",
     "probe": "tsx scripts/probe.ts",
     "gateway:quota-proof": "tsx scripts/gateway-quota-proof.ts",
-    "typecheck": "pnpm -r --if-present typecheck"
+    "typecheck": "pnpm -r --if-present typecheck",
+    "jev:fixture": "tsx scripts/jev-fixture.ts"
   },
   "devDependencies": {
     "@types/node": "^24.8.0",

@@ -2,6 +2,8 @@
 
 ## Stages
 
+**Status: Validated for the Linear synchronization boundary.** Discovery snapshots, lease ownership, session records, state transitions, evidence-gated completion, and outbox writes are implemented in `@kor-code/linear`. Repository execution and reconciliation remain Phase 2 responsibilities.
+
 ~~~mermaid
 flowchart LR
     D[Discover] --> P[Preflight]
