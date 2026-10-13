@@ -1,0 +1,5 @@
+{
+  "name": "kor-code-cockpit",
+  "version": "0.1.0",
+  "description": "Session-local Kor Code cockpit proof; safe status command only."
+}
