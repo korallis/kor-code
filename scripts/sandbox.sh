@@ -9,8 +9,13 @@ home_dir="$sandbox_dir/home"
 mkdir -p "$config_dir" "$home_dir"
 
 gateway_key="${KOR_GATEWAY_KEY:-}"
-if [ -z "$gateway_key" ] && [ -r /mnt/c/Users/leeba/Tools/CLIProxyAPI/client-api-key.txt ]; then
-  gateway_key=$(cat /mnt/c/Users/leeba/Tools/CLIProxyAPI/client-api-key.txt)
+gateway_key_file="${KOR_GATEWAY_KEY_FILE:-}"
+if [ -z "$gateway_key" ] && [ -n "$gateway_key_file" ]; then
+  if [ ! -r "$gateway_key_file" ]; then
+    echo "KOR_GATEWAY_KEY_FILE is not readable" >&2
+    exit 1
+  fi
+  gateway_key=$(cat "$gateway_key_file")
 fi
 
 checksum_surfaces() {
