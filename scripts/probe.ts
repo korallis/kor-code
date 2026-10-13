@@ -1,11 +1,15 @@
 import { execFile } from "node:child_process";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { GatewayAdapter } from "../packages/gateway-adapter/src/index.js";
 import { JevClient } from "../packages/jev/src/index.js";
 import { probeLinearReadOnly } from "../packages/linear/src/index.js";
 
 const execFileAsync = promisify(execFile);
-const repoRoot = new URL("..", import.meta.url).pathname;
+const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+// A cold Claude Code start (first plugin load, engine type generation) can exceed 45 s on a busy host.
+const sandboxTimeoutMs = Number(process.env.KOR_SANDBOX_TIMEOUT_MS ?? 120_000);
 
 async function probe(name: string, action: () => Promise<string>): Promise<void> {
   try { console.log(`${name}: Validated — ${await action()}`); }
@@ -31,9 +35,9 @@ await probe("gateway", async () => {
 });
 
 await probe("Claude Code", async () => {
-  const result = await execFileAsync("bash", [`${repoRoot}scripts/sandbox.sh`], { cwd: repoRoot, timeout: 45_000, maxBuffer: 1_000_000 });
-  if (!result.stdout.includes("Kor Code cockpit plugin")) throw new Error("plugin proof text missing");
-  return "sandbox plugin loaded; ~/.claude checksum unchanged";
+  const result = await execFileAsync("bash", [join(repoRoot, "scripts", "sandbox.sh")], { cwd: repoRoot, timeout: sandboxTimeoutMs, maxBuffer: 1_000_000 });
+  if (!result.stdout.includes("Kor Code cockpit plugin loaded (session-local; no configuration changes).")) throw new Error("plugin proof text missing");
+  return "sandbox plugin answered /kor-status from its own hook; ~/.claude checksum unchanged";
 });
 
 await probe("Jev", async () => {
@@ -43,5 +47,6 @@ await probe("Jev", async () => {
 
 await probe("Linear", async () => {
   const result = await probeLinearReadOnly();
-  return `viewer=${result.viewer}; teams=${result.teams.join(", ")}; workflowStates=${result.workflowStates.length}`;
+  // The viewer's identity is never printed or copied into docs: only that it resolved.
+  return `viewer=${result.viewer ? "resolved" : "missing"}; teams=${result.teams.length}; workflowStates=${result.workflowStates.length}`;
 });
