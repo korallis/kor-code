@@ -9,6 +9,7 @@
   "scripts": {
     "build": "pnpm -r --if-present build",
     "probe": "tsx scripts/probe.ts",
+    "gateway:quota-proof": "tsx scripts/gateway-quota-proof.ts",
     "typecheck": "pnpm -r --if-present typecheck"
   },
   "devDependencies": {

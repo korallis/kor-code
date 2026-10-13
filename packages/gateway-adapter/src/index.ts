@@ -1,132 +1,73 @@
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
-import type { GatewayFacts, JsonValue } from "@kor-code/core";
+import type { AccountHealthStatus, GatewayAccountHealth, GatewayCapability, GatewayFacts, GatewayModel, JsonValue, RouteFailureReason, RouteTelemetry } from "@kor-code/core";
+import { consumeStream, StreamFailure } from "./stream.js";
+import { boundedBody, record, text } from "./transport.js";
 
 const execFileAsync = promisify(execFile);
-export interface GatewayAdapterOptions { baseUrl?: string; apiKey?: string; managementKey?: string; managementUrl?: string; usageDbPath?: string; fetch?: typeof globalThis.fetch }
-export interface ModelCatalogue { data?: Array<{ id?: string; object?: string; owned_by?: string }>; [key: string]: JsonValue | undefined }
+const DEFAULT_MANAGEMENT_PATHS = ["/v0/management/auth-files", "/v0/management/config", "/v0/management/usage", "/v0/management/api-key-usage"] as const;
+const REDACTED = "[REDACTED]";
 
-async function resolveGatewayKey(explicit?: string): Promise<string | undefined> {
-  if (explicit) return explicit;
-  if (process.env.KOR_GATEWAY_KEY) return process.env.KOR_GATEWAY_KEY;
-  try {
-    const key = (await readFile("/mnt/c/Users/leeba/Tools/CLIProxyAPI/client-api-key.txt", "utf8")).trim();
-    return key || undefined;
-  } catch { return undefined; }
-}
+export interface ModelCatalogue { data?: Array<{ id: string; object?: string; owned_by?: string; capabilities?: Partial<Record<GatewayCapability, boolean>> }>; [key: string]: JsonValue | undefined }
+export interface GatewayAdapterOptions { baseUrl?: string; apiKey?: string; managementKey?: string; managementUrl?: string; usageDbPath?: string; fetch?: typeof globalThis.fetch; now?: () => Date; telemetry?: (event: RouteTelemetry) => void; modelCapabilities?: Record<string, Partial<Record<GatewayCapability, boolean>>> }
+export interface CapabilityRequirements { capabilities?: readonly GatewayCapability[] }
+export interface RouteRequest extends CapabilityRequirements { prompt?: string; model?: string; provider?: string; sessionId?: string; requestId?: string; idempotent?: boolean }
+export interface RouteDecision { model: string; provider: string; accountSlot?: string | undefined; compatibility: GatewayModel["compatibility"]; requiredCapabilities: readonly GatewayCapability[] }
+export interface StreamResult { text: string; route: RouteDecision; telemetry: RouteTelemetry }
 
-async function resolveManagementKey(explicit?: string): Promise<string | undefined> {
-  if (explicit) return explicit;
-  if (process.env.CPA_MANAGEMENT_KEY) return process.env.CPA_MANAGEMENT_KEY;
-  try {
-    const text = await readFile(`${process.env.HOME ?? ""}/.config/cpa-management.env`, "utf8");
-    const match = /^\s*(?:export\s+)?CPA_MANAGEMENT_KEY\s*=\s*(.+?)\s*$/m.exec(text);
-    return match?.[1]?.replace(/^['"]|['"]$/g, "");
-  } catch { return undefined; }
-}
-
-function headers(apiKey?: string, managementKey?: string): HeadersInit {
-  const result: Record<string, string> = {};
-  if (apiKey) result.authorization = `Bearer ${apiKey}`;
-  if (managementKey) result["x-management-key"] = managementKey;
+function isRecord(value: unknown): value is Record<string, unknown> { return record(value); }
+function stringValue(value: unknown): string | undefined { return text(value); }
+function booleanMap(value: unknown): Partial<Record<GatewayCapability, boolean>> {
+  if (!isRecord(value)) return {};
+  const result: Partial<Record<GatewayCapability, boolean>> = {};
+  for (const capability of ["streaming", "tool_calls", "thinking", "structured_output"] as const) if (typeof value[capability] === "boolean") result[capability] = value[capability];
   return result;
 }
+function redact(body: string): string { return body.replace(/(authorization|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token|client[-_ ]?secret|password|secret|bearer)(\s*[:=]\s*|\s+)([^\s,;"']+)/gi, `$1$2${REDACTED}`).slice(0, 512); }
+function upstreamError(status: number, body: string): Error { return new Error(`CLIProxyAPI upstream HTTP ${status}: ${redact(body)}`); }
+function routeFailure(status: number, body: string): RouteFailureReason { const text = body.toLowerCase(); if (status === 401 || status === 403 || /auth|credential|token/.test(text)) return "authentication"; if (status === 408 || status === 429 || /quota|rate.?limit|capacity/.test(text)) return status === 429 && /rate/.test(text) ? "rate_limit" : "quota"; if (status >= 500 || /unavailable|overloaded|upstream/.test(text)) return "provider_unavailable"; return "unknown"; }
+function requestId(explicit: string | undefined): string { return explicit ?? `kor-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`; }
+function providerFor(model: string, explicit?: string): string { return explicit ?? model.split("/")[0] ?? "unknown"; }
+async function readRuntimeKey(explicit: string | undefined, envNames: readonly string[]): Promise<string | undefined> { if (explicit) return explicit; for (const envName of envNames) if (process.env[envName]) return process.env[envName]; return undefined; }
+async function resolveManagementKey(explicit?: string): Promise<string | undefined> { const direct = await readRuntimeKey(explicit, ["CPA_MANAGEMENT_KEY"]); if (direct) return direct; try { const text = await readFile(`${process.env.HOME ?? ""}/.config/cpa-management.env`, "utf8"); const match = /^\s*(?:export\s+)?CPA_MANAGEMENT_KEY\s*=\s*(.+?)\s*$/m.exec(text); return match?.[1]?.replace(/^['"]|['"]$/g, ""); } catch { return undefined; } }
+function headers(apiKey?: string, managementKey?: string, sessionId?: string): HeadersInit { const result: Record<string, string> = {}; if (apiKey) result.authorization = `Bearer ${apiKey}`; if (managementKey) result["x-management-key"] = managementKey; if (sessionId) { result["x-session-id"] = sessionId; result["x-claude-code-session-id"] = sessionId; result["x-session-affinity"] = sessionId; } return result; }
+async function responseBody(response: Response): Promise<string> { return await boundedBody(response, 64 * 1024); }
+async function readJsonResponse(response: Response): Promise<JsonValue> { const text = await responseBody(response); if (!response.ok) throw upstreamError(response.status, text); try { return JSON.parse(text) as JsonValue; } catch { return { raw: redact(text) }; } }
+function modelsFrom(value: JsonValue): ModelCatalogue { if (!isRecord(value) || !Array.isArray(value.data)) return {}; const data = value.data.flatMap((item): NonNullable<ModelCatalogue["data"]> => { if (!isRecord(item)) return []; const id = stringValue(item.id); if (!id) return []; const model: NonNullable<ModelCatalogue["data"]>[number] = { id, capabilities: booleanMap(item.capabilities) }; const object = stringValue(item.object); const owner = stringValue(item.owned_by); if (object) model.object = object; if (owner) model.owned_by = owner; return [model]; }).sort((a, b) => a.id.localeCompare(b.id)); return { data }; }
 
-async function readJsonResponse(response: Response): Promise<JsonValue> {
-  const text = await response.text();
-  if (!response.ok) throw new Error(`HTTP ${response.status}: ${text.slice(0, 240)}`);
-  try { return JSON.parse(text) as JsonValue; } catch { return { raw: text }; }
-}
+export function eligibleModels(catalogue: ModelCatalogue, requirements: CapabilityRequirements = {}, configured: Record<string, Partial<Record<GatewayCapability, boolean>>> = {}): GatewayModel[] { const required = requirements.capabilities ?? []; return (catalogue.data ?? []).map((model): GatewayModel => { const capabilities = { streaming: true, ...configured[model.id], ...model.capabilities }; const compatibility = required.some((capability) => capabilities[capability] !== true) ? "incompatible" : "verified"; return { id: model.id, provider: model.owned_by ?? providerFor(model.id), capabilities, compatibility }; }).filter((model) => model.compatibility === "verified"); }
+export function selectFillFirstAccount(accounts: readonly GatewayAccountHealth[], boundAccount?: string): GatewayAccountHealth | undefined { const usable = accounts.filter((account) => account.status === "available").sort((a, b) => a.id.localeCompare(b.id)); if (boundAccount) { const bound = usable.find((account) => account.id === boundAccount); if (bound) return bound; } return usable[0]; }
 
 export class GatewayAdapter {
-  private readonly baseUrl: string;
-  private readonly apiKey: string | undefined;
-  private readonly managementKey: string | undefined;
-  private readonly managementUrl: string | undefined;
-  private readonly usageDbPath: string | undefined;
-  private readonly fetcher: typeof globalThis.fetch;
-
-  constructor(options: GatewayAdapterOptions = {}) {
-    this.baseUrl = (options.baseUrl ?? process.env.CPA_BASE_URL ?? "http://127.0.0.1:8317").replace(/\/$/, "");
-    this.apiKey = options.apiKey ?? process.env.CPA_API_KEY;
-    this.managementKey = options.managementKey ?? process.env.CPA_MANAGEMENT_KEY;
-    this.managementUrl = options.managementUrl ?? process.env.CPA_MANAGEMENT_URL;
-    this.usageDbPath = options.usageDbPath ?? process.env.CPA_USAGE_DB;
-    this.fetcher = options.fetch ?? globalThis.fetch;
-  }
-
-  async listModels(): Promise<ModelCatalogue> {
-    const apiKey = await resolveGatewayKey(this.apiKey);
-    return await readJsonResponse(await this.fetcher(`${this.baseUrl}/v1/models`, { headers: headers(apiKey, this.managementKey) })) as ModelCatalogue;
-  }
-
-  async streamCompletion(prompt = "Reply with exactly one word: ready", model = process.env.KOR_GATEWAY_MODEL ?? ""): Promise<string> {
-    if (!model) throw new Error("set KOR_GATEWAY_MODEL or pass a catalogue model to streamCompletion");
-    const apiKey = await resolveGatewayKey(this.apiKey);
-    const response = await this.fetcher(`${this.baseUrl}/v1/chat/completions`, { method: "POST", headers: { ...headers(apiKey, this.managementKey), "content-type": "application/json" }, body: JSON.stringify({ model, stream: true, messages: [{ role: "user", content: prompt }] }) });
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${(await response.text()).slice(0, 240)}`);
-    if (!response.body) throw new Error("Gateway returned no stream body");
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
+  private readonly baseUrl: string; private readonly apiKey: string | undefined; private readonly managementKey: string | undefined; private readonly managementUrl: string | undefined; private readonly usageDbPath: string | undefined; private readonly fetcher: typeof globalThis.fetch; private readonly now: () => Date; private readonly telemetry: ((event: RouteTelemetry) => void) | undefined; private readonly modelCapabilities: Record<string, Partial<Record<GatewayCapability, boolean>>>; private readonly affinity = new Map<string, string>();
+  constructor(options: GatewayAdapterOptions = {}) { this.baseUrl = (options.baseUrl ?? process.env.CPA_BASE_URL ?? "http://127.0.0.1:8317").replace(/\/$/, ""); this.apiKey = options.apiKey ?? process.env.CPA_API_KEY ?? process.env.KOR_GATEWAY_KEY; this.managementKey = options.managementKey ?? process.env.CPA_MANAGEMENT_KEY; this.managementUrl = options.managementUrl ?? process.env.CPA_MANAGEMENT_URL; this.usageDbPath = options.usageDbPath ?? process.env.CPA_USAGE_DB; this.fetcher = options.fetch ?? globalThis.fetch; this.now = options.now ?? (() => new Date()); this.telemetry = options.telemetry; this.modelCapabilities = options.modelCapabilities ?? {}; }
+  async listModels(): Promise<ModelCatalogue> { const apiKey = await readRuntimeKey(this.apiKey, ["CPA_API_KEY", "KOR_GATEWAY_KEY"]); const response = await this.fetcher(`${this.baseUrl}/v1/models`, { headers: headers(apiKey, this.managementKey) }); return modelsFrom(await readJsonResponse(response)); }
+  async catalogue(requirements: CapabilityRequirements = {}): Promise<GatewayModel[]> { return eligibleModels(await this.listModels(), requirements, this.modelCapabilities); }
+  async accountHealth(): Promise<GatewayAccountHealth[]> { const management = await this.readManagement(); if (!isRecord(management)) return []; const candidate = management["/v0/management/auth-files"]; if (!isRecord(candidate) || !Array.isArray(candidate.data)) return []; return candidate.data.flatMap((value): GatewayAccountHealth[] => { if (!isRecord(value)) return []; const id = stringValue(value.id) ?? stringValue(value.name) ?? stringValue(value.auth_index); if (!id) return []; const statusText = (stringValue(value.status) ?? "unknown").toLowerCase(); const unavailable = value.unavailable === true || value.disabled === true; const status: AccountHealthStatus = unavailable ? "unavailable" : statusText.includes("quota") ? "quota" : statusText.includes("auth") ? "authentication" : statusText === "available" || statusText === "active" ? "available" : "unknown"; return [{ id, status, remainingQuota: typeof value.remaining_quota === "number" ? value.remaining_quota : undefined, resetAt: stringValue(value.reset_at) }]; }).sort((a, b) => a.id.localeCompare(b.id)); }
+  async route(request: RouteRequest = {}): Promise<RouteDecision> { const required = request.capabilities ?? ["streaming"]; const models = await this.catalogue({ capabilities: required }); const model = models.find((candidate) => !request.model || candidate.id === request.model); if (!model) throw new Error(request.model ? `model ${request.model} does not satisfy gateway capabilities` : "catalogue contained no compatible model"); const accounts = await this.accountHealth(); const selected = selectFillFirstAccount(accounts, request.sessionId ? this.affinity.get(request.sessionId) : undefined); if (request.sessionId && selected) this.affinity.set(request.sessionId, selected.id); return { model: model.id, provider: request.provider ?? model.provider ?? providerFor(model.id), accountSlot: selected?.id, compatibility: model.compatibility, requiredCapabilities: required }; }
+  async streamCompletion(prompt = "Reply with exactly one word: ready", model = process.env.KOR_GATEWAY_MODEL ?? "", options: Omit<RouteRequest, "prompt" | "model"> = {}): Promise<string> { const request: RouteRequest = { ...options, prompt }; if (model) request.model = model; const result = await this.stream(request); return result.text; }
+  async stream(request: RouteRequest = {}): Promise<StreamResult> {
+    let route = await this.route(request); const id = requestId(request.requestId); const maxRetries = request.idempotent === true ? 2 : 0; let retryCount = 0; let failoverReason: RouteFailureReason | undefined;
     while (true) {
-      const chunk = await reader.read();
-      buffer += decoder.decode(chunk.value ?? new Uint8Array(), { stream: !chunk.done });
-      const lines = buffer.split(/\r?\n/);
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.startsWith("data:")) continue;
-        const data = line.slice(5).trim();
-        if (data === "[DONE]") return "[DONE]";
-        try {
-          const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }> };
-          const text = parsed.choices?.[0]?.delta?.content ?? parsed.choices?.[0]?.message?.content;
-          if (text) return text.replace(/\s+/g, " ").trim();
-        } catch { /* Ignore non-JSON SSE comments. */ }
-      }
-      if (chunk.done) break;
-    }
-    throw new Error("Gateway stream ended before a completion token");
-  }
-
-  async readManagement(): Promise<JsonValue | null> {
-    const apiKey = await resolveGatewayKey(this.apiKey);
-    const managementKey = await resolveManagementKey(this.managementKey);
-    const urls = this.managementUrl ? [this.managementUrl] : [`${this.baseUrl}/v0/management/config`, `${this.baseUrl}/v0/management/accounts`, `${this.baseUrl}/v0/management/usage`];
-    for (const url of urls) {
+      const apiKey = await readRuntimeKey(this.apiKey, ["CPA_API_KEY", "KOR_GATEWAY_KEY"]); const response = await this.fetcher(`${this.baseUrl}/v1/chat/completions`, { method: "POST", headers: { ...headers(apiKey, this.managementKey, request.sessionId), "content-type": "application/json" }, body: JSON.stringify({ model: route.model, stream: true, messages: [{ role: "user", content: request.prompt ?? "Reply with exactly one word: ready" }] }) });
+      if (!response.ok) { const body = await responseBody(response); failoverReason = routeFailure(response.status, body); const telemetry: RouteTelemetry = { provider: route.provider, model: route.model, accountSlot: route.accountSlot, sessionId: request.sessionId, requestId: id, failoverReason, retryCount, streamStarted: false, quotaResponse: failoverReason === "quota" || failoverReason === "rate_limit", compatibility: route.compatibility }; this.telemetry?.(telemetry); if (retryCount >= maxRetries || !["quota", "rate_limit", "authentication", "provider_unavailable"].includes(failoverReason)) throw upstreamError(response.status, body); retryCount += 1; if (request.sessionId) this.affinity.delete(request.sessionId); route = await this.route(request); continue; }
       try {
-        const response = await this.fetcher(url, { headers: headers(apiKey, managementKey) });
-        if (response.status === 404) continue;
-        return await readJsonResponse(response);
+        const text = await consumeStream(response);
+        if (!text) throw new Error("CLIProxyAPI stream ended before a completion token");
+        const telemetry: RouteTelemetry = { provider: route.provider, model: route.model, accountSlot: route.accountSlot, sessionId: request.sessionId, requestId: id, failoverReason, retryCount, streamStarted: true, quotaResponse: failoverReason === "quota" || failoverReason === "rate_limit", compatibility: route.compatibility }; this.telemetry?.(telemetry); return { text: text.replace(/\s+/g, " ").trim(), route, telemetry };
       } catch (error) {
-        if (this.managementUrl) throw error;
+        const streamError = error instanceof StreamFailure ? error : undefined;
+        if (!streamError || streamError.streamStarted || retryCount >= maxRetries) throw error;
+        failoverReason = streamError.reason;
+        retryCount += 1;
+        if (request.sessionId) this.affinity.delete(request.sessionId);
+        route = await this.route(request);
       }
     }
-    return null;
   }
-
-  async readUsageDb(): Promise<JsonValue | null> {
-    if (!this.usageDbPath) return null;
-    const text = await readFile(this.usageDbPath, "utf8");
-    try { return JSON.parse(text) as JsonValue; } catch { /* Try SQLite below. */ }
-    const { DatabaseSync } = await import("node:sqlite");
-    const db = new DatabaseSync(this.usageDbPath, { readOnly: true });
-    try {
-      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as Array<{ name: string }>;
-      return { tables: tables.map((table) => table.name) };
-    } finally { db.close(); }
-  }
-
-  async readQuota(): Promise<JsonValue | null> {
-    try {
-      const result = await execFileAsync("quota-axi", ["--json", "--no-credential-refresh"], { timeout: 20_000, maxBuffer: 4 * 1024 * 1024 });
-      return JSON.parse(result.stdout) as JsonValue;
-    } catch { return null; }
-  }
-
-  async facts(): Promise<GatewayFacts> {
-    const [models, management, usage, quota] = await Promise.all([this.listModels(), this.readManagement(), this.readUsageDb(), this.readQuota()]);
-    return { models, management, usage, quota, observedAt: new Date().toISOString() };
-  }
+  async readManagement(): Promise<JsonValue | null> { const apiKey = await readRuntimeKey(this.apiKey, ["CPA_API_KEY", "KOR_GATEWAY_KEY"]); const managementKey = await resolveManagementKey(this.managementKey); const paths = this.managementUrl ? [this.managementUrl] : DEFAULT_MANAGEMENT_PATHS.map((path) => `${this.baseUrl}${path}`); const entries: Record<string, JsonValue> = {}; for (const url of paths) { try { const response = await this.fetcher(url, { headers: headers(apiKey, managementKey) }); if (response.status === 404) continue; entries[url.replace(this.baseUrl, "")] = await readJsonResponse(response); } catch (error) { if (this.managementUrl) throw error; } } return Object.keys(entries).length ? entries : null; }
+  async readUsageDb(): Promise<JsonValue | null> { if (!this.usageDbPath) return null; const text = await readFile(this.usageDbPath, "utf8"); try { return JSON.parse(text) as JsonValue; } catch { /* Try SQLite below. */ } const { DatabaseSync } = await import("node:sqlite"); const db = new DatabaseSync(this.usageDbPath, { readOnly: true }); try { const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as Array<{ name: string }>; return { tables: tables.map((table) => table.name) }; } finally { db.close(); } }
+  async readQuota(): Promise<JsonValue | null> { try { const result = await execFileAsync("quota-axi", ["--json", "--no-credential-refresh"], { timeout: 20_000, maxBuffer: 4 * 1024 * 1024 }); return JSON.parse(result.stdout) as JsonValue; } catch { return null; } }
+  async facts(): Promise<GatewayFacts> { const [models, management, usage, quota] = await Promise.all([this.listModels(), this.readManagement(), this.readUsageDb(), this.readQuota()]); return { models, management, usage, quota, observedAt: this.now().toISOString() }; }
 }

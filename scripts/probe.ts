@@ -17,17 +17,17 @@ await probe("gateway", async () => {
   const models = await gateway.listModels();
   const management = await gateway.readManagement();
   const ids = Array.isArray(models.data) ? models.data.map((model) => model.id).filter(Boolean).slice(0, 3).join(", ") : "catalogue returned";
-  const candidates = Array.isArray(models.data) ? models.data.map((model) => model.id).filter((id): id is string => Boolean(id)) : [];
+  const candidates = Array.isArray(models.data) ? models.data.map((model) => model.id).filter((id): id is string => Boolean(id)).sort((a, b) => a.localeCompare(b)) : [];
   if (candidates.length === 0) throw new Error("catalogue contained no model ids");
   let completion = "";
   let model = "";
-  let lastError: unknown;
+  const failures: string[] = [];
   for (const candidate of candidates) {
     try { completion = await gateway.streamCompletion("Reply with exactly one word: ready", candidate); model = candidate; break; }
-    catch (error) { lastError = error; }
+    catch (error) { failures.push(`${candidate}: ${error instanceof Error ? error.message : String(error)}`); }
   }
-  if (!model) throw lastError instanceof Error ? lastError : new Error("no catalogue model streamed a completion");
-  return `models=${ids || "none"}; management=${management ? "available" : "unavailable"}; selected=${model}; stream=${completion}`;
+  if (!model) throw new Error(`no catalogue model streamed a completion; route failures=${failures.join(" | ")}`);
+  return `models=${ids || "none"}; management=${management ? "available" : "unavailable"}; selected=${model}; stream=${completion}; routeFailures=${failures.length ? failures.join(" | ") : "none"}`;
 });
 
 await probe("Claude Code", async () => {
