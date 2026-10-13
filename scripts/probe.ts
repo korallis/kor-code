@@ -37,7 +37,7 @@ await probe("gateway", async () => {
 await probe("Claude Code", async () => {
   const result = await execFileAsync("bash", [join(repoRoot, "scripts", "sandbox.sh")], { cwd: repoRoot, timeout: sandboxTimeoutMs, maxBuffer: 1_000_000 });
   if (!result.stdout.includes("Kor Code cockpit plugin loaded (session-local; no configuration changes).")) throw new Error("plugin proof text missing");
-  return "sandbox plugin answered /kor-status from its own hook; ~/.claude checksum unchanged";
+  return "sandbox plugin answered /kor-status from its own hook, offline (no model endpoint contacted)";
 });
 
 await probe("Jev", async () => {

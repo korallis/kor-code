@@ -37,6 +37,6 @@ Linear is the source of truth for intent. GitHub is the source of truth for vers
 
 ## Foundation
 
-The TypeScript pnpm workspace contains `core`, `jev`, `gateway-adapter`, `linear`, `controller`, and `claude-plugin` packages. Run `pnpm probe` for the external contract checks and read the [Phase 0 probe record](docs/phase-0-probe.md). Use `scripts/sandbox.sh` to load the Claude Code plugin in a disposable `CLAUDE_CONFIG_DIR`; it never installs the plugin globally or changes the existing Claude Code configuration, and `pnpm isolation:proof` traces the sandboxed session to show it never touches the real Claude, Codex or agents homes.
+The TypeScript pnpm workspace contains `core`, `jev`, `gateway-adapter`, `linear`, `controller`, and `claude-plugin` packages. Run `pnpm probe` for the external contract checks and read the [Phase 0 probe record](docs/phase-0-probe.md). Use `scripts/sandbox.sh` to load the Claude Code plugin in a disposable `CLAUDE_CONFIG_DIR`; it never installs the plugin globally or changes the existing Claude Code configuration, runs offline unless `--live-model` opts in to CLIProxyAPI, and `pnpm isolation:proof` traces the sandboxed session to show it never touches the real Claude, Codex or agents homes or port 8317.
 
 The Phase 6 cockpit (`packages/claude-plugin`) is Validated on fixture data: `pnpm cockpit` opens it in the sandboxed Claude Code (`/kor`), and `pnpm cockpit:proof` replays the fixture execution and checks every view's labels. See the [cockpit specification](docs/specs/cockpit-mockups.md).

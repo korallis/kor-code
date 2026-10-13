@@ -72,7 +72,7 @@ Every value and state below is illustrative.
 
 ## Implementation (Phase 6)
 
-Status: **Validated** on fixture data in the sandboxed Claude Code 2.1.296 (`pnpm cockpit:proof`, and the interactive TUI driven through `pnpm cockpit`). No value is live except what the Claude Code session reports about itself; Linear, Jev, the gateway and the controller reach the cockpit when Phases 1-5 land. `pnpm isolation:proof` traces a headless view, or with `--interactive` the TUI, to show the session never touches the real Claude, Codex or agents homes. ADR 0006 records why the cockpit is a Claude Code mod.
+Status: **Validated** on fixture data in the sandboxed Claude Code 2.1.296 (`pnpm cockpit:proof`, and the interactive TUI driven through `pnpm cockpit`). No value is live except what the Claude Code session reports about itself; Linear, Jev, the gateway and the controller reach the cockpit when Phases 1-5 land. Sandbox runs are offline: the cockpit needs no model, so the child's model endpoint is a local stub and CLIProxyAPI is never contacted (`--live-model` opts in). `pnpm isolation:proof` traces a headless view, or with `--interactive` the TUI, to show the session never touches the real Claude, Codex or agents homes or port 8317. ADR 0006 records why the cockpit is a Claude Code mod.
 
 `packages/claude-plugin` is one hooks module (`hooks/register.tsx`). It draws three things and writes nothing outside the session:
 

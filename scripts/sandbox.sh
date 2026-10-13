@@ -3,6 +3,10 @@
 #   scripts/sandbox.sh                 headless /kor-status proof
 #   scripts/sandbox.sh "/kor replay"   any headless prompt, same guards
 #   scripts/sandbox.sh --interactive   the TUI, for driving the cockpit by hand
+#   scripts/sandbox.sh --live-model …  opt in to model calls through CLIProxyAPI
+# By default the run is offline: the child's model endpoint is
+# scripts/offline-endpoint.py on an ephemeral loopback port, so CLIProxyAPI
+# (127.0.0.1:8317) is never contacted and its key is never read.
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
@@ -12,7 +16,9 @@ config_dir="$sandbox_dir/claude-config"
 home_dir="$sandbox_dir/home"
 mkdir -p "$config_dir" "$home_dir"
 
-# The real user homes the child must never reach, not even by a stat.
+# The real user homes the child must never reach, not even by a stat. The
+# harness never opens them either: these paths are only compared as strings.
+# scripts/isolation-proof.sh traces the child to prove it.
 forbidden=("$real_home/.claude" "$real_home/.claude.json" "$real_home/.codex" "$real_home/.agents")
 is_forbidden() {
   local path=$1 root
@@ -27,7 +33,8 @@ is_forbidden() {
 # ancestor .claude of anything under the home directory. So the child runs in
 # a fresh root outside every home, with its own git root and scratch directory.
 run_root=$(mktemp -d /tmp/kor-sandbox.XXXXXX)
-trap 'rm -rf "$run_root"' EXIT
+stub_pid=""
+trap '[ -z "$stub_pid" ] || kill "$stub_pid" 2>/dev/null; rm -rf "$run_root"' EXIT
 work_dir="$run_root/cwd"
 tmp_dir="$run_root/tmp"
 mkdir -p "$work_dir" "$tmp_dir"
@@ -54,64 +61,40 @@ for path in "$claude_bin" "$(readlink -f "$claude_bin")" "$config_dir" "$home_di
 done
 
 interactive=0
-if [ "${1:-}" = "--interactive" ]; then interactive=1; shift; fi
+live_model=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --interactive) interactive=1; shift ;;
+    --live-model) live_model=1; shift ;;
+    *) break ;;
+  esac
+done
 prompt=${1:-/kor-status}
 
-gateway_key="${KOR_GATEWAY_KEY:-}"
-gateway_key_file="${KOR_GATEWAY_KEY_FILE:-}"
-if [ -z "$gateway_key" ] && [ -n "$gateway_key_file" ]; then
-  if [ ! -r "$gateway_key_file" ]; then
-    echo "KOR_GATEWAY_KEY_FILE is not readable" >&2
-    exit 1
+if [ "$live_model" -eq 1 ]; then
+  # A client of the existing CLIProxyAPI, never its operator: nothing here
+  # starts, stops or reconfigures it.
+  gateway_url="${KOR_GATEWAY_URL:-http://127.0.0.1:8317}"
+  gateway_key="${KOR_GATEWAY_KEY:-}"
+  gateway_key_file="${KOR_GATEWAY_KEY_FILE:-}"
+  if [ -z "$gateway_key" ] && [ -n "$gateway_key_file" ]; then
+    if [ ! -r "$gateway_key_file" ]; then
+      echo "KOR_GATEWAY_KEY_FILE is not readable" >&2
+      exit 1
+    fi
+    gateway_key=$(cat "$gateway_key_file")
   fi
-  gateway_key=$(cat "$gateway_key_file")
+  [ -n "$gateway_key" ] || { echo "sandbox: --live-model needs KOR_GATEWAY_KEY or KOR_GATEWAY_KEY_FILE" >&2; exit 1; }
+  echo "sandbox: live model calls go to $gateway_url" >&2
+else
+  python3 -I "$repo_root/scripts/offline-endpoint.py" >"$run_root/endpoint.port" &
+  stub_pid=$!
+  for _ in $(seq 50); do [ -s "$run_root/endpoint.port" ] && break; sleep 0.1; done
+  stub_port=$(head -n1 "$run_root/endpoint.port")
+  case "$stub_port" in '' | *[!0-9]* | 8317) echo "sandbox: offline endpoint did not start" >&2; exit 1 ;; esac
+  gateway_url="http://127.0.0.1:$stub_port"
+  gateway_key="kor-sandbox-offline"
 fi
-
-checksum_surfaces() {
-  python3 - "$1" <<'PY'
-import hashlib, json, os, sys
-root = sys.argv[1]
-digest = hashlib.sha256()
-claude = os.path.join(root, ".claude")
-files = ["settings.json", "settings.local.json", "CLAUDE.md", "keybindings.json", ".credentials.json"]
-for directory in ("plugins", "skills", "hooks", "agents", "commands"):
-    base = os.path.join(claude, directory)
-    for current, dirs, names in os.walk(base):
-        if directory == "plugins":
-            dirs[:] = [name for name in dirs if name != ".in_use"]
-        files.extend(os.path.relpath(os.path.join(current, name), claude) for name in names)
-for relative in files:
-    path = os.path.join(claude, relative)
-    try:
-        with open(path, "rb") as handle:
-            content = handle.read()
-        if relative == "plugins/known_marketplaces.json":
-            def stable(value):
-                if isinstance(value, dict):
-                    return {key: stable(item) for key, item in value.items() if key != "lastUpdated"}
-                if isinstance(value, list):
-                    return [stable(item) for item in value]
-                return value
-            content = json.dumps(stable(json.loads(content)), sort_keys=True, separators=(",", ":")).encode()
-        digest.update(relative.encode())
-        digest.update(content)
-    except FileNotFoundError:
-        continue
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        raise SystemExit(f"cannot parse checksum surface: {relative}")
-claude_json = os.path.join(root, ".claude.json")
-try:
-    with open(claude_json, "rb") as handle:
-        value = json.load(handle)
-    digest.update(b".claude.json:mcpServers")
-    digest.update(json.dumps(value.get("mcpServers"), sort_keys=True, separators=(",", ":")).encode())
-except FileNotFoundError:
-    digest.update(b".claude.json:mcpServers:absent")
-except (json.JSONDecodeError, AttributeError):
-    raise SystemExit("cannot parse checksum surface: .claude.json")
-print(digest.hexdigest(), end="")
-PY
-}
 
 # Skip first-run onboarding and the trust dialog inside the throwaway config only;
 # trust covers this run's working directory alone.
@@ -142,7 +125,7 @@ child_env=(
   CLAUDE_CONFIG_DIR="$config_dir" CLAUDE_CODE_TMPDIR="$tmp_dir"
   CLAUDE_CODE_DISABLE_CLAUDE_MDS=1 DISABLE_AUTOUPDATER=1
   CLAUDE_CODE_PLUGIN_DIR_WATCH=1
-  ANTHROPIC_BASE_URL="http://127.0.0.1:8317" ANTHROPIC_AUTH_TOKEN="$gateway_key"
+  ANTHROPIC_BASE_URL="$gateway_url" ANTHROPIC_AUTH_TOKEN="$gateway_key"
 )
 for name in TERM COLORTERM LANG LC_ALL LC_CTYPE TZ USER LOGNAME; do
   [ -z "${!name:-}" ] || child_env+=("$name=${!name}")
@@ -156,7 +139,6 @@ run_claude() {
   )
 }
 
-claude_checksum_before=$(checksum_surfaces "$real_home")
 set +e
 if [ "$interactive" -eq 1 ]; then
   run_claude
@@ -167,18 +149,12 @@ else
   claude_exit=$?
 fi
 set -e
-claude_checksum_after=$(checksum_surfaces "$real_home")
 
 [ -z "$output" ] || printf '%s\n' "$output"
 if [ "$claude_exit" -ne 0 ]; then
   echo "claude exited with status $claude_exit" >&2
   exit "$claude_exit"
 fi
-if [ "$claude_checksum_before" != "$claude_checksum_after" ]; then
-  echo "Claude configuration checksum changed" >&2
-  exit 1
-fi
-echo "sandbox: Claude configuration checksum unchanged" >&2
 # /kor-status is answered by the plugin's own hook, never by the model, so the proof text is exact.
 if [ "$interactive" -eq 0 ] && [ "$prompt" = "/kor-status" ]; then
   case "$output" in
