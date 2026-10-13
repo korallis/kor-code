@@ -3,6 +3,6 @@
   "version": "0.1.0",
   "type": "module",
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.json --noEmit" },
+  "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.json --noEmit", "probe": "tsx src/probe.ts", "probe:live": "tsx src/probe.ts --live" },
   "dependencies": { "@kor-code/core": "workspace:*" }
 }

@@ -1,0 +1,121 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import type { Execution } from '@kor-code/core';
+import { type Completion, type LinearClient, type LinearIssue, type WorkflowMapping } from './contract.js';
+import { LinearStore, sessionRecord, type ExecutionClaim } from './store.js';
+
+export class SnapshotReader {
+  constructor(private readonly client: LinearClient) {}
+  async read(issueId: string): Promise<{ snapshotId: string; observedAt: string; issue: LinearIssue }> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const issue = await this.client.getIssue(issueId);
+      const snapshotId = this.digest(issue);
+      if (snapshotId === this.digest(await this.client.getIssue(issueId))) return { snapshotId, observedAt: new Date().toISOString(), issue };
+    }
+    throw new Error('Linear snapshot changed during discovery; retry reconciliation');
+  }
+  private digest(issue: LinearIssue): string { return createHash('sha256').update(JSON.stringify(issue)).digest('hex'); }
+}
+
+export class DurableQueue {
+  constructor(readonly store: LinearStore) {}
+  enqueue(issueId: string) { return this.store.enqueue(issueId); }
+}
+export class ExecutionLease {
+  constructor(private readonly store: LinearStore) {}
+  claim(owner: string, ttlMs?: number) { return this.store.claim(owner, ttlMs); }
+  renew(claim: ExecutionClaim, ttlMs?: number): void { this.store.renew(claim, ttlMs); }
+  release(claim: ExecutionClaim, delayMs?: number): void { this.store.release(claim, delayMs); }
+}
+
+// No policy decisions or execution launcher here: Phase 2 supplies the manifest
+// and Phase 3 authorizes dispatch. This boundary records only explicit changes.
+export class AgentSessionWriter {
+  constructor(private readonly store: LinearStore, private readonly client: LinearClient, private readonly states: WorkflowMapping) {}
+
+  start(claim: ExecutionClaim, manifest: Execution): void {
+    const assignment = claim.assignment;
+    if (manifest.id !== assignment.executionId || manifest.issueId !== assignment.issueId || manifest.status !== 'running') throw new Error('Manifest does not match the claimed execution');
+    this.store.transition(claim, 'running', [
+      { kind: 'session', session: sessionRecord(assignment) },
+      { kind: 'state', issueId: assignment.issueId, stateId: this.states.queued },
+      { kind: 'state', issueId: assignment.issueId, stateId: this.states.running },
+      { kind: 'summary', sessionId: assignment.sessionId, summary: `Execution ${assignment.executionId} running` },
+      { kind: 'activity', id: randomUUID(), sessionId: assignment.sessionId, activity: 'thought', body: `Execution ${assignment.executionId} started` },
+    ], manifest);
+  }
+
+  complete(claim: ExecutionClaim, completion: Completion): void {
+    if (!completion.summary.trim() || completion.evidence.length === 0 || completion.evidence.some(evidence => evidence.status !== 'pass')) throw new Error('Completion requires passing evidence and a summary');
+    const assignment = claim.assignment;
+    const body = [completion.summary, ...completion.evidence.map(evidence => `${evidence.kind}: ${evidence.summary}${evidence.source ? ` (${evidence.source})` : ''}`), completion.pullRequestUrl ?? ''].filter(Boolean).join('\n');
+    this.store.transition(claim, 'complete', [
+      { kind: 'summary', sessionId: assignment.sessionId, summary: body },
+      { kind: 'activity', id: randomUUID(), sessionId: assignment.sessionId, activity: 'response', body },
+      { kind: 'comment', id: randomUUID(), issueId: assignment.issueId, body },
+      { kind: 'state', issueId: assignment.issueId, stateId: this.states.complete },
+    ]);
+  }
+
+  async flush(maximum = 100): Promise<number> {
+    if (!Number.isSafeInteger(maximum) || maximum < 1) throw new Error('Write batch limit must be positive');
+    const token = this.store.claimWriter();
+    if (!token) return 0;
+    let count = 0;
+    try {
+      for (; count < maximum; count++) {
+        const pending = this.store.nextWrite(token);
+        if (!pending) break;
+        await this.client.apply(pending.write);
+        this.store.acknowledgeWrite(token, pending.sequence);
+      }
+      return count;
+    } finally { this.store.releaseWriter(token); }
+  }
+}
+
+import { createHmac, timingSafeEqual } from 'node:crypto';
+export interface WebhookReceiverOptions { secret: string; store: LinearStore; now?: () => number }
+export function verifyWebhookSignature(rawBody: string, signature: string, secret: string): boolean { const expected = createHmac('sha256', secret).update(rawBody).digest('hex'); const provided = signature.replace(/^sha256=/, ''); const expectedBytes = Buffer.from(expected); const providedBytes = Buffer.from(provided); return expectedBytes.length === providedBytes.length && timingSafeEqual(expectedBytes, providedBytes); }
+export class WebhookReceiver {
+  constructor(private readonly options: WebhookReceiverOptions) {}
+  receive(rawBody: string, signature: string): { accepted: boolean } {
+    if (!verifyWebhookSignature(rawBody, signature, this.options.secret)) throw new Error('invalid webhook signature');
+    const value: unknown = JSON.parse(rawBody); if (typeof value !== 'object' || value === null) throw new Error('invalid webhook payload');
+    const event = value as { id?: unknown; type?: unknown; action?: unknown; data?: unknown };
+    if (typeof event.id !== 'string' || typeof event.type !== 'string' || typeof event.action !== 'string') throw new Error('invalid webhook event');
+    const data = typeof event.data === 'object' && event.data !== null ? event.data as Record<string, unknown> : {};
+    const issueId = typeof data.id === 'string' ? data.id : typeof data.issueId === 'string' ? data.issueId : undefined;
+    const digest = createHash('sha256').update(rawBody).digest('hex');
+    return { accepted: this.options.store.acceptEvent({ id: event.id, digest, ...(issueId ? { issueId } : {}) }) === 'accepted' };
+  }
+}
+
+export interface WebhookServerOptions extends WebhookReceiverOptions {
+  port: number;
+  host?: string;
+  maxBodyBytes?: number;
+}
+
+/** Bind only the caller-selected Kor port; 8317 belongs to CLIProxyAPI. */
+export async function startWebhookServer(options: WebhookServerOptions): Promise<Server> {
+  if (!Number.isSafeInteger(options.port) || options.port < 1 || options.port > 65_535 || options.port === 8317) throw new Error('Webhook port must be a valid non-8317 port');
+  const maxBodyBytes = options.maxBodyBytes ?? 1_000_000;
+  if (!Number.isSafeInteger(maxBodyBytes) || maxBodyBytes < 1) throw new Error('Webhook body limit must be positive');
+  const receiver = new WebhookReceiver(options);
+  const server = createServer((request: IncomingMessage, response: ServerResponse) => {
+    if (request.method !== 'POST' || request.url !== '/webhooks/linear') { response.writeHead(404).end(); return; }
+    const signature = request.headers['linear-signature'];
+    if (typeof signature !== 'string') { response.writeHead(401).end(); request.resume(); return; }
+    const chunks: Buffer[] = []; let size = 0; let rejected = false;
+    request.on('data', (chunk: Buffer) => { size += chunk.byteLength; if (size > maxBodyBytes) { rejected = true; request.destroy(); } else chunks.push(chunk); });
+    request.on('error', () => { if (!response.headersSent) response.writeHead(400).end(); });
+    request.on('end', async () => {
+      if (rejected) { if (!response.headersSent) response.writeHead(413).end(); return; }
+      try { receiver.receive(Buffer.concat(chunks).toString('utf8'), signature); response.writeHead(202).end(); }
+      catch { if (!response.headersSent) response.writeHead(401).end(); }
+    });
+  });
+  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(options.port, options.host ?? '127.0.0.1', () => { server.off('error', reject); resolve(); }); });
+  return server;
+}

@@ -4,6 +4,8 @@
 
 Linear is the command centre for intent and delivery history. Kor Code uses Linear as the only project and issue management system.
 
+**Status: Validated** — the fake contract probe covers an issue lifecycle, one linked execution, signed webhook delivery, and duplicate suppression. The live adapter has only been exercised with read-only count checks. Mutations require explicit writer configuration and are not enabled by the probe.
+
 ## Linear model
 
 | Linear object | Kor Code meaning |
@@ -60,6 +62,10 @@ Write updates for execution changes, significant findings, blockers, failovers, 
 6. Record the reconciliation result.
 
 Treat webhook payloads as triggers, not as the complete source of truth.
+
+Webhook event IDs and execution assignments are persisted in the Linear store's SQLite database. WAL mode and `BEGIN IMMEDIATE` make acceptance and queue insertion atomic across controller processes. A duplicate ID with a different payload digest fails closed. Execution leases contain an owner, token, expiry, and attempt count; state transitions and outbox writes commit under the same lease. A single writer lease drains the outbox, acknowledging each write only after the client succeeds.
+
+Upstream response bodies are bounded and redacted on HTTP, transport, and GraphQL errors. The adapter validates JSON at the boundary and never exposes the credential or upstream issue text in error messages.
 
 ## Cross-project work
 
