@@ -26,6 +26,7 @@ export class ExecutionLease {
   claim(owner: string, ttlMs?: number, issueId?: string) { return this.store.claim(owner, ttlMs, issueId); }
   renew(claim: ExecutionClaim, ttlMs?: number): void { this.store.renew(claim, ttlMs); }
   release(claim: ExecutionClaim, delayMs?: number): void { this.store.release(claim, delayMs); }
+  reclaimExpired(issueId: string): boolean { return this.store.reclaimExpired(issueId); }
 }
 
 // No policy decisions or execution launcher here: Phase 2 supplies the manifest

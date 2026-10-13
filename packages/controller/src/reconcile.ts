@@ -6,7 +6,7 @@ export interface ReconciliationReport { assignments: AssignmentRecord[]; expired
 export class RestartReconciler {
   constructor(private readonly store: LinearStore, private readonly worktrees: WorktreeManager) {}
   async reconcile(): Promise<ReconciliationReport> {
-    const assignments = this.store.listAssignments(); const now = Date.now(); const expiredLeases: string[] = []; const resumable: Execution[] = []; const missingWorktrees: string[] = [];
+    const assignments = this.store.listAssignments(); const expiredLeases: string[] = []; const resumable: Execution[] = []; const missingWorktrees: string[] = [];
     for (const assignment of assignments) {
       if (assignment.status === "complete") continue;
       if (assignment.manifest) { resumable.push(assignment.manifest); try { await access(assignment.manifest.worktree); } catch { missingWorktrees.push(assignment.issueId); } }
@@ -14,8 +14,8 @@ export class RestartReconciler {
         const exists = await this.worktrees.exists({ executionId: assignment.executionId, issueId: assignment.issueId, path: assignment.manifest.worktree, branch: assignment.manifest.branch, repository: assignment.manifest.repository });
         if (!exists) missingWorktrees.push(assignment.issueId);
       }
-      if (assignment.status === "running" && assignment.expiresAt !== undefined && assignment.expiresAt <= now) expiredLeases.push(assignment.issueId);
+      if (this.store.reclaimExpired(assignment.issueId)) expiredLeases.push(assignment.issueId);
     }
-    return { assignments, expiredLeases, resumable, missingWorktrees: [...new Set(missingWorktrees)], orphanedWorktrees: [] };
+    return { assignments: this.store.listAssignments(), expiredLeases, resumable, missingWorktrees: [...new Set(missingWorktrees)], orphanedWorktrees: [] };
   }
 }

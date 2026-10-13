@@ -28,6 +28,7 @@ export interface ControllerOptions {
   owner?: string;
   defaultRoute?: Route;
   promptPrefix?: string;
+  leaseTtlMs?: number;
 }
 export interface ControllerRunResult {
   execution: Execution;
@@ -68,8 +69,11 @@ class ExecutionController implements Controller {
   private readonly writer?: AgentSessionWriter;
   private readonly snapshots?: SnapshotReader;
   private readonly reconciler?: RestartReconciler;
+  private readonly leaseTtlMs: number;
   constructor(private readonly options: ControllerOptions) {
     this.limiter = options.limits ?? new ConcurrencyLimiter({ total: 1 });
+    this.leaseTtlMs = options.leaseTtlMs ?? 60_000;
+    if (!Number.isSafeInteger(this.leaseTtlMs) || this.leaseTtlMs <= 0) throw new Error("Lease TTL must be positive");
     this.owner = options.owner ?? `controller-${process.pid}-${randomUUID()}`;
     if (options.linear) {
       this.queue = new DurableQueue(options.linear.store);
@@ -83,16 +87,17 @@ class ExecutionController implements Controller {
     const issue = input.issue ?? (this.snapshots ? (await this.snapshots.read(input.issueId)).issue : undefined);
     if (!issue) throw new Error("Controller dispatch requires an issue or a Linear runtime");
     const repository = await this.options.repositories.resolve(input.repository);
-    const permit = await this.limiter.acquire({ repository: repository.key, ...(input.route?.provider ? { provider: input.route.provider } : {}) });
+    const route = await chooseRoute(this.options, input.id, issue, input.route);
+    const permit = await this.limiter.acquire({ repository: repository.key, ...(route?.provider ? { provider: route.provider } : {}) });
     let worktree: Worktree | undefined;
     let claim: ExecutionClaim | undefined;
+    let heartbeat: { failed: Promise<never>; stop: () => void } | undefined;
     try {
       if (this.lease && this.writer) {
-        claim = input.claim ?? this.lease.claim(this.owner, undefined, input.issueId);
+        claim = input.claim ?? this.lease.claim(this.owner, this.leaseTtlMs, input.issueId);
         if (!claim) throw new Error(`No execution lease available for ${input.issueId}`);
       }
       worktree = await this.options.worktrees.create({ executionId: input.id, issueId: input.issueId, repository, branch: input.branch });
-      const route = await chooseRoute(this.options, input.id, issue, input.route);
       const execution: Execution = { ...input, repository: repository.key, worktree: worktree.path, branch: worktree.branch, status: "running", ...(route ? { route } : {}), manifest: { executionId: input.id, issueId: input.issueId, repository: repository.key, worktree: worktree.path, branch: worktree.branch, agents: [], acceptance: acceptance(issue) } };
       if (this.lease && this.writer) {
         if (!claim) throw new Error(`No execution lease available for ${input.issueId}`);
@@ -100,16 +105,37 @@ class ExecutionController implements Controller {
         await this.writer.flush();
       }
       const launch: SessionLaunch = { execution, repositoryPath: repository.path, worktreePath: worktree.path, prompt: input.prompt ?? promptFor(issue, this.options.promptPrefix), ...(route ? { route } : {}) };
-      const session = await this.options.launcher.launch(launch);
+      heartbeat = claim && this.lease ? this.startHeartbeat(claim) : undefined;
+      const sessionPromise = this.options.launcher.launch(launch);
+      const session = await Promise.race([sessionPromise, ...(heartbeat ? [heartbeat.failed] : [])]);
+      heartbeat?.stop();
       if (this.writer && claim) {
-        if (session.exitCode === 0) await this.writer.complete(claim, { summary: `Execution ${input.id} completed`, evidence: [{ id: `session-${input.id}`, kind: "test", summary: "Sandbox session exited successfully", status: "pass" }] });
+        if (session.exitCode === 0) await this.writer.complete(claim, { summary: `Execution ${input.id} completed`, evidence: [{ id: `session-${input.id}`, kind: "provider", summary: "Sandbox session exited with status 0", status: "pass" }] });
         else this.options.linear?.store.release(claim, 1_000);
         await this.writer.flush();
       }
       return { execution, issue, repository, worktree, session, ...(claim ? { claim } : {}) };
+    } catch (error) {
+      if (claim && this.options.linear) {
+        try { this.options.linear.store.release(claim, 1_000); } catch { /* expired claims are reclaimed on restart */ }
+      }
+      throw error;
     } finally {
+      heartbeat?.stop();
       permit.release();
     }
+  }
+  private startHeartbeat(claim: ExecutionClaim): { failed: Promise<never>; stop: () => void } {
+    let timer: ReturnType<typeof setInterval> | undefined;
+    let rejectFailure: (error: unknown) => void = () => undefined;
+    const failed = new Promise<never>((_, reject) => { rejectFailure = reject; });
+    failed.catch(() => undefined);
+    timer = setInterval(() => {
+      try { this.lease?.renew(claim, this.leaseTtlMs); }
+      catch (error) { if (timer) clearInterval(timer); rejectFailure(error); }
+    }, Math.max(100, Math.floor(this.leaseTtlMs / 3)));
+    timer.unref?.();
+    return { failed, stop: () => { if (timer) clearInterval(timer); } };
   }
   async runIssue(issueId: string): Promise<ControllerRunResult> {
     if (!this.queue || !this.snapshots) throw new Error("runIssue requires a Linear runtime");
@@ -121,7 +147,7 @@ class ExecutionController implements Controller {
   }
   async runNext(): Promise<ControllerRunResult | undefined> {
     if (!this.lease || !this.snapshots) throw new Error("runNext requires a Linear runtime");
-    const claim = this.lease.claim(this.owner);
+    const claim = this.lease.claim(this.owner, this.leaseTtlMs);
     if (!claim) return undefined;
     const issue = (await this.snapshots.read(claim.assignment.issueId)).issue;
     return this.dispatch({ id: claim.assignment.executionId, issueId: issue.id, repository: issue.repository ?? issue.teamKey, worktree: "", branch: `kor/${issue.id}`, status: "queued", issue, claim });

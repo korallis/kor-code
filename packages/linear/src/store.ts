@@ -142,6 +142,14 @@ export class LinearStore {
       this.db.prepare('UPDATE assignments SET token=NULL,owner=NULL,expires_at=NULL,available_at=? WHERE issue_id=?').run(this.now() + delayMs, claim.assignment.issueId);
     });
   }
+  reclaimExpired(issueId: string): boolean {
+    return this.transaction(() => {
+      const row = this.db.prepare('SELECT expires_at FROM assignments WHERE issue_id=? AND token IS NOT NULL').get(issueId) as { expires_at?: unknown } | undefined;
+      if (!row || typeof row.expires_at !== 'number' || row.expires_at > this.now()) return false;
+      const result = this.db.prepare('UPDATE assignments SET token=NULL,owner=NULL,expires_at=NULL,available_at=? WHERE issue_id=? AND expires_at<=?').run(this.now(), issueId, this.now());
+      return result.changes === 1;
+    });
+  }
   transition(claim: ExecutionClaim, status: 'running' | 'complete', writes: LinearWrite[], manifest?: Execution): void {
     this.transaction(() => {
       this.assertLease(claim);

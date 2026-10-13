@@ -16,7 +16,7 @@ Completion criterion: a test issue moves through queued, running, and completed 
 
 Build repository lookup, isolated worktrees, session launcher, event collector, restart reconciliation, and concurrency limits.
 
-Completion criterion: two test issues run concurrently without sharing uncommitted files or losing their Linear links. `pnpm controller:fixture` demonstrates this against two fake Linear issues.
+Completion criterion: two test issues run concurrently without sharing uncommitted files or losing their Linear links. `pnpm controller:fixture` demonstrates this against two fake Linear issues. The Phase 2 evidence also covers sandbox path isolation, lease renewal, and killed-run reconciliation.
 
 ## Phase 3: Jev core
 
