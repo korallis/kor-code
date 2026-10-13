@@ -42,6 +42,8 @@ Start from one tested visual layer. Add the issue, project, decision stream, age
 
 Completion criterion: a fixture execution is visible and every non-live value is labelled.
 
+Status: Validated on fixture data. `pnpm cockpit:proof` runs the fixture execution through all seven stages and every view in the sandboxed Claude Code and checks each row's provenance label; live data arrives as Phases 1-5 land.
+
 ## Phase 7: calibration
 
 Compare real tasks with a fixed-route baseline. Track completion quality, repair attempts, token use, cache hit rate, wall-clock time, failovers, verification failures, policy blocks, and clarification rate.

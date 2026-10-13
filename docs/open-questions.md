@@ -13,7 +13,7 @@ Resolve these questions with a compatibility test or an explicit product decisio
 
 ## Claude Code
 
-- Which installed version exposes the required Mods and interception points?
+- Which installed version exposes the required Mods and interception points? Claude Code 2.1.296 does: status line, self-answering commands and panes are Validated (ADR 0006).
 - Can the visual layer coexist with Jev telemetry?
 - Which APIs support unattended isolated sessions?
 - How does the runtime report partial output and recovery?
