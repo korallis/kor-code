@@ -23,7 +23,7 @@ export class DurableQueue {
 }
 export class ExecutionLease {
   constructor(private readonly store: LinearStore) {}
-  claim(owner: string, ttlMs?: number) { return this.store.claim(owner, ttlMs); }
+  claim(owner: string, ttlMs?: number, issueId?: string) { return this.store.claim(owner, ttlMs, issueId); }
   renew(claim: ExecutionClaim, ttlMs?: number): void { this.store.renew(claim, ttlMs); }
   release(claim: ExecutionClaim, delayMs?: number): void { this.store.release(claim, delayMs); }
 }

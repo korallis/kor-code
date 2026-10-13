@@ -2,7 +2,7 @@
 
 ## Stages
 
-**Status: Validated for the Linear synchronization boundary.** Discovery snapshots, lease ownership, session records, state transitions, evidence-gated completion, and outbox writes are implemented in `@kor-code/linear`. Repository execution and reconciliation remain Phase 2 responsibilities.
+**Status: Validated.** Discovery snapshots, lease ownership, session records, state transitions, evidence-gated completion, outbox writes, repository lookup, isolated worktrees, sandboxed session launch, event collection, restart reconciliation, and concurrency limits are implemented in `@kor-code/linear` and `@kor-code/controller`. The controller fixture runs two issues concurrently and confirms separate worktrees and retained Linear session links.
 
 ~~~mermaid
 flowchart LR
@@ -84,3 +84,9 @@ status: running
 ~~~
 
 A restart reconciles leases, provider request IDs, agent state, worktree existence, branch state, pull-request state, and pending Linear updates.
+
+Phase 2 sessions invoke `scripts/sandbox.sh --run` with a per-execution `HOME`,
+`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and XDG directories. The launcher filters
+`.claude`, `.codex`, and `.agents` entries from `PATH`, passes only runtime
+environment values, and supplies the plugin directory explicitly. The sandbox
+script does not inspect the caller's home directory or CLIProxyAPI files.
