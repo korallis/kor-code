@@ -18,6 +18,21 @@ if [ -z "$gateway_key" ] && [ -n "$gateway_key_file" ]; then
   gateway_key=$(cat "$gateway_key_file")
 fi
 
+if [ "${1:-}" = "--run" ]; then
+  shift
+  if [ "$#" -eq 0 ]; then echo "sandbox --run requires a command" >&2; exit 2; fi
+  safe_path="${KOR_SANDBOX_PATH:-/usr/local/bin:/usr/bin:/bin}"
+  tool_bin_dir="${KOR_CLAUDE_BIN_DIR:-}"
+  if [ -n "$tool_bin_dir" ]; then safe_path="$tool_bin_dir:$safe_path"; fi
+  env -i \
+    HOME="$home_dir" CLAUDE_CONFIG_DIR="$config_dir" \
+    CODEX_HOME="$home_dir/.codex" XDG_CONFIG_HOME="$home_dir/.config" XDG_DATA_HOME="$home_dir/.local/share" \
+    PATH="$safe_path" CLAUDE_CODE_DISABLE_CLAUDE_MDS=1 \
+    ANTHROPIC_BASE_URL="http://127.0.0.1:8317" ANTHROPIC_AUTH_TOKEN="$gateway_key" \
+    KOR_EXECUTION_ID="${KOR_EXECUTION_ID:-}" KOR_WORKTREE="${KOR_WORKTREE:-}" KOR_ROUTE_MODEL="${KOR_ROUTE_MODEL:-}" "$@"
+  exit $?
+fi
+
 checksum_surfaces() {
   python3 - "$1" <<'PY'
 import hashlib, json, os, sys
@@ -66,7 +81,7 @@ PY
 
 claude_checksum_before=$(checksum_surfaces "$real_home")
 set +e
-output=$(HOME="$home_dir" CLAUDE_CONFIG_DIR="$config_dir" ANTHROPIC_BASE_URL="http://127.0.0.1:8317" ANTHROPIC_AUTH_TOKEN="$gateway_key" claude -p "/kor-status" --plugin-dir "$repo_root/packages/claude-plugin" --no-session-persistence --permission-mode dontAsk --output-format text 2>&1)
+output=$(HOME="$home_dir" CLAUDE_CONFIG_DIR="$config_dir" CLAUDE_CODE_DISABLE_CLAUDE_MDS=1 ANTHROPIC_BASE_URL="http://127.0.0.1:8317" ANTHROPIC_AUTH_TOKEN="$gateway_key" claude -p "/kor-status" --plugin-dir "$repo_root/packages/claude-plugin" --no-session-persistence --permission-mode dontAsk --output-format text 2>&1)
 claude_exit=$?
 set -e
 claude_checksum_after=$(checksum_surfaces "$real_home")
