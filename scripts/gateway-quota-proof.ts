@@ -6,8 +6,8 @@ type FixtureAccount = { id: string; name: string; status: string; email: string;
 let failedOnce = false;
 const calls: Array<{ url: string; session: string | null }> = [];
 const accounts: FixtureAccount[] = [
-  { id: "account-01", name: "fixture-one", status: "active", email: "one@example.invalid" },
-  { id: "account-02", name: "fixture-two", status: "active", email: "two@example.invalid" },
+  { id: "two@example.invalid", name: "two@example.invalid", status: "active", email: "two@example.invalid" },
+  { id: "one@example.invalid", name: "one@example.invalid", status: "active", email: "one@example.invalid" },
 ];
 
 const fakeFetch: typeof fetch = async (input, init) => {

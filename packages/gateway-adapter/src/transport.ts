@@ -18,7 +18,7 @@ export function json(value: unknown): JsonValue {
 export function publicJson(value: unknown): JsonValue {
   if (Array.isArray(value)) return value.map(publicJson);
   if (record(value)) return Object.fromEntries(Object.entries(value)
-    .filter(([key]) => !/key|token|secret|password|credential|authorization|email|path|message|detail|error|label|account$/i.test(key))
+    .filter(([key]) => !/key|token|secret|password|credential|authorization|email|path|message|detail|error|label|account$|^(id|name)$/i.test(key))
     .map(([key, item]) => [key, publicJson(item)]));
   if (typeof value === "string" && /bearer |sk-|eyJ|api.?key|token[=:]|password[=:]/i.test(value)) return "[REDACTED]";
   return json(value);
