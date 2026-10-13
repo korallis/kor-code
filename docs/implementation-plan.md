@@ -6,11 +6,11 @@ Verify Linear authentication and objects, Claude Code session hooks, gateway cat
 
 Completion criterion: a harness reads a test issue, starts a non-destructive session, calls one verified route, and writes a test activity to Linear.
 
-## Phase 1: Linear foundation
+## Phase 1: Linear foundation — Validated
 
 Build the Linear client, webhook receiver, event deduplication, snapshot reader, durable queue, execution lease, agent-session record, and update writer.
 
-Completion criterion: a test issue moves through queued, running, and completed with one linked execution.
+Completion criterion: a test issue moves through queued, running, and completed with one linked execution. The fake Linear probe demonstrates this lifecycle and ignores a replayed webhook delivery.
 
 ## Phase 2: execution controller
 

@@ -2,7 +2,20 @@
   "name": "@kor-code/linear",
   "version": "0.1.0",
   "type": "module",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.json --noEmit" },
-  "dependencies": { "@kor-code/core": "workspace:*" }
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "probe": "tsx src/probe.ts",
+    "probe:live": "tsx src/probe.ts --live",
+    "probe:conformance": "tsx src/conformance.ts"
+  },
+  "dependencies": {
+    "@kor-code/core": "workspace:*"
+  }
 }
