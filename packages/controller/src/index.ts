@@ -1,4 +1,4 @@
-import type { CatalogueModel, Execution, Route } from "@kor-code/core";
+import type { CatalogueModel, Evidence, Execution, Route } from "@kor-code/core";
 import { JevDecisionCore, routeFromDecision } from "@kor-code/jev";
 import type { LinearClient, LinearIssue, WorkflowMapping, ExecutionClaim } from "@kor-code/linear";
 import { AgentSessionWriter, DurableQueue, ExecutionLease, LinearStore, SnapshotReader } from "@kor-code/linear";
@@ -8,6 +8,7 @@ import { type Worktree, type WorktreeManager } from "./worktree.js";
 import { ConcurrencyLimiter } from "./limiter.js";
 import { type SessionLaunch, type SessionResult, type SessionLauncherLike } from "./launcher.js";
 import { RestartReconciler, type ReconciliationReport } from "./reconcile.js";
+import type { VerificationTracker } from "@kor-code/verification";
 
 export * from "./repository.js";
 export * from "./worktree.js";
@@ -29,6 +30,7 @@ export interface ControllerOptions {
   defaultRoute?: Route;
   promptPrefix?: string;
   leaseTtlMs?: number;
+  verification?: VerificationTracker;
 }
 export interface ControllerRunResult {
   execution: Execution;
@@ -39,7 +41,7 @@ export interface ControllerRunResult {
   claim?: ExecutionClaim;
 }
 export interface Controller {
-  dispatch(execution: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim }): Promise<ControllerRunResult>;
+  dispatch(execution: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[] }): Promise<ControllerRunResult>;
   runIssue(issueId: string): Promise<ControllerRunResult>;
   runNext(): Promise<ControllerRunResult | undefined>;
   reconcile(): Promise<ReconciliationReport>;
@@ -83,7 +85,7 @@ class ExecutionController implements Controller {
       this.reconciler = new RestartReconciler(options.linear.store, options.worktrees);
     }
   }
-  async dispatch(input: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim }): Promise<ControllerRunResult> {
+  async dispatch(input: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[] }): Promise<ControllerRunResult> {
     const issue = input.issue ?? (this.snapshots ? (await this.snapshots.read(input.issueId)).issue : undefined);
     if (!issue) throw new Error("Controller dispatch requires an issue or a Linear runtime");
     const repository = await this.options.repositories.resolve(input.repository);
@@ -110,7 +112,12 @@ class ExecutionController implements Controller {
       const session = await Promise.race([sessionPromise, ...(heartbeat ? [heartbeat.failed] : [])]);
       heartbeat?.stop();
       if (this.writer && claim) {
-        if (session.exitCode === 0) await this.writer.complete(claim, { summary: `Execution ${input.id} completed`, evidence: [{ id: `session-${input.id}`, kind: "provider", summary: "Sandbox session exited with status 0", status: "pass" }] });
+        if (session.exitCode === 0) {
+          const sessionEvidence: Evidence = { id: `session-${input.id}`, kind: "provider", summary: "Sandbox session exited with status 0", status: "pass" };
+          this.options.verification?.addMany([...(input.evidence ?? []), sessionEvidence]);
+          this.options.verification?.assertComplete();
+          await this.writer.complete(claim, { summary: `Execution ${input.id} completed`, evidence: this.options.verification?.evidence() ?? [sessionEvidence] });
+        }
         else this.options.linear?.store.release(claim, 1_000);
         await this.writer.flush();
       }

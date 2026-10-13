@@ -178,6 +178,15 @@ importers:
 
   packages/claude-plugin: {}
 
+  packages/context:
+    dependencies:
+      '@kor-code/core':
+        specifier: workspace:*
+        version: link:../core
+      '@kor-code/jev':
+        specifier: workspace:*
+        version: link:../jev
+
   packages/controller:
     dependencies:
       '@kor-code/core':
@@ -189,6 +198,9 @@ importers:
       '@kor-code/linear':
         specifier: workspace:*
         version: link:../linear
+      '@kor-code/verification':
+        specifier: workspace:*
+        version: link:../verification
 
   packages/core: {}
 
@@ -208,6 +220,12 @@ importers:
         version: 4.6.6
 
   packages/linear:
+    dependencies:
+      '@kor-code/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/verification:
     dependencies:
       '@kor-code/core':
         specifier: workspace:*
