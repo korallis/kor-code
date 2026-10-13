@@ -45,7 +45,6 @@ export class MemoryDecisionAuditLog implements DecisionAuditLog {
   explain(decisionId: string): DecisionAuditRecord { const record = this.get(decisionId); if (!record) throw new Error(`Decision not found: ${decisionId}`); return record; }
   replay(decisionId: string): AppliedDecision {
     const record = this.explain(decisionId);
-    if (!record.rawAnswer) return structuredClone(record.response);
     const replayed = applyDecision(record.request, record.rawAnswer, record.response.model);
     return record.response.observedOutcome === undefined ? replayed : { ...replayed, observedOutcome: record.response.observedOutcome };
   }
@@ -73,6 +72,7 @@ export class JevDecisionCore {
     if (requests.length === 0) return { decisions: [], response: { model: "none", answers: {} } };
     const ids = new Set<string>();
     for (const request of requests) { if (ids.has(request.decisionId)) throw new Error(`Duplicate decisionId: ${request.decisionId}`); ids.add(request.decisionId); }
+    for (const request of requests) if (this.audit.get(request.decisionId) !== undefined) throw new Error(`Decision audit record already exists: ${request.decisionId}`);
     const state = requests.map(request => ({ decisionId: request.decisionId, kind: request.kind, state: request.state, inputs: request.inputs.map(input => ({ name: input.name, value: input.value, ...(input.source ? { source: input.source } : {}) })) }));
     const questions: Record<string, JevQuestion> = {};
     for (const request of requests) questions[request.decisionId] = { type: "choice", instructions: request.question, criteria: Object.fromEntries(request.candidates.map(candidate => [candidate, null])) };
