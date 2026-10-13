@@ -40,6 +40,8 @@ rebind_on:
 
 Fill-first keeps the preferred account in the adapter's health view until a configured condition makes it unavailable. The adapter reports this slot for telemetry; CLIProxyAPI owns the actual credential binding and can fail over independently.
 
+The `least-used` policy is an explicit alternative for routes that prefer the eligible account with the lowest observed usage. It is selected only when configured by the caller; the gateway supplies the usage observation and deterministic tie-break, while Jev may recommend the policy.
+
 ## Failover
 
 Fail over on quota or rate-limit response, invalid credentials, provider unavailability, or a capability failure before output starts.
