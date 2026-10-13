@@ -68,7 +68,7 @@ Record the question, inputs, candidates, result, confidence, reasons, policy che
 
 ## Phase 3 implementation
 
-Status: **Validated** — `pnpm jev:fixture` applies two batched fixture decisions, explains them from the audit log, and replays identical results without another Jev call.
+Status: **Validated** — `pnpm jev:fixture` applies four batched route, skill, agent, and context fixture decisions, explains them from the audit log, and replays identical results without another Jev call.
 
 The implementation uses `JevClient.evaluate` for one request containing independent typed `choice`, `noul`, or `score` questions. API failures are represented by a bounded, redacted error message (the upstream body is capped at 2048 characters); credentials are read only from the process environment or `~/.config/typesafe/env` at runtime. The default endpoint is `https://api.typesafe.ai/v1/systemone` and the default model is `jev-1.13.0`.
 

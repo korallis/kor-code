@@ -13,7 +13,8 @@ async function keyFromRuntimeFile(): Promise<string | undefined> {
       const match = /^\s*(?:export\s+)?(?:TYPESAFE_API_KEY|TYPESAFE_KEY|JEV_API_KEY)\s*=\s*(.*?)\s*$/.exec(line);
       if (!match?.[1]) continue;
       const raw = match[1];
-      const key = raw.startsWith('"') || raw.startsWith("'") ? raw.slice(1, raw.indexOf(raw[0] ?? "", 1)) : raw.replace(/\s+#.*$/, "");
+      const quote = raw[0];
+      const key = quote === "\"" || quote === "'" ? (raw.endsWith(quote) ? raw.slice(1, -1) : raw.slice(1)) : raw.replace(/\s+#.*$/, "");
       if (key) return key;
     }
   } catch (error) {
