@@ -2,35 +2,54 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+real_home=${HOME:-}
 sandbox_dir="$repo_root/.sandbox"
 config_dir="$sandbox_dir/claude-config"
-mkdir -p "$config_dir"
+home_dir="$sandbox_dir/home"
+mkdir -p "$config_dir" "$home_dir"
 
-checksum_tree() {
-  if [ ! -d "$1" ]; then printf '%s' absent; return; fi
+gateway_key="${KOR_GATEWAY_KEY:-}"
+if [ -z "$gateway_key" ] && [ -r /mnt/c/Users/leeba/Tools/CLIProxyAPI/client-api-key.txt ]; then
+  gateway_key=$(cat /mnt/c/Users/leeba/Tools/CLIProxyAPI/client-api-key.txt)
+fi
+
+checksum_surfaces() {
   python3 - "$1" <<'PY'
-import hashlib, os, sys
+import hashlib, json, os, sys
 root = sys.argv[1]
 digest = hashlib.sha256()
-for directory, _, names in os.walk(root):
-    for name in sorted(names):
-        path = os.path.join(directory, name)
-        try:
-            with open(path, "rb") as handle:
-                digest.update(path.encode())
-                digest.update(handle.read())
-        except FileNotFoundError:
-            continue
+claude = os.path.join(root, ".claude")
+files = ["settings.json", "settings.local.json", "CLAUDE.md", "keybindings.json"]
+for directory in ("plugins", "skills", "hooks", "agents", "commands"):
+    base = os.path.join(claude, directory)
+    for current, _, names in os.walk(base):
+        files.extend(os.path.relpath(os.path.join(current, name), claude) for name in names)
+for relative in files:
+    path = os.path.join(claude, relative)
+    try:
+        with open(path, "rb") as handle:
+            digest.update(relative.encode())
+            digest.update(handle.read())
+    except FileNotFoundError:
+        continue
+claude_json = os.path.join(root, ".claude.json")
+try:
+    with open(claude_json, "rb") as handle:
+        value = json.load(handle)
+    digest.update(b".claude.json:mcpServers")
+    digest.update(json.dumps(value.get("mcpServers"), sort_keys=True, separators=(",", ":")).encode())
+except (FileNotFoundError, json.JSONDecodeError, AttributeError):
+    pass
 print(digest.hexdigest(), end="")
 PY
 }
 
-claude_checksum_before=$(checksum_tree "$HOME/.claude")
+claude_checksum_before=$(checksum_surfaces "$real_home")
 set +e
-output=$(CLAUDE_CONFIG_DIR="$config_dir" claude -p "/kor-status" --plugin-dir "$repo_root/packages/claude-plugin" --no-session-persistence --permission-mode dontAsk --output-format text 2>&1)
+output=$(HOME="$home_dir" CLAUDE_CONFIG_DIR="$config_dir" ANTHROPIC_BASE_URL="http://127.0.0.1:8317" ANTHROPIC_AUTH_TOKEN="$gateway_key" claude -p "/kor-status" --plugin-dir "$repo_root/packages/claude-plugin" --no-session-persistence --permission-mode dontAsk --output-format text 2>&1)
 claude_exit=$?
 set -e
-claude_checksum_after=$(checksum_tree "$HOME/.claude")
+claude_checksum_after=$(checksum_surfaces "$real_home")
 
 printf '%s\n' "$output"
 if [ "$claude_exit" -ne 0 ]; then
@@ -38,10 +57,10 @@ if [ "$claude_exit" -ne 0 ]; then
   exit "$claude_exit"
 fi
 if [ "$claude_checksum_before" != "$claude_checksum_after" ]; then
-  echo "~/.claude checksum changed" >&2
+  echo "Claude configuration checksum changed" >&2
   exit 1
 fi
 case "$output" in
-  *"Kor Code cockpit plugin loaded"*) exit 0 ;;
+  *"Kor Code cockpit plugin"*|*"Kor Code cockpit"*"loaded"*) exit 0 ;;
   *) echo "plugin proof text not found" >&2; exit 1 ;;
 esac

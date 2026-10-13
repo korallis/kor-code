@@ -7,6 +7,15 @@ const execFileAsync = promisify(execFile);
 export interface GatewayAdapterOptions { baseUrl?: string; apiKey?: string; managementKey?: string; managementUrl?: string; usageDbPath?: string; fetch?: typeof globalThis.fetch }
 export interface ModelCatalogue { data?: Array<{ id?: string; object?: string; owned_by?: string }>; [key: string]: JsonValue | undefined }
 
+async function resolveGatewayKey(explicit?: string): Promise<string | undefined> {
+  if (explicit) return explicit;
+  if (process.env.KOR_GATEWAY_KEY) return process.env.KOR_GATEWAY_KEY;
+  try {
+    const key = (await readFile("/mnt/c/Users/leeba/Tools/CLIProxyAPI/client-api-key.txt", "utf8")).trim();
+    return key || undefined;
+  } catch { return undefined; }
+}
+
 function headers(apiKey?: string, managementKey?: string): HeadersInit {
   const result: Record<string, string> = {};
   if (apiKey) result.authorization = `Bearer ${apiKey}`;
@@ -38,11 +47,14 @@ export class GatewayAdapter {
   }
 
   async listModels(): Promise<ModelCatalogue> {
-    return await readJsonResponse(await this.fetcher(`${this.baseUrl}/v1/models`, { headers: headers(this.apiKey, this.managementKey) })) as ModelCatalogue;
+    const apiKey = await resolveGatewayKey(this.apiKey);
+    return await readJsonResponse(await this.fetcher(`${this.baseUrl}/v1/models`, { headers: headers(apiKey, this.managementKey) })) as ModelCatalogue;
   }
 
-  async streamCompletion(prompt = "Reply with exactly one word: ready"): Promise<string> {
-    const response = await this.fetcher(`${this.baseUrl}/v1/chat/completions`, { method: "POST", headers: { ...headers(this.apiKey, this.managementKey), "content-type": "application/json" }, body: JSON.stringify({ model: process.env.KOR_GATEWAY_MODEL ?? "claude-3-5-sonnet", stream: true, messages: [{ role: "user", content: prompt }] }) });
+  async streamCompletion(prompt = "Reply with exactly one word: ready", model = process.env.KOR_GATEWAY_MODEL ?? ""): Promise<string> {
+    if (!model) throw new Error("set KOR_GATEWAY_MODEL or pass a catalogue model to streamCompletion");
+    const apiKey = await resolveGatewayKey(this.apiKey);
+    const response = await this.fetcher(`${this.baseUrl}/v1/chat/completions`, { method: "POST", headers: { ...headers(apiKey, this.managementKey), "content-type": "application/json" }, body: JSON.stringify({ model, stream: true, messages: [{ role: "user", content: prompt }] }) });
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${(await response.text()).slice(0, 240)}`);
     if (!response.body) throw new Error("Gateway returned no stream body");
     const reader = response.body.getReader();

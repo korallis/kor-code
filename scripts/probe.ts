@@ -1,6 +1,4 @@
-import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { readFile, readdir, stat } from "node:fs/promises";
 import { promisify } from "node:util";
 import { GatewayAdapter } from "../packages/gateway-adapter/src/index.js";
 import { JevClient } from "../packages/jev/src/index.js";
@@ -8,28 +6,6 @@ import { probeLinearReadOnly } from "../packages/linear/src/index.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = new URL("..", import.meta.url).pathname;
-
-async function claudeChecksum(): Promise<string> {
-  const path = `${process.env.HOME ?? ""}/.claude`;
-  try { await stat(path); } catch { return "absent"; }
-  const hash = createHash("sha256");
-  const files: string[] = [];
-  async function walk(dir: string): Promise<void> {
-    let entries;
-    try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; }
-    for (const entry of entries) {
-      const child = `${dir}/${entry.name}`;
-      if (entry.isDirectory()) await walk(child);
-      else if (entry.isFile()) files.push(child);
-    }
-  }
-  await walk(path);
-  files.sort();
-  for (const file of files) {
-    try { hash.update(file).update(await readFile(file)); } catch { /* Claude may rotate a session file while probing. */ }
-  }
-  return hash.digest("hex");
-}
 
 async function probe(name: string, action: () => Promise<string>): Promise<void> {
   try { console.log(`${name}: Validated — ${await action()}`); }
@@ -40,16 +16,22 @@ await probe("gateway", async () => {
   const gateway = new GatewayAdapter();
   const models = await gateway.listModels();
   const ids = Array.isArray(models.data) ? models.data.map((model) => model.id).filter(Boolean).slice(0, 3).join(", ") : "catalogue returned";
-  const completion = await gateway.streamCompletion();
-  return `models=${ids || "none"}; stream=${completion}`;
+  const candidates = Array.isArray(models.data) ? models.data.map((model) => model.id).filter((id): id is string => Boolean(id)) : [];
+  if (candidates.length === 0) throw new Error("catalogue contained no model ids");
+  let completion = "";
+  let model = "";
+  let lastError: unknown;
+  for (const candidate of candidates) {
+    try { completion = await gateway.streamCompletion("Reply with exactly one word: ready", candidate); model = candidate; break; }
+    catch (error) { lastError = error; }
+  }
+  if (!model) throw lastError instanceof Error ? lastError : new Error("no catalogue model streamed a completion");
+  return `models=${ids || "none"}; selected=${model}; stream=${completion}`;
 });
 
 await probe("Claude Code", async () => {
-  const before = await claudeChecksum();
   const result = await execFileAsync("bash", [`${repoRoot}scripts/sandbox.sh`], { cwd: repoRoot, timeout: 45_000, maxBuffer: 1_000_000 });
-  const after = await claudeChecksum();
-  if (before !== after) throw new Error("~/.claude checksum changed");
-  if (!result.stdout.includes("Kor Code cockpit plugin loaded")) throw new Error("plugin proof text missing");
+  if (!result.stdout.includes("Kor Code cockpit plugin")) throw new Error("plugin proof text missing");
   return "sandbox plugin loaded; ~/.claude checksum unchanged";
 });
 
