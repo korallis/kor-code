@@ -154,11 +154,17 @@ export class LinearStore {
     this.transaction(() => {
       this.assertLease(claim);
       const previous = this.getAssignment(claim.assignment.issueId);
-      if (previous.status === status) return;
       if (previous.status === 'complete' || (status === 'complete' && previous.status !== 'running')) throw new Error('Invalid execution transition');
       this.db.prepare('UPDATE assignments SET status=?,manifest=COALESCE(?,manifest) WHERE issue_id=?').run(status, manifest ? JSON.stringify(manifest) : null, previous.issueId);
       for (const write of writes) this.db.prepare('INSERT INTO outbox(payload) VALUES(?)').run(JSON.stringify(write));
       if (status === 'complete') this.db.prepare('UPDATE assignments SET token=NULL,owner=NULL,expires_at=NULL WHERE issue_id=?').run(previous.issueId);
+    });
+  }
+  record(claim: ExecutionClaim, writes: LinearWrite[], manifest?: Execution): void {
+    this.transaction(() => {
+      this.assertLease(claim);
+      if (manifest) this.db.prepare('UPDATE assignments SET manifest=? WHERE issue_id=?').run(JSON.stringify(manifest), claim.assignment.issueId);
+      for (const write of writes) this.db.prepare('INSERT INTO outbox(payload) VALUES(?)').run(JSON.stringify(write));
     });
   }
 

@@ -8,7 +8,7 @@ import { type Worktree, type WorktreeManager } from "./worktree.js";
 import { ConcurrencyLimiter } from "./limiter.js";
 import { type SessionLaunch, type SessionResult, type SessionLauncherLike } from "./launcher.js";
 import { RestartReconciler, type ReconciliationReport } from "./reconcile.js";
-import type { VerificationTracker } from "@kor-code/verification";
+import { VerificationError, VerificationTracker } from "@kor-code/verification";
 
 export * from "./repository.js";
 export * from "./worktree.js";
@@ -18,6 +18,7 @@ export * from "./launcher.js";
 export * from "./reconcile.js";
 
 export interface ControllerLinearRuntime { store: LinearStore; client: LinearClient; workflow: WorkflowMapping }
+export type VerificationFactory = (execution: Execution) => VerificationTracker;
 export interface ControllerOptions {
   repositories: RepositoryLookup;
   worktrees: WorktreeManager;
@@ -30,7 +31,7 @@ export interface ControllerOptions {
   defaultRoute?: Route;
   promptPrefix?: string;
   leaseTtlMs?: number;
-  verification?: VerificationTracker;
+  verification?: VerificationFactory;
 }
 export interface ControllerRunResult {
   execution: Execution;
@@ -42,7 +43,7 @@ export interface ControllerRunResult {
 }
 export interface Controller {
   dispatch(execution: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[] }): Promise<ControllerRunResult>;
-  runIssue(issueId: string): Promise<ControllerRunResult>;
+  runIssue(issueId: string, evidence?: Evidence[]): Promise<ControllerRunResult>;
   runNext(): Promise<ControllerRunResult | undefined>;
   reconcile(): Promise<ReconciliationReport>;
 }
@@ -101,6 +102,7 @@ class ExecutionController implements Controller {
       }
       worktree = await this.options.worktrees.create({ executionId: input.id, issueId: input.issueId, repository, branch: input.branch });
       const execution: Execution = { ...input, repository: repository.key, worktree: worktree.path, branch: worktree.branch, status: "running", ...(route ? { route } : {}), manifest: { executionId: input.id, issueId: input.issueId, repository: repository.key, worktree: worktree.path, branch: worktree.branch, agents: [], acceptance: acceptance(issue) } };
+      const verification = this.options.verification?.(execution) ?? (this.writer ? new VerificationTracker(execution.manifest?.acceptance ?? [], execution.id) : undefined);
       if (this.lease && this.writer) {
         if (!claim) throw new Error(`No execution lease available for ${input.issueId}`);
         this.writer.start(claim, execution);
@@ -114,9 +116,16 @@ class ExecutionController implements Controller {
       if (this.writer && claim) {
         if (session.exitCode === 0) {
           const sessionEvidence: Evidence = { id: `session-${input.id}`, kind: "provider", summary: "Sandbox session exited with status 0", status: "pass" };
-          this.options.verification?.addMany([...(input.evidence ?? []), sessionEvidence]);
-          this.options.verification?.assertComplete();
-          await this.writer.complete(claim, { summary: `Execution ${input.id} completed`, evidence: this.options.verification?.evidence() ?? [sessionEvidence] });
+          verification?.addMany([...(input.evidence ?? []), sessionEvidence]);
+          try { verification?.assertComplete(); }
+          catch (error) {
+            if (error instanceof VerificationError && this.writer && claim) {
+              await this.writer.recordVerificationBlock(claim, { ...execution, status: "blocked" }, error.findings);
+              await this.writer.flush();
+            }
+            throw error;
+          }
+          await this.writer.complete(claim, { summary: `Execution ${input.id} completed`, evidence: verification?.evidence() ?? [sessionEvidence] });
         }
         else this.options.linear?.store.release(claim, 1_000);
         await this.writer.flush();
@@ -144,13 +153,13 @@ class ExecutionController implements Controller {
     timer.unref?.();
     return { failed, stop: () => { if (timer) clearInterval(timer); } };
   }
-  async runIssue(issueId: string): Promise<ControllerRunResult> {
+  async runIssue(issueId: string, evidence: Evidence[] = []): Promise<ControllerRunResult> {
     if (!this.queue || !this.snapshots) throw new Error("runIssue requires a Linear runtime");
     this.queue.enqueue(issueId);
     const issue = (await this.snapshots.read(issueId)).issue;
     const assignment = this.options.linear?.store.getAssignment(issueId);
     if (!assignment) throw new Error(`Linear assignment missing for ${issueId}`);
-    return this.dispatch({ id: assignment.executionId, issueId, repository: issue.repository ?? issue.teamKey, worktree: "", branch: `kor/${issueId}`, status: "queued", issue });
+    return this.dispatch({ id: assignment.executionId, issueId, repository: issue.repository ?? issue.teamKey, worktree: "", branch: `kor/${issueId}`, status: "queued", issue, evidence });
   }
   async runNext(): Promise<ControllerRunResult | undefined> {
     if (!this.lease || !this.snapshots) throw new Error("runNext requires a Linear runtime");

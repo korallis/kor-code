@@ -6,8 +6,18 @@ export class VerificationError extends Error {
 
 export class VerificationTracker {
   private readonly evidenceById = new Map<string, Evidence>();
-  constructor(readonly acceptance: readonly AcceptanceCondition[]) {}
-  addEvidence(evidence: Evidence): void { this.evidenceById.set(evidence.id, structuredClone(evidence)); }
+  constructor(readonly acceptance: readonly AcceptanceCondition[], readonly executionId?: string) {}
+  addEvidence(evidence: Evidence): void {
+    if (evidence.acceptanceId && !this.acceptance.some(condition => condition.id === evidence.acceptanceId)) throw new Error(`Evidence ${evidence.id} references an unknown acceptance condition`);
+    if (evidence.executionId && this.executionId && evidence.executionId !== this.executionId) throw new Error(`Evidence ${evidence.id} belongs to execution ${evidence.executionId}`);
+    const candidate = structuredClone(this.executionId ? { ...evidence, executionId: this.executionId } : evidence);
+    const existing = this.evidenceById.get(evidence.id);
+    if (existing) {
+      if (JSON.stringify(existing) !== JSON.stringify(candidate)) throw new Error(`Evidence id ${evidence.id} was already recorded with different content`);
+      return;
+    }
+    this.evidenceById.set(evidence.id, candidate);
+  }
   addMany(evidence: readonly Evidence[]): void { for (const item of evidence) this.addEvidence(item); }
   evidence(): Evidence[] { return [...this.evidenceById.values()].map(item => structuredClone(item)); }
   findings(): AcceptanceFinding[] {
