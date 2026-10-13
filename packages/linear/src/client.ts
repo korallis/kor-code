@@ -1,10 +1,9 @@
 import { readFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
 import type { Execution } from '@kor-code/core';
 import { array, connection, object, parseIssue, string, type LinearClient, type LinearWrite } from './contract.js';
 
 const page = 'pageInfo { hasNextPage }';
-const issueFields = `id title description updatedAt priority team { id } state { id type }
+const issueFields = `id title description updatedAt priority team { id key } state { id type }
   project { id documents(first: 100) { nodes { id title content } ${page} } }
   documents(first: 100) { nodes { id title content } ${page} }
   children(first: 100) { nodes { id } ${page} }
@@ -150,12 +149,13 @@ export function createLinearClient(options: LinearClientOptions = {}): LinearCli
 export interface LinearProbeResult { viewer: string; teams: string[]; workflowStates: string[]; issueCount: number }
 export async function probeLinearReadOnly(fetcher: typeof globalThis.fetch = globalThis.fetch): Promise<LinearProbeResult> {
   const client = new HttpLinearClient({ fetcher });
-  const data = await client.query(`query KorReadOnlyProbe {
+  const teamKey = process.env.LINEAR_TEAM_KEY ?? "LEE";
+  const data = await client.query(`query KorReadOnlyProbe($key: String!) {
     viewer { id }
-    teams(filter: { key: { eq: "LEE" } }) { nodes { id } ${page} }
-    workflowStates(filter: { team: { key: { eq: "LEE" } } }) { nodes { id } ${page} }
-    issues(first: 20, filter: { team: { key: { eq: "LEE" } } }) { nodes { id } }
-  }`);
+    teams(filter: { key: { eq: $key } }) { nodes { id } ${page} }
+    workflowStates(filter: { team: { key: { eq: $key } } }) { nodes { id } ${page} }
+    issues(first: 20, filter: { team: { key: { eq: $key } } }) { nodes { id } }
+  }`, { key: teamKey });
   string(object(data.viewer).id);
   return { viewer: '1', teams: connection(data.teams).map(() => '1'), workflowStates: connection(data.workflowStates).map(() => '1'), issueCount: array(object(data.issues).nodes).length };
 }

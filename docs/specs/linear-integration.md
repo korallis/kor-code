@@ -4,7 +4,7 @@
 
 Linear is the command centre for intent and delivery history. Kor Code uses Linear as the only project and issue management system.
 
-**Status: Validated** — the fake contract probe covers an issue lifecycle, one linked execution, signed webhook delivery, and duplicate suppression. The live adapter has only been exercised with read-only count checks. Mutations require explicit writer configuration and are not enabled by the probe.
+**Status: Validated** — the fake contract probe covers an issue lifecycle, one linked execution, a Linear-shaped signed webhook delivery returning HTTP 200, and duplicate suppression. The live adapter has only been exercised with read-only count checks. Mutations require explicit writer configuration and are not enabled by the probe. Phase 1 persists the `queued` → `running` → `complete` execution subset; the broader lifecycle and retry states remain controller responsibilities.
 
 ## Linear model
 

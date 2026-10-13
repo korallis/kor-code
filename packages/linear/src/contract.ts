@@ -2,8 +2,9 @@ import type { Evidence, Execution, Issue } from '@kor-code/core';
 
 export interface LinearIssue extends Issue {
   teamId: string;
+  teamKey: string;
   stateId: string;
-  stateType: string;
+  stateType: LinearStateType;
   updatedAt: string;
   priority: number;
   documents: Array<{ id: string; title: string; content: string }>;
@@ -13,6 +14,9 @@ export interface LinearIssue extends Issue {
   sessions: Array<{ id: string; status: string }>;
   resources: Array<{ title: string; url: string }>;
 }
+
+export type LinearStateType = "backlog" | "unstarted" | "started" | "completed" | "canceled" | "triage" | "duplicate";
+export interface LinearWorkflowState { id: string; type: LinearStateType }
 
 export interface AgentSessionRecord {
   id: string;
@@ -35,7 +39,7 @@ export interface LinearClient {
   recordExecution(execution: Execution): Promise<void>;
 }
 
-export interface WorkflowMapping { queued: string; running: string; complete: string }
+export interface WorkflowMapping { queued: LinearWorkflowState; running: LinearWorkflowState; complete: LinearWorkflowState }
 export interface Completion { summary: string; evidence: Evidence[]; pullRequestUrl?: string }
 
 export function object(value: unknown): Record<string, unknown> {
@@ -49,6 +53,11 @@ export function string(value: unknown): string {
 export function array(value: unknown): unknown[] {
   if (!Array.isArray(value)) throw new Error('Linear response has an invalid list');
   return value;
+}
+export function stateType(value: unknown): LinearStateType {
+  const candidate = string(value);
+  if (candidate === "backlog" || candidate === "unstarted" || candidate === "started" || candidate === "completed" || candidate === "canceled" || candidate === "triage" || candidate === "duplicate") return candidate;
+  throw new Error("Linear response has an invalid workflow state type");
 }
 export function connection(value: unknown): unknown[] {
   const data = object(value);
@@ -69,7 +78,7 @@ export function parseIssue(value: unknown): LinearIssue {
     const relation = object(value);
     if (relation.type !== 'blocks') return [];
     const issue = object(relation.issue);
-    return [{ id: string(issue.id), stateType: string(object(issue.state).type) }];
+    return [{ id: string(issue.id), stateType: stateType(object(issue.state).type) }];
   });
   if (typeof data.priority !== 'number' || !Number.isFinite(data.priority)) throw new Error('Linear priority is invalid');
   // Acceptance remains explicit in description; Jev owns interpretation/readiness.
@@ -78,7 +87,7 @@ export function parseIssue(value: unknown): LinearIssue {
     id: string(data.id), title: string(data.title), description,
     acceptanceCriteria: acceptanceSection.split('\n').map(line => line.replace(/^\s*[-*]\s*(?:\[[ x]\]\s*)?/i, '').trim()).filter(Boolean),
     ...(project ? { projectId: string(project.id) } : {}),
-    teamId: string(object(data.team).id), stateId: string(state.id), stateType: string(state.type),
+    teamId: string(object(data.team).id), teamKey: string(object(data.team).key), stateId: string(state.id), stateType: stateType(state.type),
     updatedAt: string(data.updatedAt), priority: data.priority, documents, dependencies,
     subIssueIds: connection(data.children).map(value => string(object(value).id)),
     comments: connection(data.comments).map(value => { const comment = object(value); return { id: string(comment.id), body: string(comment.body) }; }),
