@@ -15,6 +15,7 @@ async function probe(name: string, action: () => Promise<string>): Promise<void>
 await probe("gateway", async () => {
   const gateway = new GatewayAdapter();
   const models = await gateway.listModels();
+  const management = await gateway.readManagement();
   const ids = Array.isArray(models.data) ? models.data.map((model) => model.id).filter(Boolean).slice(0, 3).join(", ") : "catalogue returned";
   const candidates = Array.isArray(models.data) ? models.data.map((model) => model.id).filter((id): id is string => Boolean(id)) : [];
   if (candidates.length === 0) throw new Error("catalogue contained no model ids");
@@ -26,7 +27,7 @@ await probe("gateway", async () => {
     catch (error) { lastError = error; }
   }
   if (!model) throw lastError instanceof Error ? lastError : new Error("no catalogue model streamed a completion");
-  return `models=${ids || "none"}; selected=${model}; stream=${completion}`;
+  return `models=${ids || "none"}; management=${management ? "available" : "unavailable"}; selected=${model}; stream=${completion}`;
 });
 
 await probe("Claude Code", async () => {

@@ -16,6 +16,16 @@ async function resolveGatewayKey(explicit?: string): Promise<string | undefined>
   } catch { return undefined; }
 }
 
+async function resolveManagementKey(explicit?: string): Promise<string | undefined> {
+  if (explicit) return explicit;
+  if (process.env.CPA_MANAGEMENT_KEY) return process.env.CPA_MANAGEMENT_KEY;
+  try {
+    const text = await readFile(`${process.env.HOME ?? ""}/.config/cpa-management.env`, "utf8");
+    const match = /^\s*(?:export\s+)?CPA_MANAGEMENT_KEY\s*=\s*(.+?)\s*$/m.exec(text);
+    return match?.[1]?.replace(/^['"]|['"]$/g, "");
+  } catch { return undefined; }
+}
+
 function headers(apiKey?: string, managementKey?: string): HeadersInit {
   const result: Record<string, string> = {};
   if (apiKey) result.authorization = `Bearer ${apiKey}`;
@@ -81,10 +91,12 @@ export class GatewayAdapter {
   }
 
   async readManagement(): Promise<JsonValue | null> {
-    const urls = this.managementUrl ? [this.managementUrl] : [`${this.baseUrl}/v1/management/status`, `${this.baseUrl}/v1/management/accounts`, `${this.baseUrl}/v1/management/usage`];
+    const apiKey = await resolveGatewayKey(this.apiKey);
+    const managementKey = await resolveManagementKey(this.managementKey);
+    const urls = this.managementUrl ? [this.managementUrl] : [`${this.baseUrl}/v0/management/config`, `${this.baseUrl}/v0/management/accounts`, `${this.baseUrl}/v0/management/usage`];
     for (const url of urls) {
       try {
-        const response = await this.fetcher(url, { headers: headers(this.apiKey, this.managementKey) });
+        const response = await this.fetcher(url, { headers: headers(apiKey, managementKey) });
         if (response.status === 404) continue;
         return await readJsonResponse(response);
       } catch (error) {

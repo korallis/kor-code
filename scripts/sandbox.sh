@@ -19,27 +19,42 @@ import hashlib, json, os, sys
 root = sys.argv[1]
 digest = hashlib.sha256()
 claude = os.path.join(root, ".claude")
-files = ["settings.json", "settings.local.json", "CLAUDE.md", "keybindings.json"]
+files = ["settings.json", "settings.local.json", "CLAUDE.md", "keybindings.json", ".credentials.json"]
 for directory in ("plugins", "skills", "hooks", "agents", "commands"):
     base = os.path.join(claude, directory)
-    for current, _, names in os.walk(base):
+    for current, dirs, names in os.walk(base):
+        if directory == "plugins":
+            dirs[:] = [name for name in dirs if name != ".in_use"]
         files.extend(os.path.relpath(os.path.join(current, name), claude) for name in names)
 for relative in files:
     path = os.path.join(claude, relative)
     try:
         with open(path, "rb") as handle:
-            digest.update(relative.encode())
-            digest.update(handle.read())
+            content = handle.read()
+        if relative == "plugins/known_marketplaces.json":
+            def stable(value):
+                if isinstance(value, dict):
+                    return {key: stable(item) for key, item in value.items() if key != "lastUpdated"}
+                if isinstance(value, list):
+                    return [stable(item) for item in value]
+                return value
+            content = json.dumps(stable(json.loads(content)), sort_keys=True, separators=(",", ":")).encode()
+        digest.update(relative.encode())
+        digest.update(content)
     except FileNotFoundError:
         continue
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise SystemExit(f"cannot parse checksum surface: {relative}")
 claude_json = os.path.join(root, ".claude.json")
 try:
     with open(claude_json, "rb") as handle:
         value = json.load(handle)
     digest.update(b".claude.json:mcpServers")
     digest.update(json.dumps(value.get("mcpServers"), sort_keys=True, separators=(",", ":")).encode())
-except (FileNotFoundError, json.JSONDecodeError, AttributeError):
-    pass
+except FileNotFoundError:
+    digest.update(b".claude.json:mcpServers:absent")
+except (json.JSONDecodeError, AttributeError):
+    raise SystemExit("cannot parse checksum surface: .claude.json")
 print(digest.hexdigest(), end="")
 PY
 }

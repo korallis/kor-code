@@ -9,7 +9,7 @@ The subscription pool has several provider families and account slots. Model sel
 
 ## Decision
 
-Use a gateway boundary for credentials, account health, quota state, session affinity, safe retries, and provider failover. Jev selects the model family and route policy. The gateway selects an eligible account.
+Use a gateway boundary for credentials, account health, quota state, session affinity, safe retries, and provider failover. In the foundation, that boundary is a thin read-only adapter over the existing CLIProxyAPI, as recorded in ADR 0005. Jev selects the model family and route policy. The gateway selects an eligible account.
 
 ## Consequences
 
