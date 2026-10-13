@@ -28,3 +28,7 @@ export interface GatewayModel { id: string; provider?: string; capabilities: Par
 export interface GatewayAccountHealth { id: string; status: AccountHealthStatus; remainingQuota?: number | undefined; resetAt?: string | undefined; }
 export type RouteFailureReason = "quota" | "rate_limit" | "authentication" | "provider_unavailable" | "capability" | "unknown";
 export interface RouteTelemetry { provider: string; model: string; accountSlot?: string | undefined; accountSlotSource?: "health_observation" | undefined; sessionId?: string | undefined; requestId: string; decisionId?: string | undefined; failoverReason?: RouteFailureReason | undefined; retryCount: number; streamStarted: boolean; quotaResponse?: boolean | undefined; compatibility: GatewayModel["compatibility"]; }
+/** Where a displayed value comes from. The cockpit labels every value that is not `live`; `fixture` is the README's "Illustrative". */
+export type Provenance = "live" | "stale" | "fixture" | "unavailable";
+/** A value an adapter hands the cockpit, with the provenance the cockpit must label it with. */
+export interface Labelled<T> { value: T; provenance: Provenance; observedAt?: string }

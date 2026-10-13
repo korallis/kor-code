@@ -20,7 +20,7 @@ const typedClient = new JevClient({ apiKey: "fixture-secret", fetch: async (_inp
   const body = JSON.parse(String(init?.body)) as { questions: Record<string, JevQuestion> };
   const answers = Object.fromEntries(Object.entries(body.questions).map(([id, question]) => question.type === "noul"
     ? [id, { type: "noul", noul: 0.91 }]
-    : [id, { type: "score", score: 0.91, confidence: 0.88, probabilities: { "0": 0.09, "1": 0.91 }, legend: { "0": String(question.criteria[0]), "1": String(question.criteria[1]) } }]));
+    : [id, { type: "score", score: 0.91, confidence: 0.88, probabilities: { "0": 0.09, "1": 0.91 }, legend: { "0": String((question.criteria as unknown[])[0]), "1": String((question.criteria as unknown[])[1]) } }]));
   return new Response(JSON.stringify({ model: "fixture-jev", answers }));
 }});
 const noulScore = await typedClient.evaluate({ task: "typed questions" }, { ready: { type: "noul", instructions: "Is this ready?" }, risk: { type: "score", instructions: "Rate risk", criteria: ["low", "high"] } });
@@ -34,7 +34,7 @@ try { routeFromDecision(applied.at(-1)!, [{ model: "single-agent", provider: "fi
 persisted.recordOutcome("fixture-route", { status: "complete", apiKey: "fixture-secret" });
 const persistedRecord = persisted.explain("fixture-route");
 const persistedText = JSON.stringify(persistedRecord);
-const auditRedacted = !persistedText.includes("fixture-secret") && persistedText.includes('"input_tokens":120') && persistedRecord.observedOutcome?.status === "complete";
+const auditRedacted = !persistedText.includes("fixture-secret") && persistedText.includes('"input_tokens":120') && (persistedRecord.observedOutcome as { status?: unknown } | undefined)?.status === "complete";
 let duplicateRejected = false;
 try { await core.preflight([requests[0]!, requests[0]!]); } catch (error) { duplicateRejected = error instanceof Error && error.message.includes("Duplicate decisionId"); }
 let malformedAuditRejected = false;

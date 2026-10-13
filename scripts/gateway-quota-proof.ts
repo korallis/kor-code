@@ -29,8 +29,8 @@ const fakeFetch: typeof fetch = async (input, init) => {
   if (url.endsWith("/v1/chat/completions")) {
     if (!failedOnce) {
       failedOnce = true;
-      accounts[0] = { ...accounts[0], status: "error" };
-      accounts[0].quota = { signals: { exhausted: true } };
+      const [first] = accounts;
+      if (first) accounts[0] = { ...first, status: "error", quota: { signals: { exhausted: true } } };
       return new Response("quota exhausted; bearer secret must never appear", { status: 429 });
     }
     return new Response("data: {\"choices\":[{\"delta\":{\"content\":\"ready\"}}]}\n\ndata: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } });

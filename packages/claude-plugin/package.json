@@ -1,6 +1,9 @@
 {
   "name": "@kor-code/claude-plugin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "typecheck": "test -f .claude-plugin/types/tsconfig.json || bash ../../scripts/sandbox.sh >/dev/null; claude plugin validate . && tsc -p tsconfig.json"
+  }
 }

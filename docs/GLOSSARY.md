@@ -14,6 +14,10 @@ One authenticated provider entitlement that can serve model requests.
 
 The link between a Linear issue and the Jev execution responsible for completing it.
 
+## Cockpit
+
+The Kor Code view inside a Claude Code session: a status line, the `/kor` views and their drill-downs.
+
 ## Decision
 
 A structured judgement that selects an action, such as a model, agent, skill, context package, retry, or escalation.
@@ -53,6 +57,10 @@ The persistent workspace for one product or application. It groups intent, issue
 ## Model route
 
 The selected model family, reasoning level, provider path, and account policy for one request.
+
+## Provenance label
+
+The tag every cockpit value carries: live, stale, fixture, or unavailable. Fixture values are the README's illustrative values.
 
 ## Provider
 
