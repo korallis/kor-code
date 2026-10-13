@@ -6,11 +6,19 @@ export class StreamFailure extends GatewayError {
 /** Completion framing, not socket closure, proves success. Any delivered data blocks replay. */
 export async function consumeStream(response: Response, onChunk?: (chunk: string) => void): Promise<string> {
   if (!response.body) throw new StreamFailure(502, false, "");
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  if (contentType && !contentType.includes("text/event-stream")) {
+    await response.body.cancel();
+    // A successful non-SSE response may already have been billed. Mark it as
+    // started so the caller cannot replay it as a pre-stream failure.
+    throw new StreamFailure(response.status || 502, true, "");
+  }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let output = "";
   let started = false;
+  let sawPayload = false;
   let complete = false;
   const processFrame = (frame: string): void => {
     const data = frame.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
@@ -35,6 +43,7 @@ export async function consumeStream(response: Response, onChunk?: (chunk: string
   try {
     while (!complete) {
       const chunk = await reader.read();
+      if (chunk.value && chunk.value.length > 0) sawPayload = true;
       buffer += decoder.decode(chunk.value, { stream: !chunk.done });
       if (buffer.length > 1024 * 1024) throw new StreamFailure(502, started, output);
       const frames = buffer.split(/\r?\n\r?\n/);
@@ -42,7 +51,7 @@ export async function consumeStream(response: Response, onChunk?: (chunk: string
       for (const frame of frames) { processFrame(frame); if (complete) break; }
       if (chunk.done) {
         if (buffer) processFrame(buffer);
-        if (!complete) throw new StreamFailure(502, started, output);
+        if (!complete) throw new StreamFailure(502, started || sawPayload, output);
       }
     }
     return output;

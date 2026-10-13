@@ -1,6 +1,6 @@
 # Subscription gateway specification
 
-Status: **Validated** for the controlled failover contract; live CLIProxyAPI account health remains dependent on the runtime management key.
+Status: **Validated** for the controlled failover contract and a fake matching the recorded auth-files payload shape. The live catalogue probe was **Blocked** by a missing runtime API key. CLIProxyAPI owns credential affinity and failover at runtime.
 
 ## Purpose
 
@@ -38,7 +38,7 @@ rebind_on:
   - provider_unavailable
 ~~~
 
-Fill-first keeps the preferred account until a configured condition makes it unavailable.
+Fill-first keeps the preferred account in the adapter's health view until a configured condition makes it unavailable. The adapter reports this slot for telemetry; CLIProxyAPI owns the actual credential binding and can fail over independently.
 
 ## Failover
 
@@ -65,13 +65,14 @@ Never record access tokens, refresh tokens, or raw secret values.
 
 ## Adapter contract
 
-`@kor-code/gateway-adapter` is read-only toward CLIProxyAPI. It reads the sorted `/v1/models` catalogue, the management `auth-files`, `config`, `usage`, and `api-key-usage` routes when available, the configured usage database in read-only mode, and `quota-axi --json --no-credential-refresh`. Missing management routes produce an unavailable account-health view; they do not trigger writes.
+`@kor-code/gateway-adapter` is read-only toward CLIProxyAPI. It reads the sorted `/v1/models` catalogue, the management `auth-files`, `config`, `usage`, and `api-key-usage` routes when available, and `quota-axi --json --no-credential-refresh`. It does not open CLIProxyAPI's live usage database. Management reads use only the management key; missing management routes produce an unavailable account-health view and never trigger writes.
 
-`route()` filters the live catalogue against required capabilities and binds a session to the first available account in deterministic account-id order. On a pre-stream quota, rate-limit, authentication, or provider-unavailable response, `stream()` clears that affinity, refreshes account health, and retries only when the caller marks the request `idempotent: true`, on the next eligible account. A stream that has delivered any SSE frame is never replayed. Route telemetry records the account slot, retry count, failover reason, request/session IDs, and whether streaming started. Upstream bodies are bounded and redacted before errors are surfaced.
+`route()` filters the live catalogue against required capabilities and records a session against the first available account in deterministic opaque-slot order. On a pre-stream quota, rate-limit, authentication, or provider-unavailable response, `stream()` clears that observation, refreshes account health, and retries only when the caller marks the request `idempotent: true`. A stream that has delivered any SSE frame, or any successful non-SSE response, is never replayed. Route telemetry records the observed account slot, retry count, failover reason, request/session IDs, and whether streaming started. Upstream bodies are bounded and redacted before errors are surfaced.
 
 The controlled proof uses a fake upstream whose first account returns a simulated 429 before any stream frame, then marks that account quota-exhausted. The same session is routed to the second account and receives one complete stream without replaying partial output.
 
 ```text
 $ pnpm gateway:quota-proof
-quota-proof: session-fixture account-01 -> account-02; retries=1; streamStartedOnQuota=false; completionCalls=2
+quota-proof: session-fixture account-2c5a434788b44926 -> account-c2526b1b9f76904c; retries=1; streamStartedOnQuota=false; completionCalls=2
+quota-proof: no-replay plain=1; partial=1; facts=redacted
 ```

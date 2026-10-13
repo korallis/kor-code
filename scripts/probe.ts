@@ -17,7 +17,7 @@ await probe("gateway", async () => {
   const models = await gateway.listModels();
   const management = await gateway.readManagement();
   const ids = Array.isArray(models.data) ? models.data.map((model) => model.id).filter(Boolean).slice(0, 3).join(", ") : "catalogue returned";
-  const candidates = Array.isArray(models.data) ? models.data.map((model) => model.id).filter((id): id is string => Boolean(id)).sort((a, b) => a.localeCompare(b)) : [];
+  const candidates = [process.env.KOR_GATEWAY_MODEL ?? "claude-haiku-4-5-20251001"];
   if (candidates.length === 0) throw new Error("catalogue contained no model ids");
   let completion = "";
   let model = "";

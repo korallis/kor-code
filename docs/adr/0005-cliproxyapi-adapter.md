@@ -9,8 +9,8 @@ CLIProxyAPI already runs the provider catalogue, account pool, credentials, quot
 
 ## Decision
 
-Kor Code uses a thin, read-only gateway adapter over the existing CLIProxyAPI. It reads `/v1/models`, the documented `/v0/management/*` endpoints when a management key is available, the configured usage database in read-only mode, and `quota-axi` output. Kor Code does not start, reconfigure, or replace CLIProxyAPI. Any future Kor-owned service uses a separate port.
+Kor Code uses a thin, read-only gateway adapter over the existing CLIProxyAPI. It reads `/v1/models`, the documented `/v0/management/*` endpoints when a management key is available, and `quota-axi` output. It does not open CLIProxyAPI's live usage database because SQLite WAL reads can create sidecar files. Kor Code does not start, reconfigure, or replace CLIProxyAPI. Any future Kor-owned service uses a separate port.
 
 ## Consequences
 
-Provider and account facts remain consistent with the user's active proxy. Management and usage data can be unavailable when CLIProxyAPI access is disabled or its management key is absent; the adapter reports that state instead of writing configuration. Compatibility probes must account for stale or unavailable catalogue routes.
+Provider and account facts remain consistent with the user's active proxy. Management data can be unavailable when CLIProxyAPI access is disabled or its management key is absent; the adapter reports that state instead of writing configuration. Usage facts come from `quota-axi`, so the adapter never creates SQLite WAL sidecar files in the proxy directory. Compatibility probes must account for stale or unavailable catalogue routes.

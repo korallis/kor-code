@@ -28,7 +28,7 @@ Completion criterion: every applied fixture decision can be explained and replay
 
 Build the live catalogue, account health, fill-first affinity, safe retry, quota failover, capability checks, and route telemetry.
 
-Completion criterion: a controlled quota test moves one session to the next account without replaying a partial stream. **Validated:** `pnpm gateway:quota-proof` exercises a simulated 429 and records `account-01 -> account-02` with `streamStartedOnQuota=false`.
+Completion criterion: a controlled quota test moves one session to the next account without replaying a partial stream. **Validated locally:** `pnpm gateway:quota-proof` exercises a simulated 429 against the recorded `files` auth-files shape and records two distinct opaque health slots with `streamStartedOnQuota=false`. The one fixed-route live probe was **Blocked** by a missing runtime API key. CLIProxyAPI remains the authority for the actual credential binding.
 
 ## Phase 5: context and verification
 
