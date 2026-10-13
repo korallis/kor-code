@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { questionSchema, parseResponse, type ChoiceAnswer, type JevQuestion, type JevResponse, type JevState } from "./contracts.js";
-import { redact } from "./redact.js";
+import { redact, runtimeSecrets } from "./redact.js";
 
 export interface JevClientOptions { apiKey?: string; endpoint?: string; model?: string; fetch?: typeof globalThis.fetch; timeoutMs?: number }
 
@@ -26,11 +26,26 @@ export async function resolveJevApiKey(explicit?: string): Promise<string | unde
   return explicit || process.env.TYPESAFE_API_KEY || process.env.TYPESAFE_KEY || process.env.JEV_API_KEY || await keyFromRuntimeFile();
 }
 export class JevRequestError extends Error {
-  constructor(readonly status: number) {
-    // Upstream errors may echo credentials or state. No raw body is exposed.
-    super(`Jev request failed: HTTP ${status}; upstream body redacted (read cap: 2048 bytes)`);
+  constructor(readonly status: number, body: string) {
+    super(`Jev request failed: HTTP ${status}; upstream body (capped and redacted): ${body || "<empty>"}`);
     this.name = "JevRequestError";
   }
+}
+async function readCapped(response: Response, limit: number): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    while (length < limit) {
+      const next = await reader.read();
+      if (next.done) break;
+      const remaining = limit - length;
+      chunks.push(next.value.byteLength <= remaining ? next.value : next.value.slice(0, remaining));
+      length += Math.min(next.value.byteLength, remaining);
+    }
+  } finally { await reader.cancel().catch(() => undefined); }
+  return Buffer.concat(chunks).toString("utf8");
 }
 async function readBounded(response: Response, limit: number): Promise<string> {
   const reader = response.body?.getReader();
@@ -64,13 +79,14 @@ export class JevClient {
     let response: Response;
     try {
       response = await this.options.fetch(this.options.endpoint, { method: "POST", redirect: "error", signal: AbortSignal.timeout(this.options.timeoutMs), headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify({ state: redact(state, [key]), model: this.options.model, questions: redact(validated, [key]) }) });
-    } catch { throw new Error("Jev transport unavailable or timed out"); }
+    } catch (error) { throw new Error("Jev transport unavailable or timed out", { cause: error }); }
     if (!response.ok) {
-      await readBounded(response, 2048).catch(() => undefined);
-      throw new JevRequestError(response.status);
+      const body = await readCapped(response, 2048).catch(() => "");
+      const safeBody = String(redact(body, [key, ...runtimeSecrets()])).slice(0, 2048);
+      throw new JevRequestError(response.status, safeBody);
     }
     try { return parseResponse(JSON.parse(await readBounded(response, 1_048_576)), validated); }
-    catch { throw new Error("Jev response failed typed validation"); }
+    catch (error) { throw new Error("Jev response failed typed validation", { cause: error }); }
   }
   async choice<T extends string>(state: unknown, instructions: string, criteria: Record<T, string | null>): Promise<ChoiceAnswer & { choice: T }> {
     const response = await this.evaluate(state, { choice: { type: "choice", instructions, criteria } });

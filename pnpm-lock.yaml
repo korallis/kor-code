@@ -183,6 +183,12 @@ importers:
       '@kor-code/core':
         specifier: workspace:*
         version: link:../core
+      '@kor-code/jev':
+        specifier: workspace:*
+        version: link:../jev
+      '@kor-code/linear':
+        specifier: workspace:*
+        version: link:../linear
 
   packages/core: {}
 

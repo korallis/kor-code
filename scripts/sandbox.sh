@@ -4,9 +4,11 @@
 #   scripts/sandbox.sh "/kor replay"   any headless prompt, same guards
 #   scripts/sandbox.sh --interactive   the TUI, for driving the cockpit by hand
 #   scripts/sandbox.sh --live-model …  opt in to model calls through CLIProxyAPI
+#   scripts/sandbox.sh --run cmd …     the controller's session launch (live)
 # By default the run is offline: the child's model endpoint is
 # scripts/offline-endpoint.py on an ephemeral loopback port, so CLIProxyAPI
-# (127.0.0.1:8317) is never contacted and its key is never read.
+# (127.0.0.1:8317) is never contacted and its key is never read. Only
+# --live-model and the controller's --run are clients of CLIProxyAPI.
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
@@ -15,6 +17,42 @@ sandbox_dir="$repo_root/.sandbox"
 config_dir="$sandbox_dir/claude-config"
 home_dir="$sandbox_dir/home"
 mkdir -p "$config_dir" "$home_dir"
+
+# The controller (packages/controller, SessionLauncher) launches execution
+# sessions through --run in the execution's worktree. Those sessions do real
+# work, so they are clients of CLIProxyAPI; the offline guards below apply to
+# the cockpit's own runs.
+if [ "${1:-}" = "--run" ]; then
+  shift
+  if [ "$#" -eq 0 ]; then echo "sandbox --run requires a command" >&2; exit 2; fi
+  gateway_key="${KOR_GATEWAY_KEY:-}"
+  gateway_key_file="${KOR_GATEWAY_KEY_FILE:-}"
+  if [ -z "$gateway_key" ] && [ -n "$gateway_key_file" ]; then
+    if [ ! -r "$gateway_key_file" ]; then
+      echo "KOR_GATEWAY_KEY_FILE is not readable" >&2
+      exit 1
+    fi
+    gateway_key=$(cat "$gateway_key_file")
+  fi
+  # The launcher names a per-execution home and config under .sandbox/.
+  run_home=${KOR_SANDBOX_HOME:-$home_dir}
+  run_config=${KOR_SANDBOX_CONFIG:-$config_dir}
+  for path in "$run_home" "$run_config"; do
+    case "$path/" in */../*) ;; "$sandbox_dir"/*) continue ;; esac
+    echo "sandbox: $path is outside $sandbox_dir" >&2; exit 1
+  done
+  mkdir -p "$run_home" "$run_config"
+  safe_path="${KOR_SANDBOX_PATH:-/usr/local/bin:/usr/bin:/bin}"
+  tool_bin_dir="${KOR_CLAUDE_BIN_DIR:-}"
+  if [ -n "$tool_bin_dir" ]; then safe_path="$tool_bin_dir:$safe_path"; fi
+  env -i \
+    HOME="$run_home" CLAUDE_CONFIG_DIR="$run_config" \
+    CODEX_HOME="$run_home/.codex" XDG_CONFIG_HOME="$run_home/.config" XDG_DATA_HOME="$run_home/.local/share" \
+    PATH="$safe_path" CLAUDE_CODE_DISABLE_CLAUDE_MDS=1 \
+    ANTHROPIC_BASE_URL="${KOR_GATEWAY_URL:-http://127.0.0.1:8317}" ANTHROPIC_AUTH_TOKEN="$gateway_key" \
+    KOR_EXECUTION_ID="${KOR_EXECUTION_ID:-}" KOR_WORKTREE="${KOR_WORKTREE:-}" KOR_ROUTE_MODEL="${KOR_ROUTE_MODEL:-}" "$@"
+  exit $?
+fi
 
 # The real user homes the child must never reach, not even by a stat. The
 # harness never opens them either: these paths are only compared as strings.

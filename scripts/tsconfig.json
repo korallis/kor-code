@@ -3,7 +3,13 @@
   "compilerOptions": {
     "noEmit": true,
     "types": ["node"],
-    "paths": { "@kor-code/core": ["../packages/core/src/index.ts"] }
+    "paths": {
+      "@kor-code/core": ["../packages/core/src/index.ts"],
+      "@kor-code/linear": ["../packages/linear/src/index.ts"],
+      "@kor-code/jev": ["../packages/jev/src/index.ts"],
+      "@kor-code/gateway-adapter": ["../packages/gateway-adapter/src/index.ts"],
+      "@kor-code/controller": ["../packages/controller/src/index.ts"]
+    }
   },
   "include": ["*.ts"]
 }

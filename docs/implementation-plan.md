@@ -12,11 +12,11 @@ Build the Linear client, webhook receiver, event deduplication, snapshot reader,
 
 Completion criterion: a test issue moves through queued, running, and completed with one linked execution. The fake Linear probe demonstrates this lifecycle and ignores a replayed webhook delivery.
 
-## Phase 2: execution controller
+## Phase 2: execution controller — Validated
 
 Build repository lookup, isolated worktrees, session launcher, event collector, restart reconciliation, and concurrency limits.
 
-Completion criterion: two test issues run concurrently without sharing uncommitted files or losing their Linear links.
+Completion criterion: two test issues run concurrently without sharing uncommitted files or losing their Linear links. `pnpm controller:fixture` demonstrates this against two fake Linear issues. The Phase 2 evidence also covers sandbox path isolation, lease renewal, and killed-run reconciliation.
 
 ## Phase 3: Jev core
 

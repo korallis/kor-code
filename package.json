@@ -14,6 +14,7 @@
     "gateway:quota-proof": "tsx scripts/gateway-quota-proof.ts",
     "typecheck": "pnpm -r --if-present typecheck && tsc -p scripts/tsconfig.json",
     "jev:fixture": "tsx scripts/jev-fixture.ts",
+    "controller:fixture": "tsx scripts/controller-fixture.ts",
     "cockpit": "bash scripts/sandbox.sh --interactive",
     "cockpit:proof": "tsx scripts/cockpit-proof.ts",
     "isolation:proof": "bash scripts/isolation-proof.sh"

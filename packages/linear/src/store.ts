@@ -13,6 +13,7 @@ export interface Assignment {
 }
 export interface ExecutionClaim { assignment: Assignment; token: string; owner: string; expiresAt: number }
 export interface PendingWrite { sequence: number; write: LinearWrite }
+export interface AssignmentRecord extends Assignment { manifest?: Execution; owner?: string; expiresAt?: number }
 
 function number(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('Invalid durable numeric value');
@@ -91,6 +92,16 @@ export class LinearStore {
   getAssignment(issueId: string): Assignment {
     return parseAssignment(this.db.prepare('SELECT * FROM assignments WHERE issue_id=?').get(issueId));
   }
+  listAssignments(): AssignmentRecord[] {
+    return (this.db.prepare('SELECT * FROM assignments ORDER BY rowid').all() as unknown[]).map(row => {
+      const parsed = parseAssignment(row);
+      const value = row as Record<string, unknown>;
+      const manifest = typeof value.manifest === 'string' ? JSON.parse(value.manifest) as Execution : undefined;
+      const owner = typeof value.owner === 'string' ? value.owner : undefined;
+      const expiresAt = typeof value.expires_at === 'number' ? value.expires_at : undefined;
+      return { ...parsed, ...(manifest ? { manifest } : {}), ...(owner ? { owner } : {}), ...(expiresAt ? { expiresAt } : {}) };
+    });
+  }
   counts(): { events: number; executions: number; pendingWrites: number } {
     return {
       events: number(this.db.prepare('SELECT count(*) AS count FROM events').get()?.count),
@@ -99,10 +110,12 @@ export class LinearStore {
     };
   }
 
-  claim(owner: string, ttlMs = 60_000): ExecutionClaim | undefined {
+  claim(owner: string, ttlMs = 60_000, issueId?: string): ExecutionClaim | undefined {
     this.validateTTL(ttlMs);
     return this.transaction(() => {
-      const row = this.db.prepare(`SELECT * FROM assignments WHERE status != 'complete' AND available_at <= ? AND (token IS NULL OR expires_at <= ?) ORDER BY available_at, rowid LIMIT 1`).get(this.now(), this.now());
+      const row = issueId
+        ? this.db.prepare(`SELECT * FROM assignments WHERE issue_id=? AND status != 'complete' AND available_at <= ? AND (token IS NULL OR expires_at <= ?)`).get(issueId, this.now(), this.now())
+        : this.db.prepare(`SELECT * FROM assignments WHERE status != 'complete' AND available_at <= ? AND (token IS NULL OR expires_at <= ?) ORDER BY available_at, rowid LIMIT 1`).get(this.now(), this.now());
       if (!row) return undefined;
       const assignment = parseAssignment(row);
       const token = randomUUID();
@@ -127,6 +140,14 @@ export class LinearStore {
     this.transaction(() => {
       this.assertLease(claim);
       this.db.prepare('UPDATE assignments SET token=NULL,owner=NULL,expires_at=NULL,available_at=? WHERE issue_id=?').run(this.now() + delayMs, claim.assignment.issueId);
+    });
+  }
+  reclaimExpired(issueId: string): boolean {
+    return this.transaction(() => {
+      const row = this.db.prepare('SELECT expires_at FROM assignments WHERE issue_id=? AND token IS NOT NULL').get(issueId) as { expires_at?: unknown } | undefined;
+      if (!row || typeof row.expires_at !== 'number' || row.expires_at > this.now()) return false;
+      const result = this.db.prepare('UPDATE assignments SET token=NULL,owner=NULL,expires_at=NULL,available_at=? WHERE issue_id=? AND expires_at<=?').run(this.now(), issueId, this.now());
+      return result.changes === 1;
     });
   }
   transition(claim: ExecutionClaim, status: 'running' | 'complete', writes: LinearWrite[], manifest?: Execution): void {

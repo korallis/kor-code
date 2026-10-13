@@ -4,7 +4,7 @@
 # CLIProxyAPI tree, or touches CLIProxyAPI's port 8317 (connect, bind or a
 # request naming it). The trace covers only the child, so live sessions
 # elsewhere on the host cannot make it pass or fail. It proves offline runs
-# only: --live-model contacts CLIProxyAPI by design.
+# only: --live-model and the controller's --run contact CLIProxyAPI by design.
 #   scripts/isolation-proof.sh                 traces the /kor-status proof
 #   scripts/isolation-proof.sh "/kor replay"   traces any headless prompt
 #   scripts/isolation-proof.sh --interactive   traces the TUI until it exits
@@ -14,7 +14,9 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 for argument in "$@"; do
-  [ "$argument" != "--live-model" ] || { echo "isolation proof: --live-model contacts CLIProxyAPI by design; the proof covers offline runs" >&2; exit 1; }
+  case "$argument" in
+    --live-model | --run) echo "isolation proof: $argument contacts CLIProxyAPI by design; the proof covers offline runs" >&2; exit 1 ;;
+  esac
 done
 real_home=${HOME:?HOME must be set}
 strace_bin=${STRACE:-$(command -v strace || true)}
