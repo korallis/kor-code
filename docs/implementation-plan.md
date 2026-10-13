@@ -20,7 +20,7 @@ Completion criterion: two test issues run concurrently without sharing uncommitt
 
 ## Phase 3: Jev core
 
-**Validated** — Build typed decision requests, batched preflight, route selection, skill and agent selection, context relevance, confidence, escalation, and decision audit. `pnpm jev:fixture` demonstrates batched fixture decisions being applied, explained, and replayed identically without another Jev call.
+**Validated** — Build typed decision requests, batched preflight, route selection, skill and agent selection, context relevance, confidence, escalation, and decision audit. `pnpm jev:fixture` demonstrates batched route, skill, agent, and context fixture decisions, typed Noul/Score answers, low-confidence escalation, JSON audit persistence, and identical replay without another Jev call.
 
 Completion criterion: every applied fixture decision can be explained and replayed.
 
