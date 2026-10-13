@@ -6,14 +6,15 @@ function isCredentialKey(name: string): boolean {
   const last = words.at(-1);
   if (!last) return false;
   if (["token", "secret", "password", "authorization", "credential", "credentials", "jwt"].includes(last)) return true;
-  return last === "key" && words.slice(0, -1).some(word => ["api", "private", "secret"].includes(word));
+  if (last === "key" && words.slice(0, -1).some(word => ["api", "private", "secret"].includes(word))) return true;
+  return ["apikey", "accesstoken", "refreshtoken", "clientsecret"].includes(words.join(""));
 }
-const credentialAssignment = /(?<![\w-])((["']?)(?:api[_-]?key|authorization|password|secret|token|access[_-]?token|refresh[_-]?token|client[_-]?secret)\2\s*[:=]\s*["']?)[^\s,;"'}]+/gi;
+const credentialAssignment = /((["']?)([A-Za-z0-9_.-]+)\2\s*[:=]\s*["']?)([^\s,;"'}]+)/g;
 export function redact(value: unknown, secrets: readonly string[] = runtimeSecrets()): unknown {
   if (typeof value === "string") {
     let text = value;
     for (const secret of [...secrets].sort((a, b) => b.length - a.length)) if (secret) text = text.split(secret).join("[redacted]");
-    return text.replace(/Bearer\s+[^\s"']+/gi, "Bearer [redacted]").replace(credentialAssignment, "$1[redacted]");
+    return text.replace(/Bearer\s+[^\s"']+/gi, "Bearer [redacted]").replace(credentialAssignment, (match, prefix: string, _quote: string, key: string) => isCredentialKey(key) ? `${prefix}[redacted]` : match);
   }
   if (Array.isArray(value)) return value.map(item => redact(item, secrets));
   if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, isCredentialKey(name) ? "[redacted]" : redact(item, secrets)]));
