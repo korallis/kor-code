@@ -29,9 +29,15 @@ try { await controller.runIssue(issueA.id); } catch (error) { blocked = error in
 if (!blocked) throw new Error("execution completed without acceptance evidence");
 const blockedA = (store.listAssignments().find(assignment => assignment.issueId === issueA.id));
 if (blockedA?.manifest?.status !== "blocked") throw new Error("verification block was not recorded for execution A");
+let crossExecutionEvidenceRejected = false;
+try {
+  await controller.runIssue(issueB.id, [{ id: "issue-a-evidence-on-b", kind: "test", summary: "fixture A evidence sent to B", status: "pass", acceptanceId: "acceptance-1", ...(blockedA ? { executionId: blockedA.executionId } : {}) }]);
+} catch (error) { crossExecutionEvidenceRejected = error instanceof Error && error.constructor.name === "VerificationError"; }
+if (!crossExecutionEvidenceRejected) throw new Error("evidence tagged for execution A was accepted by execution B");
+await new Promise(resolveDelay => setTimeout(resolveDelay, 1_100));
 await controller.runIssue(issueB.id, [{ id: "issue-b-evidence", kind: "test", summary: "fixture B acceptance passed", status: "pass", acceptanceId: "acceptance-1" }]);
 const afterB = await client.getIssue(issueA.id);
-const crossExecutionEvidenceIgnored = afterB.stateType !== "completed";
+const crossExecutionEvidenceIgnored = crossExecutionEvidenceRejected && afterB.stateType !== "completed";
 if (!crossExecutionEvidenceIgnored) throw new Error("evidence from execution B completed execution A");
 await new Promise(resolveDelay => setTimeout(resolveDelay, 1_100));
 await controller.runIssue(issueA.id, [{ id: "issue-a-evidence", kind: "test", summary: "fixture A acceptance passed", status: "pass", acceptanceId: "acceptance-1" }]);
@@ -42,5 +48,5 @@ let jevPayloadCharacters = 0;
 const jev = { async rankContext(request: DecisionRequest): Promise<AppliedDecision> { const state = request.state; jevPayloadCharacters = 0; if (typeof state === "object" && state !== null && !Array.isArray(state)) { if (typeof state.issue === "string") jevPayloadCharacters += state.issue.length; if (Array.isArray(state.sources)) for (const source of state.sources) if (typeof source === "object" && source !== null && !Array.isArray(source) && typeof source.content === "string") jevPayloadCharacters += source.content.length; } return { decisionId: request.decisionId, executionId: request.executionId, kind: "context", question: request.question, inputs: request.inputs, choice: request.candidates[0] ?? "", candidates: request.candidates, confidence: 1, reasons: ["fixture relevance"], evidenceRefs: [], policyChecks: request.policyChecks ?? [], applied: true, escalated: false }; } };
 const context = await buildContextManifest({ executionId: "context-proof", repository: "fixture", worktree: repo, issue: "apiKey=fixture-secret", maxCharacters: 100, jev });
 if (!context.redacted || context.sources.some(source => source.content.includes("fixture-secret")) || jevPayloadCharacters > 100 || context.droppedSources.length === 0) throw new Error("context bounds, redaction, or dropped-source proof failed");
-console.log(`phase5-proof: blockedMissingEvidence=${blocked}; crossExecutionEvidenceIgnored=${crossExecutionEvidenceIgnored}; completedWithOwnEvidence=${completedWithOwnEvidence}; contextRules=${context.sources.filter(source => source.purpose === "rule").length}; contextDropped=${context.droppedSources.length}; jevPayloadCharacters=${jevPayloadCharacters}; contextRedacted=${context.redacted}; linearWrites=${client.writes.length}`);
+console.log(`phase5-proof: blockedMissingEvidence=${blocked}; crossExecutionEvidenceIgnored=${crossExecutionEvidenceIgnored}; crossExecutionEvidenceRejected=${crossExecutionEvidenceRejected}; completedWithOwnEvidence=${completedWithOwnEvidence}; contextRules=${context.sources.filter(source => source.purpose === "rule").length}; contextDropped=${context.droppedSources.length}; jevPayloadCharacters=${jevPayloadCharacters}; contextRedacted=${context.redacted}; linearWrites=${client.writes.length}`);
 store.close();

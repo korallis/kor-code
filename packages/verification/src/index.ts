@@ -23,7 +23,7 @@ export class VerificationTracker {
   findings(): AcceptanceFinding[] {
     return this.acceptance.map(condition => {
       const evidence = this.evidence().filter(item => item.acceptanceId === condition.id);
-      const status = evidence.some(item => item.status === "pass") ? "pass" : evidence.some(item => item.status === "fail") ? "fail" : "unresolved";
+      const status = evidence.some(item => item.status === "fail") ? "fail" : evidence.some(item => item.status === "pass") ? "pass" : "unresolved";
       return { conditionId: condition.id, status, evidenceIds: evidence.map(item => item.id) };
     });
   }

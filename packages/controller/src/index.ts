@@ -116,12 +116,17 @@ class ExecutionController implements Controller {
       if (this.writer && claim) {
         if (session.exitCode === 0) {
           const sessionEvidence: Evidence = { id: `session-${input.id}`, kind: "provider", summary: "Sandbox session exited with status 0", status: "pass" };
-          verification?.addMany([...(input.evidence ?? []), sessionEvidence]);
-          try { verification?.assertComplete(); }
-          catch (error) {
-            if (error instanceof VerificationError && this.writer && claim) {
-              await this.writer.recordVerificationBlock(claim, { ...execution, status: "blocked" }, error.findings);
+          try {
+            verification?.addMany([...(input.evidence ?? []), sessionEvidence]);
+            verification?.assertComplete();
+          } catch (error) {
+            if (verification && this.writer && claim) {
+              const failure = error instanceof VerificationError
+                ? error
+                : new VerificationError(error instanceof Error ? error.message : String(error), verification.findings());
+              await this.writer.recordVerificationBlock(claim, { ...execution, status: "blocked" }, failure.findings);
               await this.writer.flush();
+              throw failure;
             }
             throw error;
           }

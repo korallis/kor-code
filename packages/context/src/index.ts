@@ -104,7 +104,7 @@ export async function buildContextManifest(options: ContextBuildOptions): Promis
     const decision = await options.jev.rankContext({ decisionId: `context-${options.executionId}`, executionId: options.executionId, kind: "context", question: "Which repository context source is most relevant to this execution?", state: { issue: decisionIssue.slice(0, issueCharacters), sources: candidates.map(source => ({ id: source.id, purpose: source.purpose, content: source.content })) }, inputs: [{ name: "execution", value: options.executionId, source: "controller" }], candidates: candidates.map(source => source.id), policyChecks: [{ name: "worktree-only", result: "pass" }] });
     if (decision.applied) ranked = ranked.map(source => ({ ...source, relevance: source.id === decision.choice ? 1 : source.relevance * 0.9 }));
   }
-  if (options.rank) relevanceOverride = { source: "caller", reason: "caller rank callback applied after Jev relevance" };
+  if (options.rank) relevanceOverride = { source: "caller", reason: "caller rank callback applied before Jev relevance" };
   ranked.sort((a, b) => b.relevance - a.relevance || a.id.localeCompare(b.id));
   const compactedSources = compactContext(ranked, maxCharacters);
   const selected = new Set(compactedSources.map(source => source.id));
