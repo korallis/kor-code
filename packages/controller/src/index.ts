@@ -1,4 +1,4 @@
-import type { CatalogueModel, Execution, Route } from "@kor-code/core";
+import type { CatalogueModel, Evidence, Execution, Route } from "@kor-code/core";
 import { JevDecisionCore, routeFromDecision } from "@kor-code/jev";
 import type { LinearClient, LinearIssue, WorkflowMapping, ExecutionClaim } from "@kor-code/linear";
 import { AgentSessionWriter, DurableQueue, ExecutionLease, LinearStore, SnapshotReader } from "@kor-code/linear";
@@ -8,6 +8,7 @@ import { type Worktree, type WorktreeManager } from "./worktree.js";
 import { ConcurrencyLimiter } from "./limiter.js";
 import { type SessionLaunch, type SessionResult, type SessionLauncherLike } from "./launcher.js";
 import { RestartReconciler, type ReconciliationReport } from "./reconcile.js";
+import { VerificationError, VerificationTracker } from "@kor-code/verification";
 
 export * from "./repository.js";
 export * from "./worktree.js";
@@ -17,6 +18,7 @@ export * from "./launcher.js";
 export * from "./reconcile.js";
 
 export interface ControllerLinearRuntime { store: LinearStore; client: LinearClient; workflow: WorkflowMapping }
+export type VerificationFactory = (execution: Execution) => VerificationTracker;
 export interface ControllerOptions {
   repositories: RepositoryLookup;
   worktrees: WorktreeManager;
@@ -29,6 +31,7 @@ export interface ControllerOptions {
   defaultRoute?: Route;
   promptPrefix?: string;
   leaseTtlMs?: number;
+  verification?: VerificationFactory;
 }
 export interface ControllerRunResult {
   execution: Execution;
@@ -39,8 +42,8 @@ export interface ControllerRunResult {
   claim?: ExecutionClaim;
 }
 export interface Controller {
-  dispatch(execution: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim }): Promise<ControllerRunResult>;
-  runIssue(issueId: string): Promise<ControllerRunResult>;
+  dispatch(execution: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[] }): Promise<ControllerRunResult>;
+  runIssue(issueId: string, evidence?: Evidence[]): Promise<ControllerRunResult>;
   runNext(): Promise<ControllerRunResult | undefined>;
   reconcile(): Promise<ReconciliationReport>;
 }
@@ -83,7 +86,7 @@ class ExecutionController implements Controller {
       this.reconciler = new RestartReconciler(options.linear.store, options.worktrees);
     }
   }
-  async dispatch(input: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim }): Promise<ControllerRunResult> {
+  async dispatch(input: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[] }): Promise<ControllerRunResult> {
     const issue = input.issue ?? (this.snapshots ? (await this.snapshots.read(input.issueId)).issue : undefined);
     if (!issue) throw new Error("Controller dispatch requires an issue or a Linear runtime");
     const repository = await this.options.repositories.resolve(input.repository);
@@ -99,6 +102,7 @@ class ExecutionController implements Controller {
       }
       worktree = await this.options.worktrees.create({ executionId: input.id, issueId: input.issueId, repository, branch: input.branch });
       const execution: Execution = { ...input, repository: repository.key, worktree: worktree.path, branch: worktree.branch, status: "running", ...(route ? { route } : {}), manifest: { executionId: input.id, issueId: input.issueId, repository: repository.key, worktree: worktree.path, branch: worktree.branch, agents: [], acceptance: acceptance(issue) } };
+      const verification = this.options.verification?.(execution) ?? (this.writer ? new VerificationTracker(execution.manifest?.acceptance ?? [], execution.id) : undefined);
       if (this.lease && this.writer) {
         if (!claim) throw new Error(`No execution lease available for ${input.issueId}`);
         this.writer.start(claim, execution);
@@ -110,7 +114,24 @@ class ExecutionController implements Controller {
       const session = await Promise.race([sessionPromise, ...(heartbeat ? [heartbeat.failed] : [])]);
       heartbeat?.stop();
       if (this.writer && claim) {
-        if (session.exitCode === 0) await this.writer.complete(claim, { summary: `Execution ${input.id} completed`, evidence: [{ id: `session-${input.id}`, kind: "provider", summary: "Sandbox session exited with status 0", status: "pass" }] });
+        if (session.exitCode === 0) {
+          const sessionEvidence: Evidence = { id: `session-${input.id}`, kind: "provider", summary: "Sandbox session exited with status 0", status: "pass" };
+          try {
+            verification?.addMany([...(input.evidence ?? []), sessionEvidence]);
+            verification?.assertComplete();
+          } catch (error) {
+            if (verification && this.writer && claim) {
+              const failure = error instanceof VerificationError
+                ? error
+                : new VerificationError(error instanceof Error ? error.message : String(error), verification.findings());
+              await this.writer.recordVerificationBlock(claim, { ...execution, status: "blocked" }, failure.findings);
+              await this.writer.flush();
+              throw failure;
+            }
+            throw error;
+          }
+          await this.writer.complete(claim, { summary: `Execution ${input.id} completed`, evidence: verification?.evidence() ?? [sessionEvidence] });
+        }
         else this.options.linear?.store.release(claim, 1_000);
         await this.writer.flush();
       }
@@ -137,13 +158,13 @@ class ExecutionController implements Controller {
     timer.unref?.();
     return { failed, stop: () => { if (timer) clearInterval(timer); } };
   }
-  async runIssue(issueId: string): Promise<ControllerRunResult> {
+  async runIssue(issueId: string, evidence: Evidence[] = []): Promise<ControllerRunResult> {
     if (!this.queue || !this.snapshots) throw new Error("runIssue requires a Linear runtime");
     this.queue.enqueue(issueId);
     const issue = (await this.snapshots.read(issueId)).issue;
     const assignment = this.options.linear?.store.getAssignment(issueId);
     if (!assignment) throw new Error(`Linear assignment missing for ${issueId}`);
-    return this.dispatch({ id: assignment.executionId, issueId, repository: issue.repository ?? issue.teamKey, worktree: "", branch: `kor/${issueId}`, status: "queued", issue });
+    return this.dispatch({ id: assignment.executionId, issueId, repository: issue.repository ?? issue.teamKey, worktree: "", branch: `kor/${issueId}`, status: "queued", issue, evidence });
   }
   async runNext(): Promise<ControllerRunResult | undefined> {
     if (!this.lease || !this.snapshots) throw new Error("runNext requires a Linear runtime");

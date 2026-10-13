@@ -38,7 +38,8 @@ const client = new FakeLinearClient([first, second]);
 const store = new LinearStore(":memory:");
 const worktrees = new FixtureWorktrees();
 const controller = createController({ repositories: new RepositoryRegistry([{ key: "fixture", path: repositoryPath }]), worktrees, launcher: new FixtureLauncher(), linear: { store, client, workflow: workflowMappingFixture }, limits: new ConcurrencyLimiter({ total: 2, perRepository: 2 }) });
-const results = await Promise.all([controller.runIssue(first.id), controller.runIssue(second.id)]);
+const fixtureEvidence = (issueId: string) => [{ id: `fixture-${issueId}-acceptance`, kind: "test" as const, summary: `Fixture acceptance passed for ${issueId}`, status: "pass" as const, acceptanceId: "acceptance-1" }];
+const results = await Promise.all([controller.runIssue(first.id, fixtureEvidence(first.id)), controller.runIssue(second.id, fixtureEvidence(second.id))]);
 const paths = new Set(results.map(result => result.worktree.path));
 if (paths.size !== 2) throw new Error("Concurrent executions shared a worktree");
 for (const result of results) {

@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import type { Execution } from '@kor-code/core';
+import type { AcceptanceFinding, Execution } from '@kor-code/core';
 import { type Completion, type LinearClient, type LinearIssue, type WorkflowMapping } from './contract.js';
 import { LinearStore, sessionRecord, type ExecutionClaim } from './store.js';
 
@@ -56,6 +56,15 @@ export class AgentSessionWriter {
       { kind: 'comment', id: randomUUID(), issueId: assignment.issueId, body },
       { kind: 'state', issueId: assignment.issueId, stateId: this.states.complete.id },
     ]);
+  }
+
+  recordVerificationBlock(claim: ExecutionClaim, execution: Execution, findings: readonly AcceptanceFinding[]): void {
+    const body = [`Execution ${execution.id} blocked: acceptance evidence is incomplete`, ...findings.map(finding => `${finding.conditionId}: ${finding.status}${finding.evidenceIds.length > 0 ? ` (${finding.evidenceIds.join(', ')})` : ''}`)].join('\n');
+    this.store.record(claim, [
+      { kind: 'summary', sessionId: claim.assignment.sessionId, summary: body },
+      { kind: 'activity', id: randomUUID(), sessionId: claim.assignment.sessionId, activity: 'error', body },
+      { kind: 'comment', id: randomUUID(), issueId: claim.assignment.issueId, body },
+    ], execution);
   }
 
   async flush(maximum = 100): Promise<number> {

@@ -30,9 +30,11 @@ Build the live catalogue, account health, fill-first affinity, safe retry, quota
 
 Completion criterion: a controlled quota test moves one session to the next account without replaying a partial stream. **Validated locally:** `pnpm gateway:quota-proof` exercises a simulated 429 against the recorded `files` auth-files shape and records two distinct opaque health slots with `streamStartedOnQuota=false`. The one fixed-route live probe was **Blocked** by a missing runtime API key. CLIProxyAPI remains the authority for the actual credential binding.
 
-## Phase 5: context and verification
+## Phase 5: context and verification — Validated
 
-Build repository-rule discovery, context manifests, compaction, redaction, acceptance tracking, tests, and review evidence.
+Build repository-rule discovery, context manifests, compaction, redaction, and per-execution acceptance tracking. The `@kor-code/context` package discovers only rule files inside the resolved execution worktree, bounds the redacted excerpts sent to Jev, records dropped sources, and exercises Jev relevance ranking through a fixture callback. The `@kor-code/verification` tracker associates evidence with the current execution's required acceptance conditions; the Linear controller creates a fresh tracker for every execution, records a verification block, and rejects completion until all required conditions have passing evidence. `pnpm phase5:proof` demonstrates one fake Linear execution blocked without evidence, evidence from a second execution not counting for it, and completion after the first execution receives its own evidence.
+
+Review evidence is currently a typed evidence factory only; GitHub review/check integration and automated test evidence collection remain Proposed.
 
 Completion criterion: an execution cannot reach complete while one acceptance condition lacks evidence.
 
