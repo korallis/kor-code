@@ -256,7 +256,9 @@ function Workspace({ run, issue, decisions, composerRef }: { run: MissionRun; is
   const message = useRunMessage();
   const override = useOverride();
   const [draft, setDraft] = useState('');
-  const [model, setModel] = useState(run.route?.model ?? '');
+  // null follows the route in force (it changes when an override applies); a pick here is kept until sent.
+  const [picked, setModel] = useState<string | null>(null);
+  const model = picked ?? run.route?.model ?? '';
   const steps = toolSteps(parseTerminal(terminal.text)).slice(-8);
   const attempt = latestVerification(run);
   const diffs = attempt ? parseDiff(attempt.diff) : [];
@@ -270,7 +272,7 @@ function Workspace({ run, issue, decisions, composerRef }: { run: MissionRun; is
     const text = draft.trim();
     if (!text) return;
     if (model && model !== run.route?.model) await override.mutateAsync({ executionId: run.executionId, target: 'route', choice: model }).catch(() => undefined);
-    message.mutate({ action: 'request-changes', executionId: run.executionId, body: { message: text } }, { onSuccess: () => setDraft('') });
+    message.mutate({ action: 'request-changes', executionId: run.executionId, body: { message: text } }, { onSuccess: () => { setDraft(''); setModel(null); } });
   };
   const error = message.error ?? override.error;
   const tags = [issue?.stateName ?? run.issueState, ...(issue?.labels ?? [])].filter(Boolean) as string[];
