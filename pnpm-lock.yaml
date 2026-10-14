@@ -183,6 +183,9 @@ importers:
       '@kor-code/config':
         specifier: workspace:*
         version: link:../config
+      '@kor-code/linear':
+        specifier: workspace:*
+        version: link:../linear
 
   packages/config:
     dependencies:
