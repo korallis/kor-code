@@ -27,6 +27,18 @@ function resultLine(stdout: string): string | undefined {
   return stdout.split(/\r?\n/).filter(line => line.includes('"type":"result"')).at(-1);
 }
 
+function resultText(stdout: string): string | undefined {
+  for (const line of stdout.split(/\r?\n/).reverse()) {
+    try {
+      const value: unknown = JSON.parse(line);
+      if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
+      const event = value as { type?: unknown; result?: unknown };
+      if (event.type === "result" && typeof event.result === "string") return event.result;
+    } catch { /* retain the raw line in diagnostics */ }
+  }
+  return undefined;
+}
+
 function capability(value: boolean | undefined): string { return value === true ? "pass" : value === false ? "fail" : "absent"; }
 
 function runSandbox(args: readonly string[], env: NodeJS.ProcessEnv, timeoutMs: number): Promise<{ stdout: string; stderr: string }> {
@@ -56,13 +68,14 @@ async function probeModel(model: string): Promise<ModelProbeResult> {
   try {
     const result = await runSandbox([sandbox, "--run", "claude", "-p", prompt, "--model", model, "--effort", "medium", "--permission-mode", "acceptEdits", "--allowedTools", "Write", "Bash", "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--setting-sources", ""], { ...process.env, KOR_CLAUDE_BIN_DIR: claudeBinDir(), KOR_SANDBOX_HOME: join(sessionRoot, "home"), KOR_SANDBOX_CONFIG: join(sessionRoot, "config") }, Number(process.env.KOR_MODEL_PROBE_TIMEOUT_MS ?? 180_000));
     const stream = result.stdout;
-    const hasResult = stream.includes('"type":"result"');
+    const decodedResult = resultText(stream);
+    const hasResult = decodedResult !== undefined;
     const wroteMarker = (await readFile(marker, "utf8").catch(() => "")).trim() === "READY";
     const capabilities = {
       streaming: hasResult,
       tool_calls: wroteMarker && /tool_use|"name"\s*:\s*"(?:Write|Bash)"/.test(stream),
       thinking: /content_block_start.*thinking|"type"\s*:\s*"thinking"/.test(stream),
-      structured_output: hasResult && /[\\"]ready[\\"]\s*:\s*true/.test(stream),
+      structured_output: decodedResult !== undefined && /[\"]ready[\"]\s*:\s*true/.test(decodedResult),
     };
     const verified = Object.values(capabilities).every(Boolean);
     const cost = result.stdout.match(/"total_cost_usd":\s*([0-9.]+)/)?.[1];
