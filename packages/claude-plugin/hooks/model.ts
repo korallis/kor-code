@@ -72,4 +72,3 @@ export function ageText(seconds: number): string {
   if (seconds < 36 * 3600) return `${Math.round(seconds / 3600)}h`
   return `${Math.round(seconds / 86400)}d`
 }
-

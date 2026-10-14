@@ -46,7 +46,8 @@ export interface Labelled<T> { value: T; provenance: Provenance; observedAt?: st
 
 /** Stable read-only shape consumed by the cockpit and `kor status --json`. */
 export type RunLifecycle = ExecutionStatus | "canceled";
-export interface SessionProcessIdentity { pid: number; bootId: string; startTicks: string }
+/** Linux process identity plus the detached process group Kor created for it. */
+export interface SessionProcessIdentity { pid: number; bootId: string; startTicks: string; pgid?: number }
 export interface RunStatus {
   executionId: string;
   issueId: string;

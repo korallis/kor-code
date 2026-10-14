@@ -77,9 +77,14 @@ function overrideComment(record: OverrideRecord): string {
 function runStatus(assignment: AssignmentRecord, observedAt: string, facts: RunFacts = { decisions: [] }): RunStatus {
   const manifest = assignment.manifest;
   const route = facts.route ?? manifest?.route;
+  const issue = facts.issue
+    ? { key: facts.issue.key, title: facts.issue.title, ...(facts.issue.url ? { url: facts.issue.url } : {}), ...(facts.issue.state ? { state: facts.issue.state } : {}) }
+    : assignment.issueKey || assignment.issueTitle
+      ? { key: assignment.issueKey ?? assignment.issueId, title: assignment.issueTitle ?? assignment.issueKey ?? assignment.issueId }
+      : undefined;
   return {
     executionId: assignment.executionId, issueId: assignment.issueId, status: assignment.status, attempts: assignment.attempts, observedAt,
-    ...(facts.issue ? { issueKey: facts.issue.key, issueTitle: facts.issue.title, ...(facts.issue.url ? { issueUrl: facts.issue.url } : {}), ...(facts.issue.state ? { issueState: facts.issue.state } : {}) } : {}),
+    ...(issue ? { issueKey: issue.key, issueTitle: issue.title, ...(issue.url ? { issueUrl: issue.url } : {}), ...(issue.state ? { issueState: issue.state } : {}) } : {}),
     ...(route ? { route } : {}),
     ...(facts.routeSource ? { routeSource: facts.routeSource } : {}),
     ...(facts.decisions.length ? { decisionIds: facts.decisions.map(decision => decision.decisionId) } : {}),
@@ -198,7 +203,8 @@ export class KorDaemon {
       if (assignment.status !== "running" && assignment.status !== "queued") continue;
       if (assignment.processIdentity) {
         const existed = processMatches(assignment.processIdentity);
-        await stopSession(assignment.processIdentity);
+        try { await stopSession(assignment.processIdentity); }
+        catch (error) { await this.reportError(new Error(`recovery could not stop ${assignment.executionId}: ${safeMessage(error)}`)); continue; }
         if (existed) result.killedPids.push(assignment.processIdentity.pid);
       } else if (assignment.sessionPid && processExists(assignment.sessionPid)) {
         throw new Error(`Cannot recover ${assignment.executionId}: legacy session PID has no identity; waiting for it to exit`);
@@ -439,6 +445,7 @@ export class KorDaemon {
       // The configured mapping (linearProject, then linearTeam) names the checkout.
       const repository = repositoryKeyForIssue(issue, this.options.config);
       const route = await this.routeFor(id, issue);
+      this.store.setIssueMetadata(claim, issue.identifier ?? issue.id, issue.title);
       this.store.markRunning(claim, { id, issueId: issue.id, repository, worktree: "", branch: `kor/${issue.id}`, status: "running", route });
       abort.signal.throwIfAborted();
       if (this.options.runner) result = await this.options.runner({ claim, issue, onSpawn, signal: abort.signal });
@@ -448,8 +455,15 @@ export class KorDaemon {
     } catch (error) { failure = error; }
     finally { clearInterval(heartbeat); }
     // Do not release a claim while any tracked session group might still mutate its worktree.
-    if (identity) await stopSession(identity);
-    if (this.store.isCancelRequested(claim.assignment.issueId)) this.store.cancelClaim(claim);
+    let cleanupFailure: unknown;
+    if (identity) {
+      try { await stopSession(identity); }
+      catch (error) { cleanupFailure = error; }
+    }
+    if (cleanupFailure !== undefined) {
+      this.store.clearCancel(claim.assignment.issueId);
+      this.store.failClaim(claim, `session cleanup failed: ${safeMessage(cleanupFailure)}`);
+    } else if (this.store.isCancelRequested(claim.assignment.issueId)) this.store.cancelClaim(claim);
     else if (this.stopping) this.store.recover(claim.assignment.issueId, "daemon stopped; session stopped; re-queued");
     else if (failure !== undefined) this.store.failClaim(claim, safeMessage(failure), failure instanceof ExecutionVerificationError ? "blocked" : "failed");
     else if (result?.execution.status === "failed" || result?.execution.status === "blocked") this.store.finishClaim(claim, result.execution.status, "execution did not complete", result.execution);

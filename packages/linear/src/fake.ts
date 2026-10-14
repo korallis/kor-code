@@ -115,4 +115,4 @@ export class FakeLinearClient implements LinearClient {
   }
 }
 
-export function fakeIssue(id = linearIssueFixture.id): LinearIssue { return { ...structuredClone(linearIssueFixture), id }; }
+export function fakeIssue(id = linearIssueFixture.id): LinearIssue { return { ...structuredClone(linearIssueFixture), id, identifier: id }; }
