@@ -60,7 +60,7 @@ async function runCase(name: string, repair: boolean): Promise<{ output: string;
   store.close();
   if (!launcher.repairEvidenceSeen) throw new Error("Repair prompt omitted failed check output or criterion findings");
   if (!repair && (!comments.includes("Check failed:") || !comments.includes("deliberately broken test") || linked.stateType === "completed")) throw new Error("Blocked Linear issue omitted the check failure or completed");
-  return { output: `${name}: ${outcome}; launches=${launcher.calls}; state=${linked.stateType}; findings=${comments.includes("acceptance-1") ? "recorded" : "none"}`, calls: launcher.calls };
+  return { output: `${name}: ${outcome}; launches=${launcher.calls}; state=${linked.stateType}; findings=${comments.includes("acceptance-1") ? "recorded" : "none"}; repair-evidence=${launcher.repairEvidenceSeen ? "recorded" : "none"}; blocker=${comments.includes("Check failed:") ? "recorded" : "none"}`, calls: launcher.calls };
 }
 
 const repaired = await runCase("repair", true);

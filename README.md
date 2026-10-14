@@ -51,8 +51,8 @@ pnpm verification:proof
 ```
 
 ```text
-verification-proof: repair: complete; launches=2; state=completed; findings=recorded
-verification-proof: broken: blocked (acceptance-1=pass); launches=3; state=started; findings=recorded
+verification-proof: repair: complete; launches=2; state=completed; findings=recorded; repair-evidence=recorded; blocker=none
+verification-proof: broken: blocked (acceptance-1=pass); launches=3; state=started; findings=recorded; repair-evidence=recorded; blocker=recorded
 ```
 
 Configure checks on a repository entry with `checks: ["pnpm typecheck", "pnpm test"]`. A failed check or unmet acceptance criterion leaves the execution blocked and records each criterion finding in the Linear comment.
