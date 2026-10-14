@@ -78,6 +78,14 @@ defaultRoute:
   reasoningLevel: medium
 pollIntervalSeconds: 60
 intakeLabel: kor
+calibration:
+  sampleRate: 0.25
+  baselineRoute:
+    provider: anthropic
+    model: claude-sonnet-5-5
+    accountPolicy: fill-first
+    sessionAffinity: true
+    reasoningLevel: medium
 ```
 
 `defaultBranch` defaults to `main`, `checks` and `toolAllowlist` default to empty lists, and the default route is `anthropic / claude-sonnet-5-5` with fill-first account selection. Unknown fields and invalid values fail before a configuration reaches the controller.
@@ -89,3 +97,17 @@ Use `kor run LEE-123 --dry-run` to read a Todo issue and its team's workflow sta
 Run `pnpm kor doctor` (or the installed `kor doctor`) for bounded checks of the credentials, CLIProxyAPI, management endpoint, quota-axi, Claude Code, no-mistakes, and every configured repository. A missing Kor client key reports the exact one-line proxy addition to make:
 
 The doctor prints one generated key-list item, such as `CLIProxyAPI addition: - kor-<generated-value>`. Add that exact item to the proxy's `api-keys` list and put the same value in `KOR_GATEWAY_KEY` in `gateway.env`.
+
+
+## Calibration
+
+Calibration rows share `kor.db` with the daemon. Each Jev or baseline arm records one `run_metrics` row per attempt, including cost, token and cache counters, wall-clock time, failovers, verification failures, policy blocks, and clarifications. Terminal outcomes are recorded separately; the product observes rejected, escalated, and abandoned outcomes, while merge observation remains a T6 integration point.
+
+Run the report with:
+
+```sh
+kor calibrate report
+kor calibrate report --since 2026-10-01T00:00:00.000Z --json
+```
+
+The text report shows Jev and baseline arms side by side and a confidence reliability table with sample sizes and Brier scores. Fewer than 20 completed pairs are labelled directional. Clarifications remain unavailable until the clarification path supplies them; failovers use the provider API error signal when present.

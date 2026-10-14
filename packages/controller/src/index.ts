@@ -73,8 +73,13 @@ async function chooseRoute(options: ControllerOptions, executionId: string, issu
     const replayed = options.jev.replay(decisionId);
     if (replayed.escalated) return { ...(options.defaultRoute ? { route: { ...options.defaultRoute, label: "fallback" } } : {}), decisionId };
     return { route: { ...routeFromDecision(replayed, catalogue, { accountPolicy: "fill-first", sessionAffinity: true }), label: "jev" }, decisionId };
-  } catch {
-    // A first attempt has no audit record; retries reuse the recorded decision above.
+  } catch (error) {
+    // A first attempt has no audit record; retries reuse the recorded decision
+    // above. If a previously selected model left the catalogue, keep the
+    // execution retryable by falling back instead of writing a duplicate id.
+    if (!(error instanceof Error) || !/Decision not found/.test(error.message)) {
+      return { ...(options.defaultRoute ? { route: { ...options.defaultRoute, label: "fallback" } } : {}), decisionId };
+    }
   }
   const decision = await options.jev.selectRoute({ decisionId, executionId, kind: "route", question: "Select the available model route that best fits this Linear issue and its acceptance conditions.", state: { issueId: issue.id, title: issue.title, description: issue.description ?? "", acceptance: issue.acceptanceCriteria, dependencies: issue.dependencies }, inputs: [{ name: "issue", value: issue.title, source: "linear" }], candidates, policyChecks: [{ name: "catalogue-nonempty", result: "pass" }] });
   if (decision.escalated) return { ...(options.defaultRoute ? { route: { ...options.defaultRoute, label: "fallback" } } : {}), decisionId };
