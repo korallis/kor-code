@@ -1,6 +1,6 @@
 # Isolation harness
 
-Kor Code is not installed into Claude Code globally. The harness creates a disposable `CLAUDE_CONFIG_DIR` under the gitignored `.sandbox/` directory and loads the plugin only for that invocation with `--plugin-dir`.
+The harness does not install Kor into Claude Code. The separate `kor install` command supports local pilot and user scopes with a reversible manifest (see [configuration](docs/configuration.md#install-and-uninstall)). The harness creates a disposable `CLAUDE_CONFIG_DIR` under the gitignored `.sandbox/` directory and loads the plugin only for that invocation with `--plugin-dir`.
 
 Run it from the repository:
 
@@ -20,7 +20,7 @@ A sandbox run makes no model calls unless asked to. Its `ANTHROPIC_BASE_URL` is 
 
 `--live-model` is the explicit opt-in for a session that needs model calls. It points the child at CLIProxyAPI (`KOR_GATEWAY_URL`, default `http://127.0.0.1:8317`) as a client only, the same way the Phase 4 gateway adapter uses it: nothing starts, stops or reconfigures the proxy. The key comes from `KOR_GATEWAY_KEY` or a runtime-only file named by `KOR_GATEWAY_KEY_FILE`; it is passed only through the child's environment, never on a command line, and the path is never inferred from a machine-specific location. The isolation proof below covers offline runs only and refuses `--live-model` and `--run`.
 
-The harness never opens the real `~/.claude`, `~/.claude.json`, `~/.codex` or `~/.agents`: it compares those paths as strings only, to fail closed if anything would resolve into them. The plugin is not copied to a marketplace or installed globally. Kor Code services, when added, must use a port other than CLIProxyAPI's `8317`.
+The harness never opens the real `~/.claude`, `~/.claude.json`, `~/.codex` or `~/.agents`: it compares those paths as strings only, to fail closed if anything would resolve into them. The harness does not copy the plugin to a marketplace or install it globally. Kor Code services use a port other than CLIProxyAPI's `8317`.
 
 ## Isolation proof
 
@@ -33,3 +33,11 @@ What the child still reads outside the sandbox, all read-only: the Claude Code b
 ## Controller sessions
 
 The Phase 2 controller (`SessionLauncher` in `packages/controller`) launches each execution's Claude Code session through `scripts/sandbox.sh --run`, with the execution's worktree as the working directory. These sessions do the issue's work, so they are live clients of CLIProxyAPI (`KOR_GATEWAY_URL`, default `http://127.0.0.1:8317`, with the key from `KOR_GATEWAY_KEY` or `KOR_GATEWAY_KEY_FILE`) in the same client-only way as `--live-model`; nothing starts, stops or reconfigures the proxy. A `--run` child starts from `env -i` and gets only: a per-execution `HOME` and `CLAUDE_CONFIG_DIR` named by the launcher (`KOR_SANDBOX_HOME`, `KOR_SANDBOX_CONFIG`; the harness refuses any path outside `.sandbox/`), `CODEX_HOME` and XDG directories under that home, a fixed allowlist `PATH` (system directories plus the directory holding the `claude` binary), `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1`, the model endpoint variables and the `KOR_EXECUTION_ID`, `KOR_WORKTREE` and `KOR_ROUTE_MODEL` values. The route's model and effort and the repository's `allowedTools` config become explicit Claude flags: `--model`, `--effort`, `--permission-mode dontAsk`, and `--allowedTools`; with `dontAsk`, removing `Write` or another mutation tool produces a permission denial. Sessions use `--output-format stream-json --verbose`; the final `result` event is retained as telemetry. `is_error`, permission denials, a missing result event, and a non-zero exit mark the attempt failed. The launcher drops `--bare` so the PreToolUse policy hook and gateway auth can run, while `--setting-sources ""` and the memory-file switch keep caller settings out. Unlike the cockpit's runs, a `--run` session works inside its worktree rather than a fresh root outside every home, so ancestor settings are kept out by those flags and the memory-file switch rather than by location, and the offline isolation proof does not trace it.
+
+## Plugin validation
+
+`pnpm typecheck` runs the existing Claude plugin validator through
+`scripts/validate-plugin.sh`. Claude plugin subcommands can migrate user settings,
+so the wrapper uses an empty environment, a throwaway HOME and CLAUDE_CONFIG_DIR,
+and a working directory under `/tmp`. It supplies no live credentials and removes
+the temporary directory on exit. TypeScript still checks the workspace normally.
