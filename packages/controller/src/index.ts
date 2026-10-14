@@ -133,6 +133,7 @@ class ExecutionController implements Controller {
       if (!session) throw new Error("Execution did not produce a session result");
       const latest = attempts.at(-1)!;
       const verificationReport = { attempts, passed: latest.blockers.length === 0 };
+      const completedExecution = { ...execution, status: "complete" as const, verification: verificationReport };
       if (this.writer && claim) {
         try {
           verification?.addMany(input.evidence ?? []);
@@ -151,7 +152,6 @@ class ExecutionController implements Controller {
         await this.writer.flush();
       }
       if (latest.blockers.length > 0) throw new ExecutionVerificationError(verificationReport);
-      const completedExecution = { ...execution, status: "complete" as const, verification: verificationReport };
       return { execution: completedExecution, issue, repository, worktree, session, ...(claim ? { claim } : {}) };
     } catch (error) {
       if (claim && this.options.linear) {
