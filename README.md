@@ -17,6 +17,7 @@ This repository contains the foundation monorepo and documentation. The foundati
 7. [Open questions](docs/open-questions.md)
 8. [Model compatibility](docs/model-compatibility.md)
 9. [Configuration and doctor](docs/configuration.md)
+10. [Firstmate dispatch adapter and CLI contract](integrations/firstmate/README.md)
 
 ## Responsibility split
 
@@ -207,11 +208,14 @@ Add a `linearTeam` or `linearProject` mapping to the repository entry in `config
 pnpm kor run LEE-123 --dry-run
 ```
 
+The preview includes the canonical issue UUID, title, intake label, default route, and these planned actions:
+
 ```text
-{"issueId":"LEE-123","canonicalIssueId":"<linear-uuid>","dryRun":true,"queued":false}
+enqueue durable assignment
+run isolated session when kor serve is active
 ```
 
-Run it without `--dry-run` to enqueue the canonical assignment. This daemon path owns the durable queue and execution status; its CLI does not perform the direct Linear progress writes from the standalone preflight command. `kor cancel LEE-123` and `kor retry LEE-123` resolve the same canonical issue before changing the durable assignment.
+Run it without `--dry-run` to enqueue the canonical assignment and return its `executionId`. This daemon path owns the durable queue and execution status; its CLI does not perform the direct Linear progress writes from the standalone preflight command. `kor status --json EXECUTION-ID|ISSUE-ID`, `kor cancel EXECUTION-ID|ISSUE-ID`, and `kor retry EXECUTION-ID|ISSUE-ID` find the durable assignment locally, without a Linear request. Missing acceptance criteria produce `blocked` with a needs-input reason before a model session starts.
 
 ### Operate the daemon
 
@@ -228,12 +232,69 @@ $ pnpm daemon:proof
 daemon proof passed; picked=LEE-57; status=live; restart=queued; attempts=1; orphan=removed; lease=exclusive; cancel=terminal; failure=retryable; pid-guard=pass
 ```
 
+### Calibrate Jev routing against a baseline
+
+Calibration is **Validated locally** through the daemon with a persistent SQLite store, restart/retry, and paired replay. Live Jev preflight and acceptance calls are **Validated**. The proof uses fixture Linear data and session generation, so gateway model execution and live Linear intake are not exercised by this proof.
+
+After `pnpm install --frozen-lockfile` and `pnpm build`, configure `calibration.sampleRate` (default `0.25`) and `calibration.baselineRoute` in `~/.config/kor/config.yaml`. `kor serve` runs one Jev preflight over the verified model registry, and records the selected provider, model, label and decision ID for calibration. `kor serve --jev` additionally filters the candidates against the live gateway catalogue. Both modes use the same preflight and acceptance judge. Use `--no-calibration` to disable metrics and baseline runs, `--calibration-rate 1` to sample every Jev execution, or `--baseline-model MODEL` to override the comparison model for one process.
+
+Sampling is stable per execution ID. A sampled baseline uses the same base revision, prompt, checks, acceptance judge and repair budget in a throwaway worktree; it never ships. Retries reuse the preflight audit and keep attempt costs, while clearing the previous terminal outcome until a new outcome is observed. An escalated, unavailable or no-longer-eligible route is labelled `fallback` and does not create a new Jev sample.
+
+```sh
+pnpm kor calibrate report
+pnpm kor calibrate report --since 2026-10-01T00:00:00.000Z --json
+pnpm calibration:proof              # offline daemon/retry proof
+pnpm calibration:proof --live-jev   # runtime TypeSafe key; real preflight and acceptance calls
+pnpm calibration:proof --fallback   # forced Jev outage; no external calls
+```
+
+Each proof prints a `report_command` for its own isolated state directory. Run that command to inspect its stored report. The live Jev run on 2026-10-14 produced:
+
+```text
+calibration:proof passed; mode=live-jev; daemon=true; preflight_calls=1; route=claude-sonnet-5-5; confidence=1.0000; arm=jev; pairs=1; retry=replayed; terminal_outcome=recorded
+
+Kor calibration report
+Completed Jev/baseline pairs: 1
+Since: all time
+Success = identical verification gate in both arms. Terminal merge outcomes are separate.
+Metric	Jev-route (all)	baseline (sampled)	Paired delta (Jev - baseline)
+Runs (finished/total)	1/1	1/1	1 pairs
+Merged/terminal outcomes	1/1	0/0	n/a (baseline never ships)
+successRate	1.0000 (n=1)	1.0000 (n=1)	0.0000 (n=1)
+repairs	1.0000 (n=1)	0.0000 (n=1)	1.0000 (n=1)
+costUsd	unavailable (n=0)	0.0400 (n=1)	unavailable (n=0)
+cacheHitRate	unavailable (n=0)	0.3125 (n=1)	unavailable (n=0)
+wallClockMs	305.0000 (n=1)	248.0000 (n=1)	57.0000 (n=1)
+failovers	unavailable (n=0)	unavailable (n=0)	unavailable (n=0)
+verificationFailures	0.0000 (n=1)	0.0000 (n=1)	0.0000 (n=1)
+policyBlocks	unavailable (n=0)	0.0000 (n=1)	unavailable (n=0)
+clarifications	unavailable (n=0)	unavailable (n=0)	unavailable (n=0)
+
+Confidence calibration against terminal merge success (outcome proxy, not decision-correctness probability)
+Kind	Bin	N	Mean signal	Observed success	Brier (proxy)
+route	0.8–1.0	1	1.0000	1.0000	0.0000
+readiness	0.8–1.0	1	0.9700	1.0000	0.0009
+acceptance	0.8–1.0	1	0.8200	1.0000	0.0324
+Route uses Choice confidence; readiness/acceptance use Noul probability. Missing outcomes excluded; final acceptance attempt only.
+Fewer than 20 completed pairs; insufficient evidence to conclude routing wins.
+```
+
+The forced-outage run produced:
+
+```text
+calibration:proof passed; mode=forced-fallback; daemon=true; preflight_calls=1; route=claude-sonnet-5-5; confidence=0.0000; arm=fallback; pairs=0; retry=not-needed; terminal_outcome=recorded
+```
+
+The outage still launches the configured default route, but unavailable acceptance judgment leaves the execution blocked and records a rejected outcome. It creates no baseline and appears in the report's fallback column. The live proof deliberately crashes its first session, so missing cost/cache counters for that attempt remain `unavailable`; baseline cost and token counts are fixture telemetry. Jev confidence and acceptance probabilities above came from live calls, and wall-clock values vary.
+
+Rejected, escalated, and abandoned outcomes are recorded by the controller. The shipping daemon records merged or rejected outcomes when it observes a PR merge or closure. The calibration proof invokes that hook locally; the shipping replay exercises the observation path with forge fixtures. Neither proof merges a real PR. Credentials are read at runtime and never printed or committed.
+
 ## Run the Kor daemon
 
 After `pnpm install` and a `~/.config/kor/config.yaml`, install the user service with `cp systemd/kor.service ~/.config/systemd/user/kor.service`, then run `systemctl --user daemon-reload` and `systemctl --user enable --now kor`.
 The daemon polls Todo issues carrying the configured `kor` label, stores leases in `~/.local/state/kor/kor.db`, and publishes snapshots under `~/.local/state/kor/snapshots/`.
 It polls each repository's `linearTeam` (else the team part of its map key) and runs a claimed issue in the checkout `repositoryKeyForIssue` maps it to (`linearProject`, then `linearTeam`).
-Use `kor status --json`, `kor run LEE-n` (a queue entry; the daemon writes Linear progress), `kor cancel LEE-n`, `kor retry ISSUE-ID`, and `kor logs EXECUTION-ID`.
+Use `kor status --json`, `kor run LEE-n` (a durable queue entry; the daemon writes Linear progress), `kor cancel EXECUTION-ID|ISSUE-ID`, `kor retry EXECUTION-ID|ISSUE-ID`, and `kor logs EXECUTION-ID`.
 The HTTP equivalent is `http://127.0.0.1:8327/status`; the cockpit also posts overrides there (see [Open the live cockpit](#open-the-live-cockpit)).
 Status values are `queued`, `running`, `shipping`, `review`, `complete`, `failed`, `blocked`, and `canceled`; response provenance is `live`, `stale`, or `unavailable`.
 `retry` is explicit for terminal failures and verification blocks, while a running cancellation stops the detached session group before recording `canceled`.
@@ -291,7 +352,8 @@ pnpm shipping:proof
 It exercises real Git, SQLite and HTTP, with external-service and cleanup fixtures.
 The replay proves that shipping stages only verified paths, leaves a decoy
 `.env.local` and unrelated files untracked, blocks sensitive paths already staged
-or committed by a session, and redacts/caps the public PR content:
+or committed by a session, records calibration outcomes, and redacts/caps the public
+PR content:
 
 ```text
 publication proof: verified files committed; .env.local and unrelated file excluded; PR secrets/local paths redacted; body <= 60000 characters; literal filename preserved
@@ -304,6 +366,42 @@ The filename policy excludes common secret/config/log paths; it is not a content
 secret scanner. Direct PR content strips credentials and local paths, and gated
 delivery uses `--no-publish-intent` to keep the Linear description out of the public
 Intent section.
+
+## Dispatch from Firstmate
+
+The adapter in `integrations/firstmate/` is **Validated** against a real local daemon with isolated XDG directories and a live read of throwaway issue LEE-1107. Its missing acceptance criteria produced a captain-call payload; the Linear issue remained unchanged and no model session launched. Fleet rendering and captain delivery are **Proposed** until Firstmate wires its private home using the [integration guide](integrations/firstmate/README.md).
+
+Build once before using the machine-readable entry point. It needs Node 24+, pnpm, Bash, and `jq`:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build
+bin/kor serve                 # or the existing user service
+```
+
+In another terminal with the same Kor configuration and state directories, dispatch an issue. The local proof produced:
+
+```text
+$ integrations/firstmate/kor-dispatch dispatch LEE-1107
+{"schemaVersion":1,"issueId":"LEE-1107","canonicalIssueId":"900a9f29-97bd-4343-b1f2-28462741c05f","executionId":"e9f75716-7856-4b76-b305-bcb39b682206","status":"queued","queued":true,"dispatchType":"kor"}
+
+$ integrations/firstmate/kor-dispatch poll e9f75716-7856-4b76-b305-bcb39b682206
+{"schemaVersion":1,"dispatchType":"kor","executionId":"e9f75716-7856-4b76-b305-bcb39b682206","issueId":"LEE-1107","state":"blocked","provenance":"live","observedAt":"2026-10-14T16:08:33.490Z","fleetState":"needs-decision","holdsCapacity":true,"pullRequestUrl":null,"costUsd":null,"cancelRequested":false,"captainCall":{"key":"kor:e9f75716-7856-4b76-b305-bcb39b682206:1:needs-input","reason":"Add a # Acceptance section with explicit criteria to the Linear issue, then retry this execution."},"reason":null}
+
+$ integrations/firstmate/kor-dispatch cancel e9f75716-7856-4b76-b305-bcb39b682206
+{
+  "schemaVersion": 1,
+  "issueId": "LEE-1107",
+  "canonicalIssueId": "900a9f29-97bd-4343-b1f2-28462741c05f",
+  "executionId": "e9f75716-7856-4b76-b305-bcb39b682206",
+  "command": "cancel",
+  "accepted": true
+}
+```
+
+For the raw versioned contract, use `bin/kor status --json EXECUTION-ID` or `bin/kor status --json LEE-1107`. It returns `provenance` and a `run` object containing `state`, `needsInput`, `pullRequestUrl`, and `costUsd`. Unknown executions return `run: null` and exit 1. A stopped daemon makes the selected response stale even if the last snapshot is recent; the adapter then reports `paused` and withholds captain calls. PR URL and cost are `null` until shipping and telemetry publish them.
+
+Firstmate reserves a kor-code slot for each distinct execution while `holdsCapacity` is true, and deduplicates captain calls by their key. A live terminal poll releases the reservation. The adapter provides these signals; it does not change the home's private configuration.
 
 ## Open the live cockpit
 

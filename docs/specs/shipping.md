@@ -47,7 +47,9 @@ the model launches.
 
 `complete` means GitHub returned a non-null merge timestamp. Kor does not merge.
 It durably queues the Done write before cleanup. A closed, unmerged PR is `failed`;
-it keeps the issue out of Done and retains the worktree for inspection.
+it keeps the issue out of Done and retains the worktree for inspection. When
+calibration is enabled, these observations record merged or rejected outcomes
+through the controller's existing outcome hook.
 
 `kor status --json` and the HTTP/file snapshots expose `verification`, `shipping`,
 and `pullRequestUrl`. `shipping.stage` retains the submitted commit, mode, pipeline

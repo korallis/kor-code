@@ -5,7 +5,9 @@
   "description": "Kor Code foundation monorepo",
   "type": "module",
   "packageManager": "pnpm@12.9.1",
-  "bin": { "kor": "bin/kor" },
+  "bin": {
+    "kor": "bin/kor"
+  },
   "engines": {
     "node": ">=24"
   },
@@ -25,7 +27,8 @@
     "cockpit:proof": "tsx scripts/cockpit-proof.ts",
     "isolation:proof": "bash scripts/isolation-proof.sh",
     "daemon:proof": "tsx scripts/daemon-proof.ts",
-    "shipping:proof": "node scripts/shipping-proof.mjs"
+    "shipping:proof": "node scripts/shipping-proof.mjs",
+    "calibration:proof": "tsx --tsconfig scripts/tsconfig.json scripts/calibration-proof.ts"
   },
   "devDependencies": {
     "@types/node": "^24.8.0",

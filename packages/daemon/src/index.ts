@@ -17,8 +17,9 @@ export { GitHubShipping, type ShippingDriver, type ShippingCommand } from "./shi
 
 export { OverrideStore } from "./overrides.js";
 
-export { readSnapshot, readStatus } from "./status.js";
+export { readSnapshot, readStatus, readExecutionStatus } from "./status.js";
 const exec = promisify(execFile);
+class NeedsInputError extends Error {}
 export interface DaemonRunInput {
   claim: ExecutionClaim;
   issue: LinearIssue;
@@ -47,7 +48,7 @@ export interface DaemonOptions {
   /** Models the compatibility probe verified; a route override must name one. */
   verifiedModels?: () => Promise<string[]>;
   /**
-   * Plans an execution's route on its first attempt (Jev preflight). A thrown
+   * Plans an execution's route or replays its durable preflight on retry. A thrown
    * error leaves the configured default standing, labelled `fallback`; it never
    * fails the run.
    */
@@ -289,6 +290,9 @@ export class KorDaemon {
           writes.push({ kind: 'comment', id: stableId('kor-shipping', `${execution.id}:${execution.status}`), issueId: issue.id,
             body: [`Kor execution ${execution.id}: ${execution.status}`, 'url' in stage ? stage.url : '', report.error ?? '', ...report.evidence.map(item => `${item.kind}: ${item.status} — ${item.summary}`)].filter(Boolean).join('\n') });
         }
+        if (changed && (report.stage.kind === 'merged' || report.stage.kind === 'closed')) {
+          this.options.controller?.recordTerminalOutcome(execution.id, { status: report.stage.kind === 'merged' ? 'merged' : 'rejected', recordedAt: new Date(this.now()).toISOString(), source: 'shipping.github-observed' });
+        }
         this.store.updateShipping(execution, writes);
         await writer.flush();
         if (report.stage.kind === 'merged' && report.cleanup !== 'removed' && this.store.counts().pendingWrites === 0) {
@@ -331,10 +335,10 @@ export class KorDaemon {
     const issue = this.issues.get(assignment.issueId);
     const decisions = this.overrides.decisions(assignment.executionId);
     const override = this.overrides.activeRoute(assignment.executionId);
-    const base = assignment.manifest?.route ?? this.options.config.defaultRoute;
+    const base: Route = assignment.manifest?.route ?? this.options.config.defaultRoute;
     if (override) return { ...(issue ? { issue } : {}), route: { ...base, model: override.choice }, routeSource: "override", decisions };
     const decided = [...decisions].reverse().find(decision => decision.kind === "route");
-    const routeSource: RouteSource = !decided ? "config" : !decided.escalated && decided.choice === base.model ? "jev" : "fallback";
+    const routeSource: RouteSource = base.label === "fallback" || base.label === "escalated" ? "fallback" : !decided ? "config" : !decided.escalated && decided.choice === base.model ? "jev" : "fallback";
     return { ...(issue ? { issue } : {}), route: base, routeSource, decisions };
   }
 
@@ -501,12 +505,13 @@ export class KorDaemon {
       if (!this.options.linear) throw new Error("Linear client unavailable");
       const issue = await this.options.linear.getIssue(claim.assignment.issueId);
       this.remember(claim.assignment.issueId, issue);
+      this.store.setIssueMetadata(claim, issue.identifier ?? issue.id, issue.title);
+      if (issue.acceptanceCriteria.length === 0) throw new NeedsInputError("Add a # Acceptance section with explicit criteria to the Linear issue, then retry this execution.");
       // The configured mapping (linearProject, then linearTeam) names the checkout.
       const repository = repositoryKeyForIssue(issue, this.options.config);
       const route = await this.routeFor(id, issue);
-      this.store.setIssueMetadata(claim, issue.identifier ?? issue.id, issue.title);
       const previousBranch = this.store.listAssignments().find(assignment => assignment.executionId === id)?.manifest?.branch;
-      const manifest: Execution = { id, issueId: issue.id, repository, worktree: "", branch: previousBranch || `kor/${issue.identifier ?? issue.id}`, status: "running", route };
+      const manifest: Execution = { id, issueId: issue.id, repository, worktree: "", branch: previousBranch || `kor/${issue.identifier ?? issue.id}`, status: "running", ...(route ? { route } : {}) };
       this.store.markRunning(claim, manifest);
       if (this.options.shipping) {
         const states = workflowMapping(await this.options.linear.listWorkflowStates(issue.teamKey));
@@ -538,7 +543,7 @@ export class KorDaemon {
         const manifest = this.store.listAssignments().find(item => item.executionId === id)?.manifest;
         if (manifest) this.store.record(claim, [{ kind: 'comment', id: stableId('kor-shipping', `${id}:verification-blocked`), issueId: manifest.issueId, body: `Kor verification blocked: ${safeMessage(failure)}\n${failure.findings.map(finding => `${finding.conditionId}: ${finding.status}`).join('\n')}` }], { ...manifest, status: 'blocked', verification: failure.report });
       }
-      this.store.failClaim(claim, safeMessage(failure), failure instanceof ExecutionVerificationError ? "blocked" : "failed");
+      this.store.failClaim(claim, safeMessage(failure), failure instanceof ExecutionVerificationError || failure instanceof NeedsInputError ? "blocked" : "failed");
     }
     else if (result?.execution.status === "failed" || result?.execution.status === "blocked") this.store.finishClaim(claim, result.execution.status, "execution did not complete", result.execution);
     else if (result && result.execution.status !== "complete") this.store.failClaim(claim, `Unexpected execution outcome: ${result.execution.status}`);
@@ -550,15 +555,23 @@ export class KorDaemon {
   }
 
   /** An applied override wins; then Jev's preflight (planned once per execution); then the default route. */
-  private async routeFor(executionId: string, issue: LinearIssue): Promise<Route> {
+  private async routeFor(executionId: string, issue: LinearIssue): Promise<Route | undefined> {
     const defaultRoute = this.options.config.defaultRoute;
     const override = this.overrides.activeRoute(executionId);
     if (override) return { ...defaultRoute, model: override.choice };
+    if (this.options.chooseRoute) {
+      // The planner replays its durable audit on retry, preserving provider,
+      // provenance and decision id instead of reconstructing only a model.
+      try { return (await this.options.chooseRoute({ executionId, issue })).route; }
+      catch (error) {
+        await this.log(executionId, `route preflight unavailable; default route stands: ${safeMessage(error)}`);
+        return { ...defaultRoute, label: "fallback" };
+      }
+    }
+    if (this.options.controller) return undefined;
     const planned = [...this.overrides.decisions(executionId)].reverse().find(decision => decision.kind === "route");
-    if (planned) return !planned.escalated && planned.choice ? { ...defaultRoute, model: planned.choice } : defaultRoute;
-    if (!this.options.chooseRoute) return defaultRoute;
-    try { return (await this.options.chooseRoute({ executionId, issue })).route; }
-    catch (error) { await this.log(executionId, `route preflight unavailable; default route stands: ${safeMessage(error)}`); return defaultRoute; }
+    if (planned) return { ...defaultRoute, model: !planned.escalated && planned.choice ? planned.choice : defaultRoute.model, label: planned.escalated ? "fallback" : "jev", decisionId: planned.decisionId };
+    return defaultRoute;
   }
 
   private writeSnapshot(): Promise<void> {

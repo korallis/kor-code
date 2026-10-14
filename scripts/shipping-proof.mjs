@@ -11,6 +11,7 @@ import { DatabaseSync } from 'node:sqlite';
 const repo = fileURLToPath(new URL('../', import.meta.url));
 const { GitHubShipping, KorDaemon, readStatus } = await import(pathToFileURL(join(repo, 'packages/daemon/dist/index.js')));
 const { createController, RepositoryRegistry } = await import(pathToFileURL(join(repo, 'packages/controller/dist/index.js')));
+const { CalibrationStore } = await import(pathToFileURL(join(repo, 'packages/calibration/dist/index.js')));
 const { FakeLinearClient, LinearStore } = await import(pathToFileURL(join(repo, 'packages/linear/dist/index.js')));
 const { linearIssueFixture, workflowMappingFixture } = await import(pathToFileURL(join(repo, 'packages/linear/dist/fixture.js')));
 const { JevClient, JevDecisionCore, MemoryDecisionAuditLog } = await import(pathToFileURL(join(repo, 'packages/jev/dist/index.js')));
@@ -82,7 +83,8 @@ for(const mode of ['direct','no-mistakes']) {
     throw new Error(`Unexpected command ${file} ${args.join(' ')}`);
   };
   const shipping=new GitHubShipping(command);
-  const controller=createController({repositories:new RepositoryRegistry([{key:'LEE',...repository}]),worktrees:{create:async input=>({executionId:input.executionId,issueId:input.issueId,path:cwd,branch:input.branch,repository:cwd})},launcher:{launch:async()=>{launches++;await writeFile(join(cwd,'hello.js'),"console.log('hello');\n");await writeFile(join(cwd,'.env.local'),`token=${secret}\n`);await writeFile(join(cwd,'feature [literal].txt'),'literal filename\n');return {exitCode:0,events:[],stdout:'',stderr:'',failed:false};}},jev:new JevDecisionCore(fixtureJev(),new MemoryDecisionAuditLog()),defaultRoute:config.defaultRoute});
+  const calibration=new CalibrationStore(paths.databaseFile);
+  const controller=createController({repositories:new RepositoryRegistry([{key:'LEE',...repository}]),worktrees:{create:async input=>({executionId:input.executionId,issueId:input.issueId,path:cwd,branch:input.branch,repository:cwd})},launcher:{launch:async()=>{launches++;await writeFile(join(cwd,'hello.js'),"console.log('hello');\n");await writeFile(join(cwd,'.env.local'),`token=${secret}\n`);await writeFile(join(cwd,'feature [literal].txt'),'literal filename\n');return {exitCode:0,events:[],stdout:'',stderr:'',failed:false};}},jev:new JevDecisionCore(fixtureJev(),new MemoryDecisionAuditLog()),defaultRoute:config.defaultRoute,calibration:{store:calibration,sampleRate:0,baselineRoute:config.defaultRoute}});
   let daemon=new KorDaemon({paths,config,store,linear,controller,shipping,port:0,pollIntervalMs:3_600_000});
   let handle=await daemon.start();
   try {
@@ -129,10 +131,12 @@ for(const mode of ['direct','no-mistakes']) {
     mismatched=false;await unlink(join(cwd,'.env.local'));await unlink(join(cwd,'unrelated.txt'));await daemon.pollOnce();assert.equal(removed,1);assert.equal(daemon.status().runs[0].shipping.cleanup,'removed');
     await daemon.pollOnce();assert.equal(removed,1);
   }
+  assert.equal(calibration.outcomes()[0].status,mode==='direct'?'rejected':'merged');
+  assert.equal(calibration.outcomes()[0].source,'shipping.github-observed');
   const final=daemon.status().runs[0];await writeFile(join(home,'status.json'),JSON.stringify(final,null,2));
   await handle.stop();
-  console.log(`shipping proof ${mode}: git=committed; Jev=fixture-pass; Linear=${mode==='direct'?'In Review (closed unmerged)':'Done (merge observed)'}; CI=none-unresolved/failure/success; restart=one-session; pipelineStarts=${starts}; PRCreates=${creates}; cleanup=${removed}; status=${final.status}`);
-  } finally { await handle.stop(); }
+  console.log(`shipping proof ${mode}: git=committed; Jev=fixture-pass; Linear=${mode==='direct'?'In Review (closed unmerged)':'Done (merge observed)'}; CI=none-unresolved/failure/success; restart=one-session; pipelineStarts=${starts}; PRCreates=${creates}; cleanup=${removed}; status=${final.status}; calibration=${calibration.outcomes()[0].status}`);
+  } finally { await handle.stop(); calibration.close(); }
 }
 console.log('boundaries: git/SQLite/HTTP real; session/Jev/Linear/forge/pipeline/cleanup fixtures; no network or worktree administration');
 console.log(`artifacts=${root}`);
