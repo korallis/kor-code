@@ -87,7 +87,7 @@ export async function verifyAttempt(input: {
   if (session.exitCode !== 0 || session.failed || session.telemetry?.isError || (session.telemetry?.permissionDenials ?? 0) > 0) blockers.push(`Session failed: ${session.failureReasons?.join(", ") || `exit ${session.exitCode}`}`);
   const checks: RepositoryCheckResult[] = [];
   for (const command of input.checks) checks.push(await runCheck(command, execution.worktree, settings.checkTimeoutMs));
-  blockers.push(...checks.filter(check => check.status !== "pass").map(check => `Check failed: ${check.command} (exit ${check.exitCode ?? "unavailable"})`));
+  blockers.push(...checks.filter(check => check.status !== "pass").map(check => `Check failed: ${check.command} (exit ${check.exitCode ?? "unavailable"})${check.output ? ` — ${check.output.slice(-2_000)}` : ""}`));
   let diff = "";
   try { if (input.baseRevision) diff = await collectDiff(execution.worktree, input.baseRevision); }
   catch (error) { blockers.push(`Diff unavailable: ${failureText(error)}`); }

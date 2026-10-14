@@ -3,6 +3,6 @@
   "version": "0.1.0",
   "type": "module",
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.json --noEmit" },
+  "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.typecheck.json --noEmit" },
   "dependencies": { "@kor-code/core": "workspace:*", "@kor-code/jev": "workspace:*", "@kor-code/linear": "workspace:*", "@kor-code/verification": "workspace:*" }
 }

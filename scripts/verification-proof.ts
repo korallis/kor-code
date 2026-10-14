@@ -20,9 +20,11 @@ class ProofWorktrees implements WorktreeManager {
 
 class ProofLauncher implements SessionLauncherLike {
   calls = 0;
+  repairEvidenceSeen = false;
   constructor(private readonly repair: boolean) {}
   async launch(input: SessionLaunch): Promise<SessionResult> {
     this.calls += 1;
+    if (this.calls > 1) this.repairEvidenceSeen = input.prompt.includes("Check failed:") && input.prompt.includes("deliberately broken test") && input.prompt.includes("acceptance-1");
     if (this.repair && this.calls > 1) await writeFile(join(input.worktreePath, "fixed.txt"), "fixed\n");
     return { exitCode: 0, events: [], stdout: "proof session", stderr: "", telemetry: { result: "ok", isError: false, permissionDenials: 0 } };
   }
@@ -30,10 +32,8 @@ class ProofLauncher implements SessionLauncherLike {
 
 class ProofJevClient {
   async evaluate(state: unknown, questions: Record<string, JevQuestion>): Promise<JevResponse> {
-    const checks = typeof state === "object" && state !== null && !Array.isArray(state) && "checks" in state ? (state as { checks?: unknown }).checks : undefined;
-    const passed = Array.isArray(checks) && checks.every(item => typeof item === "object" && item !== null && (item as { status?: unknown }).status === "pass");
     return { model: "proof-jev", answers: Object.fromEntries(Object.entries(questions).map(([id, question]) => question.type === "noul"
-      ? [id, { type: "noul" as const, noul: passed ? 0.97 : 0.05 }]
+      ? [id, { type: "noul" as const, noul: 0.97 }]
       : [id, { type: "choice" as const, choice: Object.keys(question.criteria)[0]!, confidence: 1, probabilities: Object.fromEntries(Object.keys(question.criteria).map(candidate => [candidate, candidate === Object.keys(question.criteria)[0] ? 1 : 0])) }])) };
   }
 }
@@ -45,7 +45,7 @@ async function runCase(name: string, repair: boolean): Promise<{ output: string;
   const client = new FakeLinearClient([issue]);
   const store = new LinearStore(":memory:");
   const launcher = new ProofLauncher(repair);
-  const controller = createController({ repositories: new RepositoryRegistry([{ key: "proof", path: repositoryPath, checks: ["test -f fixed.txt"] }]), worktrees: new ProofWorktrees(), launcher, linear: { store, client, workflow: workflowMappingFixture }, jev: new JevDecisionCore(new ProofJevClient()), limits: new ConcurrencyLimiter({ total: 1 }), verificationOptions: { maxRepairs: 2 } });
+  const controller = createController({ repositories: new RepositoryRegistry([{ key: "proof", path: repositoryPath, checks: ["sleep 1; test -f fixed.txt || { echo 'deliberately broken test: fixed.txt missing' >&2; exit 1; }"] }]), worktrees: new ProofWorktrees(), launcher, linear: { store, client, workflow: workflowMappingFixture }, jev: new JevDecisionCore(new ProofJevClient()), limits: new ConcurrencyLimiter({ total: 1 }), leaseTtlMs: 500, verificationOptions: { maxRepairs: 2 } });
   let outcome: string;
   try {
     await controller.runIssue(issue.id);
@@ -58,6 +58,8 @@ async function runCase(name: string, repair: boolean): Promise<{ output: string;
   const linked = await client.getIssue(issue.id);
   const comments = linked.comments.map(comment => comment.body).join("\n");
   store.close();
+  if (!launcher.repairEvidenceSeen) throw new Error("Repair prompt omitted failed check output or criterion findings");
+  if (!repair && (!comments.includes("Check failed:") || !comments.includes("deliberately broken test") || linked.stateType === "completed")) throw new Error("Blocked Linear issue omitted the check failure or completed");
   return { output: `${name}: ${outcome}; launches=${launcher.calls}; state=${linked.stateType}; findings=${comments.includes("acceptance-1") ? "recorded" : "none"}`, calls: launcher.calls };
 }
 

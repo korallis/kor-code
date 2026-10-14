@@ -123,12 +123,11 @@ class ExecutionController implements Controller {
         const previous = attempts.at(-1);
         const launch: SessionLaunch = { execution, repositoryPath: repository.path, worktreePath: worktree.path, prompt: previous ? repairPrompt(initialPrompt, previous) : initialPrompt, ...(route ? { route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}) };
         session = await Promise.race([this.options.launcher.launch(launch), ...(heartbeat ? [heartbeat.failed] : [])]);
-        heartbeat?.stop();
-        const attempt = await verifyAttempt({ execution, acceptance: execution.manifest?.acceptance ?? [], session, attempt: attempts.length + 1, checks: repository.checks ?? [], baseRevision, ...(this.options.jev ? { jev: this.options.jev } : {}), enforceSemantic, settings });
+        const verificationPromise = verifyAttempt({ execution, acceptance: execution.manifest?.acceptance ?? [], session, attempt: attempts.length + 1, checks: repository.checks ?? [], baseRevision, ...(this.options.jev ? { jev: this.options.jev } : {}), enforceSemantic, settings });
+        const attempt = heartbeat ? await Promise.race([verificationPromise, heartbeat.failed]) : await verificationPromise;
         attempts.push(attempt);
         if (attempt.blockers.length === 0 || repair >= settings.maxRepairs) break;
         repair += 1;
-        heartbeat = claim && this.lease ? this.startHeartbeat(claim) : undefined;
       }
       if (!session) throw new Error("Execution did not produce a session result");
       const latest = attempts.at(-1)!;
@@ -144,7 +143,7 @@ class ExecutionController implements Controller {
           const failure = error instanceof VerificationError
             ? error
             : new VerificationError(error instanceof Error ? error.message : String(error), verification?.findings() ?? latest.findings);
-          await this.writer.recordVerificationBlock(claim, { ...execution, status: "blocked", verification: verificationReport }, failure.findings);
+          await this.writer.recordVerificationBlock(claim, { ...execution, status: "blocked", verification: verificationReport }, failure.findings, latest.blockers);
           await this.writer.flush();
           throw failure;
         }
