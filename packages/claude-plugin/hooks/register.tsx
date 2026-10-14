@@ -145,7 +145,7 @@ async function liveOverride($: EngineInterface, target: string, choice: string |
   const decision = current.decisions.value.find(one => one.decisionId === target || one.kind === target)
   const executionId = current.execution.value?.id
   if (current.execution.provenance !== 'live' || !executionId) return { text: `[${LABEL[current.execution.provenance]}] no live execution to override (${current.execution.why ?? 'the daemon reports none'}).`, exitCode: 1 }
-  // A live override always names its choice (Jev 0.88): nothing is guessed on the captain's behalf.
+  // A live override always names its choice (Jev 0.88): nothing is guessed on the user's behalf.
   const wanted = choice
   if (!wanted) return { text: `Usage: /kor override <decision|route> <choice>${decision ? `; ${decision.decisionId} candidates: ${decision.candidates.join(' | ')}` : ''}`, exitCode: 2 }
   const body = JSON.stringify({ executionId, ...(decision ? { decisionId: decision.decisionId } : {}), target, choice: wanted, origin: 'cockpit' })
