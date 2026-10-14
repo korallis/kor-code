@@ -9,6 +9,8 @@ const positiveInteger = z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
 export const repositorySchema = z.strictObject({
   path: nonempty,
   remote: nonempty.optional(),
+  linearTeam: nonempty.optional(),
+  linearProject: nonempty.optional(),
   defaultBranch: nonempty.default("main"),
   checks: z.array(nonempty).default([]),
   toolAllowlist: z.array(nonempty).default([]),
@@ -39,6 +41,15 @@ export const korConfigSchema = z.strictObject({
 export type KorRepositoryConfig = z.infer<typeof repositorySchema>;
 export type KorLimits = KorConfig["limits"];
 export type KorConfig = z.infer<typeof korConfigSchema>;
+
+export function repositoryKeyForIssue(issue: { teamKey: string; projectId?: string }, config: KorConfig): string {
+  const entries = Object.entries(config.repos);
+  const match = entries.find(([, repository]) => repository.linearProject && repository.linearProject === issue.projectId)
+    ?? entries.find(([, repository]) => repository.linearTeam && repository.linearTeam === issue.teamKey)
+    ?? entries.find(([key]) => key === issue.projectId || key === issue.teamKey);
+  if (!match) throw new Error(`No Kor repository mapping for Linear team ${issue.teamKey}`);
+  return match[0];
+}
 
 export interface KorPaths {
   home: string;
