@@ -84,6 +84,7 @@ export async function verifyAttempt(input: {
   enforceSemantic?: boolean;
   settings: ReturnType<typeof verificationSettings>;
 }): Promise<VerificationAttempt> {
+  const startedAt = new Date().toISOString();
   const { execution, acceptance, session, settings } = input;
   const attemptId = input.attemptId ?? randomUUID();
   const blockers: string[] = [];
@@ -125,7 +126,7 @@ export async function verifyAttempt(input: {
   tracker.addMany(evidence);
   const findings = tracker.findings().map(finding => ({ ...finding, note: evidence.find(item => item.acceptanceId === finding.conditionId)?.summary ?? judgmentError ?? "No acceptance judgment returned" }));
   if (input.enforceSemantic) blockers.push(...findings.filter(finding => finding.status !== "pass").map(finding => `${finding.conditionId}: ${finding.status} — ${finding.note}`));
-  return { attempt: input.attempt, attemptId, checks, diff, evidence, findings, blockers, ...(publication ? { publication } : {}) };
+  return { attempt: input.attempt, attemptId, startedAt, completedAt: new Date().toISOString(), checks, diff, evidence, findings, blockers, ...(publication ? { publication } : {}) };
 }
 export function repairPrompt(initial: string, attempt: VerificationAttempt): string {
   return `${initial}\n\nRepair attempt ${attempt.attempt + 1}. Resolve these verification failures and preserve the acceptance requirements:\n${attempt.blockers.join("\n")}\n\nDenied tools (these did not execute):\n${attempt.evidence.filter(item => item.kind === "policy").map(item => item.summary).join("\n")}\n\nAuthoritative check output:\n${attempt.checks.map(check => `${check.command}: exit ${check.exitCode ?? "unavailable"}\n${check.output}`).join("\n").slice(0, 100_000)}\n\nPer-criterion findings:\n${attempt.findings.map(finding => `${finding.conditionId}: ${finding.status} — ${finding.note ?? ""}`).join("\n")}`;

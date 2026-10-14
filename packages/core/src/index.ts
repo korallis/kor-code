@@ -9,6 +9,9 @@ export type AcceptanceStatus = "pending" | "pass" | "fail" | "unresolved";
 export interface AcceptanceFinding { conditionId: string; status: AcceptanceStatus; evidenceIds: string[]; note?: string }
 export interface RepositoryCheckResult { command: string; exitCode: number | null; output: string; status: "pass" | "fail"; note?: string }
 export interface VerificationAttempt {
+  /** Absent only in reports recorded before verification timing was persisted. */
+  startedAt?: string | null;
+  completedAt?: string | null;
   /** Unique session identity; absent only in reports written before durable attempt IDs. */
   attemptId?: string;
   attempt: number;
@@ -20,7 +23,19 @@ export interface VerificationAttempt {
   /** Exact repository paths observed during verification; shipping cannot discover extra files. */
   publication?: { baseRevision: string; paths: string[] };
 }
-export interface VerificationReport { attempts: VerificationAttempt[]; passed: boolean }
+export interface VerificationReport { attempts: VerificationAttempt[]; passed: boolean; costUsd?: number }
+/** One actual provider session measurement; null means the provider omitted it. */
+export interface SessionSpend {
+  attempt: number;
+  attemptId: string;
+  recordedAt: string;
+  model: string;
+  costUsd: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheCreationTokens: number | null;
+}
 export interface AgentManifest { id: string; name: string; description?: string; skills: string[]; capabilities: string[]; acceptance: AcceptanceCondition[] }
 export interface ExecutionManifest { executionId: string; issueId: string; repository: string; worktree: string; branch: string; agents: AgentManifest[]; acceptance: AcceptanceCondition[] }
 export interface ContextSource { id: string; path: string; purpose: "rule" | "issue" | "document" | "decision" | "evidence"; relevance: number; content: string; truncated?: boolean }
@@ -101,7 +116,7 @@ export interface KorStatusSnapshot {
 }
 export type RouteSource = "config" | "jev" | "fallback" | "override";
 /** A recorded Jev decision as the status reports it. */
-export interface DecisionRecord extends DecisionBundle { kind: string; escalated: boolean; recordedAt: string }
+export interface DecisionRecord extends DecisionBundle { kind: string; escalated: boolean; recordedAt: string; probabilities?: Record<string, number> }
 /** A cockpit override as the daemon judged and audited it. */
 export interface OverrideRecord {
   id: string;

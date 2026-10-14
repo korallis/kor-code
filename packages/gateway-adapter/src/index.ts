@@ -132,6 +132,29 @@ export class GatewayAdapter {
       || registry.models.some(item => item.model === model.id && item.verified));
   }
   async accountHealth(): Promise<GatewayAccountHealth[]> { return accountHealthFrom(await this.rawManagement()); }
+  async managementAvailable(): Promise<boolean> { return await this.rawManagement() !== null; }
+  /** Resolve the opaque public slot internally; never expose credential filenames. */
+  async setAccountPaused(id: string, paused: boolean): Promise<void> {
+    const { baseUrl, managementKey } = await this.config();
+    if (!managementKey) throw new Error("Gateway management credential unavailable");
+    const response = await this.fetcher(`${baseUrl}/v0/management/auth-files`, { headers: headers(managementKey), redirect: "error", signal: AbortSignal.timeout(15_000) });
+    const data = await readJson(response);
+    const files = record(data) && Array.isArray(data.files) ? data.files : [];
+    const selected = files.find(value => {
+      if (!record(value)) return false;
+      const identity = text(value.id) ?? text(value.auth_index) ?? text(value.name);
+      return identity !== undefined && `account-${createHash("sha256").update(identity).digest("hex").slice(0, 16)}` === id;
+    });
+    const name = record(selected) ? text(selected.name) : undefined;
+    if (!name) throw new Error("Gateway account not found");
+    const result = await this.fetcher(`${baseUrl}/v0/management/auth-files/status`, {
+      method: "PATCH", headers: { ...headers(managementKey), "content-type": "application/json" },
+      body: JSON.stringify({ name, disabled: paused }), redirect: "error", signal: AbortSignal.timeout(15_000),
+    });
+    await result.body?.cancel();
+    if (!result.ok) throw new Error(`Gateway account update failed: HTTP ${result.status}`);
+    this.managementCache = undefined;
+  }
   async route(request: RouteRequest = {}): Promise<RouteDecision> {
     const required = request.capabilities ?? ["streaming"];
     const models = await this.catalogue({ capabilities: required });

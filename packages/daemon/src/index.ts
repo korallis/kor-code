@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile, open } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { basename, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -13,11 +13,21 @@ import { AgentSessionWriter, LinearStore, flushLinearWrites, stableId, workflowM
 import { captureProcess, processExists, processMatches, stopSession } from "./process.js";
 import { OverrideStore } from "./overrides.js";
 import type { ShippingDriver } from "./shipping.js";
+import type { IssuesResponse, MissionRun, Stage } from "@kor-code/mission-control";
+import type { JsonValue } from "@kor-code/core";
+import { redact, runtimeSecrets } from "@kor-code/jev";
+import { ApiFailure, MissionApi } from "./api.js";
+import { MissionEvents } from "./events.js";
+import { MissionServices, atomicPrivateFile, live, unavailable } from "./mission-services.js";
+import { ensureUiToken } from "./ui-token.js";
+export { ensureUiToken } from "./ui-token.js";
+export { MissionServices } from "./mission-services.js";
 export { GitHubShipping, type ShippingDriver, type ShippingCommand } from "./shipping.js";
 
 export { OverrideStore } from "./overrides.js";
 
 export { readSnapshot, readStatus, readExecutionStatus } from "./status.js";
+export { processMatches } from "./process.js";
 const exec = promisify(execFile);
 export class NeedsInputError extends Error {}
 export interface DaemonRunInput {
@@ -44,7 +54,7 @@ export interface DaemonOptions {
   pollIntervalMs?: number;
   owner?: string;
   /** Account health from the gateway's management API, refreshed on every poll. */
-  gateway?: { accountHealth(): Promise<GatewayAccountHealth[]> };
+  gateway?: { accountHealth(): Promise<GatewayAccountHealth[]>; managementAvailable?(): Promise<boolean> };
   /** Models the compatibility probe verified; a route override must name one. */
   verifiedModels?: () => Promise<string[]>;
   /**
@@ -53,6 +63,12 @@ export interface DaemonOptions {
    * fails the run.
    */
   chooseRoute?: (input: { executionId: string; issue: LinearIssue }) => Promise<RouteChoice>;
+  /** Built web assets. The CLI defaults to packages/web/dist. */
+  webRoot?: string;
+  missionServices?: MissionServices;
+  probeModel?: (model: string) => Promise<boolean>;
+  /** Rebuild the CLI's controller and preflight with new settings, while idle. */
+  reconfigure?: (config: KorConfig) => { controller: Controller; chooseRoute: NonNullable<DaemonOptions["chooseRoute"]> };
 }
 export interface RouteChoice { route: Route; source: RouteSource }
 /** What `POST /overrides` accepts from the cockpit. */
@@ -96,6 +112,7 @@ function runStatus(assignment: AssignmentRecord, observedAt: string, facts: RunF
     ...(facts.decisions.length ? { decisionIds: facts.decisions.map(decision => decision.decisionId) } : {}),
     phase: assignment.status === "running" ? manifest?.status ?? assignment.status : assignment.status,
     ...(manifest?.verification ? { verification: manifest.verification } : {}),
+    ...(manifest?.verification?.costUsd !== undefined ? { costUsd: manifest.verification.costUsd } : {}),
     ...(manifest?.shipping ? { shipping: manifest.shipping } : {}),
     ...(manifest?.shipping && "url" in manifest.shipping.stage ? { pullRequestUrl: manifest.shipping.stage.url } : {}),
     ...(assignment.cancelRequested ? { cancelRequested: true } : {}),
@@ -117,7 +134,7 @@ export class KorDaemon {
   private readonly now: () => number;
   private readonly owner: string;
   private readonly leaseTtlMs: number;
-  private readonly pollIntervalMs: number;
+  private pollIntervalMs: number;
   private readonly host: string;
   private readonly port: number;
   private readonly active = new Map<string, ActiveRun>();
@@ -137,6 +154,20 @@ export class KorDaemon {
   /** Issue facts by assignment issue ID, kept from polls and claims for display. */
   private readonly issues = new Map<string, IssueFacts>();
   private accounts: Labelled<GatewayAccountHealth[]> | undefined;
+  readonly mission: MissionServices;
+  readonly events = new MissionEvents(() => [this.token, ...runtimeSecrets(), ...this.mission.secrets()]);
+  private readonly stages = new Map<string, Stage>();
+  private readonly shippingActive = new Set<string>();
+  private readonly eventSignatures = new Map<string, string>();
+  private terminalWrite: Promise<void> = Promise.resolve();
+  private quota: Labelled<JsonValue | null> = unavailable(null, "Quota has not been measured");
+  private quotaPoll: Promise<Labelled<JsonValue | null>> | undefined;
+  private lastQuotaAt = 0;
+  private token = "";
+  private reconfiguring = false;
+
+  get paths(): KorPaths { return this.options.paths; }
+  get config(): KorConfig { return this.options.config; }
 
   constructor(private readonly options: DaemonOptions) {
     this.now = options.now ?? Date.now;
@@ -151,6 +182,7 @@ export class KorDaemon {
     if (!Number.isSafeInteger(this.port) || this.port < 0 || this.port > 65_535 || this.port === 8317) throw new Error("Status port must be a valid non-8317 port");
     this.store = options.store ?? new LinearStore(options.paths.databaseFile);
     this.overrides = new OverrideStore(options.paths.databaseFile, this.now);
+    this.mission = options.missionServices ?? new MissionServices(options.paths, options.probeModel);
     this.startedAt = new Date(this.now()).toISOString();
   }
 
@@ -162,11 +194,15 @@ export class KorDaemon {
       this.ownsStore = true;
       await mkdir(this.options.paths.snapshotsDir, { recursive: true, mode: 0o700 });
       await mkdir(this.options.paths.logsDir, { recursive: true, mode: 0o700 });
+      this.token = await ensureUiToken(this.options.paths);
+      await this.mission.initialize();
       await this.reconcile();
+      const api = new MissionApi(this, this.token, this.options.webRoot);
       const server = createServer((request, response) => {
         const address = server.address();
         const port = address && typeof address !== "string" ? address.port : this.port;
         if (request.headers.host !== `127.0.0.1:${port}` && request.headers.host !== `localhost:${port}`) { response.writeHead(403).end(); return; }
+        if ((request.url ?? "").startsWith("/api") || !["/status", "/status/", "/overrides"].includes(request.url ?? "") && !(request.url ?? "").startsWith("/overrides/")) { void api.handle(request, response, port); return; }
         if (request.method === "POST") { this.handleOverride(request, response); return; }
         if (request.method !== "GET" || !["/status", "/status/"].includes(request.url ?? "")) { response.writeHead(404).end(); return; }
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
@@ -177,6 +213,8 @@ export class KorDaemon {
         server.once("error", reject);
         server.listen(this.port, this.host, () => { server.off("error", reject); resolvePromise(); });
       });
+      const address = server.address();
+      if (address && typeof address !== "string") await atomicPrivateFile(join(this.paths.stateDir, "ui-address.json"), `${JSON.stringify({ pid: process.pid, url: `http://127.0.0.1:${address.port}/` })}\n`);
       await this.tick();
       this.timer = setInterval(() => { void this.tick(); }, 100);
       return { daemon: this, server, stop: () => this.stop() };
@@ -198,6 +236,8 @@ export class KorDaemon {
     await this.poll;
     await Promise.all([...this.active.values()].map(run => run.done));
     await this.writeSnapshot();
+    await this.terminalWrite;
+    this.events.close();
     if (this.server) await new Promise<void>(resolvePromise => this.server?.close(() => resolvePromise()));
     if (this.ownsStore) this.store.releaseDaemon(this.owner);
     this.ownsStore = false;
@@ -240,6 +280,7 @@ export class KorDaemon {
     try {
       if (this.options.linear) await flushLinearWrites(this.store, this.options.linear);
       await this.advanceShipping();
+      if (this.now() - this.lastQuotaAt >= 60_000) void this.refreshQuota();
       let found = 0;
       if (this.options.linear) for (const key of teamKeys(this.options.config)) {
         const issues = await this.options.linear.listIssues(key, 100);
@@ -247,7 +288,7 @@ export class KorDaemon {
           if (this.stopping) break;
           this.remember(issue.id, issue);
           if (issue.stateType !== "unstarted" || !issue.labels.some(label => label.toLowerCase() === this.options.config.intakeLabel.toLowerCase())) continue;
-          this.store.enqueue(issue.id);
+          this.store.enqueue(issue.id, { issueKey: issue.identifier ?? issue.id, issueTitle: issue.title, repository: repositoryKeyForIssue(issue, this.config) });
           found++;
         }
       }
@@ -268,6 +309,7 @@ export class KorDaemon {
       const previous = assignment.manifest;
       if (this.stopping || !previous?.shipping) continue;
       if (!['shipping', 'review', 'blocked', 'complete', 'failed'].includes(assignment.status)) continue;
+      this.shippingActive.add(assignment.executionId);
       try {
         const issue = await linear.getIssue(assignment.issueId);
         this.remember(assignment.issueId, issue);
@@ -311,7 +353,7 @@ export class KorDaemon {
         });
         await this.log(assignment.executionId, `shipping synchronization will retry: ${safeMessage(error)}`);
         await this.reportError(error);
-      }
+      } finally { this.shippingActive.delete(assignment.executionId); }
     }
   }
   async enqueue(issueId: string): Promise<AssignmentRecord> {
@@ -319,8 +361,167 @@ export class KorDaemon {
     await this.writeSnapshot();
     return this.store.listAssignments().find(item => item.issueId === issueId) ?? { ...assignment, attempts: 0 };
   }
-  cancel(issueId: string): boolean { return this.store.requestCancel(issueId); }
+  cancel(issueId: string): boolean {
+    const assignment = this.store.findAssignment(issueId);
+    if (assignment && this.shippingActive.has(assignment.executionId)) return false;
+    const accepted = this.store.requestCancel(assignment?.issueId ?? issueId);
+    if (accepted) this.active.get(assignment?.issueId ?? issueId)?.abort.abort(new Error("canceled by operator"));
+    return accepted;
+  }
   retry(issueId: string): boolean { return this.store.retry(issueId); }
+  missionRuns(): MissionRun[] {
+    const assignments = new Map(this.store.listAssignments().map(assignment => [assignment.executionId, assignment]));
+    const historical = this.store.spendHistory();
+    const iso = (time: number | undefined) => time === undefined ? null : new Date(time).toISOString();
+    return this.status().runs.map(({ verification, ...run }): MissionRun => {
+      const assignment = assignments.get(run.executionId);
+      const measurements = new Map(historical.filter(metric => metric.executionId === run.executionId).map(({ executionId: _, ...metric }) => [metric.attemptId ?? `legacy-${metric.attempt}`, metric]));
+      for (const spend of this.store.spend(run.executionId)) measurements.set(spend.attemptId, spend);
+      const spend = [...measurements.values()].sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
+      const attempts = verification?.attempts.map(attempt => ({ ...attempt, startedAt: attempt.startedAt ?? null, completedAt: attempt.completedAt ?? null }));
+      return { ...run,
+        createdAt: iso(assignment?.createdAt), updatedAt: iso(assignment?.updatedAt), startedAt: iso(assignment?.startedAt), completedAt: iso(assignment?.completedAt),
+        ...(verification && attempts ? { verification: { ...verification, attempts } } : {}),
+        verifiedAt: verification?.passed ? attempts?.at(-1)?.completedAt ?? null : null,
+        spend: spend.length || run.attempts === 0 ? live(spend) : unavailable([], "No timestamped provider measurements were recorded for this historical execution"),
+        ...(spend.length && spend.every(measurement => measurement.costUsd !== null) ? { costUsd: spend.reduce((sum, measurement) => sum + (measurement.costUsd ?? 0), 0) } : {}),
+        stage: ["shipping", "review", "complete"].includes(run.status) ? "synchronise" : run.status === "queued" ? "discover" : run.status === "waiting" ? "verify" : this.stages.get(run.executionId) ?? (verification ? "verify" : "preflight"),
+        needsInput: run.errorCode === "needs_input" ? { reason: run.error ?? "Operator input required" } : run.status === "waiting" ? { reason: "Verified. Awaiting approval to publish." } : null,
+        accountSlot: unavailable(null, "Upstream account binding is not reported by the session"),
+      };
+    });
+  }
+  missionRun(reference: string): MissionRun {
+    const run = this.missionRuns().find(one => one.executionId === reference || one.issueId === reference || one.issueKey === reference);
+    if (!run) throw new ApiFailure(404, "not_found", "Execution not found");
+    return run;
+  }
+  async missionIssues(project: string | null): Promise<IssuesResponse> {
+    const repositories = project ? [[project, this.config.repos[project]]] as const : Object.entries(this.config.repos);
+    if (project && !this.config.repos[project]) throw new ApiFailure(404, "not_found", "Configured project not found");
+    const linear = this.options.linear;
+    if (!linear) return { schemaVersion: 1, bounded: true, issues: unavailable([], "Linear connection unavailable") };
+    try {
+      const issues = (await Promise.all(repositories.map(async ([key, repository]) => {
+        const all = await linear.listIssues(repository?.linearTeam ?? key.split("/")[0] ?? key, 100);
+        return repository?.linearProject ? all.filter(issue => issue.projectId === repository.linearProject) : all;
+      }))).flat();
+      return { schemaVersion: 1, bounded: true, issues: { value: [...new Map(issues.map(issue => [issue.id, issue])).values()], provenance: "live", observedAt: new Date().toISOString() } };
+    } catch { return { schemaVersion: 1, bounded: true, issues: unavailable([], "Linear issues unavailable") }; }
+  }
+  async queueIssues(references: string[]): Promise<MissionRun[]> {
+    const linear = this.options.linear;
+    if (!linear) throw new ApiFailure(503, "unavailable", "Linear connection unavailable");
+    const issues = await Promise.all(references.map(reference => linear.getIssue(reference)));
+    // Validate the full batch before queueing any of it.
+    for (const issue of issues) repositoryKeyForIssue(issue, this.config);
+    for (const issue of issues) {
+      this.remember(issue.id, issue);
+      this.store.enqueue(issue.id, { issueKey: issue.identifier ?? issue.id, issueTitle: issue.title, repository: repositoryKeyForIssue(issue, this.config) });
+    }
+    await this.writeSnapshot();
+    return issues.map(issue => this.missionRun(issue.id));
+  }
+  async runAction(executionId: string, action: "cancel" | "retry" | "answer" | "approve" | "request-changes" | "note", message?: string): Promise<void> {
+    const assignment = this.store.findAssignment(executionId);
+    if (!assignment) throw new ApiFailure(404, "not_found", "Execution not found");
+    if (this.shippingActive.has(executionId)) throw new ApiFailure(409, "conflict", "Publication is advancing; wait for it to settle");
+    let accepted = false;
+    switch (action) {
+      case "cancel": accepted = this.cancel(assignment.issueId); break;
+      case "retry":
+        if (assignment.status === "blocked" && assignment.manifest?.shipping) { this.store.updateShipping({ ...assignment.manifest, status: "shipping" }); accepted = true; }
+        else accepted = this.retry(assignment.issueId);
+        break;
+      case "approve":
+        if (assignment.status === "waiting" && assignment.manifest?.verification?.passed && assignment.manifest.shipping?.stage.kind === "commit") { this.store.updateShipping({ ...assignment.manifest, status: "shipping" }); accepted = true; }
+        break;
+      case "answer":
+        if (assignment.status === "blocked" && this.missionRun(executionId).needsInput && message) { this.store.operatorMessage(executionId, action, message); accepted = this.retry(assignment.issueId); }
+        break;
+      case "request-changes":
+        if (message) { accepted = this.store.requestChanges(executionId); if (accepted) this.store.operatorMessage(executionId, action, message); }
+        break;
+      case "note":
+        if (message && !FINISHED.has(assignment.status)) { this.store.operatorMessage(executionId, action, message); accepted = true; }
+        break;
+      default: { const exhaustive: never = action; throw new Error(String(exhaustive)); }
+    }
+    if (!accepted) throw new ApiFailure(409, "conflict", "This action is not available in the execution's current state");
+    await this.log(executionId, `${action} accepted from Mission Control`);
+    if (this.options.linear) await flushLinearWrites(this.store, this.options.linear);
+    await this.writeSnapshot();
+  }
+  async configure(config: KorConfig): Promise<void> {
+    if (this.active.size || this.poll || this.shippingActive.size) throw new ApiFailure(409, "conflict", "Wait for running work and polling to settle before changing configuration");
+    this.reconfiguring = true;
+    try {
+    const runtime = this.options.reconfigure?.(config);
+    if (!runtime && this.options.controller) throw new ApiFailure(409, "conflict", "This daemon cannot reload its controller");
+    const previous = await readFile(this.paths.configFile, "utf8").catch(error => {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (previous !== undefined) await atomicPrivateFile(`${this.paths.configFile}.bak`, previous);
+    await atomicPrivateFile(this.paths.configFile, `${JSON.stringify(config, null, 2)}\n`);
+    this.options.config = config;
+    this.pollIntervalMs = config.pollIntervalSeconds * 1000;
+    if (runtime) { this.options.controller = runtime.controller; this.options.chooseRoute = runtime.chooseRoute; }
+    await this.writeSnapshot();
+    } finally { this.reconfiguring = false; }
+  }
+  async connectionsChanged(provider: string): Promise<void> {
+    if (provider === "linear") this.options.linear = this.mission.linear();
+    if (provider === "gateway") {
+      this.options.gateway = await this.mission.gateway();
+      // Observations from another gateway must not survive a connection switch.
+      this.accounts = undefined;
+      await this.quotaPoll?.catch(() => undefined);
+      this.quota = unavailable(null, "Gateway connection changed; quota has not been observed");
+      this.lastQuotaAt = 0;
+      await this.refreshAccounts();
+    }
+  }
+  refreshQuota(): Promise<Labelled<JsonValue | null>> {
+    if (this.quotaPoll) return this.quotaPoll;
+    if (this.now() - this.lastQuotaAt < 60_000) return Promise.resolve(this.quota);
+    this.lastQuotaAt = this.now();
+    this.quotaPoll = this.mission.quota().then(quota => { this.quota = quota; this.events.publish({ kind: "usage", quota }); return quota; }).finally(() => { this.quotaPoll = undefined; });
+    return this.quotaPoll;
+  }
+  setStage(executionId: string, stage: Stage): void {
+    this.stages.set(executionId, stage);
+    this.events.publish({ kind: "stage", executionId, stage });
+  }
+  recordOutput(executionId: string, channel: "stdout" | "stderr" | "daemon", text: string): void {
+    const safe = redact(text, [this.token, ...runtimeSecrets(), ...this.mission.secrets()]);
+    if (typeof safe !== "string") return;
+    for (let index = 0; index < safe.length; index += 16_000) {
+      const chunk = safe.slice(index, index + 16_000);
+      this.terminalWrite = this.terminalWrite.then(async () => {
+        const file = join(this.paths.logsDir, `${basename(executionId)}.terminal.log`);
+        await appendFile(file, chunk, { mode: 0o600 });
+        this.events.publish({ kind: "terminal", executionId, channel, text: chunk, offset: (await stat(file)).size });
+      }).catch(error => this.reportError(error));
+    }
+  }
+  async readTerminal(executionId: string): Promise<{ content: string; offset: number }> {
+    this.missionRun(executionId);
+    await this.terminalWrite;
+    const tail = async (file: string) => {
+      const handle = await open(file, "r");
+      try {
+        const offset = (await handle.stat()).size;
+        const length = Math.min(offset, 1_048_576);
+        const buffer = Buffer.alloc(length);
+        const result = await handle.read(buffer, 0, length, offset - length);
+        const text = buffer.subarray(0, result.bytesRead).toString("utf8");
+        return { content: offset > length ? text.slice(text.indexOf("\n") + 1) : text, offset };
+      } finally { await handle.close(); }
+    };
+    try { return await tail(join(this.paths.logsDir, `${basename(executionId)}.terminal.log`)); }
+    catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") return tail(join(this.paths.logsDir, `${basename(executionId)}.log`)).catch(() => ({ content: "", offset: 0 })); throw error; }
+  }
   status(): KorStatusSnapshot {
     const observedAt = new Date(this.now()).toISOString();
     return { schemaVersion: 1, observedAt,
@@ -357,6 +558,7 @@ export class KorDaemon {
     if (!this.options.gateway) return;
     const observedAt = new Date(this.now()).toISOString();
     try {
+      if (this.options.gateway.managementAvailable && !await this.options.gateway.managementAvailable()) throw new Error("Gateway management data unavailable");
       this.accounts = { value: await this.options.gateway.accountHealth(), provenance: "live", observedAt };
     } catch (error) {
       const reason = `gateway management unreachable: ${safeMessage(error)}`;
@@ -465,7 +667,7 @@ export class KorDaemon {
 
   private busy = false;
   private tick(): Promise<void> {
-    if (this.busy || this.stopping) return this.cycle;
+    if (this.busy || this.stopping || this.reconfiguring) return this.cycle;
     this.busy = true;
     this.cycle = (async () => {
       if (!this.lastPollAt || this.now() - Date.parse(this.lastPollAt) >= this.pollIntervalMs) void this.pollOnce();
@@ -497,6 +699,7 @@ export class KorDaemon {
       } catch (error) { abort.abort(error); }
     }, Math.max(25, Math.floor(this.leaseTtlMs / 3)));
     const onSpawn = (pid: number) => {
+      this.setStage(id, "supervise");
       const captured = captureProcess(pid);
       identity = captured;
       this.store.setSessionPid(claim, pid, captured);
@@ -506,12 +709,19 @@ export class KorDaemon {
       await this.log(id, "execution started");
       if (!this.options.linear) throw new Error("Linear client unavailable");
       const issue = await this.options.linear.getIssue(claim.assignment.issueId);
+      this.setStage(id, "discover");
+      const messages = this.store.operatorMessages(id);
+      const answers = messages.filter(message => message.kind === "answer");
+      const answer = answers.at(-1);
+      if (issue.acceptanceCriteria.length === 0 && answer) issue.acceptanceCriteria = [answer.message];
+      if (messages.length) issue.description = `${issue.description ?? ""}\n\nOperator guidance:\n${messages.map(message => `${message.kind}: ${message.message}`).join("\n\n")}`;
       this.remember(claim.assignment.issueId, issue);
       this.store.setIssueMetadata(claim, issue.identifier ?? issue.id, issue.title);
       if (issue.acceptanceCriteria.length === 0) throw new NeedsInputError("Add a # Acceptance section with explicit criteria to the Linear issue, then retry this execution.");
       if (issue.dependencies.some(dependency => dependency.stateType !== 'completed')) throw new NeedsInputError('Complete the blocking dependencies in Linear, then retry this execution.');
       // The configured mapping (linearProject, then linearTeam) names the checkout.
       const repository = repositoryKeyForIssue(issue, this.options.config);
+      this.setStage(id, "preflight");
       const route = await this.routeFor(id, issue);
       const previousBranch = this.store.listAssignments().find(assignment => assignment.executionId === id)?.manifest?.branch;
       const manifest: Execution = { id, issueId: issue.id, repository, worktree: "", branch: previousBranch || `kor/${issue.identifier ?? issue.id}`, status: "running", ...(route ? { route } : {}) };
@@ -560,7 +770,10 @@ export class KorDaemon {
     else if (result && result.execution.status !== "complete") this.store.failClaim(claim, `Unexpected execution outcome: ${result.execution.status}`);
     else if (this.options.shipping) {
       if (!result?.execution.verification?.passed) this.store.failClaim(claim, 'Shipping requires a passing verification report', 'blocked');
-      else this.store.finishClaim(claim, 'shipping', undefined, { ...result.execution, status: 'shipping', shipping: { stage: { kind: 'commit' }, evidence: [], cleanup: 'pending' } });
+      else {
+        const gated = this.options.config.repos[result.execution.repository]?.ship === "approve";
+        this.store.finishClaim(claim, gated ? 'waiting' : 'shipping', undefined, { ...result.execution, status: gated ? 'waiting' : 'shipping', shipping: { stage: { kind: 'commit' }, evidence: [], cleanup: 'pending' } });
+      }
     } else this.store.completeClaim(claim, result?.execution);
     await this.log(id, `execution ${this.store.getAssignment(claim.assignment.issueId).status}${failure ? `: ${safeMessage(failure)}` : ""}`);
   }
@@ -598,6 +811,24 @@ export class KorDaemon {
         this.runFiles.set(run.executionId, signature);
       }
       await this.atomicWrite(join(this.options.paths.snapshotsDir, "index.json"), snapshot);
+      for (const run of this.missionRuns()) {
+        const signature = JSON.stringify({ ...run, observedAt: undefined, heartbeatAt: undefined, accountSlot: { ...run.accountSlot, observedAt: undefined }, spend: { ...run.spend, observedAt: undefined } });
+        if (this.eventSignatures.get(run.executionId) !== signature) {
+          const previous = this.eventSignatures.get(run.executionId);
+          this.eventSignatures.set(run.executionId, signature);
+          this.events.publish({ kind: "run", run });
+          if (run.needsInput || previous?.includes('"needsInput":{')) this.events.publish({ kind: "needs-input", executionId: run.executionId, reason: run.needsInput?.reason ?? null });
+        }
+      }
+      for (const decision of snapshot.decisions?.value ?? []) {
+        const key = `decision:${decision.decisionId}`;
+        const signature = JSON.stringify(decision);
+        if (this.eventSignatures.get(key) !== signature) { this.eventSignatures.set(key, signature); this.events.publish({ kind: "decision", decision }); }
+      }
+      if (snapshot.accounts) {
+        const signature = JSON.stringify({ ...snapshot.accounts, observedAt: undefined });
+        if (this.eventSignatures.get("pool") !== signature) { this.eventSignatures.set("pool", signature); this.events.publish({ kind: "pool", accounts: snapshot.accounts }); }
+      }
     };
     this.snapshotWrite = this.snapshotWrite.catch(() => undefined).then(write);
     return this.snapshotWrite;
@@ -634,6 +865,7 @@ export class KorDaemon {
   private async log(id: string, message: string): Promise<void> {
     await mkdir(this.options.paths.logsDir, { recursive: true, mode: 0o700 });
     await appendFile(join(this.options.paths.logsDir, `${basename(id)}.log`), `${new Date(this.now()).toISOString()} ${message}\n`, { mode: 0o600 });
+    if (id !== "daemon") this.recordOutput(id, "daemon", `${new Date(this.now()).toISOString()} ${message}\n`);
   }
   async readLog(id: string): Promise<string> {
     try { return await readFile(join(this.options.paths.logsDir, `${basename(id)}.log`), "utf8"); }

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Execution, VerificationAttempt } from "@kor-code/core";
+import type { Execution, SessionSpend, VerificationAttempt } from "@kor-code/core";
 import type { JevDecisionCore } from "@kor-code/jev";
 import { metricFromSession, type CalibrationStore } from "@kor-code/calibration";
 import type { Repository } from "./repository.js";
@@ -22,9 +22,12 @@ export async function runVerifiedSessions(input: {
   leaseFailure?: Promise<never>;
   onSpawn?: (pid: number) => void;
   signal?: AbortSignal;
+  onStage?: (executionId: string, stage: "execute" | "verify") => void;
+  onSpend?: (executionId: string, spend: SessionSpend) => void;
 }) {
   const { execution, repository, settings } = input;
   const attempts: VerificationAttempt[] = [];
+  const costs: Array<number | undefined> = [];
   const race = <T>(action: Promise<T>): Promise<T> => input.leaseFailure ? Promise.race([action, input.leaseFailure]) : action;
   for (let repair = 0; ; repair += 1) {
     const attemptNumber = input.calibration?.nextAttempt(execution.id) ?? attempts.length + 1;
@@ -33,6 +36,7 @@ export async function runVerifiedSessions(input: {
     const startedAt = new Date().toISOString();
     let session: SessionResult;
     try {
+      input.onStage?.(execution.id, "execute");
       session = await race(input.launcher.launch({ execution, repositoryPath: repository.path, worktreePath: execution.worktree,
         prompt: previous ? repairPrompt(input.initialPrompt, previous) : input.initialPrompt,
         ...(execution.route ? { route: execution.route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}), ...(repository.checks ? { checks: repository.checks } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}), ...(input.signal ? { signal: input.signal } : {}) }));
@@ -41,12 +45,22 @@ export async function runVerifiedSessions(input: {
       if (input.calibration && execution.route) input.calibration.recordAttempt(metricFromSession({ executionId: execution.id, attempt: attemptNumber, attemptId, ...(input.decisionId ? { decisionId: input.decisionId } : {}), route: execution.route, startedAt, finishedAt: new Date().toISOString(), session: {}, verified: false, verificationFailures: 0 }));
       throw error;
     }
+    input.onStage?.(execution.id, "verify");
+    if (execution.route) {
+      const metric = metricFromSession({ executionId: execution.id, attempt: attemptNumber, attemptId, route: execution.route, startedAt, finishedAt: new Date().toISOString(), session, verified: false });
+      input.onSpend?.(execution.id, { attempt: attemptNumber, attemptId, recordedAt: metric.recordedAt, model: metric.model, costUsd: metric.costUsd,
+        inputTokens: metric.inputTokens, outputTokens: metric.outputTokens, cacheReadTokens: metric.cacheReadTokens, cacheCreationTokens: metric.cacheCreationTokens });
+    }
+    costs.push(session.telemetry?.totalCostUsd);
     const attempt = await race(verifyAttempt({ execution, acceptance: execution.manifest?.acceptance ?? [], session, attempt: attemptNumber, attemptId,
       checks: repository.checks ?? [], baseRevision: input.baseRevision, ...(input.jev ? { jev: input.jev } : {}), enforceSemantic: repository.checks !== undefined || input.jev !== undefined, settings }));
     attempts.push(attempt);
     if (input.calibration && execution.route) input.calibration.recordAttempt(metricFromSession({ executionId: execution.id, attempt: attemptNumber, attemptId,
       ...(input.decisionId ? { decisionId: input.decisionId } : {}), route: execution.route, startedAt, finishedAt: new Date().toISOString(), session,
       verificationFailures: attempt.blockers.length > 0 ? 1 : 0, findings: attempt.findings, verified: attempt.blockers.length === 0 }));
-    if (attempt.blockers.length === 0 || repair >= settings.maxRepairs) return { session, latest: attempt, verificationReport: { attempts, passed: attempt.blockers.length === 0 } };
+    if (attempt.blockers.length === 0 || repair >= settings.maxRepairs) {
+      const measured = costs.filter((cost): cost is number => cost !== undefined);
+      return { session, latest: attempt, verificationReport: { attempts, passed: attempt.blockers.length === 0, ...(measured.length === costs.length ? { costUsd: measured.reduce((sum, cost) => sum + cost, 0) } : {}) } };
+    }
   }
 }
