@@ -97,7 +97,7 @@ export class SessionLauncher implements SessionLauncherLike {
       ...(input.route?.model ? ["--model", input.route.model] : []),
       ...(input.route?.reasoningLevel ? ["--effort", input.route.reasoningLevel] : []),
     ];
-    const commandArgs = this.options.args ?? ["claude", "-p", input.prompt, ...routeArgs, "--plugin-dir", resolve(this.repoRoot, "packages/claude-plugin"), "--no-session-persistence", "--permission-mode", "dontAsk", "--allowedTools", ...toolArgs, "--output-format", "stream-json", "--verbose", "--setting-sources", ""];
+    const commandArgs = this.options.args ?? ["claude", "-p", input.prompt, ...routeArgs, "--plugin-dir", resolve(this.repoRoot, "packages/claude-plugin"), "--no-session-persistence", "--permission-mode", "acceptEdits", "--allowedTools", ...toolArgs, "--output-format", "stream-json", "--verbose", "--setting-sources", ""];
     const args = ["--run", ...commandArgs];
     const tool = commandArgs[0] ?? "claude";
     const toolDir = tool.includes("/") ? dirname(tool) : this.findToolDir(tool);

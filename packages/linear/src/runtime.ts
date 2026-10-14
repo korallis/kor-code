@@ -59,7 +59,7 @@ export class AgentSessionWriter {
   }
 
   recordVerificationBlock(claim: ExecutionClaim, execution: Execution, findings: readonly AcceptanceFinding[]): void {
-    const body = [`Execution ${execution.id} blocked: acceptance evidence is incomplete`, ...findings.map(finding => `${finding.conditionId}: ${finding.status}${finding.evidenceIds.length > 0 ? ` (${finding.evidenceIds.join(', ')})` : ''}`)].join('\n');
+    const body = [`Execution ${execution.id} blocked: acceptance evidence is incomplete`, ...findings.map(finding => `${finding.conditionId}: ${finding.status}${finding.evidenceIds.length > 0 ? ` (${finding.evidenceIds.join(', ')})` : ''}${finding.note ? ` — ${finding.note}` : ''}`)].join('\n');
     this.store.record(claim, [
       { kind: 'summary', sessionId: claim.assignment.sessionId, summary: body },
       { kind: 'activity', id: randomUUID(), sessionId: claim.assignment.sessionId, activity: 'error', body },
