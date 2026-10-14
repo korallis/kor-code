@@ -1,6 +1,6 @@
 // Screen 1, Home: what needs the owner now, and acting on it in place.
 import * as stylex from '@stylexjs/stylex';
-import { Activity as ActivityIcon, ArrowRight, Bot, BrainCircuit, Coins, Cpu, FolderKanban, Gauge, GitPullRequest, ListTodo, MessageSquare, Play, Send, ShieldCheck } from 'lucide-react';
+import { Activity as ActivityIcon, ArrowRight, Bot, Check, RotateCcw, BrainCircuit, Coins, Cpu, FolderKanban, Gauge, GitPullRequest, ListTodo, MessageSquare, Play, Send, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import type { MissionRun } from '@kor-code/mission-control';
 import type { LinearIssue } from '@kor-code/linear';
@@ -29,7 +29,7 @@ import { CountUp } from '../ui/count';
 import { MotionMedia } from '../motion/MotionMedia';
 import { buildActivity } from '../lib/activity';
 import { plural, shortModel, usd } from '../lib/format';
-import { isActive, keyOf, needsYou, readyToShip, runUpdatedAt, spendOn } from '../lib/runs';
+import { canAnswer, isActive, keyOf, needsYou, readyToShip, runUpdatedAt, spendOn } from '../lib/runs';
 import { parseQuota, sessionWindow, weeklyWindow, providerTitle } from '../lib/quota';
 import { ago, clock, greeting, isToday, longDate, shortDate, useNow } from '../lib/time';
 import { page, QueryError, RunRow } from './shared';
@@ -126,7 +126,40 @@ const orbitTone = stylex.create({
   violet: { fill: color.violetBright, filter: `drop-shadow(0 0 6px ${color.violetBright})` },
 });
 
-function NeedsYou({ run, now, linearUrl, decisions }: { run: MissionRun | undefined; now: number; linearUrl?: string | undefined; decisions: DecisionRecord[] }) {
+/** A run waiting at the ship gate: the owner approves, reviews or requests changes; there is no question to answer. */
+function ReadyToShip({ run, now }: { run: MissionRun; now: number }) {
+  const action = useRunAction();
+  const attempt = run.verification?.attempts.at(-1);
+  const checks = attempt?.checks ?? [];
+  const findings = attempt?.findings ?? [];
+  return (
+    <Card index={1} variant="neon" style={styles.needs} label="Ready to ship">
+      <div {...stylex.props(layout.row)}>
+        <Pill tone="magenta" dot pulse>READY TO SHIP</Pill>
+        <a href={href('linear', run.executionId)} {...stylex.props(text.key)}>{keyOf(run)}</a>
+        <span {...stylex.props(text.muted, text.mono, text.xs, text.ellipsis)}>waiting · your go-ahead</span>
+        <span {...stylex.props(layout.grow)} />
+        <span {...stylex.props(text.muted, text.mono, text.xs, text.nowrap)}>{run.verifiedAt ? `verified ${ago(run.verifiedAt, now)} ago` : 'undated'}</span>
+      </div>
+      <h3 {...stylex.props(styles.needsTitle)}>{run.issueTitle ?? run.issueId}</h3>
+      <div {...stylex.props(layout.row, text.muted, text.sm, layout.mt1)}>
+        {run.repository && <>{run.repository} · </>}{plural(run.attempts, 'attempt')} · {usd(run.costUsd)} so far
+      </div>
+      <div {...stylex.props(styles.askQ)}>
+        <JevOrb size={18} />
+        <div>Verification passed: <b {...stylex.props(text.strong)}>{checks.filter(check => check.status === 'pass').length} of {checks.length}</b> repository checks and <b {...stylex.props(text.strong)}>{findings.filter(finding => finding.status === 'pass').length} of {findings.length}</b> acceptance conditions. Approving commits on {run.branch ?? 'the issue branch'}, runs the delivery gate and opens the pull request.</div>
+      </div>
+      {action.error && <div {...stylex.props(layout.mt2)}><Notice title={action.error.message} hint={action.error instanceof ApiFailure ? action.error.hint : undefined} /></div>}
+      {action.isSuccess && <div {...stylex.props(layout.mt2)}><Notice tone="ok" title="Approved. Kor is shipping it now." /></div>}
+      <div {...stylex.props(layout.row, layout.mt3)}>
+        <Button variant="primary" icon={Check} busy={action.isPending} onClick={() => action.mutate({ action: 'approve', executionId: run.executionId })}>Approve and ship</Button>
+        <Button icon={GitPullRequest} onClick={() => navigate('linear', run.executionId)}>Review changes</Button>
+      </div>
+    </Card>
+  );
+}
+
+function NeedsYou({ run, now, linearUrl }: { run: MissionRun | undefined; now: number; linearUrl?: string | undefined }) {
   const [answer, setAnswer] = useState('');
   const message = useRunMessage();
   const action = useRunAction();
@@ -138,7 +171,8 @@ function NeedsYou({ run, now, linearUrl, decisions }: { run: MissionRun | undefi
       </Card>
     );
   }
-  const send = () => { if (answer.trim()) message.mutate({ action: 'answer', executionId: run.executionId, body: { message: answer.trim() } }, { onSuccess: () => setAnswer('') }); };
+  const answerable = canAnswer(run);
+  const send = () => { if (answer.trim() && answerable) message.mutate({ action: 'answer', executionId: run.executionId, body: { message: answer.trim() } }, { onSuccess: () => setAnswer('') }); };
   const error = message.error ?? action.error;
   return (
     <Card index={1} variant="attention" style={styles.needs} label="Needs you">
@@ -156,17 +190,24 @@ function NeedsYou({ run, now, linearUrl, decisions }: { run: MissionRun | undefi
       </div>
       <div {...stylex.props(styles.askQ)}>
         <JevOrb size={18} />
-        <div><b {...stylex.props(text.strong)}>Jev asks:</b> {run.needsInput?.reason ?? run.error ?? 'This run is blocked and needs your direction before it can continue.'}</div>
+        <div><b {...stylex.props(text.strong)}>{answerable ? 'Jev asks:' : 'Blocked:'}</b> {run.needsInput?.reason ?? run.error ?? 'This run stopped and needs your direction before it can continue.'}</div>
       </div>
-      <TextArea label={`Answer for ${keyOf(run)}`} value={answer} onChange={setAnswer} mono rows={4} placeholder="Answer Jev. ⌘↵ sends." onSubmit={send} style={styles.answerBox} />
-      <div {...stylex.props(styles.caption)}>Kor writes your answer to the Linear issue as a comment, then retries the run.</div>
+      {answerable ? (
+        <>
+          <TextArea label={`Answer for ${keyOf(run)}`} value={answer} onChange={setAnswer} mono rows={4} placeholder="Answer Jev. ⌘↵ sends." onSubmit={send} style={styles.answerBox} />
+          <div {...stylex.props(styles.caption)}>Kor writes your answer to the Linear issue as a comment, then retries the run.</div>
+        </>
+      ) : <div {...stylex.props(styles.caption)}>This run has no question to answer. Read why in the run, then retry it once the cause is fixed.</div>}
       {error && <div {...stylex.props(layout.mt2)}><Notice title={error.message} hint={error instanceof ApiFailure ? error.hint : undefined} /></div>}
       {message.isSuccess && <div {...stylex.props(layout.mt2)}><Notice tone="ok" title="Sent. The run is queued again." /></div>}
+      {action.isSuccess && action.variables?.action === 'retry' && <div {...stylex.props(layout.mt2)}><Notice tone="ok" title="Retried." /></div>}
       <div {...stylex.props(layout.row, layout.mt3)}>
-        <Button variant="primary" icon={Send} busy={message.isPending} disabled={!answer.trim()} onClick={send}>Send and retry</Button>
-        {(run.issueUrl ?? linearUrl) && <Button brand="linear" href={run.issueUrl ?? linearUrl} external>Open in Linear</Button>}
+        {answerable
+          ? <Button variant="primary" icon={Send} busy={message.isPending} disabled={!answer.trim()} onClick={send}>Send and retry</Button>
+          : <Button variant="primary" icon={RotateCcw} busy={action.isPending && action.variables?.action === 'retry'} onClick={() => action.mutate({ action: 'retry', executionId: run.executionId })}>Retry</Button>}
+        {answerable ? ((run.issueUrl ?? linearUrl) && <Button brand="linear" href={run.issueUrl ?? linearUrl} external>Open in Linear</Button>) : <Button icon={Bot} onClick={() => navigate('agents', run.executionId)}>Open the run</Button>}
         <span {...stylex.props(layout.grow)} />
-        <Button variant="danger-ghost" busy={action.isPending} onClick={() => action.mutate({ action: 'cancel', executionId: run.executionId })}>Cancel run</Button>
+        <Button variant="danger-ghost" busy={action.isPending && action.variables?.action === 'cancel'} onClick={() => action.mutate({ action: 'cancel', executionId: run.executionId })}>Cancel run</Button>
       </div>
     </Card>
   );
@@ -302,7 +343,7 @@ export function CommandCentre() {
             </div>
             </div>
           </Card>
-          <NeedsYou key={attention[0]?.executionId ?? 'none'} run={attention[0]} now={now} decisions={decisions} />
+          {!attention[0] && ready[0] ? <ReadyToShip key={ready[0].executionId} run={ready[0]} now={now} /> : <NeedsYou key={attention[0]?.executionId ?? 'none'} run={attention[0]} now={now} />}
         </section>
 
         {runsError && <QueryError error={runsError} what="Runs" />}

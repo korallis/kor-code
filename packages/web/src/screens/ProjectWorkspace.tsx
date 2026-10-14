@@ -30,7 +30,7 @@ import { layout } from '../ui/layout';
 import { text } from '../ui/text';
 import { buildActivity } from '../lib/activity';
 import { prob, shortModel, usd } from '../lib/format';
-import { FINISHED, isActive, keyOf, needsYou, prNumber, latestDecision } from '../lib/runs';
+import { FINISHED, isActive, keyOf, needsYou, prNumber, latestDecision, runUpdatedAt } from '../lib/runs';
 import { ago, shortDate, useNow } from '../lib/time';
 import { page, QueryError } from './shared';
 
@@ -76,7 +76,7 @@ type Tab = 'overview' | 'issues' | 'runs' | 'pulls' | 'documents' | 'settings';
 type Filter = 'all' | 'kor' | 'running' | 'needs' | 'ready';
 
 function runFor(issue: LinearIssue, runs: readonly MissionRun[]): MissionRun | undefined {
-  return runs.filter(run => run.issueId === issue.id).sort((a, b) => Date.parse(b.observedAt) - Date.parse(a.observedAt))[0];
+  return runs.filter(run => run.issueId === issue.id).sort((a, b) => (Date.parse(runUpdatedAt(b) ?? '') || 0) - (Date.parse(runUpdatedAt(a) ?? '') || 0))[0];
 }
 
 function IssueAction({ issue, run, intake, selected }: { issue: LinearIssue; run: MissionRun | undefined; intake: string; selected: boolean }) {
@@ -212,7 +212,9 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
     return times.length >= 2 ? times.map((_, i) => i + 1) : null;
   })();
   const withCriteria = issues.filter(issue => issue.acceptanceCriteria.length > 0).length;
-  const failed7 = projectRuns.filter(run => run.status === 'failed' && now - Date.parse(run.observedAt) < 7 * 86_400_000).length;
+  const failedRuns = projectRuns.filter(run => run.status === 'failed');
+  const failed7 = failedRuns.filter(run => run.completedAt !== null && now - Date.parse(run.completedAt) < 7 * 86_400_000).length;
+  const failedUndated = failedRuns.filter(run => run.completedAt === null).length;
   const checkRuns = projectRuns.flatMap(run => run.verification?.attempts ?? []).flatMap(attempt => attempt.checks);
   const checkPass = checkRuns.length ? checkRuns.filter(check => check.status === 'pass').length / checkRuns.length : null;
   const verifiedRuns = projectRuns.filter(run => run.verification?.passed && run.costUsd !== undefined);
@@ -237,7 +239,7 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
     { value: 'overview' as const, label: 'Overview', icon: Layers },
     { value: 'issues' as const, label: 'Issues', icon: ListChecks, count: issues.length },
     { value: 'runs' as const, label: 'Runs', icon: Users, count: projectRuns.length },
-    { value: 'pulls' as const, label: 'Pull requests', icon: GitPullRequest, count: pulls.data ? openPulls.length : undefined },
+    { value: 'pulls' as const, label: 'Pull requests', icon: GitPullRequest, count: pulls.data && pulls.data.pulls.provenance !== 'unavailable' ? openPulls.length : undefined },
     { value: 'documents' as const, label: 'Documents', icon: FileText, count: issues.reduce((sum, issue) => sum + issue.documents.length, 0) },
     { value: 'settings' as const, label: 'Repository settings', icon: SettingsIcon },
   ];
@@ -315,7 +317,7 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
                     <div {...stylex.props(styles.hl)}>
                       <div {...stylex.props(styles.hlRow)}><Icon icon={CircleCheck} size={14} style={text.green} />Repository checks<b {...stylex.props(styles.hlVal)}>{checkPass === null ? '—' : `${Math.round(checkPass * 100)}% pass`}</b></div>
                       <div {...stylex.props(styles.hlRow)}><Icon icon={ListChecks} size={14} style={text.cyan} />Issues with criteria<b {...stylex.props(styles.hlVal)}>{withCriteria} / {issues.length}</b></div>
-                      <div {...stylex.props(styles.hlRow)}><Icon icon={CircleAlert} size={14} style={text.amber} />Failed runs (7 days)<b {...stylex.props(styles.hlVal)}>{failed7}</b></div>
+                      <div {...stylex.props(styles.hlRow)}><Icon icon={CircleAlert} size={14} style={text.amber} />Failed runs (7 days)<b {...stylex.props(styles.hlVal)} title={failedUndated ? `${failedUndated} failed runs have no recorded completion time and are not counted` : undefined}>{failed7}{failedUndated ? ` · ${failedUndated} undated` : ''}</b></div>
                       <div {...stylex.props(styles.hlRow)}><Icon icon={Timer} size={14} style={text.violet} />Runs with a PR<b {...stylex.props(styles.hlVal)}>{projectRuns.filter(run => run.pullRequestUrl).length}</b></div>
                       <div {...stylex.props(styles.hlRow)}><Icon icon={Coins} size={14} style={text.violet} />Cost per verified run<b {...stylex.props(styles.hlVal)}>{usd(costPerVerified)}</b></div>
                     </div>
@@ -326,6 +328,7 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
                 <CardHeader icon={GitPullRequest} title="Pull requests" aside={pulls.data && <ProvenanceChip provenance={pulls.data.pulls.provenance} reason={pulls.data.pulls.reason}>GitHub</ProvenanceChip>} />
                 <CardBody>
                   {pulls.error && <QueryError error={pulls.error} what="Pull requests" />}
+                  {pulls.data?.pulls.provenance === 'unavailable' && <Notice tone="warn" title={`Pull requests unavailable: ${pulls.data.pulls.reason ?? 'GitHub did not answer'}`} hint="Connect GitHub in Settings; this is not evidence that nothing awaits review." />}
                   {openPulls.slice(0, 4).map(pull => {
                     const run = projectRuns.find(one => one.pullRequestUrl === pull.url);
                     return (
@@ -336,7 +339,7 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
                       </div>
                     );
                   })}
-                  {pulls.data && openPulls.length === 0 && <span {...stylex.props(text.muted)}>No open pull requests.</span>}
+                  {pulls.data && pulls.data.pulls.provenance !== 'unavailable' && openPulls.length === 0 && <span {...stylex.props(text.muted)}>No open pull requests.</span>}
                 </CardBody>
               </Card>
               <Card index={5}>
@@ -362,7 +365,7 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
                       <Td><span {...stylex.props(text.mono)}>{run.attempts}</span></Td>
                       <Td align="right"><span {...stylex.props(text.mono)}>{usd(run.costUsd)}</span></Td>
                       <Td>{run.pullRequestUrl ? <a href={run.pullRequestUrl} target="_blank" rel="noopener noreferrer" {...stylex.props(text.cyan, text.mono)}>{prNumber(run.pullRequestUrl)}</a> : '—'}</Td>
-                      <Td><span {...stylex.props(text.mono, text.muted, text.xs)}>{shortDate(run.observedAt)}</span></Td>
+                      <Td><span {...stylex.props(text.mono, text.muted, text.xs)}>{runUpdatedAt(run) ? shortDate(runUpdatedAt(run)!) : 'undated'}</span></Td>
                     </Tr>
                   ))}
                 </tbody>
@@ -381,7 +384,7 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
                 <Button size="sm" href={pull.url} external>Open</Button>
               </div>
             ))}
-            {pulls.data && pulls.data.pulls.value.length === 0 && <Empty title="No pull requests." />}
+            {pulls.data?.pulls.provenance === 'unavailable' ? <Empty slot="empty-pool-unavailable" title="Pull requests unavailable.">{pulls.data.pulls.reason ?? 'GitHub did not answer.'} Connect GitHub in Settings.</Empty> : pulls.data && pulls.data.pulls.value.length === 0 && <Empty title="No pull requests." />}
           </Card>
         )}
         {tab === 'documents' && (
