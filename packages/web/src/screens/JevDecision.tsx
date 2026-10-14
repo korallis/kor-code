@@ -132,8 +132,21 @@ function DecisionPanel({ run, decisions, issue, onRequestChanges }: { run: Missi
   const step = nextStep(run);
   const error = action.error;
   const deciding = decidedAt > 0 && now - decidedAt < 2_500;
+  // R requests changes and E explores alternatives, as the panel's key hints say; typing in a field is left alone.
+  const shortcuts = (node: HTMLElement | null) => {
+    if (!node) return undefined;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (event.metaKey || event.ctrlKey || event.altKey || target?.closest('input, textarea, select, [contenteditable="true"], dialog')) return;
+      if (event.key === 'r' || event.key === 'R') { event.preventDefault(); onRequestChanges(); }
+      else if (event.key === 'e' || event.key === 'E') { event.preventDefault(); setExploring(true); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  };
   return (
     <Card index={2} variant="neon" flex style={styles.col} label="Jev decision">
+      <span ref={shortcuts} hidden />
       <div {...stylex.props(styles.dh)}>
         <JevOrb size={34} state={run.status === 'evaluating' ? 'thinking' : deciding ? 'deciding' : 'idle'} playKey={decidedAt} />
         <div>

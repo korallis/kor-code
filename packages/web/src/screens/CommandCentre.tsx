@@ -89,27 +89,36 @@ function Orbit({ keys }: { keys: readonly string[] }) {
   return (
     <svg viewBox="0 0 250 150" fill="none" aria-hidden="true" {...stylex.props(styles.orbit)}>
       <defs>
-        <radialGradient id="kor-core"><stop offset="0" stopColor="#fff" /><stop offset=".3" stopColor="#c4b5fd" /><stop offset="1" stopColor="#7c3aed" stopOpacity="0" /></radialGradient>
-        <linearGradient id="kor-orb" x1="0" x2="1"><stop offset="0" stopColor="#a78bfa" stopOpacity=".15" /><stop offset=".5" stopColor="#a78bfa" stopOpacity=".7" /><stop offset="1" stopColor="#22d3ee" stopOpacity=".2" /></linearGradient>
+        <radialGradient id="kor-core"><stop offset="0" {...stylex.props(orbitStop.white)} /><stop offset=".3" {...stylex.props(orbitStop.core)} /><stop offset="1" stopOpacity="0" {...stylex.props(orbitStop.violet)} /></radialGradient>
+        <linearGradient id="kor-orb" x1="0" x2="1"><stop offset="0" stopOpacity=".15" {...stylex.props(orbitStop.violetBright)} /><stop offset=".5" stopOpacity=".7" {...stylex.props(orbitStop.violetBright)} /><stop offset="1" stopOpacity=".2" {...stylex.props(orbitStop.cyan)} /></linearGradient>
       </defs>
       <ellipse cx="160" cy="75" rx="86" ry="30" stroke="url(#kor-orb)" strokeWidth="1" />
       <ellipse cx="160" cy="75" rx="62" ry="54" stroke="url(#kor-orb)" strokeWidth="1" transform="rotate(-24 160 75)" />
       <ellipse cx="160" cy="75" rx="40" ry="66" stroke="url(#kor-orb)" strokeWidth="1" transform="rotate(38 160 75)" opacity=".7" />
       <circle cx="160" cy="75" r="30" fill="url(#kor-core)" />
-      <circle cx="160" cy="75" r="7" fill="#fff" />
+      <circle cx="160" cy="75" r="7" {...stylex.props(orbitTone.white)} />
       {keys.slice(0, 4).map((key, index) => {
         const [x, y, ty, tx, tone] = nodes[index]!;
         return (
           <g key={key}>
             <circle cx={x} cy={y} r="3.5" {...stylex.props(orbitTone[tone])} />
-            <text x={tx} y={ty} fill="#7079a6" fontFamily="JetBrains Mono Variable" fontSize="8.5" letterSpacing="1">{key}</text>
+            <text x={tx} y={ty} fontSize="8.5" letterSpacing="1" {...stylex.props(orbitTone.label)}>{key}</text>
           </g>
         );
       })}
     </svg>
   );
 }
+const orbitStop = stylex.create({
+  white: { stopColor: tint.white },
+  core: { stopColor: tint.markCore },
+  violet: { stopColor: color.violet },
+  violetBright: { stopColor: color.violetBright },
+  cyan: { stopColor: color.cyan },
+});
 const orbitTone = stylex.create({
+  white: { fill: tint.white, filter: `drop-shadow(0 0 8px ${color.violetBright})` },
+  label: { fill: color.textMuted, fontFamily: font.mono },
   cyan: { fill: color.cyan, filter: `drop-shadow(0 0 6px ${color.cyan})` },
   green: { fill: color.green, filter: `drop-shadow(0 0 6px ${color.green})` },
   amber: { fill: color.amber, filter: `drop-shadow(0 0 6px ${color.amber})` },
