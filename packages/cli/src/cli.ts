@@ -141,8 +141,9 @@ async function updateQueue(command: "cancel" | "retry", args: readonly string[])
 }
 
 async function logs(args: readonly string[]): Promise<number> {
-  const executionId = args.find(arg => !arg.startsWith("-"));
-  if (!executionId) usageFailure("kor logs EXECUTION-ID [--json]");
+  const references = args.filter(arg => arg !== "--json");
+  const executionId = references[0];
+  if (references.length !== 1 || !executionId || executionId.startsWith("-")) usageFailure("kor logs EXECUTION-ID [--json]");
   const paths = runtimePaths();
   let content = "";
   try { content = await readFile(join(paths.logsDir, basename(executionId) + ".log"), "utf8"); }
