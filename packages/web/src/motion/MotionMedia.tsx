@@ -1,6 +1,6 @@
 // Plays a Higgsfield slot over its coded fallback. Glows composite with
 // mix-blend-mode: screen, so the navy background drops out. Under reduced
-// motion the poster (or nothing) shows; off-screen loops pause.
+// motion the poster shows instead; off-screen loops pause.
 import * as stylex from '@stylexjs/stylex';
 import { useState, type ReactNode } from 'react';
 import { animate } from '../theme/animate';
@@ -32,21 +32,20 @@ export function MotionMedia({ slot, fallback, contain = false, round = false, on
   const asset = useMotionAsset(slot);
   const reduced = useReducedMotion();
   const [failed, setFailed] = useState<string | null>(null);
-  const failedHere = failed === slot;
   const mediaStyle = stylex.props(styles.media, animate.fadeIn, contain && styles.contain, round && styles.round);
   let media: ReactNode = null;
-  if (asset && !failedHere) {
-    if (reduced) {
-      if (asset.poster && !once) media = <img src={asset.poster} alt="" aria-hidden="true" {...mediaStyle} onError={() => setFailed(slot)} />;
-    } else if (asset.webm || asset.mp4) {
+  if (asset && failed !== slot) {
+    const still = asset.poster ?? (asset.kind === 'image' ? asset.sources[0]?.src : undefined);
+    if (reduced && asset.posterWhenReduced) {
+      if (still && !once) media = <img src={still} alt="" aria-hidden="true" {...mediaStyle} onError={() => setFailed(slot)} />;
+    } else if (asset.kind === 'video') {
       media = (
-        <video key={playKey} autoPlay muted playsInline loop={!once && asset.loop} poster={asset.poster} aria-hidden="true" ref={once ? undefined : pauseOffscreen} {...mediaStyle} onError={() => setFailed(slot)}>
-          {asset.webm && <source src={asset.webm} type="video/webm" />}
-          {asset.mp4 && <source src={asset.mp4} type="video/mp4" />}
+        <video key={playKey} autoPlay muted playsInline loop={!once && asset.loop} poster={asset.poster} aria-hidden="true" ref={once || !asset.loop ? undefined : pauseOffscreen} {...mediaStyle} onError={() => setFailed(slot)}>
+          {asset.sources.map(source => <source key={source.src} src={source.src} type={source.type} />)}
         </video>
       );
-    } else if (asset.webp) {
-      media = <img src={asset.webp} alt="" aria-hidden="true" {...mediaStyle} onError={() => setFailed(slot)} />;
+    } else {
+      media = <img src={asset.sources[0]!.src} alt="" aria-hidden="true" {...mediaStyle} onError={() => setFailed(slot)} />;
     }
   }
   return (

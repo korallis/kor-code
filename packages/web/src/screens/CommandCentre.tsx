@@ -40,7 +40,8 @@ const styles = stylex.create({
   hello: { paddingBlock: '22px', paddingInline: '26px', overflow: 'hidden' },
   halo: { position: 'absolute', right: '-140px', top: '-160px', width: '520px', height: '520px', borderRadius: '50%', backgroundImage: tint.heroHalo, pointerEvents: 'none' },
   orbit: { position: 'absolute', right: '22px', top: '14px', width: '250px', height: '150px', opacity: 0.95, pointerEvents: 'none' },
-  heroMedia: { position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.9 },
+  heroMedia: { position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.8, zIndex: 0, borderRadius: 'inherit', overflow: 'hidden' },
+  heroContent: { position: 'relative', zIndex: 1 },
   h1: { fontFamily: font.display, fontSize: { default: '46px', [NARROW]: '40px' }, fontWeight: 600, letterSpacing: '-0.02em', lineHeight: 1.05, marginTop: '10px', position: 'relative' },
   pills: { display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap', position: 'relative' },
   ask: { marginTop: '18px', position: 'relative' },
@@ -75,6 +76,7 @@ const styles = stylex.create({
   insight: { padding: '18px' },
   donutTotal: { fontFamily: font.display, fontSize: '24px', fontWeight: 600 },
   donutLabel: { fontFamily: font.mono, fontSize: '10px', letterSpacing: '.08em', color: color.textMuted },
+  ember: { position: 'absolute', inset: 0, opacity: 0.22, pointerEvents: 'none', borderRadius: 'inherit', overflow: 'hidden' },
   now: { marginTop: '12px', paddingBlock: '14px', paddingInline: '16px', borderRadius: '14px', backgroundImage: tint.jevAnswer, borderWidth: '1px', borderStyle: 'solid', borderColor: tint.violetSoftEdge, position: 'relative' },
   nowText: { marginTop: '8px', color: color.textSecondary, fontSize: '13.5px', lineHeight: 1.6 },
   more: { fontSize: '12px', color: color.violetBright, display: 'inline-flex', alignItems: 'center', gap: '4px' },
@@ -130,6 +132,7 @@ function NeedsYou({ run, now, linearUrl }: { run: MissionRun | undefined; now: n
   const error = message.error ?? action.error;
   return (
     <Card index={1} variant="attention" style={styles.needs} label="Needs you">
+      <MotionMedia slot="needs-you-ember" fallback={null} style={styles.ember} />
       <div {...stylex.props(layout.row)}>
         <Pill tone="amber" dot pulse>NEEDS YOU</Pill>
         <a href={href('linear', run.executionId)} {...stylex.props(text.key)}>{keyOf(run)}</a>
@@ -274,6 +277,7 @@ export function CommandCentre() {
           <Card index={0} style={styles.hello} label="Greeting">
             <span {...stylex.props(styles.halo)} />
             <MotionMedia slot="hero-background" fallback={<Orbit keys={active.concat(attention, ready).map(keyOf)} />} style={styles.heroMedia} />
+            <div {...stylex.props(styles.heroContent)}>
             <div {...stylex.props(text.eyebrow, text.violet)}>{longDate(now)} · Command Centre</div>
             <h1 {...stylex.props(styles.h1)}>{greeting(now).split(' ')[0]} <span {...stylex.props(text.grad)}>{greeting(now).split(' ')[1]}.</span></h1>
             <div {...stylex.props(styles.pills)}>
@@ -284,6 +288,7 @@ export function CommandCentre() {
             </div>
             <div {...stylex.props(styles.ask)}>
               <AskJev placeholder="Ask Jev — what's blocked, and what can ship today?" idle={<RightNow attention={attention} ready={ready} queued={queued} />} />
+            </div>
             </div>
           </Card>
           <NeedsYou run={attention[0]} now={now} />

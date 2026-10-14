@@ -23,6 +23,9 @@ import { usd } from '../lib/format';
 import { isActive, needsYou } from '../lib/runs';
 import { parseQuota, providerTitle, sessionWindow, weeklyWindow } from '../lib/quota';
 import { KorMark } from './Mark';
+import { Card } from '../ui/card';
+import { Button } from '../ui/button';
+import { MotionMedia } from '../motion/MotionMedia';
 import { openAsk } from './askStore';
 import { projectTone } from './projectTone';
 
@@ -99,6 +102,10 @@ const styles = stylex.create({
   claude: { color: tint.providerClaude },
   codex: { color: tint.providerCodex },
   copilot: { color: color.violetBright },
+  offline: { paddingInline: space.s6, paddingTop: space.s6 },
+  offlineRow: { display: 'flex', alignItems: 'center', gap: space.s5 },
+  offlineArt: { width: '160px', height: '100px', flex: 'none' },
+  offlineTitle: { fontFamily: font.display, fontSize: '17px', fontWeight: 600 },
   hideNarrow: { display: { default: 'flex', [NARROW]: 'none' } },
   hideNarrowInline: { display: { default: 'inline', [NARROW]: 'none' } },
 });
@@ -278,6 +285,27 @@ function StatusBar() {
   );
 }
 
+/** When the event stream has failed repeatedly, say so above every screen, with the daemon-offline art and a reconnect. */
+function Offline() {
+  const connection = useLive(live => live.connection);
+  const reason = useLive(live => live.reason);
+  if (connection !== 'offline') return null;
+  return (
+    <div {...stylex.props(styles.offline)}>
+      <Card pad variant="attention">
+        <div {...stylex.props(styles.offlineRow)}>
+          <MotionMedia slot="empty-daemon-offline" contain fallback={null} style={styles.offlineArt} />
+          <div>
+            <div {...stylex.props(styles.offlineTitle)}>The Kor daemon is not answering.</div>
+            <div {...stylex.props(text.muted)}>{reason ?? 'The live event stream closed.'} Every value below is the last one Kor reported. Start it with <span {...stylex.props(text.mono, text.cyan)}>kor serve</span>.</div>
+          </div>
+          <span {...stylex.props(styles.pushRight)}><Button variant="warn" onClick={reconnect}>Reconnect</Button></span>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 export function AppFrame({ active, crumbs, askHint, showAsk = true, project, children }: { active: Screen; crumbs: readonly string[]; askHint?: string; showAsk?: boolean; project?: string; children: ReactNode }) {
   return (
     <div {...stylex.props(styles.app)}>
@@ -285,7 +313,7 @@ export function AppFrame({ active, crumbs, askHint, showAsk = true, project, chi
       <span {...stylex.props(styles.grid)} />
       <TopBar crumbs={crumbs} askHint={askHint} showAsk={showAsk} />
       <SideBar active={active} project={project} />
-      <main {...stylex.props(styles.main)}>{children}</main>
+      <main {...stylex.props(styles.main)}><Offline />{children}</main>
       <StatusBar />
     </div>
   );

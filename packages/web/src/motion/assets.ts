@@ -1,6 +1,7 @@
 // Higgsfield motion slots. The asset set lives in public/motion/ with a
-// manifest.json naming each slot; every slot has a coded fallback, so the app
-// looks complete before (or without) the assets.
+// manifest.json naming each slot (kind, ordered sources, posters, loop,
+// reduced-motion rule). Every slot has a coded fallback, so the app looks
+// complete before, or without, the assets.
 import { useQuery } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
 
@@ -13,50 +14,33 @@ export type MotionSlot =
   | 'empty-no-runs' | 'empty-no-issues' | 'empty-pool-unavailable' | 'empty-daemon-offline'
   | 'connect-splash';
 
-export interface MotionAsset { webm?: string; mp4?: string; webp?: string; poster?: string; loop: boolean }
+export interface MotionSource { src: string; type?: string | undefined }
+export interface MotionAsset { kind: 'video' | 'animated-image' | 'image'; sources: MotionSource[]; poster?: string | undefined; loop: boolean; posterWhenReduced: boolean }
 
-const BASE = '/motion/';
-const url = (file: unknown) => typeof file === 'string' && file.length > 0 ? (/^(\/|https?:)/.test(file) ? file : `${BASE}${file}`) : undefined;
+const obj = (value: unknown): Record<string, unknown> | null => typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
 
-function readEntry(value: unknown): MotionAsset | null {
-  if (typeof value === 'string') {
-    const file = url(value);
-    if (!file) return null;
-    return /\.webm$/i.test(file) ? { webm: file, loop: true } : /\.mp4$/i.test(file) ? { mp4: file, loop: true } : /\.(webp|gif|png|avif)$/i.test(file) ? { webp: file, loop: true } : null;
-  }
-  if (typeof value !== 'object' || value === null) return null;
-  const entry = value as Record<string, unknown>;
-  const files: Record<string, unknown> = { ...entry, ...(typeof entry.files === 'object' && entry.files !== null ? entry.files as Record<string, unknown> : {}) };
-  const pick = (pattern: RegExp) => {
-    for (const [key, file] of Object.entries(files)) if (pattern.test(key) && url(file)) return url(file);
-    for (const file of Object.values(files)) if (typeof file === 'string' && pattern.test(file)) return url(file);
-    return undefined;
-  };
-  const asset: MotionAsset = { loop: entry.loop !== false && entry.oneShot !== true && entry.kind !== 'one-shot' };
-  const webm = pick(/webm/i), mp4 = pick(/mp4|h264/i), webp = pick(/webp|animated/i), poster = pick(/poster|avif|still/i);
-  if (webm) asset.webm = webm;
-  if (mp4) asset.mp4 = mp4;
-  if (webp) asset.webp = webp;
-  if (poster) asset.poster = poster;
-  return asset.webm || asset.mp4 || asset.webp || asset.poster ? asset : null;
+function files(value: unknown, base: string): MotionSource[] {
+  const list = Array.isArray(value) ? value : value === undefined ? [] : [value];
+  return list.flatMap(item => {
+    const entry = obj(item);
+    const src = typeof item === 'string' ? item : typeof entry?.src === 'string' ? entry.src : null;
+    if (!src) return [];
+    return [{ src: /^(\/|https?:)/.test(src) ? src : `${base}${src}`, type: typeof entry?.type === 'string' ? entry.type : undefined }];
+  });
 }
 
 function readManifest(raw: unknown): Partial<Record<MotionSlot, MotionAsset>> {
+  const root = obj(raw);
+  const base = typeof root?.basePath === 'string' ? root.basePath : '/motion/';
+  const slots = obj(root?.slots) ?? {};
   const out: Partial<Record<MotionSlot, MotionAsset>> = {};
-  if (typeof raw !== 'object' || raw === null) return out;
-  const root = raw as Record<string, unknown>;
-  const slots = root.slots ?? root.assets ?? root;
-  if (Array.isArray(slots)) {
-    for (const item of slots) {
-      const slot = (item as Record<string, unknown>)?.slot ?? (item as Record<string, unknown>)?.name ?? (item as Record<string, unknown>)?.id;
-      const asset = readEntry(item);
-      if (typeof slot === 'string' && asset) out[slot as MotionSlot] = asset;
-    }
-  } else if (typeof slots === 'object' && slots !== null) {
-    for (const [slot, item] of Object.entries(slots)) {
-      const asset = readEntry(item);
-      if (asset) out[slot as MotionSlot] = asset;
-    }
+  for (const [name, value] of Object.entries(slots)) {
+    const entry = obj(value);
+    if (!entry) continue;
+    const sources = files(entry.sources ?? entry.src, base);
+    if (sources.length === 0) continue;
+    const kind = entry.kind === 'video' || entry.kind === 'animated-image' ? entry.kind : 'image';
+    out[name as MotionSlot] = { kind, sources, poster: files(entry.poster, base)[0]?.src, loop: entry.loop !== false, posterWhenReduced: entry.reducedMotion !== 'same' };
   }
   return out;
 }
@@ -65,7 +49,7 @@ export function useMotionAsset(slot: MotionSlot): MotionAsset | null {
   const { data } = useQuery({
     queryKey: ['motion-manifest'], staleTime: Infinity, retry: false,
     queryFn: async () => {
-      const response = await fetch(`${BASE}manifest.json`, { cache: 'force-cache' });
+      const response = await fetch('/motion/manifest.json', { cache: 'no-cache' });
       if (!response.ok) return {};
       return readManifest(await response.json());
     },

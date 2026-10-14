@@ -27,6 +27,7 @@ import { Icon } from '../ui/icon';
 import { layout } from '../ui/layout';
 import { text } from '../ui/text';
 import { MotionMedia } from '../motion/MotionMedia';
+import { AgentAvatar, profileOf } from '../ui/avatar';
 import { compact, prob, shortModel, usd } from '../lib/format';
 import { parseDiff } from '../lib/diff';
 import { parseTerminal, sessionUsage } from '../lib/terminal';
@@ -169,6 +170,7 @@ function RunTerminal({ run, decisions, now }: { run: MissionRun; decisions: Deci
     <Card index={1} flex style={styles.term} label={`Terminal for ${keyOf(run)}`}>
       {shippedAt > 0 && now - shippedAt < 4_000 && <MotionMedia slot="pr-shipped" once playKey={shippedAt} fallback={<span {...stylex.props(animate.fadeIn)}><Pill tone="green" dot>{run.status === 'review' ? 'PR opened' : 'merged'}</Pill></span>} style={styles.shipped} />}
       <div {...stylex.props(styles.th)}>
+        <AgentAvatar profile={profileOf(runDecisions.filter(decision => decision.kind === 'agent').at(-1)?.choice, run.status === 'evaluating')} size={34} />
         <span {...stylex.props(text.key, text.lg)}>{keyOf(run)}</span>
         <h2 {...stylex.props(styles.thTitle, text.ellipsis)}>{run.issueTitle ?? run.issueId}</h2>
         <StatusPill status={run.status} detail={run.stage} />
