@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import type { Execution } from '@kor-code/core';
-import { array, connection, object, parseIssue, string, type LinearClient, type LinearWrite } from './contract.js';
+import { array, connection, object, parseIssue, stateType, string, type LinearClient, type LinearWrite, type LinearWorkflowState } from './contract.js';
 
 const page = 'pageInfo { hasNextPage }';
 const issueFields = `id title description updatedAt priority team { id key } state { id type }
@@ -18,6 +18,7 @@ export interface LinearClientOptions {
   fetcher?: typeof globalThis.fetch;
   // Write access is opt-in and also requires an app user for agent sessions.
   writes?: { appUserId?: string };
+  capabilities?: { agentSessions?: boolean };
 }
 
 export async function resolveLinearApiKey(envFile = `${process.env.HOME ?? ''}/.config/linear/env`): Promise<string> {
@@ -57,7 +58,10 @@ export async function readBoundedJson(response: Response, maximum = 2_000_000): 
 }
 
 export class HttpLinearClient implements LinearClient {
-  constructor(private readonly options: LinearClientOptions = {}) {}
+  readonly capabilities: { agentSessions: boolean };
+  constructor(private readonly options: LinearClientOptions = {}) {
+    this.capabilities = { agentSessions: options.capabilities?.agentSessions ?? false };
+  }
 
   async query(query: string, variables: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
     const apiKey = this.options.apiKey ?? await resolveLinearApiKey(this.options.envFile);
@@ -70,7 +74,12 @@ export class HttpLinearClient implements LinearClient {
     } catch { throw new Error('Linear transport failed; upstream details redacted'); }
     const payload = object(await readBoundedJson(response));
     if (payload.errors !== undefined && array(payload.errors).length > 0) {
-      throw new Error(`Linear GraphQL request failed: errors=${array(payload.errors).length}; upstream details redacted`);
+      const codes = array(payload.errors).map(error => {
+        const value = object(error);
+        const extensions = value.extensions === undefined ? undefined : object(value.extensions);
+        return extensions?.code === undefined ? 'UNKNOWN' : string(extensions.code);
+      });
+      throw new Error(`Linear GraphQL request failed: errors=${codes.length}; codes=${[...new Set(codes)].join(',')}; upstream details redacted`);
     }
     return object(payload.data);
   }
@@ -89,13 +98,23 @@ export class HttpLinearClient implements LinearClient {
     return array(object(data.issues).nodes).map(parseIssue);
   }
 
+  async listWorkflowStates(teamKey: string): Promise<LinearWorkflowState[]> {
+    const data = await this.query(`query KorWorkflowStates($key: String!) {
+      workflowStates(filter: { team: { key: { eq: $key } } }) { nodes { id name type } ${page} }
+    }`, { key: teamKey });
+    return connection(data.workflowStates).map(value => {
+      const state = object(value);
+      return { id: string(state.id), name: string(state.name), type: stateType(state.type) };
+    });
+  }
+
   async apply(write: LinearWrite): Promise<void> {
     const writes = this.options.writes;
     if (!writes) throw new Error('Linear writes disabled');
     let data: Record<string, unknown>;
     switch (write.kind) {
       case 'session': {
-        if (!writes.appUserId) throw new Error('Linear agent-session writes require an OAuth app user; use comments with a personal key');
+        if (!writes.appUserId || !this.capabilities.agentSessions) throw new Error('Linear agent-session writes disabled; use an OAuth app capability');
         // Reconcile stable IDs before replaying creates after a process crash.
         const existing = await this.query('query KorSession($id: String!) { agentSession(id: $id) { id issue { id } context } }', { id: write.session.id });
         if (existing.agentSession !== null) {
@@ -126,13 +145,22 @@ export class HttpLinearClient implements LinearClient {
         break;
       }
       case 'comment': {
-        // Query the issue's bounded comment connection. Linear reports a
-        // missing Comment entity as a GraphQL error, which cannot distinguish
-        // a normal first write from an authentication failure.
-        const existing = object(await this.query('query KorIssueComments($id: String!) { issue(id: $id) { comments(first: 100) { nodes { id } } } }', { id: write.issueId }));
-        const comments = array(object(object(existing.issue).comments).nodes);
-        if (comments.some(value => string(object(value).id) === write.id)) return;
+        const issue = await this.getIssue(write.issueId);
+        const existing = issue.comments.find(comment => comment.id === write.id);
+        if (existing?.body === write.body) return;
+        if (existing) {
+          data = await this.query('mutation KorCommentUpdate($id: String!, $input: CommentUpdateInput!) { commentUpdate(id: $id, input: $input) { success } }', { id: write.id, input: { body: write.body } });
+          break;
+        }
         data = await this.query('mutation KorComment($input: CommentCreateInput!) { commentCreate(input: $input) { success } }', { input: { id: write.id, issueId: write.issueId, body: write.body } });
+        break;
+      }
+      case 'attachment': {
+        const issue = await this.getIssue(write.issueId);
+        if (issue.resources.some(resource => resource.url === write.url)) return;
+        data = await this.query('mutation KorAttachment($input: AttachmentLinkGitHubPRInput!) { attachmentLinkGitHubPR(input: $input) { success } }', {
+          input: { issueId: write.issueId, url: write.url, ...(write.title ? { title: write.title } : {}) },
+        });
         break;
       }
     }

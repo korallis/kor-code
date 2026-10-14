@@ -35,6 +35,7 @@ function parseWrite(value: unknown): LinearWrite {
     case 'state': return { kind: 'state', issueId: string(write.issueId), stateId: string(write.stateId) };
     case 'summary': return { kind: 'summary', sessionId: string(write.sessionId), summary: string(write.summary) };
     case 'comment': return { kind: 'comment', id: string(write.id), issueId: string(write.issueId), body: string(write.body) };
+    case 'attachment': return { kind: 'attachment', issueId: string(write.issueId), url: string(write.url), ...(write.title === undefined ? {} : { title: string(write.title) }) };
     case 'activity': {
       const activity = string(write.activity);
       if (activity !== 'thought' && activity !== 'response' && activity !== 'error') throw new Error('Invalid activity type');

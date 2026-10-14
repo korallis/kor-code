@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "rootDir": "..",
+    "baseUrl": ".",
+    "paths": { "@kor-code/config": ["../config/src/index.ts"] }
+  },
+  "references": []
+}

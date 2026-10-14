@@ -10,6 +10,17 @@ import { redact } from "./redact.js";
 
 export type DecisionKind = "route" | "skill" | "agent" | "context" | "readiness" | "complexity" | "risk";
 export type DecisionAnswerType = "choice" | "noul" | "score";
+export interface AcceptanceJudgmentRequest {
+  executionId: string;
+  state: JsonValue;
+  criteria: readonly { id: string; description: string }[];
+  threshold?: number;
+}
+export interface AcceptanceJudgment {
+  criterionId: string;
+  probability: number;
+  passed: boolean;
+}
 export interface DecisionRequest { decisionId: string; executionId: string; kind: DecisionKind; question: string; state: JsonValue; inputs: DecisionInput[]; candidates: string[]; criteria?: Record<string, JevJsonValue>; nonApplyingCandidates?: string[]; answerType?: DecisionAnswerType; evidenceRefs?: string[]; policyChecks?: DecisionBundle["policyChecks"]; threshold?: number; overrides?: JsonValue }
 export interface AppliedDecision extends DecisionBundle { kind: DecisionKind; applied: boolean; escalated: boolean; answerType?: DecisionAnswerType; model?: string; probabilities?: Record<string, number>; noul?: number; score?: number; overrides?: JsonValue; observedOutcome?: JsonValue }
 export interface DecisionAuditRecord { request: DecisionRequest; response: AppliedDecision; recordedAt: string; rawAnswer?: JevAnswer; overrides?: JsonValue; observedOutcome?: JsonValue }
@@ -131,6 +142,23 @@ export class JevDecisionCore {
   async selectSkill(request: DecisionRequest): Promise<AppliedDecision> { return this.decide({ ...request, kind: "skill" }); }
   async selectAgent(request: DecisionRequest): Promise<AppliedDecision> { return this.decide({ ...request, kind: "agent" }); }
   async rankContext(request: DecisionRequest): Promise<AppliedDecision> { return this.decide({ ...request, kind: "context" }); }
+  /** Ask one typed Noul for each acceptance condition over the supplied evidence. */
+  async judgeAcceptance(request: AcceptanceJudgmentRequest): Promise<AcceptanceJudgment[]> {
+    if (request.criteria.length === 0) return [];
+    const threshold = request.threshold ?? 0.7;
+    if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) throw new Error("Acceptance threshold must be between 0 and 1");
+    const questions = Object.fromEntries(request.criteria.map(criterion => [criterion.id, {
+      type: "noul" as const,
+      instructions: `Does the current implementation satisfy this acceptance criterion: ${criterion.description}? Judge only the supplied diff and check output.`,
+      criteria: { true: "The diff and authoritative checks demonstrate the criterion is satisfied.", false: "The evidence is missing, contradictory, or the checks do not demonstrate the criterion." },
+    }]));
+    const response = await this.client.evaluate(request.state, questions);
+    return request.criteria.map(criterion => {
+      const answer = response.answers[criterion.id];
+      if (!answer || answer.type !== "noul") throw new Error(`Jev acceptance answer missing for ${criterion.id}`);
+      return { criterionId: criterion.id, probability: answer.noul, passed: answer.noul >= threshold };
+    });
+  }
   apply(request: DecisionRequest, answer: JevAnswer | undefined, model?: string): AppliedDecision {
     const result = applyDecision(request, answer, model);
     this.audit.append({ request: redact(structuredClone(request)) as DecisionRequest, response: result, recordedAt: this.now(), ...(answer ? { rawAnswer: structuredClone(answer) } : {}), ...(request.overrides !== undefined ? { overrides: redact(request.overrides) as JsonValue } : {}) });

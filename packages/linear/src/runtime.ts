@@ -1,7 +1,7 @@
-import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AcceptanceFinding, Execution } from '@kor-code/core';
-import { type Completion, type LinearClient, type LinearIssue, type WorkflowMapping } from './contract.js';
+import { stableId, type Completion, type LinearClient, type LinearIssue, type LinearWrite, type WorkflowMapping } from './contract.js';
 import { LinearStore, sessionRecord, type ExecutionClaim } from './store.js';
 
 export class SnapshotReader {
@@ -37,34 +37,44 @@ export class AgentSessionWriter {
   start(claim: ExecutionClaim, manifest: Execution): void {
     const assignment = claim.assignment;
     if (manifest.id !== assignment.executionId || manifest.issueId !== assignment.issueId || manifest.status !== 'running') throw new Error('Manifest does not match the claimed execution');
-    this.store.transition(claim, 'running', [
-      { kind: 'session', session: sessionRecord(assignment) },
-      { kind: 'state', issueId: assignment.issueId, stateId: this.states.queued.id },
-      { kind: 'state', issueId: assignment.issueId, stateId: this.states.running.id },
-      { kind: 'summary', sessionId: assignment.sessionId, summary: `Execution ${assignment.executionId} running` },
-      { kind: 'activity', id: randomUUID(), sessionId: assignment.sessionId, activity: 'thought', body: `Execution ${assignment.executionId} started` },
-    ], manifest);
+    this.store.transition(claim, 'running', startWrites(assignment, this.states, this.client), manifest);
   }
 
   complete(claim: ExecutionClaim, completion: Completion): void {
     if (!completion.summary.trim() || completion.evidence.length === 0 || completion.evidence.some(evidence => evidence.status !== 'pass')) throw new Error('Completion requires passing evidence and a summary');
     const assignment = claim.assignment;
     const body = [completion.summary, ...completion.evidence.map(evidence => `${evidence.kind}: ${evidence.summary}${evidence.source ? ` (${evidence.source})` : ''}`), completion.pullRequestUrl ?? ''].filter(Boolean).join('\n');
-    this.store.transition(claim, 'complete', [
-      { kind: 'summary', sessionId: assignment.sessionId, summary: body },
-      { kind: 'activity', id: randomUUID(), sessionId: assignment.sessionId, activity: 'response', body },
-      { kind: 'comment', id: randomUUID(), issueId: assignment.issueId, body },
-      { kind: 'state', issueId: assignment.issueId, stateId: this.states.complete.id },
-    ]);
+    const writes: LinearWrite[] = [
+      { kind: 'comment', id: stableId('kor-progress', `${assignment.executionId}:complete`), issueId: assignment.issueId, body },
+      { kind: 'state', issueId: assignment.issueId, stateId: completion.pullRequestUrl && this.states.review ? this.states.review.id : this.states.complete.id },
+    ];
+    if (completion.pullRequestUrl) writes.push({ kind: 'attachment', issueId: assignment.issueId, url: completion.pullRequestUrl, title: 'GitHub pull request' });
+    if (this.client.capabilities?.agentSessions) {
+      writes.unshift(
+        { kind: 'summary', sessionId: assignment.sessionId, summary: body },
+        { kind: 'activity', id: stableId('kor-activity', `${assignment.executionId}:complete`), sessionId: assignment.sessionId, activity: 'response', body },
+      );
+    }
+    this.store.transition(claim, 'complete', writes);
   }
 
-  recordVerificationBlock(claim: ExecutionClaim, execution: Execution, findings: readonly AcceptanceFinding[]): void {
-    const body = [`Execution ${execution.id} blocked: acceptance evidence is incomplete`, ...findings.map(finding => `${finding.conditionId}: ${finding.status}${finding.evidenceIds.length > 0 ? ` (${finding.evidenceIds.join(', ')})` : ''}`)].join('\n');
+  cancel(claim: ExecutionClaim, reason = 'Execution canceled by operator'): void {
+    const state = this.states.queued;
     this.store.record(claim, [
+      { kind: 'comment', id: stableId('kor-progress', `${claim.assignment.executionId}:cancel`), issueId: claim.assignment.issueId, body: `Kor canceled execution ${claim.assignment.executionId}: ${reason}` },
+      { kind: 'state', issueId: claim.assignment.issueId, stateId: state.id },
+    ]);
+    this.store.release(claim);
+  }
+
+  recordVerificationBlock(claim: ExecutionClaim, execution: Execution, findings: readonly AcceptanceFinding[], blockers: readonly string[] = []): void {
+    const body = [`Execution ${execution.id} blocked: acceptance evidence is incomplete`, ...(blockers.length > 0 ? ['Blockers:', ...blockers.map(blocker => `- ${blocker}`)] : []), ...findings.map(finding => `${finding.conditionId}: ${finding.status}${finding.evidenceIds.length > 0 ? ` (${finding.evidenceIds.join(', ')})` : ''}${finding.note ? ` — ${finding.note}` : ''}`)].join('\n');
+    const writes: LinearWrite[] = [{ kind: 'comment', id: stableId('kor-progress', `${claim.assignment.executionId}:blocked`), issueId: claim.assignment.issueId, body }];
+    if (this.client.capabilities?.agentSessions) writes.unshift(
       { kind: 'summary', sessionId: claim.assignment.sessionId, summary: body },
-      { kind: 'activity', id: randomUUID(), sessionId: claim.assignment.sessionId, activity: 'error', body },
-      { kind: 'comment', id: randomUUID(), issueId: claim.assignment.issueId, body },
-    ], execution);
+      { kind: 'activity', id: stableId('kor-activity', `${claim.assignment.executionId}:blocked`), sessionId: claim.assignment.sessionId, activity: 'error', body },
+    );
+    this.store.record(claim, writes, execution);
   }
 
   async flush(maximum = 100): Promise<number> {
@@ -82,6 +92,19 @@ export class AgentSessionWriter {
       return count;
     } finally { this.store.releaseWriter(token); }
   }
+}
+
+export function startWrites(assignment: ExecutionClaim['assignment'], states: WorkflowMapping, client?: LinearClient): LinearWrite[] {
+  const writes: LinearWrite[] = [
+    { kind: 'state', issueId: assignment.issueId, stateId: states.running.id },
+    { kind: 'comment', id: stableId('kor-progress', `${assignment.executionId}:start`), issueId: assignment.issueId, body: `Kor started execution ${assignment.executionId}; state → ${states.running.name ?? 'In Progress'}` },
+  ];
+  if (client?.capabilities?.agentSessions) writes.push(
+    { kind: 'session', session: sessionRecord(assignment) },
+    { kind: 'summary', sessionId: assignment.sessionId, summary: `Execution ${assignment.executionId} running` },
+    { kind: 'activity', id: stableId('kor-activity', `${assignment.executionId}:start`), sessionId: assignment.sessionId, activity: 'thought', body: `Execution ${assignment.executionId} started` },
+  );
+  return writes;
 }
 
 export interface WebhookReceiverOptions { secret: string; store: LinearStore; now?: () => number }
