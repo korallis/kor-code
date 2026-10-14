@@ -17,6 +17,7 @@ This repository contains the foundation monorepo and documentation. The foundati
 7. [Open questions](docs/open-questions.md)
 8. [Model compatibility](docs/model-compatibility.md)
 9. [Configuration and doctor](docs/configuration.md)
+10. [Firstmate dispatch adapter and CLI contract](integrations/firstmate/README.md)
 
 ## Responsibility split
 
@@ -207,11 +208,14 @@ Add a `linearTeam` or `linearProject` mapping to the repository entry in `config
 pnpm kor run LEE-123 --dry-run
 ```
 
+The preview includes the canonical issue UUID, title, intake label, default route, and these planned actions:
+
 ```text
-{"issueId":"LEE-123","canonicalIssueId":"<linear-uuid>","dryRun":true,"queued":false}
+enqueue durable assignment
+run isolated session when kor serve is active
 ```
 
-Run it without `--dry-run` to enqueue the canonical assignment. This daemon path owns the durable queue and execution status; its CLI does not perform the direct Linear progress writes from the standalone preflight command. `kor cancel LEE-123` and `kor retry LEE-123` resolve the same canonical issue before changing the durable assignment.
+Run it without `--dry-run` to enqueue the canonical assignment and return its `executionId`. This daemon path owns the durable queue and execution status; its CLI does not perform the direct Linear progress writes from the standalone preflight command. `kor status --json EXECUTION-ID|ISSUE-ID`, `kor cancel EXECUTION-ID|ISSUE-ID`, and `kor retry EXECUTION-ID|ISSUE-ID` find the durable assignment locally, without a Linear request. Missing acceptance criteria produce `blocked` with a needs-input reason before a model session starts.
 
 ### Operate the daemon
 
@@ -233,7 +237,7 @@ daemon proof passed; picked=LEE-57; status=live; restart=queued; attempts=1; orp
 After `pnpm install` and a `~/.config/kor/config.yaml`, install the user service with `cp systemd/kor.service ~/.config/systemd/user/kor.service`, then run `systemctl --user daemon-reload` and `systemctl --user enable --now kor`.
 The daemon polls Todo issues carrying the configured `kor` label, stores leases in `~/.local/state/kor/kor.db`, and publishes snapshots under `~/.local/state/kor/snapshots/`.
 It polls each repository's `linearTeam` (else the team part of its map key) and runs a claimed issue in the checkout `repositoryKeyForIssue` maps it to (`linearProject`, then `linearTeam`).
-Use `kor status --json`, `kor run LEE-n` (the Linear writes above, then a queue entry for the daemon), `kor cancel LEE-n`, `kor retry ISSUE-ID`, and `kor logs EXECUTION-ID`.
+Use `kor status --json`, `kor run LEE-n` (a durable queue entry), `kor cancel EXECUTION-ID|ISSUE-ID`, `kor retry EXECUTION-ID|ISSUE-ID`, and `kor logs EXECUTION-ID`.
 The HTTP equivalent is `http://127.0.0.1:8327/status`; the cockpit also posts overrides there (see [Open the live cockpit](#open-the-live-cockpit)).
 Status values are `queued`, `running`, `complete`, `failed`, `blocked`, and `canceled`; response provenance is `live`, `stale`, or `unavailable`.
 `retry` is explicit for terminal failures and verification blocks, while a running cancellation stops the detached session group before recording `canceled`.
@@ -246,6 +250,42 @@ daemon proof passed; picked=LEE-57; status=live; restart=queued; attempts=1; orp
 ```
 
 No live Linear or gateway credential was used for this proof; credentials are supplied at runtime by the configured environment.
+
+## Dispatch from Firstmate
+
+The adapter in `integrations/firstmate/` is **Validated** against a real local daemon with isolated XDG directories and a live read of throwaway issue LEE-1107. Its missing acceptance criteria produced a captain-call payload; the Linear issue remained unchanged and no model session launched. Fleet rendering and captain delivery are **Proposed** until Firstmate wires its private home using the [integration guide](integrations/firstmate/README.md).
+
+Build once before using the machine-readable entry point. It needs Node 24+, pnpm, Bash, and `jq`:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build
+bin/kor serve                 # or the existing user service
+```
+
+In another terminal with the same Kor configuration and state directories, dispatch an issue. The local proof produced:
+
+```text
+$ integrations/firstmate/kor-dispatch dispatch LEE-1107
+{"schemaVersion":1,"issueId":"LEE-1107","canonicalIssueId":"900a9f29-97bd-4343-b1f2-28462741c05f","executionId":"e9f75716-7856-4b76-b305-bcb39b682206","status":"queued","queued":true,"dispatchType":"kor"}
+
+$ integrations/firstmate/kor-dispatch poll e9f75716-7856-4b76-b305-bcb39b682206
+{"schemaVersion":1,"dispatchType":"kor","executionId":"e9f75716-7856-4b76-b305-bcb39b682206","issueId":"LEE-1107","state":"blocked","provenance":"live","observedAt":"2026-10-14T16:08:33.490Z","fleetState":"needs-decision","holdsCapacity":true,"pullRequestUrl":null,"costUsd":null,"cancelRequested":false,"captainCall":{"key":"kor:e9f75716-7856-4b76-b305-bcb39b682206:1:needs-input","reason":"Add a # Acceptance section with explicit criteria to the Linear issue, then retry this execution."},"reason":null}
+
+$ integrations/firstmate/kor-dispatch cancel e9f75716-7856-4b76-b305-bcb39b682206
+{
+  "schemaVersion": 1,
+  "issueId": "LEE-1107",
+  "canonicalIssueId": "900a9f29-97bd-4343-b1f2-28462741c05f",
+  "executionId": "e9f75716-7856-4b76-b305-bcb39b682206",
+  "command": "cancel",
+  "accepted": true
+}
+```
+
+For the raw versioned contract, use `bin/kor status --json EXECUTION-ID` or `bin/kor status --json LEE-1107`. It returns `provenance` and a `run` object containing `state`, `needsInput`, `pullRequestUrl`, and `costUsd`. Unknown executions return `run: null` and exit 1. A stopped daemon makes the selected response stale even if the last snapshot is recent; the adapter then reports `paused` and withholds captain calls. PR URL and cost are `null` until shipping and telemetry publish them.
+
+Firstmate reserves a kor-code slot for each distinct execution while `holdsCapacity` is true, and deduplicates captain calls by their key. A live terminal poll releases the reservation. The adapter provides these signals; it does not change the home's private configuration.
 
 ## Open the live cockpit
 
