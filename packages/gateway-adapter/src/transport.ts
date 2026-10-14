@@ -1,5 +1,4 @@
-import { readFile } from "node:fs/promises";
-import { loadGatewayEnvironment } from "@kor-code/config";
+import { gatewayUrl, loadGatewayEnvironment } from "@kor-code/config";
 import type { JsonValue, RouteFailureReason } from "@kor-code/core";
 
 export function record(value: unknown): value is Record<string, unknown> {
@@ -27,26 +26,13 @@ export function publicJson(value: unknown): JsonValue {
 export interface RuntimeConfig { baseUrl: string; apiKey: string | undefined; managementKey: string | undefined; managementUrl?: string }
 export async function runtimeConfig(options: { baseUrl?: string; apiKey?: string; managementKey?: string }): Promise<RuntimeConfig> {
   const korEnvironment = await loadGatewayEnvironment();
-  const envFile: Record<string, string> = {};
-  try {
-    const body = await readFile(`${process.env.HOME ?? ""}/.config/cpa-management.env`, "utf8");
-    for (const line of body.split(/\r?\n/)) {
-      const match = /^\s*(?:export\s+)?(CPA_BASE_URL|CPA_MANAGEMENT_KEY)\s*=\s*(.*?)\s*$/.exec(line);
-      if (match?.[1] && match[2]) envFile[match[1]] = match[2].replace(/^['"]|['"]$/g, "");
-    }
-  } catch (error) {
-    if (!record(error) || error.code !== "ENOENT") throw new Error("Cannot read CPA runtime environment file");
-  }
-  let apiKey = options.apiKey ?? process.env.CPA_API_KEY ?? process.env.KOR_GATEWAY_KEY ?? korEnvironment.key;
-  if (!apiKey && process.env.KOR_GATEWAY_KEY_FILE) {
-    try { apiKey = (await readFile(process.env.KOR_GATEWAY_KEY_FILE, "utf8")).trim(); }
-    catch { throw new Error("Cannot read KOR_GATEWAY_KEY_FILE"); }
-  }
-  const baseUrl = options.baseUrl ?? process.env.CPA_BASE_URL ?? korEnvironment.baseUrl ?? envFile.CPA_BASE_URL ?? "http://127.0.0.1:8317";
-  const url = new URL(baseUrl);
-  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error("Invalid CPA base URL");
-  const managementUrl = process.env.CPA_MANAGEMENT_URL ?? korEnvironment.managementUrl;
-  return { baseUrl: baseUrl.replace(/\/$/, ""), apiKey, managementKey: options.managementKey ?? process.env.CPA_MANAGEMENT_KEY ?? korEnvironment.managementKey ?? envFile.CPA_MANAGEMENT_KEY, ...(managementUrl ? { managementUrl } : {}) };
+  const baseUrl = gatewayUrl(options.baseUrl ?? korEnvironment.baseUrl);
+  return {
+    baseUrl,
+    apiKey: options.apiKey ?? korEnvironment.key,
+    managementKey: options.managementKey ?? korEnvironment.managementKey,
+    ...(korEnvironment.managementUrl ? { managementUrl: korEnvironment.managementUrl } : {}),
+  };
 }
 export function classify(status: number): RouteFailureReason {
   if (status === 429) return "quota";

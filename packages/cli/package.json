@@ -2,12 +2,20 @@
   "name": "@kor-code/cli",
   "version": "0.1.0",
   "type": "module",
-  "bin": { "kor": "dist/cli.js" },
-  "exports": { ".": { "types": "./dist/cli.d.ts", "import": "./dist/cli.js" } },
-  "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.json --noEmit" },
+  "bin": {
+    "kor": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
   "dependencies": {
-    "@kor-code/config": "workspace:*",
-    "@kor-code/gateway-adapter": "workspace:*",
-    "@kor-code/linear": "workspace:*"
+    "@kor-code/config": "workspace:*"
   }
 }

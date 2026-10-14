@@ -1,6 +1,16 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": "src", "outDir": "dist", "composite": true },
-  "include": ["src/**/*.ts"],
-  "references": [{ "path": "../config" }, { "path": "../gateway-adapter" }, { "path": "../linear" }]
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "composite": true
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../config"
+    }
+  ]
 }

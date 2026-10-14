@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import { loadGatewayEnvironment, loadKorConfig, parseDotEnv, runtimePaths, type GatewayEnvironment, type KorPaths } from "@kor-code/config";
@@ -59,13 +59,7 @@ async function checkManagement(environment: NodeJS.ProcessEnv, paths: KorPaths, 
   let gateway: GatewayEnvironment;
   try { gateway = await loadGatewayEnvironment(paths.gatewayEnvFile, environment); }
   catch (error) { return { name: "CLIProxyAPI management access", status: "error", detail: error instanceof Error ? error.message : "runtime environment unavailable" }; }
-  let managementKey = gateway.managementKey;
-  if (!managementKey) {
-    try {
-      const values = parseDotEnv(await readFile(resolve(paths.home, ".config", "cpa-management.env"), "utf8"));
-      managementKey = values.CPA_MANAGEMENT_KEY;
-    } catch { /* The missing-key result below is the useful diagnosis. */ }
-  }
+  const managementKey = gateway.managementKey;
   if (!managementKey) return { name: "CLIProxyAPI management access", status: "error", detail: "management key missing" };
   const baseUrl = gateway.baseUrl ?? "http://127.0.0.1:8317";
   const url = gateway.managementUrl ?? `${baseUrl.replace(/\/$/, "")}/v0/management/config`;
@@ -80,9 +74,10 @@ async function checkCommand(name: string, file: string, args: readonly string[],
   try {
     const result = await command(file, args);
     if (name === "Claude Code") {
-      const version = result.stdout.trim().split(/\r?\n/, 1)[0]?.slice(0, 80);
-      return { name, status: "ok", detail: version || "available" };
+      const version = /^(\d+\.\d+\.\d+)(?: \(Claude Code\))?$/.exec(result.stdout.trim())?.[1];
+      return version ? { name, status: "ok", detail: `${version} (Claude Code)` } : { name, status: "error", detail: "unrecognized version output" };
     }
+    if (name === "no-mistakes daemon" && !/daemon running\b/.test(result.stdout)) return { name, status: "error", detail: "not running" };
     return { name, status: "ok", detail: "available" };
   } catch { return { name, status: "error", detail: "unavailable" }; }
 }
@@ -90,18 +85,24 @@ async function checkCommand(name: string, file: string, args: readonly string[],
 async function checkRepositories(config: Awaited<ReturnType<typeof loadKorConfig>>, command: DoctorCommand): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
   for (const [key, repository] of Object.entries(config.config.repos).sort(([left], [right]) => left.localeCompare(right))) {
+    let detail = "path is unavailable";
     try {
       await access(repository.path);
+      detail = "path is not a Git checkout root";
       const root = (await command("git", ["-C", repository.path, "rev-parse", "--show-toplevel"])).stdout.trim();
-      if (!root) throw new Error("not a git repository");
-      await command("git", ["-C", repository.path, "show-ref", "--verify", `refs/heads/${repository.defaultBranch}`]);
+      if (await realpath(repository.path) !== await realpath(root)) throw new Error();
+      detail = "configured default branch is missing";
+      await command("git", ["-C", repository.path, "rev-parse", "--verify", `refs/heads/${repository.defaultBranch}^{commit}`]).catch(() =>
+        command("git", ["-C", repository.path, "rev-parse", "--verify", `refs/remotes/origin/${repository.defaultBranch}^{commit}`]));
       if (repository.remote) {
+        detail = "origin does not match configured remote";
         const remote = (await command("git", ["-C", repository.path, "remote", "get-url", "origin"])).stdout.trim();
-        if (remote !== repository.remote) throw new Error("origin does not match config");
+        if (remote !== repository.remote) throw new Error();
       }
-      checks.push({ name: `repo ${key}`, status: "ok", detail: `${root} (${repository.defaultBranch})` });
-    } catch (error) {
-      checks.push({ name: `repo ${key}`, status: "error", detail: error instanceof Error ? error.message : "unavailable" });
+      checks.push({ name: `repo ${key}`, status: "ok", detail: `${repository.path} (${repository.defaultBranch})` });
+    } catch {
+      // Never forward git stderr: a configured remote can contain credentials.
+      checks.push({ name: `repo ${key}`, status: "error", detail });
     }
   }
   return checks;
@@ -111,9 +112,14 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   const environment = options.environment ?? process.env;
   const paths = options.paths ?? runtimePaths(environment);
   const command: DoctorCommand = options.command ?? commandRunner();
-  const config = await loadKorConfig(paths.configFile, { home: paths.home });
+  let config: Awaited<ReturnType<typeof loadKorConfig>> | undefined;
+  let configCheck: DoctorCheck;
+  try {
+    config = await loadKorConfig(paths.configFile, { home: paths.home });
+    configCheck = { name: "Kor config", status: config.exists ? "ok" : "error", detail: config.exists ? paths.configFile : `missing (${paths.configFile})` };
+  } catch { configCheck = { name: "Kor config", status: "error", detail: "invalid or unreadable; see docs/configuration.md" }; }
   const checks: DoctorCheck[] = [
-    { name: "Kor config", status: config.exists ? "ok" : "error", detail: config.exists ? paths.configFile : `missing (${paths.configFile})` },
+    configCheck,
     await checkCredential("Linear key", ["LINEAR_API_KEY"], resolve(paths.home, ".config", "linear", "env"), environment),
     await checkCredential("TypeSafe key", ["TYPESAFE_API_KEY", "TYPESAFE_KEY", "JEV_API_KEY"], resolve(paths.home, ".config", "typesafe", "env"), environment),
     await checkGateway(environment, paths, options.fetcher ?? globalThis.fetch),
@@ -122,10 +128,16 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     await checkCommand("Claude Code", "claude", ["--version"], command),
     await checkCommand("no-mistakes daemon", "no-mistakes", ["daemon", "status"], command),
   ];
-  checks.push(...await checkRepositories(config, command));
+  if (config) {
+    checks.push(...await checkRepositories(config, command));
+    if (Object.keys(config.config.repos).length === 0) checks.push({ name: "Repositories", status: "error", detail: "none configured" });
+  }
   return { checks, ok: checks.every(check => check.status === "ok") };
 }
 
-export function formatDoctor(report: DoctorReport): string {
-  return report.checks.map(check => `${check.status === "ok" ? "PASS" : "FAIL"} ${check.name}: ${check.detail}`).join("\n");
+export function formatDoctor(report: DoctorReport, color = false): string {
+  return report.checks.map(check => {
+    const line = `${check.status === "ok" ? "PASS" : "FAIL"} ${check.name}: ${check.detail}`;
+    return color ? `\u001b[${check.status === "ok" ? "32" : "31"}m${line}\u001b[0m` : line;
+  }).join("\n");
 }
