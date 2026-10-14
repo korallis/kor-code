@@ -277,7 +277,7 @@ export function JevBrain() {
                   </div>
                 </div>
               ))}
-              {learnings.length === 0 && <Empty title="No learnings yet.">Jev proposes them once calibration has enough finished runs.</Empty>}
+              {learnings.length === 0 && (brain.data?.learnings.provenance === 'unavailable' ? <Empty title="Learnings unavailable.">{brain.data.learnings.reason ?? 'Not reported by the daemon.'}</Empty> : <Empty title="No learnings yet.">Jev proposes them once calibration has enough finished runs.</Empty>)}
             </CardBody>
           </Card>
           <Card index={10} variant="neon" style={styles.experiment}>

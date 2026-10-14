@@ -24,7 +24,7 @@ import { page, QueryError } from './shared';
 const styles = stylex.create({
   grid: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: space.s4, alignItems: 'start' },
   connCard: { overflow: 'hidden' },
-  splash: { position: 'absolute', inset: 0, opacity: 0.35, pointerEvents: 'none' },
+  splash: { position: 'absolute', inset: 0, opacity: 0.16, pointerEvents: 'none' },
   conn: { display: 'grid', gridTemplateColumns: '36px minmax(0, 1fr) auto', gap: '12px', alignItems: 'start', paddingBlock: '14px', borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine, position: 'relative' },
   badge: { width: '36px', height: '36px', borderRadius: '10px', display: 'grid', placeItems: 'center', backgroundColor: tint.ghost, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairlineStrong, color: color.textSecondary },
   connName: { fontFamily: font.display, fontSize: '15px', fontWeight: 600 },

@@ -415,7 +415,7 @@ export function CommandCentre() {
           </Card>
           <Card index={12} variant="insight" style={[styles.insight, styles.spanNarrow]}>
             <div {...stylex.props(layout.row)}><JevOrb size={26} /><span {...stylex.props(text.eyebrow, text.violet)}>Jev learned</span><span {...stylex.props(layout.grow)} />{brain.data && <ProvenanceChip provenance={brain.data.learnings.provenance} reason={brain.data.learnings.reason} />}</div>
-            {learning ? <q {...stylex.props(styles.quote)}>{learning}</q> : <p {...stylex.props(styles.quote, text.muted)}>{brain.error ? `Learnings unavailable: ${brain.error.message}` : 'No learnings yet. Jev proposes one once calibration has enough finished runs to compare.'}</p>}
+            {learning ? <q {...stylex.props(styles.quote)}>{learning}</q> : <p {...stylex.props(styles.quote, text.muted)}>{brain.error ? `Learnings unavailable: ${brain.error.message}` : brain.data?.learnings.provenance === 'unavailable' ? `Learnings unavailable: ${brain.data.learnings.reason ?? 'not reported by the daemon'}.` : 'No learnings yet. Jev proposes one once calibration has enough finished runs to compare.'}</p>}
             <div {...stylex.props(layout.row, layout.mt3)}><Button size="sm" variant="violet" icon={BrainCircuit} onClick={() => navigate('brain')}>See why</Button></div>
           </Card>
         </section>
