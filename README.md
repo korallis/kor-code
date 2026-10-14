@@ -79,7 +79,8 @@ a fresh home, key redacted:
 
 Add `--no-systemd` on a host without a systemd user manager. To remove everything
 again, run `kor uninstall` (`kor uninstall --purge` also removes Kor's own data);
-on a fresh home the pair left no files behind. See
+on a fresh home the pair left no files behind. To update, pull, rebuild and
+**reinstall** (a rebuild alone does not refresh the installed cockpit). See
 [Update and uninstall](docs/user-guide.md#update-and-uninstall).
 
 ## Set up and check

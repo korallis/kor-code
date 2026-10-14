@@ -23,7 +23,16 @@ bump.
 - Do not start `kor serve` from a script on every poll. The daemon is a
   long-running process (`systemctl --user enable --now kor`, or a terminal).
 - Exit codes: `0` success, `1` the command ran and failed, `2` the arguments were
-  wrong (a usage error).
+  wrong (a usage error). Two commands deviate for usage errors: `kor calibrate`
+  and `kor models` report a wrong argument as `command_failed` with exit `1`.
+- `--json` is accepted by `run`, `status`, `cancel`, `retry`, `logs`, `doctor`,
+  `plan`, `install`, `uninstall` and `calibrate report`, and a failure of any
+  command is reported as a JSON error object when `--json` is present (see
+  [Errors](#errors)). Only some commands print JSON on success: `run`, `status`,
+  `cancel`, `retry`, `logs`, `doctor`, `plan`, `install` and `uninstall` do.
+  `kor models list` and `kor models probe` always print a table, and `kor
+  calibrate report` prints its text report unless you pass `--json` to get
+  the report object.
 
 ## Queue an issue: `kor run ISSUE-ID --json`
 
@@ -112,7 +121,7 @@ $ kor status --json LEE-1111
 | `observedAt` | When the CLI read the record (UTC). |
 | `reason` | Present when `provenance` is `stale` or `unavailable`. |
 | `run.executionId`, `run.issueId`, `run.issueKey` | The durable execution ID, the Linear UUID, and the issue key (nullable for old assignments). |
-| `run.state` | `queued`, `running`, `shipping`, `review`, `complete`, `failed`, `blocked` or `canceled`. Treat an unknown future state as "not finished". |
+| `run.state` | The queue state: `queued`, `running`, `shipping`, `review`, `complete`, `failed`, `blocked` or `canceled`. Treat an unknown future state as "not finished". |
 | `run.attempts` | How many times the daemon has claimed this execution. A restart or `kor retry` adds one. |
 | `run.cancelRequested` | A cancellation is waiting for the running session to stop. |
 | `run.pullRequestUrl` | The pull request, or `null` until shipping has opened one. |
@@ -127,7 +136,8 @@ immediately.
 
 When nothing matches the selector, or there is no database, the response has
 `provenance: "unavailable"`, `run: null`, a `reason`, and an `error` object, and
-the exit code is `1`:
+the exit code is `1` (the no-database variant is under
+[Unavailable status](#unavailable-status)):
 
 ```text
 $ kor status nope --json
@@ -149,9 +159,13 @@ $ kor status nope --json
 
 ## Read everything: `kor status --json`
 
-With no selector, `kor status` prints the daemon's snapshot envelope. It is the
-same document served at `http://127.0.0.1:8327/status` and written to
-`snapshots/index.json` in the state directory.
+With no selector, `kor status` prints an envelope around the daemon's snapshot.
+The same envelope is served at `http://127.0.0.1:8327/status`. The file the daemon
+writes to disk, `snapshots/index.json` in the state directory, is **not** the
+envelope: it is only the inner snapshot (the object under `snapshot`), with no
+`provenance` and no outer `schemaVersion`/`observedAt` envelope. A program that
+reads the file must compute freshness itself from `observedAt`; the CLI and HTTP
+endpoint do that for you.
 
 ```text
 $ kor status --json | jq -c 'keys'
@@ -166,13 +180,67 @@ $ kor status --json | jq -c '.snapshot.runs[0] | keys'
 | --- | --- |
 | `daemon` | `pid`, `startedAt`, `pollIntervalSeconds`, `lastPollAt`. |
 | `runs[]` | One entry per execution: its `status`, `attempts`, the Linear issue (`issueKey`, `issueTitle`, `issueUrl`, `issueState`), the `route` in force with its `routeSource` (`config`, `jev`, `fallback` or `override`), `decisionIds`, `verification` (each attempt's checks, diff and per-criterion findings), `shipping`, the `branch` and `worktree`, and `error` when blocked or failed. |
-| `accounts`, `decisions` | Each is `{ value, provenance, observedAt }`, plus `reason` when it could not be read. `provenance` is `live`, `stale` or `unavailable`. |
+| `accounts`, `decisions` | Each is `{ value, provenance, observedAt }`, plus `reason` when it could not be read. `provenance` is `live`, `stale` or `unavailable`. `accounts` can be missing from the very first snapshot a daemon publishes, before its first account refresh. |
 | `overrides` | The audit of cockpit overrides. |
 
-The top-level `provenance` has the same meaning as above. Without a selector the
-CLI compares the snapshot's age against twice the poll interval, so a daemon that
-was just stopped still reads `live` until the snapshot is that old. A missing
-snapshot is `unavailable`; an unavailable status is never an empty queue.
+A run's `status` in the snapshot can be any of `queued`, `ready`, `evaluating`,
+`running`, `waiting`, `verifying`, `repairing`, `shipping`, `review`, `blocked`,
+`complete`, `failed`, `escalated` or `canceled`. The selected-execution `run.state`
+above uses the narrower queue vocabulary.
+
+The envelope's `provenance` is `live` when the snapshot is no older than twice the
+poll interval, `stale` when it is older (with a `reason` such as `snapshot is 132s
+old`), and `unavailable` when there is no usable snapshot. Without a selector the
+CLI judges only the snapshot's age, so a daemon that was just stopped still reads
+`live` until the snapshot is that old. An unavailable status is never an empty
+queue.
+
+### Unavailable status
+
+`kor status` can fail to read a snapshot or an execution. Both forms then exit `1`
+and, with `--json`, print an envelope whose `provenance` is `unavailable`, with a
+`reason` and an `error` object. The shape differs by form: the unselected form
+carries `snapshot: null`, the selected form carries `run: null`.
+
+| Form | `error.code` | When |
+| --- | --- | --- |
+| `kor status` | `snapshot_unavailable` | The daemon has not published a snapshot yet. |
+| `kor status` | `snapshot_unreadable` | The snapshot file exists but cannot be read or does not match the schema. |
+| `kor status` | `snapshot_invalid` | The snapshot's timestamp is invalid (for example in the future). |
+| `kor status ID` | `execution_database_unavailable` | There is no execution database yet (nothing was ever queued). |
+| `kor status ID` | `execution_not_found` | The database has no execution matching the selector. |
+
+```text
+$ kor status --json
+{
+  "schemaVersion": 1,
+  "provenance": "unavailable",
+  "observedAt": "2026-10-14T18:42:46.856Z",
+  "snapshot": null,
+  "reason": "daemon has not published a snapshot",
+  "error": {
+    "code": "snapshot_unavailable",
+    "message": "daemon has not published a snapshot",
+    "hint": "start `kor serve` or check the daemon state directory"
+  }
+}
+$ kor status nope --json
+{
+  "schemaVersion": 1,
+  "provenance": "unavailable",
+  "observedAt": "2026-10-14T18:42:47.091Z",
+  "run": null,
+  "reason": "no execution database",
+  "error": {
+    "code": "execution_database_unavailable",
+    "message": "no execution database",
+    "hint": "run `kor run ISSUE-ID` before requesting execution status"
+  }
+}
+```
+
+Without `--json` the same failures are the usual one-line `FAIL status: <reason>.
+Hint: <hint>` on stderr.
 
 ## Cancel and retry
 
@@ -234,13 +302,36 @@ $ kor run LEE-999999 --json
 
 | Field | Meaning |
 | --- | --- |
-| `error.code` | A stable machine-readable code: `invalid_arguments` and `unknown_command` (exit `2`), `execution_not_found`, `not_accepted`, `invalid_port`, `install_failed`, `uninstall_failed`, or the catch-all `command_failed` (exit `1`). |
+| `error.code` | A stable machine-readable code: `invalid_arguments` and `unknown_command` (exit `2`), `execution_not_found`, `not_accepted`, `invalid_port`, `install_failed`, `uninstall_failed`, or the catch-all `command_failed` (exit `1`). `kor status` adds its own unavailable codes, listed above. |
 | `error.message` | One line. Credentials, issue text and upstream response bodies are never included. |
 | `error.hint` | What to do next. |
 
-`kor status` with a selector that matches nothing is the one exception: it
-returns the `unavailable` status envelope above (which carries the same `error`
-object) instead of the bare error object.
+`kor status` is the exception: when it cannot read a snapshot or an execution it
+prints the `unavailable` envelope (which carries the same `error` object) instead
+of the bare error object, for both the unselected and the selected form. A usage
+error in `kor status` is the ordinary bare error object.
+
+### `kor doctor --json` and `kor plan --json`
+
+`doctor --json` prints the checks as one object and exits `1` when any check
+failed. A failed check is not a command error, so there is no `error` object and
+no stderr line:
+
+```text
+$ kor doctor --json
+{"schemaVersion":1,"ok":false,"checks":[{"name":"Kor config","status":"ok","detail":"/tmp/kor-t15/home/.config/kor/config.yaml"},{"name":"Linear key","status":"ok","detail":"available"},{"name":"TypeSafe key","status":"ok","detail":"available"},{"name":"CLIProxyAPI with Kor key","status":"ok","detail":"reachable"},{"name":"CLIProxyAPI management access","status":"error","detail":"management key missing"},{"name":"quota-axi","status":"error","detail":"unavailable"},{"name":"Claude Code","status":"ok","detail":"2.1.300 (Claude Code)"},{"name":"no-mistakes daemon","status":"error","detail":"not running"},{"name":"repo demo-app","status":"ok","detail":"/tmp/kor-t15/demo-app (main)"}]}
+```
+
+`plan --json` prints the preflight and exits `1` when `ready` is `false` (readiness
+is blocked, a decision is escalated, or the route is a fallback):
+
+```text
+$ kor plan LEE-1117 --json
+{"schemaVersion":1,"planId":"plan-ab730c39-9a69-4f34-8a08-3f8d64aee7bb","ready":true,"route":{"provider":"anthropic","model":"claude-haiku-5-5","accountPolicy":"fill-first","sessionAffinity":true,"reasoningLevel":"medium","label":"jev","decisionId":"route-plan-ab730c39-9a69-4f34-8a08-3f8d64aee7bb"},"fallback":false,"decisions":[{"kind":"readiness","choice":"ready","confidence":0.94,"applied":true,"escalated":false},{"kind":"complexity","choice":"small bounded change","confidence":0.39,"applied":true,"escalated":false},{"kind":"risk","choice":"low operational risk","confidence":1,"applied":true,"escalated":false},{"kind":"route","choice":"claude-haiku-5-5","confidence":0.96,"applied":true,"escalated":false},{"kind":"skill","choice":"generalist","confidence":1,"applied":true,"escalated":false},{"kind":"agent","choice":"generalist","confidence":1,"applied":true,"escalated":false}],"commentWritten":false}
+```
+
+`outage` (a string) is present when Jev was unavailable, and `commentWritten` says
+whether a clarification comment was posted to the issue.
 
 ## Over HTTP
 

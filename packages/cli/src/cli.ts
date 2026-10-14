@@ -223,18 +223,27 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
   const command = cleanArgs[0] ?? "help";
   try {
     if (command === "doctor") {
-      if (cleanArgs.length !== 1) usageFailure("kor doctor");
+      if (cleanArgs.slice(1).some(arg => arg !== "--json")) usageFailure("kor doctor [--json]");
       const report = await runDoctor();
-      process.stdout.write(`${formatDoctor(report, Boolean(process.stdout.isTTY) && process.env.NO_COLOR === undefined)}\n`);
-      if (!report.ok) process.stderr.write("FAIL doctor: one or more checks failed. Hint: fix the reported checks and rerun `kor doctor`\n");
+      if (jsonFlag(cleanArgs)) process.stdout.write(`${JSON.stringify({ schemaVersion: 1, ok: report.ok, checks: report.checks })}\n`);
+      else {
+        process.stdout.write(`${formatDoctor(report, Boolean(process.stdout.isTTY) && process.env.NO_COLOR === undefined)}\n`);
+        if (!report.ok) process.stderr.write("FAIL doctor: one or more checks failed. Hint: fix the reported checks and rerun `kor doctor`\n");
+      }
       return report.ok ? 0 : 1;
     }
     if (command === "plan") {
-      if (cleanArgs.length !== 2 || !cleanArgs[1]) usageFailure("kor plan ISSUE-ID");
-      const result = await runPlan(cleanArgs[1]);
-      process.stdout.write(`${result.output}\n${result.commentWritten ? "linear: clarification comment written" : "linear: no clarification needed"}\n`);
+      const planArgs = cleanArgs.slice(1).filter(arg => arg !== "--json");
+      if (planArgs.length !== 1 || !planArgs[0] || planArgs[0].startsWith("-")) usageFailure("kor plan ISSUE-ID [--json]");
+      const result = await runPlan(planArgs[0]);
       const blocked = result.plan.fallback || result.plan.decisions.some(decision => decision.escalated || decision.kind === "readiness" && decision.choice === "blocked");
-      if (blocked) process.stderr.write("FAIL plan: preflight did not produce a ready route. Hint: resolve the reported decisions or provide a healthy Jev response, then retry\n");
+      if (jsonFlag(cleanArgs)) {
+        const { plan } = result;
+        process.stdout.write(`${JSON.stringify({ schemaVersion: 1, planId: plan.executionId, ready: !blocked, route: plan.route, fallback: plan.fallback, ...(plan.outage ? { outage: plan.outage } : {}), decisions: plan.decisions.map(decision => ({ kind: decision.kind, choice: decision.choice, confidence: decision.confidence, applied: decision.applied, escalated: decision.escalated })), commentWritten: result.commentWritten })}\n`);
+      } else {
+        process.stdout.write(`${result.output}\n${result.commentWritten ? "linear: clarification comment written" : "linear: no clarification needed"}\n`);
+        if (blocked) process.stderr.write("FAIL plan: preflight did not produce a ready route. Hint: resolve the reported decisions or provide a healthy Jev response, then retry\n");
+      }
       return blocked ? 1 : 0;
     }
     if (command === "status") return await status(cleanArgs.slice(1));
@@ -274,7 +283,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     if (debug && error instanceof Error && error.stack) process.stderr.write(`${error.stack}\n`);
     return failure instanceof CliFailure ? failure.exitCode : 1;
   }
-  process.stdout.write("Usage: kor serve [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor plan ISSUE-ID | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list | kor models probe [--family family] [--model model]\n");
+  process.stdout.write("Usage: kor serve [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list | kor models probe [--family family] [--model model]\n");
   return 0;
 }
 

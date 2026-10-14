@@ -232,8 +232,10 @@ The full schema, including calibration options, is in
 ## Check your setup with `kor doctor`
 
 `kor doctor` prints one `PASS` or `FAIL` line per check and exits non-zero if any
-fail. It never edits anything. This is the real output on the sandbox used for
-this guide:
+fail. Kor itself writes nothing during the check (the tools it calls, such as
+`claude` or `no-mistakes`, may create their own caches). `kor doctor --json` prints
+the same checks as an object ([contract](cli-contract.md#kor-doctor---json-and-kor-plan---json)).
+This is the real output on the sandbox used for this guide:
 
 ![kor doctor](images/doctor.png)
 
@@ -819,9 +821,46 @@ issue back to Todo (or cancel it) in Linear yourself.
 
 ## Update and uninstall
 
-To update, `git pull` in the `kor-code` checkout, then `pnpm install --frozen-lockfile
-&& pnpm build`. Restart the service (`systemctl --user restart kor`) or `kor
-serve`.
+To update, pull and rebuild, then **reinstall**. Building updates the checkout, but
+the installer copied the cockpit plugin into Kor's marketplace and Claude's plugin
+cache, and neither copy follows the source. The installer also refuses to run over
+an existing installation, so uninstall first. Use the same options you installed
+with (`--pilot …` or `--scope user`):
+
+```sh
+cd kor-code
+git pull
+pnpm install --frozen-lockfile
+pnpm build
+kor uninstall
+node packages/cli/dist/cli.js install --pilot ~/code/my-project
+systemctl --user enable --now kor     # uninstall disabled the service; or run `kor serve`
+```
+
+The uninstall keeps your config, gateway key and state, and the reinstall reuses
+them (it prints `existing credential retained`). I checked this by adding a marker
+line to the cockpit source and running `pnpm build`: the installed copy did not
+have it until the reinstall, and `gateway.env` was byte-identical afterwards:
+
+```text
+$ kor uninstall && node packages/cli/dist/cli.js install --pilot /tmp/kor-t15/fresh4-pilot --no-systemd
+Kor uninstalled; config and state retained
+Backups: /tmp/kor-t15/fresh4/.local/state/kor-install/backups/1792003406272-aac9bb9d
+Kor installed (scope: local)
+CLI: /tmp/kor-t15/fresh4/.local/bin/kor
+Config: /tmp/kor-t15/fresh4/.config/kor/config.yaml
+Service: /tmp/kor-t15/fresh4/.config/systemd/user/kor.service (not started; systemd control skipped)
+Cockpit: kor-cockpit@kor only when Claude starts in /tmp/kor-t15/fresh4-pilot (linked worktrees disabled)
+Manifest: /tmp/kor-t15/fresh4/.local/state/kor-install/manifest.json
+CLIProxyAPI addition: existing credential retained; add its api-keys line manually if needed (value not printed).
+Configure repository mapping, checks and toolAllowlist; run kor doctor before starting the service.
+```
+
+One consequence: `kor uninstall --purge` after a reinstall restores the config and
+state as they were just before the *latest* install, which includes what the earlier
+installation created, so a purge after an update cycle leaves those files in place.
+Delete `~/.config/kor`, `~/.local/state/kor` and `~/.local/share/kor` by hand if you
+want them gone.
 
 To remove Kor, run `kor uninstall`. It stops and disables the service, restores
 every file it changed from its backups, and removes the cockpit plugin and
