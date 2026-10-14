@@ -169,10 +169,13 @@ export function ModelsPool() {
   const pause = useAccountPause();
   const probe = useProbe();
   const [probing, setProbing] = useState(false);
+  const [allModels, setAllModels] = useState(false);
   const accounts = pool.accounts?.value ?? [];
   const quota = parseQuota(pool.quota?.value ?? null).filter(provider => !provider.notSetUp);
   const accountsFor = (provider: string) => accounts.filter(account => providerKind(account.provider ?? account.id) === providerKind(provider));
-  const modelList = models.data?.models.value ?? [];
+  const RANK = { verified: 0, incompatible: 1, unverified: 2 } as const;
+  const modelList = [...(models.data?.models.value ?? [])].sort((a, b) => RANK[a.compatibility] - RANK[b.compatibility] || a.id.localeCompare(b.id));
+  const shownModels = allModels ? modelList : modelList.filter(model => model.compatibility !== 'unverified').concat(modelList.filter(model => model.compatibility === 'unverified')).slice(0, Math.max(6, modelList.filter(model => model.compatibility !== 'unverified').length));
   const runsByModel = new Map<string, { runs: number; verified: number }>();
   for (const run of runs) if (run.route) { const entry = runsByModel.get(run.route.model) ?? { runs: 0, verified: 0 }; entry.runs += 1; if (run.verification?.passed) entry.verified += 1; runsByModel.set(run.route.model, entry); }
   const verifiedCount = modelList.filter(model => model.compatibility === 'verified').length;
@@ -238,7 +241,7 @@ export function ModelsPool() {
                 <Table label="Verified models">
                   <thead><tr><Th>Model</Th><Th align="center">Streaming</Th><Th align="center">Tool calls</Th><Th align="center">Thinking</Th><Th align="center">Structured</Th><Th align="right">Runs</Th><Th align="right">Verified</Th><Th /></tr></thead>
                   <tbody>
-                    {modelList.map(model => {
+                    {shownModels.map(model => {
                       const usage = runsByModel.get(model.id);
                       const cap = (name: 'streaming' | 'tool_calls' | 'thinking' | 'structured_output') => model.capabilities[name] === true ? <Icon icon={CircleCheck} size={14} style={text.green} /> : model.capabilities[name] === false ? <Icon icon={CircleX} size={14} style={text.rose} /> : <Icon icon={Minus} size={14} style={text.faint} />;
                       return (
@@ -254,6 +257,7 @@ export function ModelsPool() {
                   </tbody>
                 </Table>
                 {models.error && <CardBody><QueryError error={models.error} what="Models" /></CardBody>}
+                {modelList.length > shownModels.length || allModels ? <CardBody><div {...stylex.props(layout.row, layout.mt3)}><Button size="sm" variant="ghost" onClick={() => setAllModels(value => !value)}>{allModels ? 'Show verified first' : `Show all ${modelList.length} gateway models`}</Button><span {...stylex.props(text.mono, text.xs, text.muted)}>unverified models can be probed from here or with Probe a model</span></div></CardBody> : null}
               </div>
             </Card>
           </div>

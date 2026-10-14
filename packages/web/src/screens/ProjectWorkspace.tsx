@@ -46,7 +46,7 @@ const styles = stylex.create({
   body: { display: 'grid', gridTemplateColumns: { default: 'minmax(0, 1fr) 404px', [NARROW]: 'minmax(0, 1fr) 340px' }, gap: space.s4, alignItems: 'start' },
   toolbar: { display: 'flex', alignItems: 'center', gap: '10px', paddingBlock: '14px', paddingInline: '18px', borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: color.hairline, flexWrap: 'wrap' },
   tableWrap: { paddingInline: '8px', overflowX: 'auto' },
-  title: { maxWidth: '262px' },
+  title: { maxWidth: '236px' },
   korCell: { display: 'grid', gap: '5px', width: '150px' },
   mdl: { fontFamily: font.mono, fontSize: '11.5px', color: color.textSecondary, lineHeight: 1.35 },
   mdlSub: { color: color.textMuted, fontSize: '10.5px' },
@@ -91,7 +91,7 @@ function IssueAction({ issue, run, intake, selected }: { issue: LinearIssue; run
   if (run?.status === 'queued') return <Pill tone="slate" small dot>queued</Pill>;
   if (!isOpen(issue)) return null;
   if (issue.acceptanceCriteria.length === 0) return <Button size="sm" variant="warn" icon={Plus} href={issue.url} external title="Add acceptance criteria in Linear">Add criteria</Button>;
-  if (!issue.labels.includes(intake)) return <Button size="sm" variant="ghost" icon={Plus} href={issue.url} external title={`Label the issue ${intake} in Linear so the daemon picks it up`}>Label {intake}</Button>;
+  if (!issue.labels.includes(intake)) return <Button size="sm" variant="ghost" icon={Plus} href={issue.url} external title={`Label the issue ${intake} in Linear so the daemon picks it up`}>Label</Button>;
   return <Button size="sm" variant={selected ? 'violet' : 'default'} icon={Play} title={title} busy={queue.isPending} onClick={() => queue.mutate({ issueIds: [issue.id] })}>Run with Kor</Button>;
 }
 
