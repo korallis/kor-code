@@ -13,6 +13,7 @@ import { metricSchema, type CalibrationRun, type CalibrationStore, type RunMetri
 export interface SessionMetricInput {
   executionId: string;
   attempt: number;
+  attemptId?: string;
   decisionId?: string;
   route: Route;
   startedAt: string;
@@ -50,6 +51,7 @@ export function metricFromSession(input: SessionMetricInput): RunMetric {
   return metricSchema.parse({
     executionId: input.executionId,
     attempt: input.attempt,
+    ...(input.attemptId ? { attemptId: input.attemptId } : {}),
     recordedAt: input.finishedAt,
     ...(input.decisionId ? { decisionId: input.decisionId } : {}),
     model: telemetry?.model ?? input.route.model,
@@ -145,8 +147,12 @@ export function buildReport(store: CalibrationStore, since?: string): Calibratio
       const outcome = outcomes.find(candidate => candidate.executionId === run.executionId);
       if (!outcome) return [];
       // Intermediate repairs are not the submitted artifact; retain their audit but exclude them here.
-      const lastAttempt = Math.max(0, ...metrics.filter(metric => metric.executionId === run.executionId).map(metric => metric.attempt));
-      if (kind === "acceptance" && record.request.inputs.find(input => input.name === "attempt")?.value !== lastAttempt) return [];
+      const lastAttempt = metrics.filter(metric => metric.executionId === run.executionId).at(-1);
+      if (kind === "acceptance") {
+        if (!lastAttempt) return [];
+        const identity = lastAttempt.attemptId ? "attemptId" : "attempt";
+        if (record.request.inputs.find(input => input.name === identity)?.value !== (lastAttempt.attemptId ?? lastAttempt.attempt)) return [];
+      }
       const probability = record.rawAnswer?.type === "noul" ? record.rawAnswer.noul : record.response.confidence;
       return [{ probability, success: Number(outcome.status === "merged") }];
     });

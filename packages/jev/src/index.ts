@@ -4,6 +4,7 @@ export * from "./redact.js";
 export * from "./preflight.js";
 import type { CatalogueModel, DecisionBundle, DecisionInput, JsonValue, Route } from "@kor-code/core";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import { answerSchema, type JevAnswer, type JevJsonValue, type JevQuestion, type JevResponse } from "./contracts.js";
 import type { JevClient } from "./client.js";
 import { redact } from "./redact.js";
@@ -13,6 +14,7 @@ export type DecisionAnswerType = "choice" | "noul" | "score";
 export interface AcceptanceJudgmentRequest {
   executionId: string;
   attempt?: number;
+  attemptId?: string;
   state: JsonValue;
   criteria: readonly { id: string; description: string }[];
   threshold?: number;
@@ -146,6 +148,7 @@ export class JevDecisionCore {
   /** Ask one typed Noul for each acceptance condition over the supplied evidence. */
   async judgeAcceptance(request: AcceptanceJudgmentRequest): Promise<AcceptanceJudgment[]> {
     if (request.criteria.length === 0) return [];
+    const attemptId = request.attemptId ?? randomUUID();
     const threshold = request.threshold ?? 0.7;
     if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) throw new Error("Acceptance threshold must be between 0 and 1");
     const questions = Object.fromEntries(request.criteria.map(criterion => [criterion.id, {
@@ -157,7 +160,7 @@ export class JevDecisionCore {
     return request.criteria.map(criterion => {
       const answer = response.answers[criterion.id];
       if (!answer || answer.type !== "noul") throw new Error(`Jev acceptance answer missing for ${criterion.id}`);
-      this.apply({ decisionId: `acceptance-${request.executionId}-${request.attempt ?? 1}-${criterion.id}`, executionId: request.executionId, kind: "acceptance", answerType: "noul", question: `Does the implementation satisfy: ${criterion.description}?`, state: request.state, inputs: [{ name: "attempt", value: request.attempt ?? 1 }], candidates: ["yes", "no"], threshold }, answer, response.model);
+      this.apply({ decisionId: `acceptance-${request.executionId}-${attemptId}-${criterion.id}`, executionId: request.executionId, kind: "acceptance", answerType: "noul", question: `Does the implementation satisfy: ${criterion.description}?`, state: request.state, inputs: [{ name: "attempt", value: request.attempt ?? 1 }, { name: "attemptId", value: attemptId }], candidates: ["yes", "no"], threshold }, answer, response.model);
       return { criterionId: criterion.id, probability: answer.noul, passed: answer.noul >= threshold };
     });
   }

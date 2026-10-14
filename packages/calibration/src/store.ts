@@ -16,7 +16,7 @@ export const runSchema = z.object({
 });
 export type CalibrationRun = z.infer<typeof runSchema>;
 export const metricSchema = z.object({
-  executionId: z.string(), attempt: count.positive(), recordedAt: z.string().datetime(),
+  executionId: z.string(), attempt: count.positive(), attemptId: z.string().uuid().optional(), recordedAt: z.string().datetime(),
   decisionId: z.string().optional(), model: z.string(), costUsd: measurement,
   inputTokens: measurement, outputTokens: measurement, cacheReadTokens: measurement, cacheCreationTokens: measurement,
   wallClockMs: z.number().nonnegative(), sessionDurationMs: measurement,

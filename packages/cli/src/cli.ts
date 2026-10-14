@@ -197,6 +197,7 @@ async function serve(args: readonly string[]): Promise<number> {
   } });
   const controller = createController({
     repositories,
+    reserveAttempt: (executionId, attempt) => store.reserveVerificationAttempt(executionId, attempt),
     worktrees: new GitWorktreeManager(paths.worktreesDir),
     launcher: new SessionLauncher({ repoRoot: process.cwd(), cockpit: { statusUrl, stateDir: paths.stateDir } }),
     limits: new ConcurrencyLimiter({ total: loaded.config.limits.total, perRepository: loaded.config.limits.perRepository, ...(loaded.config.limits.perProvider ? { perProvider: loaded.config.limits.perProvider } : {}) }),

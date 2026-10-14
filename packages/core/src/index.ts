@@ -9,6 +9,8 @@ export type AcceptanceStatus = "pending" | "pass" | "fail" | "unresolved";
 export interface AcceptanceFinding { conditionId: string; status: AcceptanceStatus; evidenceIds: string[]; note?: string }
 export interface RepositoryCheckResult { command: string; exitCode: number | null; output: string; status: "pass" | "fail"; note?: string }
 export interface VerificationAttempt {
+  /** Unique session identity; absent only in reports written before durable attempt IDs. */
+  attemptId?: string;
   attempt: number;
   checks: RepositoryCheckResult[];
   diff: string;
