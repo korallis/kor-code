@@ -20,6 +20,7 @@
     "controller:fixture": "tsx scripts/controller-fixture.ts",
     "e2e:live": "tsx scripts/e2e-live.ts",
     "phase5:proof": "tsx scripts/phase5-proof.ts",
+    "verification:proof": "tsx scripts/verification-proof.ts",
     "cockpit": "bash scripts/sandbox.sh --interactive",
     "cockpit:proof": "tsx scripts/cockpit-proof.ts",
     "isolation:proof": "bash scripts/isolation-proof.sh"

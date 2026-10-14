@@ -7,6 +7,8 @@ export interface Repository {
   defaultBranch?: string;
   /** Claude Code tool patterns permitted for sessions in this repository. */
   allowedTools?: readonly string[];
+  /** Shell commands Kor must run before an execution can complete. */
+  checks?: readonly string[];
 }
 export interface RepositoryLookup { resolve(reference: string): Promise<Repository> }
 
