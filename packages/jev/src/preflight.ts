@@ -55,7 +55,7 @@ function makeRequests(inputData: PreflightInput): DecisionRequest[] {
     ...(model.costUsd !== undefined ? { costUsd: model.costUsd } : {}),
     ...(model.durationMs !== undefined ? { durationMs: model.durationMs } : {}),
   }]));
-  for (const candidate of routeCandidates) if (!Object.hasOwn(routeCriteria, candidate)) routeCriteria[candidate] = { reason: candidate === "no-verified-route" ? "No verified model is available." : "Ask the captain for a route." };
+  for (const candidate of routeCandidates) if (!Object.hasOwn(routeCriteria, candidate)) routeCriteria[candidate] = { reason: candidate === "no-verified-route" ? "No verified model is available." : "Ask the user for a route." };
   const threshold = inputData.threshold ?? 0.7;
   const common = { executionId: inputData.executionId, state: issueState(inputData, readinessChecks), inputs: [input("issue", inputData.issue.title)], threshold };
   return [

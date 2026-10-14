@@ -17,7 +17,6 @@ This repository contains the foundation monorepo and documentation. The foundati
 7. [Open questions](docs/open-questions.md)
 8. [Model compatibility](docs/model-compatibility.md)
 9. [Configuration and doctor](docs/configuration.md)
-10. [Firstmate dispatch adapter and CLI contract](integrations/firstmate/README.md)
 
 ## Responsibility split
 
@@ -184,7 +183,7 @@ Run a preflight for an issue identifier that you can read with the configured pe
 pnpm kor plan LEE-1101
 ```
 
-The command prints the route, each decision, and its confidence. It writes redacted decision records to `~/.local/state/kor/kor.db`. A missing or invalid TypeSafe response keeps readiness `blocked` and marks the configured route `fallback`. A healthy but uncertain or non-applicable response keeps the route `escalated`, which is distinct from an outage. When a decision needs captain input, Kor writes one stable-ID clarification comment to the Linear issue. The command exits one while readiness is blocked, a decision is escalated, or a fallback route is in use.
+The command prints the route, each decision, and its confidence. It writes redacted decision records to `~/.local/state/kor/kor.db`. A missing or invalid TypeSafe response keeps readiness `blocked` and marks the configured route `fallback`. A healthy but uncertain or non-applicable response keeps the route `escalated`, which is distinct from an outage. When a decision needs user input, Kor writes one stable-ID clarification comment to the Linear issue. The command exits one while readiness is blocked, a decision is escalated, or a fallback route is in use.
 
 ```text
 PLAN plan-<uuid>
@@ -366,49 +365,6 @@ The filename policy excludes common secret/config/log paths; it is not a content
 secret scanner. Direct PR content strips credentials and local paths, and gated
 delivery uses `--no-publish-intent` to keep the Linear description out of the public
 Intent section.
-
-## Dispatch from Firstmate
-
-The adapter in `integrations/firstmate/` is **Validated** against a real local daemon with isolated XDG directories and a live read of throwaway issue LEE-1107. Its missing acceptance criteria produced a captain-call payload; the Linear issue remained unchanged and no model session launched. Fleet rendering and captain delivery are **Proposed** until Firstmate wires its private home using the [integration guide](integrations/firstmate/README.md).
-
-Build once before using the machine-readable entry point. It needs Node 24+, pnpm, Bash, and `jq`:
-
-```sh
-pnpm install --frozen-lockfile
-pnpm build
-bin/kor serve                 # or the existing user service
-```
-
-In another terminal with the same Kor configuration and state directories, dispatch an issue. The local proof produced:
-
-```text
-$ integrations/firstmate/kor-dispatch dispatch LEE-1107
-{"schemaVersion":1,"issueId":"LEE-1107","canonicalIssueId":"900a9f29-97bd-4343-b1f2-28462741c05f","executionId":"e9f75716-7856-4b76-b305-bcb39b682206","status":"queued","queued":true,"dispatchType":"kor"}
-
-$ integrations/firstmate/kor-dispatch poll e9f75716-7856-4b76-b305-bcb39b682206
-{"schemaVersion":1,"dispatchType":"kor","executionId":"e9f75716-7856-4b76-b305-bcb39b682206","issueId":"LEE-1107","state":"blocked","provenance":"live","observedAt":"2026-10-14T16:08:33.490Z","fleetState":"needs-decision","holdsCapacity":true,"pullRequestUrl":null,"costUsd":null,"cancelRequested":false,"captainCall":{"key":"kor:e9f75716-7856-4b76-b305-bcb39b682206:1:needs-input","reason":"Add a # Acceptance section with explicit criteria to the Linear issue, then retry this execution."},"reason":null}
-
-$ integrations/firstmate/kor-dispatch cancel e9f75716-7856-4b76-b305-bcb39b682206
-{
-  "schemaVersion": 1,
-  "issueId": "LEE-1107",
-  "canonicalIssueId": "900a9f29-97bd-4343-b1f2-28462741c05f",
-  "executionId": "e9f75716-7856-4b76-b305-bcb39b682206",
-  "command": "cancel",
-  "accepted": true
-}
-```
-
-For the raw versioned contract, use `bin/kor status --json EXECUTION-ID` or `bin/kor status --json LEE-1107`. It returns `provenance` and a `run` object containing `state`, `needsInput`, `pullRequestUrl`, and `costUsd`. Unknown executions return `run: null` and exit 1. A stopped daemon makes the selected response stale even if the last snapshot is recent; the adapter then reports `paused` and withholds captain calls. PR URL and cost are `null` until shipping and telemetry publish them.
-
-Kor command failures are concise and actionable: `FAIL <command>: <message>. Hint: <recovery>`, with a nonzero exit code and no stack trace unless `--debug` is supplied. With `--json`, the same failure is a structured object on stdout, for example:
-
-```text
-$ bin/kor cancel unknown-execution --json
-{"schemaVersion":1,"error":{"code":"execution_not_found","message":"execution not found","hint":"check the execution ID, issue ID, or stored issue key"}}
-```
-
-Firstmate reserves a kor-code slot for each distinct execution while `holdsCapacity` is true, and deduplicates captain calls by their key. A live terminal poll releases the reservation. The adapter provides these signals; it does not change the home's private configuration.
 
 ## Open the live cockpit
 
