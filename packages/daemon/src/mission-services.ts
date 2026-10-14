@@ -9,7 +9,7 @@ import { loadGatewayEnvironment, type KorPaths } from "@kor-code/config";
 import { GatewayAdapter, readModelRegistry } from "@kor-code/gateway-adapter";
 import { HttpLinearClient, type LinearClient } from "@kor-code/linear";
 import { JevClient } from "@kor-code/jev";
-import { redact } from "@kor-code/jev";
+import { redact, runtimeSecrets } from "@kor-code/jev";
 import { CalibrationStore, buildReport } from "@kor-code/calibration";
 import type { AskRequest, AskResponse, BrainResponse, ConnectRequest, ConnectionsResponse, ModelsResponse, PullsResponse, SuggestedAction } from "@kor-code/mission-control";
 import type { JsonValue, Labelled, KorStatusSnapshot } from "@kor-code/core";
@@ -83,13 +83,16 @@ export class MissionServices {
   }
   async shippingCommand(file: string, args: string[], cwd: string): Promise<{ code: number; stdout: string; stderr: string }> {
     const token = this.credentials.github;
+    const secrets = [...runtimeSecrets(), ...this.secrets()];
     try {
       const result = await exec(file, args, { cwd, timeout: 30_000, maxBuffer: 2_097_152,
         env: { ...process.env, ...(token ? { GH_TOKEN: token } : {}), ...(token && file === "git" ? { GIT_CONFIG_COUNT: "2", GIT_CONFIG_KEY_0: "credential.helper", GIT_CONFIG_VALUE_0: "", GIT_CONFIG_KEY_1: "credential.helper", GIT_CONFIG_VALUE_1: "!gh auth git-credential" } : {}) },
       });
-      return { code: 0, stdout: String(redact(result.stdout, this.secrets())), stderr: String(redact(result.stderr, this.secrets())) };
+      return { code: 0, stdout: String(redact(result.stdout, secrets)), stderr: String(redact(result.stderr, secrets)) };
     } catch (error) {
-      return { code: error instanceof Error && "code" in error && typeof error.code === "number" ? error.code : -1, stdout: "", stderr: "Shipping command failed; provider details redacted" };
+      const stdout = error instanceof Error && "stdout" in error && typeof error.stdout === "string" ? error.stdout : "";
+      const stderr = error instanceof Error && "stderr" in error && typeof error.stderr === "string" ? error.stderr : "Shipping command failed; provider details redacted";
+      return { code: error instanceof Error && "code" in error && typeof error.code === "number" ? error.code : -1, stdout: String(redact(stdout, secrets)), stderr: String(redact(stderr, secrets)) };
     }
   }
   jev(): JevClient { return new JevClient(this.credentials.jev ? { apiKey: this.credentials.jev } : {}); }

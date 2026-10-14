@@ -472,7 +472,15 @@ export class KorDaemon {
   }
   async connectionsChanged(provider: string): Promise<void> {
     if (provider === "linear") this.options.linear = this.mission.linear();
-    if (provider === "gateway") { this.options.gateway = await this.mission.gateway(); await this.refreshAccounts(); }
+    if (provider === "gateway") {
+      this.options.gateway = await this.mission.gateway();
+      // Observations from another gateway must not survive a connection switch.
+      this.accounts = undefined;
+      await this.quotaPoll?.catch(() => undefined);
+      this.quota = unavailable(null, "Gateway connection changed; quota has not been observed");
+      this.lastQuotaAt = 0;
+      await this.refreshAccounts();
+    }
   }
   refreshQuota(): Promise<Labelled<JsonValue | null>> {
     if (this.quotaPoll) return this.quotaPoll;
