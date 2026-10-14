@@ -13,7 +13,16 @@ export interface Assignment {
 }
 export interface ExecutionClaim { assignment: Assignment; token: string; owner: string; expiresAt: number }
 export interface PendingWrite { sequence: number; write: LinearWrite }
-export interface AssignmentRecord extends Assignment { manifest?: Execution; owner?: string; expiresAt?: number }
+export interface AssignmentRecord extends Assignment {
+  manifest?: Execution;
+  owner?: string;
+  expiresAt?: number;
+  sessionPid?: number;
+  heartbeatAt?: number;
+  cancelRequested?: boolean;
+  lastError?: string;
+  attempts: number;
+}
 
 function number(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('Invalid durable numeric value');
@@ -57,11 +66,24 @@ export class LinearStore {
       CREATE TABLE IF NOT EXISTS assignments (
         issue_id TEXT PRIMARY KEY, execution_id TEXT NOT NULL UNIQUE, session_id TEXT NOT NULL UNIQUE,
         status TEXT NOT NULL CHECK(status IN ('queued','running','complete')), manifest TEXT,
-        token TEXT, owner TEXT, expires_at INTEGER, available_at INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0
+        token TEXT, owner TEXT, expires_at INTEGER, available_at INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+        session_pid INTEGER, heartbeat_at INTEGER, cancel_requested INTEGER NOT NULL DEFAULT 0, last_error TEXT
       );
       CREATE TABLE IF NOT EXISTS outbox (sequence INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS writer (id INTEGER PRIMARY KEY CHECK(id=1), token TEXT, expires_at INTEGER);
       INSERT OR IGNORE INTO writer(id) VALUES (1);`);
+    // The store predates process tracking. Keep upgrades additive so a restart
+    // never discards queued work when a newer daemon opens an older database.
+    for (const statement of [
+      'ALTER TABLE assignments ADD COLUMN session_pid INTEGER',
+      'ALTER TABLE assignments ADD COLUMN heartbeat_at INTEGER',
+      'ALTER TABLE assignments ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE assignments ADD COLUMN last_error TEXT',
+    ]) {
+      try { this.db.exec(statement); } catch (error) {
+        if (!(error instanceof Error) || !/duplicate column name/i.test(error.message)) throw error;
+      }
+    }
   }
 
   private transaction<T>(action: () => T): T {
@@ -99,7 +121,11 @@ export class LinearStore {
       const manifest = typeof value.manifest === 'string' ? JSON.parse(value.manifest) as Execution : undefined;
       const owner = typeof value.owner === 'string' ? value.owner : undefined;
       const expiresAt = typeof value.expires_at === 'number' ? value.expires_at : undefined;
-      return { ...parsed, ...(manifest ? { manifest } : {}), ...(owner ? { owner } : {}), ...(expiresAt ? { expiresAt } : {}) };
+      const sessionPid = typeof value.session_pid === 'number' ? value.session_pid : undefined;
+      const heartbeatAt = typeof value.heartbeat_at === 'number' ? value.heartbeat_at : undefined;
+      const lastError = typeof value.last_error === 'string' ? value.last_error : undefined;
+      const attempts = typeof value.attempts === 'number' ? value.attempts : 0;
+      return { ...parsed, ...(manifest ? { manifest } : {}), ...(owner ? { owner } : {}), ...(expiresAt ? { expiresAt } : {}), ...(sessionPid ? { sessionPid } : {}), ...(heartbeatAt ? { heartbeatAt } : {}), ...(value.cancel_requested === 1 ? { cancelRequested: true } : {}), ...(lastError ? { lastError } : {}), attempts };
     });
   }
   counts(): { events: number; executions: number; pendingWrites: number } {
@@ -133,20 +159,48 @@ export class LinearStore {
   }
   renew(claim: ExecutionClaim, ttlMs = 60_000): void {
     this.validateTTL(ttlMs);
-    this.transaction(() => { this.assertLease(claim); this.db.prepare('UPDATE assignments SET expires_at=? WHERE issue_id=?').run(this.now() + ttlMs, claim.assignment.issueId); });
+    this.transaction(() => { this.assertLease(claim); this.db.prepare('UPDATE assignments SET expires_at=?,heartbeat_at=? WHERE issue_id=?').run(this.now() + ttlMs, this.now(), claim.assignment.issueId); });
+  }
+  heartbeat(claim: ExecutionClaim, ttlMs = 60_000): void { this.renew(claim, ttlMs); }
+  setSessionPid(claim: ExecutionClaim, pid: number): void {
+    if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('Session PID must be positive');
+    this.transaction(() => { this.assertLease(claim); this.db.prepare('UPDATE assignments SET session_pid=?,heartbeat_at=? WHERE issue_id=?').run(pid, this.now(), claim.assignment.issueId); });
+  }
+  requestCancel(issueId: string): boolean {
+    return this.transaction(() => this.db.prepare("UPDATE assignments SET cancel_requested=1 WHERE issue_id=? AND status != 'complete'").run(issueId).changes === 1);
+  }
+  clearCancel(issueId: string): void { this.transaction(() => { this.db.prepare('UPDATE assignments SET cancel_requested=0,last_error=NULL WHERE issue_id=?').run(issueId); }); }
+  isCancelRequested(issueId: string): boolean { return (this.db.prepare('SELECT cancel_requested FROM assignments WHERE issue_id=?').get(issueId) as { cancel_requested?: unknown } | undefined)?.cancel_requested === 1; }
+  requeue(issueId: string, delayMs = 0, lastError?: string): boolean {
+    if (!Number.isSafeInteger(delayMs) || delayMs < 0) throw new Error('Queue delay must be nonnegative');
+    return this.transaction(() => this.db.prepare("UPDATE assignments SET status='queued',token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,heartbeat_at=NULL,cancel_requested=0,available_at=?,last_error=? WHERE issue_id=? AND status != 'complete'").run(this.now() + delayMs, lastError ?? null, issueId).changes === 1);
+  }
+  markRunning(claim: ExecutionClaim, manifest?: Execution): void {
+    this.transaction(() => {
+      this.assertLease(claim);
+      const previous = this.getAssignment(claim.assignment.issueId);
+      if (previous.status === 'complete') throw new Error('Cannot run a completed assignment');
+      this.db.prepare("UPDATE assignments SET status='running',manifest=COALESCE(?,manifest),heartbeat_at=? WHERE issue_id=?").run(manifest ? JSON.stringify(manifest) : null, this.now(), claim.assignment.issueId);
+    });
+  }
+  completeClaim(claim: ExecutionClaim): void {
+    this.transaction(() => {
+      this.assertLease(claim);
+      this.db.prepare("UPDATE assignments SET status='complete',token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,heartbeat_at=NULL,cancel_requested=0 WHERE issue_id=?").run(claim.assignment.issueId);
+    });
   }
   release(claim: ExecutionClaim, delayMs = 0): void {
     if (!Number.isSafeInteger(delayMs) || delayMs < 0) throw new Error('Queue delay must be nonnegative');
     this.transaction(() => {
       this.assertLease(claim);
-      this.db.prepare('UPDATE assignments SET token=NULL,owner=NULL,expires_at=NULL,available_at=? WHERE issue_id=?').run(this.now() + delayMs, claim.assignment.issueId);
+      this.db.prepare('UPDATE assignments SET token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,heartbeat_at=NULL,available_at=? WHERE issue_id=?').run(this.now() + delayMs, claim.assignment.issueId);
     });
   }
   reclaimExpired(issueId: string): boolean {
     return this.transaction(() => {
       const row = this.db.prepare('SELECT expires_at FROM assignments WHERE issue_id=? AND token IS NOT NULL').get(issueId) as { expires_at?: unknown } | undefined;
       if (!row || typeof row.expires_at !== 'number' || row.expires_at > this.now()) return false;
-      const result = this.db.prepare('UPDATE assignments SET token=NULL,owner=NULL,expires_at=NULL,available_at=? WHERE issue_id=? AND expires_at<=?').run(this.now(), issueId, this.now());
+      const result = this.db.prepare('UPDATE assignments SET status=\'queued\',token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,heartbeat_at=NULL,available_at=? WHERE issue_id=? AND expires_at<=?').run(this.now(), issueId, this.now());
       return result.changes === 1;
     });
   }
@@ -157,7 +211,7 @@ export class LinearStore {
       if (previous.status === 'complete' || (status === 'complete' && previous.status !== 'running')) throw new Error('Invalid execution transition');
       this.db.prepare('UPDATE assignments SET status=?,manifest=COALESCE(?,manifest) WHERE issue_id=?').run(status, manifest ? JSON.stringify(manifest) : null, previous.issueId);
       for (const write of writes) this.db.prepare('INSERT INTO outbox(payload) VALUES(?)').run(JSON.stringify(write));
-      if (status === 'complete') this.db.prepare('UPDATE assignments SET token=NULL,owner=NULL,expires_at=NULL WHERE issue_id=?').run(previous.issueId);
+      if (status === 'complete') this.db.prepare('UPDATE assignments SET token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,heartbeat_at=NULL,cancel_requested=0 WHERE issue_id=?').run(previous.issueId);
     });
   }
   record(claim: ExecutionClaim, writes: LinearWrite[], manifest?: Execution): void {

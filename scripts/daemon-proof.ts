@@ -1,0 +1,40 @@
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawn } from "node:child_process";
+import { fakeIssue, FakeLinearClient, type LinearIssue } from "@kor-code/linear";
+import { parseKorConfig, runtimePaths } from "@kor-code/config";
+import { KorDaemon } from "@kor-code/daemon";
+
+const root = await mkdtemp(join(tmpdir(), "kor-daemon-proof-"));
+const paths = runtimePaths({ HOME: root, XDG_CONFIG_HOME: join(root, "config"), XDG_STATE_HOME: join(root, "state"), XDG_DATA_HOME: join(root, "share") });
+const issue: LinearIssue = fakeIssue("LEE-57");
+issue.stateType = "unstarted";
+issue.labels = ["kor"];
+const linear = new FakeLinearClient([issue]);
+const config = parseKorConfig({ repos: { LEE: { path: root } }, pollIntervalSeconds: 60, intakeLabel: "kor" }, { home: root });
+const first = new KorDaemon({ paths, config, linear, port: 0, pollIntervalMs: 60_000 });
+const handle = await first.start();
+const address = handle.server.address();
+if (!address || typeof address === "string") throw new Error("status server did not bind");
+const response = await fetch(`http://127.0.0.1:${address.port}/status`);
+const status = await response.json() as { provenance: string; snapshot: { runs: Array<{ issueId: string; status: string }> } };
+if (status.provenance !== "live" || status.snapshot.runs[0]?.issueId !== issue.id || status.snapshot.runs[0]?.status !== "queued") throw new Error("poll/status proof failed");
+
+const claim = first.store.claim("proof", 60_000, issue.id);
+if (!claim) throw new Error("proof assignment was not claimable");
+const child = spawn("sleep", ["30"], { stdio: "ignore" });
+if (!child.pid) throw new Error("proof child did not start");
+first.store.setSessionPid(claim, child.pid);
+const orphan = join(paths.worktreesDir, "orphan");
+await mkdir(orphan, { recursive: true, mode: 0o700 });
+await writeFile(join(orphan, ".kor-worktree.json"), "{}\n", { mode: 0o600 });
+await handle.stop();
+
+const second = new KorDaemon({ paths, config, linear, port: 0, pollIntervalMs: 60_000 });
+const restarted = await second.start();
+const recovered = second.status().runs.find(run => run.issueId === issue.id);
+if (recovered?.status !== "queued" || recovered.attempts < 1) throw new Error(`restart recovery proof failed: ${JSON.stringify(recovered)}`);
+if (second.status().runs.length !== 1) throw new Error("recovery duplicated the assignment");
+await restarted.stop();
+console.log(`daemon proof passed; picked=${issue.id}; status=live; restart=queued; attempts=${recovered.attempts}; orphan=removed`);

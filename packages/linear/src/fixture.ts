@@ -12,7 +12,7 @@ export const linearIssueFixture: LinearIssue = {
   teamId: '00000000-0000-4000-8000-000000000010', teamKey: 'LEE',
   stateId: workflowMappingFixture.queued.id, stateType: workflowMappingFixture.queued.type,
   updatedAt: new Date(0).toISOString(), priority: 2,
-  documents: [], dependencies: [], subIssueIds: [], comments: [], sessions: [], resources: [],
+  documents: [], dependencies: [], subIssueIds: [], comments: [], sessions: [], resources: [], labels: [],
 };
 
 function page(nodes: unknown[]) { return { nodes, pageInfo: { hasNextPage: false } }; }
@@ -23,7 +23,7 @@ function graphqlIssue(issue: LinearIssue) {
     documents: page(issue.documents), children: page(issue.subIssueIds.map(id => ({ id }))),
     comments: page(issue.comments), agentSessions: page(issue.sessions),
     inverseRelations: page(issue.dependencies.map(dependency => ({ type: 'blocks', issue: { id: dependency.id, state: { type: dependency.stateType } } }))),
-    attachments: page(issue.resources),
+    attachments: page(issue.resources), labels: page(issue.labels.map(name => ({ name }))),
   };
 }
 

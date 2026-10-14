@@ -4,6 +4,7 @@ import { array, connection, object, parseIssue, string, type LinearClient, type 
 
 const page = 'pageInfo { hasNextPage }';
 const issueFields = `id title description updatedAt priority team { id key } state { id type }
+  labels { nodes { name } pageInfo { hasNextPage } }
   project { id documents(first: 100) { nodes { id title content } ${page} } }
   documents(first: 100) { nodes { id title content } ${page} }
   children(first: 100) { nodes { id } ${page} }

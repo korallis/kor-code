@@ -7,6 +7,22 @@ Kor keeps its machine-specific configuration outside a repository. The default p
 - `~/.local/state/kor` — durable state, audit records, and snapshots.
 - `~/.local/share/kor` — execution session homes and worktrees.
 
+The daemon persists its queue and leases in `~/.local/state/kor/kor.db`. It writes
+an atomic `snapshots/index.json` and one `<execution-id>.json` file per assignment.
+`kor serve` exposes the same status envelope at `http://127.0.0.1:8327/status`.
+Install the user unit from `systemd/kor.service` after the CLI is available:
+
+```sh
+mkdir -p ~/.config/systemd/user
+cp systemd/kor.service ~/.config/systemd/user/kor.service
+systemctl --user daemon-reload
+systemctl --user enable --now kor
+```
+
+The response has `provenance: live`, `stale`, or `unavailable`. A missing snapshot
+is unavailable; an old snapshot is stale and includes its age reason. The daemon
+never treats unavailable data as an empty queue.
+
 `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, and `XDG_DATA_HOME` override those roots. `KOR_GATEWAY_KEY`, `KOR_GATEWAY_URL`, and the other supported environment variables override values in `gateway.env` for one process. Kor never edits CLIProxyAPI configuration and never prints credential values.
 
 The YAML schema is:
