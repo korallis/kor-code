@@ -36,6 +36,8 @@ const USAGE = [
 ].join('\n')
 /** How often the status line and an open pane re-read the daemon. */
 const POLL_MS = 5000
+/** How long a status read waits before the daemon counts as not answering. */
+const STATUS_TIMEOUT_MS = 2000
 
 let replay: Timer | undefined
 let poll: Timer | undefined
@@ -77,7 +79,8 @@ async function source($: EngineInterface): Promise<LiveSource> {
 /** Reads the daemon now and keeps the result for the pane. */
 async function readLive($: EngineInterface): Promise<CockpitData> {
   const fetched = await fetchStatus(await source($), {
-    fetch: url => $.http.fetch(url),
+    // The host's fetch can wait about 30 s on a closed loopback port; a daemon answers in milliseconds.
+    fetch: url => Promise.race([$.http.fetch(url), $.clock.sleep(STATUS_TIMEOUT_MS).then(() => Promise.reject(new Error('status timeout')))]),
     read: path => $.fs.read(path),
   })
   latest = fromStatus(fetched, await $.clock.now())
@@ -240,7 +243,8 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'kor', description: 'Kor Code cockpit: live daemon status; /kor demo for the fixture', argumentHint: '[view] [id] | override <decision> <choice> | demo …' })
     await $.command.register({ name: 'kor-status', description: 'Show the Kor Code cockpit status line' })
-    await refreshStatus($, true)
+    // The first read must not hold the session's start while a stopped daemon times out.
+    void refreshStatus($, true)
     if ((await $.env.get('KOR_COCKPIT')) !== 'off') startPoll($)
     return next(e)
   })

@@ -84,7 +84,7 @@ Status: **Validated** on a live daemon run in the sandboxed Claude Code 2.1.299:
 | `/kor demo [view\|replay\|…]` | The fixture execution, labelled `[FIXTURE]`, with session-local actions |
 | `/kor-status` | The sandbox's load proof and the status line, answered by the plugin's own hook rather than the model |
 
-Data (`hooks/live.ts`): `GET http://127.0.0.1:8327/status` first (`KOR_STATUS_URL`), then `snapshots/index.json` under the Kor state directory (`KOR_STATE_DIR`, else `XDG_STATE_HOME/kor` or `~/.local/state/kor`). Each part of the view (execution, issue, decisions, accounts, acceptance, overrides) carries its own label:
+Data (`hooks/live.ts`): `GET http://127.0.0.1:8327/status` first (`KOR_STATUS_URL`), then `snapshots/index.json` under the Kor state directory (`KOR_STATE_DIR`, else `XDG_STATE_HOME/kor` or `~/.local/state/kor`). A status read that gets no answer within 2 s counts as the daemon not answering (Claude Code's fetch otherwise waits about 30 s on a closed loopback port). Each part of the view (execution, issue, decisions, accounts, acceptance, overrides) carries its own label; the account pool also honours the daemon's own label for it, so a failed gateway read is stale or unavailable, never a fresh empty pool:
 
 - `[LIVE]`: the daemon answered over HTTP and the part's `observedAt` is within the daemon's `pollIntervalSeconds`.
 - `[STALE]`: older than that, or read from the snapshot because the daemon did not answer; the section title carries the age.
