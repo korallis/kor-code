@@ -272,6 +272,15 @@ $ kor logs 5520bb1e-3b82-4063-8e92-98cdb7fc1fa2
 | Stop an execution | `kor cancel LEE-123` (this does not move the Linear issue) |
 | Check your setup | `kor doctor` |
 
+Missing acceptance criteria, unfinished dependencies, and healthy Jev readiness
+rejections block dispatch before a model session starts. Kor writes a durable
+clarification comment and adds `kor:blocked` on Linear, then removes that label
+when execution resumes.
+
+Retries replay the preflight audit while the issue and eligible models are
+unchanged. Clarified intent or a changed catalogue creates a new immutable decision
+revision; earlier decisions and attempt costs remain recorded.
+
 The [user guide](docs/user-guide.md#recover-from-a-restart-a-crash-or-a-block) walks
 through restart, crash and block recovery, and has a
 [troubleshooting table](docs/user-guide.md#troubleshooting). Every command failure is

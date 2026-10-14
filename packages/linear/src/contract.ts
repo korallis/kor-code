@@ -35,6 +35,7 @@ export interface AgentSessionRecord {
 export type LinearWrite =
   | { kind: 'session'; session: AgentSessionRecord }
   | { kind: 'state'; issueId: string; stateId: string }
+  | { kind: 'label'; issueId: string; name: string; present: boolean }
   | { kind: 'summary'; sessionId: string; summary: string }
   | { kind: 'activity'; id: string; sessionId: string; activity: 'thought' | 'response' | 'error'; body: string }
   | { kind: 'comment'; id: string; issueId: string; body: string }

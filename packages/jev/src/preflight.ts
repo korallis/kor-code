@@ -12,6 +12,8 @@ export interface PreflightIssue {
 }
 export interface PreflightInput {
   executionId: string;
+  /** Reuse the audit only while the issue and eligible models remain identical. */
+  decisionRevision?: string;
   issue: PreflightIssue;
   verifiedModels: readonly CatalogueModel[];
   defaultRoute: Route;
@@ -41,6 +43,9 @@ function issueState(input: PreflightInput, readinessChecks: readonly { name: str
   };
 }
 function input(name: string, value: JsonValue, source = "linear"): DecisionInput { return { name, value, source }; }
+function decisionId(inputData: PreflightInput, kind: string): string {
+  return `${kind}-${inputData.executionId}${inputData.decisionRevision ? `-${inputData.decisionRevision}` : ""}`;
+}
 function makeRequests(inputData: PreflightInput): DecisionRequest[] {
   const models = inputData.verifiedModels.map(model => model.model);
   const routeCandidates = models.length >= 2 ? models : [...models, "no-verified-route", "clarification"].slice(0, 2);
@@ -59,12 +64,12 @@ function makeRequests(inputData: PreflightInput): DecisionRequest[] {
   const threshold = inputData.threshold ?? 0.7;
   const common = { executionId: inputData.executionId, state: issueState(inputData, readinessChecks), inputs: [input("issue", inputData.issue.title)], threshold };
   return [
-    { ...common, decisionId: `readiness-${inputData.executionId}`, kind: "readiness", answerType: "noul", question: "Is this issue ready for Kor to execute? Answer ready only when the issue has explicit acceptance criteria, every dependency is completed, and the verified route list is non-empty. The state includes each deterministic check.", candidates: ["ready", "blocked"], policyChecks: readinessChecks, criteria: { true: "All supplied readinessChecks pass and the acceptance conditions specify a bounded, actionable change without unresolved scope questions.", false: "At least one readiness check fails, or the issue leaves essential implementation scope or acceptance unclear." } },
-    { ...common, decisionId: `complexity-${inputData.executionId}`, kind: "complexity", answerType: "score", question: "How complex is this issue for an isolated coding session?", candidates: [...complexityLevels], threshold: 0 },
-    { ...common, decisionId: `risk-${inputData.executionId}`, kind: "risk", answerType: "score", question: "How much delivery or operational risk does this issue carry?", candidates: [...riskLevels], threshold: 0 },
-    { ...common, decisionId: `route-${inputData.executionId}`, kind: "route", question: "Which verified model best fits this issue? Compare the supplied provider, capabilities, cost, and duration. Choose no-verified-route when no supplied model is suitable.", candidates: routeCandidates, policyChecks: [{ name: "verified-model", result: models.length > 0 ? "pass" : "fail" }], criteria: routeCriteria, nonApplyingCandidates: ["no-verified-route", "clarification"] },
-    { ...common, decisionId: `skill-${inputData.executionId}`, kind: "skill", question: "Which available skill best supports this issue? Select testing when the primary requested deliverable is test development or test diagnosis. Select generalist for implementation, documentation, or configuration work with routine verification.", candidates: [...(inputData.skills ?? defaultSkills)], criteria: { generalist: "Implement or document a bounded change, including routine checks.", testing: "Specialized test development or diagnosis is the main deliverable." } },
-    { ...common, decisionId: `agent-${inputData.executionId}`, kind: "agent", question: "Which available agent profile best supports this issue? Select generalist for bounded implementation or documentation. Select specialist only when the issue explicitly requires deep domain expertise or a broad investigation.", candidates: [...(inputData.agents ?? defaultAgents)], criteria: { generalist: "A coding worker can complete the bounded change with ordinary repository context.", specialist: "Requires deep domain expertise, architecture research, or specialized investigation." } },
+    { ...common, decisionId: decisionId(inputData, "readiness"), kind: "readiness", answerType: "noul", question: "Is this issue ready for Kor to execute? Answer ready only when the issue has explicit acceptance criteria, every dependency is completed, and the verified route list is non-empty. The state includes each deterministic check.", candidates: ["ready", "blocked"], policyChecks: readinessChecks, criteria: { true: "All supplied readinessChecks pass and the acceptance conditions specify a bounded, actionable change without unresolved scope questions.", false: "At least one readiness check fails, or the issue leaves essential implementation scope or acceptance unclear." } },
+    { ...common, decisionId: decisionId(inputData, "complexity"), kind: "complexity", answerType: "score", question: "How complex is this issue for an isolated coding session?", candidates: [...complexityLevels], threshold: 0 },
+    { ...common, decisionId: decisionId(inputData, "risk"), kind: "risk", answerType: "score", question: "How much delivery or operational risk does this issue carry?", candidates: [...riskLevels], threshold: 0 },
+    { ...common, decisionId: decisionId(inputData, "route"), kind: "route", question: "Which verified model best fits this issue? Compare the supplied provider, capabilities, cost, and duration. Choose no-verified-route when no supplied model is suitable.", candidates: routeCandidates, policyChecks: [{ name: "verified-model", result: models.length > 0 ? "pass" : "fail" }], criteria: routeCriteria, nonApplyingCandidates: ["no-verified-route", "clarification"] },
+    { ...common, decisionId: decisionId(inputData, "skill"), kind: "skill", question: "Which available skill best supports this issue? Select testing when the primary requested deliverable is test development or test diagnosis. Select generalist for implementation, documentation, or configuration work with routine verification.", candidates: [...(inputData.skills ?? defaultSkills)], criteria: { generalist: "Implement or document a bounded change, including routine checks.", testing: "Specialized test development or diagnosis is the main deliverable." } },
+    { ...common, decisionId: decisionId(inputData, "agent"), kind: "agent", question: "Which available agent profile best supports this issue? Select generalist for bounded implementation or documentation. Select specialist only when the issue explicitly requires deep domain expertise or a broad investigation.", candidates: [...(inputData.agents ?? defaultAgents)], criteria: { generalist: "A coding worker can complete the bounded change with ordinary repository context.", specialist: "Requires deep domain expertise, architecture research, or specialized investigation." } },
   ];
 }
 
@@ -93,7 +98,7 @@ export async function planPreflight(inputData: PreflightInput, core: JevDecision
   } catch (error) {
     if (!(error instanceof JevUnavailableError)) throw error;
     const reason = error.message;
-    const route: Route = { ...inputData.defaultRoute, label: "fallback", decisionId: `route-${inputData.executionId}` };
+    const route: Route = { ...inputData.defaultRoute, label: "fallback", decisionId: decisionId(inputData, "route") };
     return { executionId: inputData.executionId, route, decisions: appendFallback(audit, requests, route, `Jev unavailable. Default route is labelled fallback. ${reason}`), fallback: true, outage: reason };
   }
 }

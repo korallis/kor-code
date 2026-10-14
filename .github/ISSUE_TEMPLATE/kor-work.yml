@@ -1,0 +1,24 @@
+name: Kor work
+description: Provide the problem and explicit acceptance criteria for an isolated Kor execution.
+title: ""
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the current behavior and the intended improvement.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: List observable criteria, one per bullet. Keep this heading when copying the issue to Linear.
+      placeholder: "- The command returns the documented result."
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints
+      description: Include scope, dependencies, and verification commands.
