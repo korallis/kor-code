@@ -32,6 +32,7 @@ const worktree = await worktrees.create({ executionId: "e2e-live", issueId: "E2E
 const launcher = new SessionLauncher({ repoRoot: resolve(process.cwd()), env: {
   ...(process.env.KOR_GATEWAY_KEY ? { KOR_GATEWAY_KEY: process.env.KOR_GATEWAY_KEY } : {}),
   ...(process.env.KOR_GATEWAY_KEY_FILE ? { KOR_GATEWAY_KEY_FILE: process.env.KOR_GATEWAY_KEY_FILE } : {}),
+  ...(process.env.KOR_GATEWAY_URL ? { KOR_GATEWAY_URL: process.env.KOR_GATEWAY_URL } : {}),
 } });
 const result = await launcher.launch({
   execution: { id: "e2e-live", issueId: "E2E-HELLO", repository: "scratch", worktree: worktree.path, branch, status: "running", route: { provider: "claude", model, accountPolicy: "fill-first", sessionAffinity: true, reasoningLevel: "medium" } },

@@ -29,7 +29,7 @@ export interface SessionResult {
 export interface SessionLauncherLike { launch(input: SessionLaunch): Promise<SessionResult> }
 export interface SessionLauncherOptions { repoRoot?: string; command?: string; args?: string[]; env?: NodeJS.ProcessEnv; gatewayKey?: string; sandboxScript?: string; allowedTools?: readonly string[] }
 
-// A repository must opt into mutation tools; an omitted config can still inspect.
+// A repository must opt into mutation tools; an omitted config can only inspect.
 const DEFAULT_ALLOWED_TOOLS = ["Read"] as const;
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -97,13 +97,14 @@ export class SessionLauncher implements SessionLauncherLike {
       ...(input.route?.model ? ["--model", input.route.model] : []),
       ...(input.route?.reasoningLevel ? ["--effort", input.route.reasoningLevel] : []),
     ];
-    const commandArgs = this.options.args ?? ["claude", "-p", input.prompt, ...routeArgs, "--plugin-dir", resolve(this.repoRoot, "packages/claude-plugin"), "--no-session-persistence", "--permission-mode", "acceptEdits", "--allowedTools", ...toolArgs, "--output-format", "stream-json", "--verbose", "--setting-sources", ""];
+    const commandArgs = this.options.args ?? ["claude", "-p", input.prompt, ...routeArgs, "--plugin-dir", resolve(this.repoRoot, "packages/claude-plugin"), "--no-session-persistence", "--permission-mode", "dontAsk", "--allowedTools", ...toolArgs, "--output-format", "stream-json", "--verbose", "--setting-sources", ""];
     const args = ["--run", ...commandArgs];
     const tool = commandArgs[0] ?? "claude";
     const toolDir = tool.includes("/") ? dirname(tool) : this.findToolDir(tool);
     const gatewayKey = this.options.gatewayKey ?? this.options.env?.KOR_GATEWAY_KEY ?? process.env.KOR_GATEWAY_KEY ?? "";
     const gatewayKeyFile = this.options.env?.KOR_GATEWAY_KEY_FILE ?? process.env.KOR_GATEWAY_KEY_FILE;
-    const env = { ...this.options.env, KOR_EXECUTION_ID: input.execution.id, KOR_WORKTREE: input.worktreePath, KOR_ROUTE_MODEL: input.route?.model ?? "", KOR_CLAUDE_BIN_DIR: toolDir, KOR_GATEWAY_KEY: gatewayKey, ...(gatewayKeyFile ? { KOR_GATEWAY_KEY_FILE: gatewayKeyFile } : {}) };
+    const gatewayUrl = this.options.env?.KOR_GATEWAY_URL ?? process.env.KOR_GATEWAY_URL;
+    const env = { ...this.options.env, KOR_EXECUTION_ID: input.execution.id, KOR_WORKTREE: input.worktreePath, KOR_ROUTE_MODEL: input.route?.model ?? "", KOR_CLAUDE_BIN_DIR: toolDir, KOR_GATEWAY_KEY: gatewayKey, ...(gatewayKeyFile ? { KOR_GATEWAY_KEY_FILE: gatewayKeyFile } : {}), ...(gatewayUrl ? { KOR_GATEWAY_URL: gatewayUrl } : {}) };
     return new Promise((resolvePromise, reject) => {
       const child = spawn(this.options.command ?? "bash", [script, ...args], { cwd: input.worktreePath, env: this.isolatedEnv(env), stdio: ["ignore", "pipe", "pipe"] });
       let stdout = ""; let stderr = "";
