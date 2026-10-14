@@ -108,16 +108,17 @@ class ExecutionController implements Controller {
         this.writer.start(claim, execution);
         await this.writer.flush();
       }
-      const launch: SessionLaunch = { execution, repositoryPath: repository.path, worktreePath: worktree.path, prompt: input.prompt ?? promptFor(issue, this.options.promptPrefix), ...(route ? { route } : {}) };
+      const launch: SessionLaunch = { execution, repositoryPath: repository.path, worktreePath: worktree.path, prompt: input.prompt ?? promptFor(issue, this.options.promptPrefix), ...(route ? { route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}) };
       heartbeat = claim && this.lease ? this.startHeartbeat(claim) : undefined;
       const sessionPromise = this.options.launcher.launch(launch);
       const session = await Promise.race([sessionPromise, ...(heartbeat ? [heartbeat.failed] : [])]);
       heartbeat?.stop();
+      const failed = session.failed ?? session.exitCode !== 0;
+      const completedExecution = { ...execution, status: failed ? "failed" as const : "complete" as const };
       if (this.writer && claim) {
-        if (session.exitCode === 0) {
-          const sessionEvidence: Evidence = { id: `session-${input.id}`, kind: "provider", summary: "Sandbox session exited with status 0", status: "pass" };
+        if (!failed) {
           try {
-            verification?.addMany([...(input.evidence ?? []), sessionEvidence]);
+            verification?.addMany(input.evidence ?? []);
             verification?.assertComplete();
           } catch (error) {
             if (verification && this.writer && claim) {
@@ -130,12 +131,12 @@ class ExecutionController implements Controller {
             }
             throw error;
           }
-          await this.writer.complete(claim, { summary: `Execution ${input.id} completed`, evidence: verification?.evidence() ?? [sessionEvidence] });
+          await this.writer.complete(claim, { summary: `Execution ${input.id} completed`, evidence: verification?.evidence() ?? [] });
         }
         else this.options.linear?.store.release(claim, 1_000);
         await this.writer.flush();
       }
-      return { execution, issue, repository, worktree, session, ...(claim ? { claim } : {}) };
+      return { execution: completedExecution, issue, repository, worktree, session, ...(claim ? { claim } : {}) };
     } catch (error) {
       if (claim && this.options.linear) {
         try { this.options.linear.store.release(claim, 1_000); } catch { /* expired claims are reclaimed on restart */ }

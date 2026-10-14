@@ -1,7 +1,13 @@
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
 
-export interface Repository { key: string; path: string; defaultBranch?: string }
+export interface Repository {
+  key: string;
+  path: string;
+  defaultBranch?: string;
+  /** Claude Code tool patterns permitted for sessions in this repository. */
+  allowedTools?: readonly string[];
+}
 export interface RepositoryLookup { resolve(reference: string): Promise<Repository> }
 
 export class RepositoryRegistry implements RepositoryLookup {
