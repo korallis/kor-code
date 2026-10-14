@@ -10,6 +10,32 @@ import { KorDaemon, readExecutionStatus, readStatus, type RouteChoice } from "@k
 import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController } from "@kor-code/controller";
 import { GatewayAdapter, readModelRegistry } from "@kor-code/gateway-adapter";
 import { JevClient, JevDecisionCore, PersistentDecisionAuditLog, planPreflight } from "@kor-code/jev";
+import type { KorCliError } from "@kor-code/core";
+
+class CliFailure extends Error {
+  constructor(readonly code: string, message: string, readonly hint: string, readonly exitCode = 1) { super(message); }
+}
+
+function usageFailure(usage: string): never {
+  throw new CliFailure("invalid_arguments", "invalid command arguments", `use ${usage}`, 2);
+}
+
+function errorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : "unable to run command";
+  return message.replace(/[\r\n]+/g, " ").trim() || "unable to run command";
+}
+
+function errorHint(command: string, error: unknown): string {
+  if (error instanceof CliFailure) return error.hint;
+  if (command === "serve") return "check the Kor configuration and daemon state, then retry";
+  if (command === "run" || command === "plan") return "check the issue identifier and Linear credentials, then retry";
+  if (command === "status" || command === "cancel" || command === "retry" || command === "logs") return "check the execution ID or issue key, then retry";
+  return `run \`kor ${command} --help\` or retry with --debug for details`;
+}
+
+function cliError(command: string, error: unknown): KorCliError {
+  return { code: error instanceof CliFailure ? error.code : "command_failed", message: errorMessage(error), hint: errorHint(command, error) };
+}
 
 function jsonFlag(args: readonly string[]): boolean { return args.includes("--json"); }
 function valueAfter(args: readonly string[], name: string): string | undefined {
@@ -28,24 +54,35 @@ async function canonicalIssue(reference: string): Promise<{ id: string; identifi
 
 async function status(args: readonly string[]): Promise<number> {
   const selectors = args.filter(arg => arg !== "--json");
-  if (selectors.length > 1 || selectors.some(arg => arg.startsWith("-"))) { process.stderr.write("Usage: kor status [--json] [EXECUTION-ID|ISSUE-ID]\n"); return 2; }
+  if (selectors.length > 1 || selectors.some(arg => arg.startsWith("-"))) usageFailure("kor status [--json] [EXECUTION-ID|ISSUE-ID]");
   const paths = runtimePaths();
   const loaded = await loadKorConfig(paths.configFile, { home: paths.home });
   const maxAgeMs = Math.max(2_000, loaded.config.pollIntervalSeconds * 2_000);
   const reference = selectors[0];
   if (reference) {
     const response = await readExecutionStatus(paths, reference, maxAgeMs);
+    if (response.provenance === "unavailable") {
+      if (jsonFlag(args)) print(response, true);
+      else process.stderr.write(`FAIL status: ${response.reason}. Hint: ${response.error?.hint ?? "check the execution ID or daemon state"}\n`);
+      return 1;
+    }
     print(response, jsonFlag(args));
-    return response.provenance === "unavailable" ? 1 : 0;
+    return 0;
   }
-  print(await readStatus(paths, maxAgeMs), jsonFlag(args));
+  const response = await readStatus(paths, maxAgeMs);
+  if (response.provenance === "unavailable") {
+    if (jsonFlag(args)) print(response, true);
+    else process.stderr.write(`FAIL status: ${response.reason}. Hint: ${response.error?.hint ?? "start the daemon and retry"}\n`);
+    return 1;
+  }
+  print(response, jsonFlag(args));
   return 0;
 }
 
 async function runIssue(args: readonly string[]): Promise<number> {
   const references = args.filter(arg => arg !== "--json" && arg !== "--dry-run");
   const issueReference = references[0];
-  if (references.length !== 1 || !issueReference || issueReference.startsWith("-")) { process.stderr.write("Usage: kor run ISSUE-ID [--dry-run] [--json]\n"); return 2; }
+  if (references.length !== 1 || !issueReference || issueReference.startsWith("-")) usageFailure("kor run ISSUE-ID [--dry-run] [--json]");
   const json = jsonFlag(args);
   const dryRun = args.includes("--dry-run");
   const paths = runtimePaths();
@@ -66,26 +103,27 @@ async function runIssue(args: readonly string[]): Promise<number> {
 async function updateQueue(command: "cancel" | "retry", args: readonly string[]): Promise<number> {
   const references = args.filter(arg => arg !== "--json");
   const issueReference = references[0];
-  if (references.length !== 1 || !issueReference || issueReference.startsWith("-")) { process.stderr.write(`Usage: kor ${command} EXECUTION-ID|ISSUE-ID [--json]\n`); return 2; }
+  if (references.length !== 1 || !issueReference || issueReference.startsWith("-")) usageFailure(`kor ${command} EXECUTION-ID|ISSUE-ID [--json]`);
   const paths = runtimePaths();
   const store = new LinearStore(paths.databaseFile);
   try {
     const assignment = store.findAssignment(issueReference);
-    if (!assignment) throw new Error("execution not found");
+    if (!assignment) throw new CliFailure("execution_not_found", "execution not found", "check the execution ID, issue ID, or stored issue key");
     const accepted = command === "cancel" ? store.requestCancel(assignment.issueId) : store.retry(assignment.issueId);
+    if (!accepted) throw new CliFailure("not_accepted", `${command} was not accepted for execution ${assignment.executionId}`, command === "cancel" ? "cancel only queued, running, or blocked executions" : "retry only failed, blocked, or canceled executions");
     print({ schemaVersion: 1, issueId: assignment.issueKey ?? assignment.issueId, canonicalIssueId: assignment.issueId, executionId: assignment.executionId, command, accepted }, jsonFlag(args));
-    return accepted ? 0 : 1;
+    return 0;
   } finally { store.close(); }
 }
 
 async function logs(args: readonly string[]): Promise<number> {
   const executionId = args.find(arg => !arg.startsWith("-"));
-  if (!executionId) { process.stderr.write("Usage: kor logs EXECUTION-ID [--json]\n"); return 2; }
+  if (!executionId) usageFailure("kor logs EXECUTION-ID [--json]");
   const paths = runtimePaths();
   let content = "";
   try { content = await readFile(join(paths.logsDir, basename(executionId) + ".log"), "utf8"); }
   catch (error) { if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error; }
-  print(jsonFlag(args) ? { executionId, content } : content.trimEnd(), false);
+  print(jsonFlag(args) ? { executionId, content } : content.trimEnd(), jsonFlag(args));
   return 0;
 }
 
@@ -95,7 +133,7 @@ async function serve(args: readonly string[]): Promise<number> {
   await ensureRuntimeDirectories(paths);
   const portValue = valueAfter(args, "--port");
   const port = portValue ? Number(portValue) : 8327;
-  if (!Number.isSafeInteger(port) || port < 0 || port > 65_535 || port === 8317) throw new Error("--port must be a valid non-8317 TCP port");
+  if (!Number.isSafeInteger(port) || port < 0 || port > 65_535 || port === 8317) throw new CliFailure("invalid_port", "--port must be a valid non-8317 TCP port", "choose an available TCP port between 0 and 65535");
   const statusUrl = `http://127.0.0.1:${port}/status`;
   const repositories = new RepositoryRegistry(Object.entries(loaded.config.repos).map(([key, repository]) => ({ key, path: repository.path, defaultBranch: repository.defaultBranch, allowedTools: repository.toolAllowlist, checks: repository.checks })));
   const controller = createController({
@@ -128,29 +166,40 @@ async function serve(args: readonly string[]): Promise<number> {
 }
 
 export async function main(args: readonly string[] = process.argv.slice(2)): Promise<number> {
-  const command = args[0] ?? "help";
+  const debug = args.includes("--debug");
+  const cleanArgs = args.filter(arg => arg !== "--debug");
+  const command = cleanArgs[0] ?? "help";
   try {
-    if (command === "doctor" && args.length === 1) {
+    if (command === "doctor") {
+      if (cleanArgs.length !== 1) usageFailure("kor doctor");
       const report = await runDoctor();
       process.stdout.write(`${formatDoctor(report, Boolean(process.stdout.isTTY) && process.env.NO_COLOR === undefined)}\n`);
+      if (!report.ok) process.stderr.write("FAIL doctor: one or more checks failed. Hint: fix the reported checks and rerun `kor doctor`\n");
       return report.ok ? 0 : 1;
     }
-    if (command === "plan" && args.length === 2) {
-      const result = await runPlan(args[1]!);
+    if (command === "plan") {
+      if (cleanArgs.length !== 2 || !cleanArgs[1]) usageFailure("kor plan ISSUE-ID");
+      const result = await runPlan(cleanArgs[1]);
       process.stdout.write(`${result.output}\n${result.commentWritten ? "linear: clarification comment written" : "linear: no clarification needed"}\n`);
-      return result.plan.fallback || result.plan.decisions.some(decision => decision.escalated || decision.kind === "readiness" && decision.choice === "blocked") ? 1 : 0;
+      const blocked = result.plan.fallback || result.plan.decisions.some(decision => decision.escalated || decision.kind === "readiness" && decision.choice === "blocked");
+      if (blocked) process.stderr.write("FAIL plan: preflight did not produce a ready route. Hint: resolve the reported decisions or provide a healthy Jev response, then retry\n");
+      return blocked ? 1 : 0;
     }
-    if (command === "status") return status(args.slice(1));
-    if (command === "run") return runIssue(args.slice(1));
-    if (command === "cancel" || command === "retry") return updateQueue(command, args.slice(1));
-    if (command === "logs") return logs(args.slice(1));
-    if (command === "serve") return serve(args.slice(1));
+    if (command === "status") return await status(cleanArgs.slice(1));
+    if (command === "run") return await runIssue(cleanArgs.slice(1));
+    if (command === "cancel" || command === "retry") return await updateQueue(command, cleanArgs.slice(1));
+    if (command === "logs") return await logs(cleanArgs.slice(1));
+    if (command === "serve") return await serve(cleanArgs.slice(1));
+    if (!["help", "--help", "-h"].includes(command)) throw new CliFailure("unknown_command", `unknown command \"${command}\"`, "run `kor --help` to list available commands", 2);
   } catch (error) {
-    process.stderr.write(`FAIL ${command}: ${error instanceof Error ? error.message : "unable to run"}\n`);
-    return 1;
+    const structured = cliError(command, error);
+    if (jsonFlag(args)) process.stdout.write(`${JSON.stringify({ schemaVersion: 1, error: structured })}\n`);
+    else process.stderr.write(`FAIL ${command}: ${structured.message}. Hint: ${structured.hint}\n`);
+    if (debug && error instanceof Error && error.stack) process.stderr.write(`${error.stack}\n`);
+    return error instanceof CliFailure ? error.exitCode : 1;
   }
   process.stdout.write("Usage: kor serve | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor plan ISSUE-ID | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor | kor models list | kor models probe [--family family] [--model model]\n");
-  return ["help", "--help", "-h"].includes(command) ? 0 : 2;
+  return 0;
 }
 
 const entrypoint = process.argv[1] ? fileURLToPath(import.meta.url) === process.argv[1] || process.argv[1].endsWith("/.bin/kor") : false;

@@ -47,6 +47,7 @@ Capacity starts at one Kor execution per repository and two total in Kor config.
 | `observedAt` | UTC time the CLI read the durable assignment. |
 | `run.executionId`, `run.issueId`, `run.issueKey` | Durable execution ID, canonical issue UUID, nullable issue key. |
 | `run.state` | Current queue state: `queued`, `running`, `blocked`, `complete`, `failed`, `canceled`. Future lifecycle states must not be treated as completion. |
+| `run.errorCode` | Optional diagnostic classification; missing acceptance criteria use `needs_input`, while failed verification uses `verification_blocked`. |
 | `run.attempts`, `run.cancelRequested` | Claim count and whether an active cancellation is pending. |
 | `run.needsInput` | `{ "reason": "…" }` for blocked executions, otherwise `null`. Missing acceptance criteria block before a model is launched; failed verification also blocks. |
 | `run.pullRequestUrl` | Reported PR URL, or `null` if shipping has not published one. |
@@ -56,6 +57,20 @@ Capacity starts at one Kor execution per repository and two total in Kor config.
 The existing daemon does not yet publish PR or aggregate cost data; those fields are deliberately null until the shipping and telemetry producers populate the snapshot. This adapter does not estimate either value.
 
 An unknown selector or missing database returns `provenance: "unavailable"`, `run: null`, a `reason`, and exit 1. Stale known executions still return exit 0 so the supervisor can display the durable record. Consumers must inspect provenance. `kor cancel EXECUTION-ID|ISSUE-ID --json` returns `executionId`, both issue identifiers, `command: "cancel"`, and `accepted`. A queued or blocked execution cancels immediately; a running execution cancels after its session stops. Exit 1 means not accepted; usage errors use exit 2.
+
+### Error output
+
+Every `kor` command reports failures on one line with a nonzero exit code. The line includes a recovery hint, and does not include a stack trace unless `--debug` is present. Commands using `--json` return a versioned error object on stdout so a supervisor can handle failures without parsing human text:
+
+```text
+$ bin/kor cancel unknown-execution
+FAIL cancel: execution not found. Hint: check the execution ID, issue ID, or stored issue key
+
+$ bin/kor cancel unknown-execution --json
+{"schemaVersion":1,"error":{"code":"execution_not_found","message":"execution not found","hint":"check the execution ID, issue ID, or stored issue key"}}
+```
+
+The adapter resolves its own symlink before locating the default `bin/kor`, so an absolute symlink to `kor-dispatch` works without setting `KOR_BIN`. An unavailable poll keeps Kor's diagnostic in its structured response and exits nonzero. A blocked execution caused by missing acceptance criteria is labelled `errorCode: "needs_input"`; verification failures continue to use `verification_blocked`.
 
 ## Validation
 

@@ -77,6 +77,7 @@ function overrideComment(record: OverrideRecord): string {
 }
 function runStatus(assignment: AssignmentRecord, observedAt: string, facts: RunFacts = { decisions: [] }): RunStatus {
   const manifest = assignment.manifest;
+  const blockedErrorCode = assignment.lastError?.startsWith("Add a # Acceptance section") ? "needs_input" : "verification_blocked";
   const route = facts.route ?? manifest?.route;
   const issue = facts.issue
     ? { key: facts.issue.key, title: facts.issue.title, ...(facts.issue.url ? { url: facts.issue.url } : {}), ...(facts.issue.state ? { state: facts.issue.state } : {}) }
@@ -92,7 +93,7 @@ function runStatus(assignment: AssignmentRecord, observedAt: string, facts: RunF
     ...(manifest?.status ? { phase: manifest.status } : {}),
     ...(assignment.cancelRequested ? { cancelRequested: true } : {}),
     ...(assignment.status === "failed" ? { errorCode: "execution_failed" } : {}),
-    ...(assignment.status === "blocked" ? { errorCode: "verification_blocked" } : {}),
+    ...(assignment.status === "blocked" ? { errorCode: blockedErrorCode } : {}),
     ...(assignment.status === "canceled" ? { errorCode: "canceled" } : {}),
     ...(manifest?.repository ? { repository: manifest.repository } : {}),
     ...(manifest?.worktree ? { worktree: manifest.worktree } : {}),

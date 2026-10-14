@@ -2,7 +2,7 @@
 set -euo pipefail
 repo_root=$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd -P)
 if [[ ! -x "$repo_root/node_modules/.bin/tsx" || ! -f "$repo_root/packages/cli/dist/cli.js" ]]; then
-  echo 'Kor is not built. Run pnpm install --frozen-lockfile and pnpm build in the Kor checkout.' >&2
+  echo 'FAIL kor: Kor is not built. Hint: run pnpm install --frozen-lockfile and pnpm build in the Kor checkout.' >&2
   exit 1
 fi
 # Keep stdout machine-readable; installation/build output must not precede JSON.

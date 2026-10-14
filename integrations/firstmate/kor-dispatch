@@ -7,7 +7,8 @@ usage() {
   exit 2
 }
 [[ $# == 2 && -n $2 && $2 != -* ]] || usage
-adapter_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+adapter_path=$(readlink -f "${BASH_SOURCE[0]}")
+adapter_dir=$(cd "$(dirname "$adapter_path")" && pwd -P)
 kor_bin=${KOR_BIN:-"$adapter_dir/../../bin/kor"}
 command -v jq >/dev/null || { echo 'kor-dispatch requires jq' >&2; exit 1; }
 
@@ -23,7 +24,11 @@ case $1 in
     ;;
   poll)
     "$kor_bin" status --json "$2" | jq -ce '
-      if .schemaVersion != 1 or .run == null then error("Kor execution unavailable") else . end
+      if .schemaVersion != 1 then
+        {schemaVersion: 1, dispatchType: "kor", error: {code: "invalid_response", message: "Kor returned an unsupported status response", hint: "rebuild Kor and retry the poll"}} | halt_error(5)
+      elif .run == null then
+        {schemaVersion: 1, dispatchType: "kor", error: {code: (.error.code // "execution_unavailable"), message: (.reason // .error.message // "Kor execution unavailable"), hint: (.error.hint // "check the execution ID and daemon state")}} | halt_error(1)
+      else . end
       | . as $response | .run as $run
       | (["complete", "failed", "canceled"] | index($run.state)) as $terminal
       | {
