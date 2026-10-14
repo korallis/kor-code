@@ -42,3 +42,38 @@ Linear is the source of truth for intent. GitHub is the source of truth for vers
 The TypeScript pnpm workspace contains `core`, `jev`, `gateway-adapter`, `linear`, `controller`, `context`, `verification`, and `claude-plugin` packages. Run `pnpm probe` for the external contract checks and read the [Phase 0 probe record](docs/phase-0-probe.md). Use `scripts/sandbox.sh` to load the Claude Code plugin in a disposable `CLAUDE_CONFIG_DIR`; it never installs the plugin globally or changes the existing Claude Code configuration, runs offline unless `--live-model` opts in to CLIProxyAPI, and `pnpm isolation:proof` traces the sandboxed session to show it never touches the real Claude, Codex or agents homes or port 8317.
 
 The Phase 6 cockpit (`packages/claude-plugin`) is Validated on fixture data: `pnpm cockpit` opens it in the sandboxed Claude Code (`/kor`), and `pnpm cockpit:proof` replays the fixture execution and checks every view's labels. See the [cockpit specification](docs/specs/cockpit-mockups.md).
+
+## Check model compatibility
+
+Install the workspace before using the `kor` commands:
+
+```sh
+pnpm install
+```
+
+Run a probe with a gateway key supplied at runtime. The probe discovers models from the gateway's `/v1/models` response, starts one isolated sandbox session per selected model, and writes verified results to `~/.local/state/kor/models.json`.
+
+```sh
+export KOR_GATEWAY_KEY="<your runtime gateway key>"
+pnpm kor models probe --model claude-haiku-5-5
+```
+
+The table reports each capability independently. A model is routable only when streaming, tool calls, thinking, and structured output all pass.
+
+```text
+MODEL	STREAMING	TOOL_CALLS	THINKING	STRUCTURED_OUTPUT	COST_USD	DURATION_MS
+claude-haiku-5-5	pass	pass	pass	pass	0.004184965	5118
+```
+
+Use `--family claude` to probe every Claude model returned by the gateway. Use `--dry-run` to list the selected models without starting sessions. To inspect the verified models later, run:
+
+```sh
+pnpm kor models list
+```
+
+```text
+MODEL	FAMILY	CAPABILITIES	COST_USD	DURATION_MS
+claude-haiku-5-5	claude	streaming,tool_calls,thinking,structured_output	0.004184965	5118
+```
+
+Set `KOR_MODEL_REGISTRY` when you need a disposable registry for a proof or a CI job. The gateway key is never written to the registry or printed by these commands.
