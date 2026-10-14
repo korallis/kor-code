@@ -16,10 +16,10 @@ const breathe = stylex.keyframes({
 });
 
 const styles = stylex.create({
-  orb: { position: 'relative', flex: 'none', borderRadius: '50%', backgroundImage: tint.orbFill, boxShadow: tint.orbGlow, display: 'block', animationName: breathe, animationDuration: '6s', animationIterationCount: motion.loop, animationTimingFunction: 'ease-in-out' },
+  orb: { position: 'relative', flex: 'none', borderRadius: '50%', backgroundImage: tint.orbFill, boxShadow: tint.orbGlow, display: 'block', animationName: breathe, animationDuration: `calc(${motion.breathe} * 2.5)`, animationIterationCount: motion.loop, animationTimingFunction: 'ease-in-out' },
   ring: { position: 'absolute', inset: '-4px', borderRadius: '50%', borderWidth: '1px', borderStyle: 'solid', borderColor: tint.orbRing, borderLeftColor: 'transparent', borderBottomColor: 'transparent', transform: 'rotate(-20deg)' },
   ringSmall: { inset: '-3px' },
-  ping: { position: 'absolute', inset: 0, borderRadius: '50%', borderWidth: '1.5px', borderStyle: 'solid', borderColor: tint.orbRing, animationName: ping, animationDuration: '1.2s', animationIterationCount: 1, animationFillMode: 'both', animationTimingFunction: motion.easeOut },
+  ping: { position: 'absolute', inset: 0, borderRadius: '50%', borderWidth: '1.5px', borderStyle: 'solid', borderColor: tint.orbRing, animationName: ping, animationDuration: `calc(${motion.slow} * 2.9)`, animationIterationCount: 1, animationFillMode: 'both', animationTimingFunction: motion.easeOut },
   media: { flex: 'none' },
 });
 const sized = stylex.create({ size: (px: number) => ({ width: `${px}px`, height: `${px}px` }) });

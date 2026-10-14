@@ -75,12 +75,12 @@ export const animate = stylex.create({
   fadeInFast: { animationName: fadeIn, animationDuration: motion.base, animationFillMode: 'both' },
   dotPulse: { animationName: dotPulse, animationDuration: motion.pulse, animationIterationCount: motion.loop, animationTimingFunction: 'ease-in-out' },
   stageGlow: { animationName: stageGlow, animationDuration: motion.pulse, animationIterationCount: motion.loop, animationTimingFunction: 'ease-in-out' },
-  ripple: { animationName: ripple, animationDuration: '6s', animationIterationCount: motion.loop },
-  blink: { animationName: blink, animationDuration: '1s', animationTimingFunction: 'steps(1)', animationIterationCount: motion.loop },
+  ripple: { animationName: ripple, animationDuration: `calc(${motion.breathe} * 2.5)`, animationIterationCount: motion.loop },
+  blink: { animationName: blink, animationDuration: `calc(${motion.pulse} / 1.8)`, animationTimingFunction: 'steps(1)', animationIterationCount: motion.loop },
   grow: { transformOrigin: 'left center', animationName: grow, animationDuration: motion.slow, animationTimingFunction: motion.easeOut, animationFillMode: 'both' },
   spin: { animationName: spin, animationDuration: '1s', animationIterationCount: 'infinite', animationTimingFunction: 'linear' },
-  spinSlow: { animationName: spin, animationDuration: '14s', animationIterationCount: motion.loop, animationTimingFunction: 'linear' },
-  spinFast: { animationName: spin, animationDuration: '1.4s', animationIterationCount: motion.loop, animationTimingFunction: 'linear' },
+  spinSlow: { animationName: spin, animationDuration: `calc(${motion.pulse} * 7.8)`, animationIterationCount: motion.loop, animationTimingFunction: 'linear' },
+  spinFast: { animationName: spin, animationDuration: `calc(${motion.pulse} * 0.78)`, animationIterationCount: motion.loop, animationTimingFunction: 'linear' },
 });
 
 /** Stagger an entrance by its position: 40 ms a step. */
