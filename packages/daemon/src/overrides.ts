@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import type { DecisionRecord, OverrideRecord } from "@kor-code/core";
+import { z } from "zod";
 
 type Row = Record<string, unknown>;
 
@@ -10,6 +11,7 @@ function decisionFrom(payload: string): DecisionRecord | undefined {
     const response = record.response;
     if (!response || typeof response.decisionId !== "string" || typeof response.executionId !== "string") return undefined;
     const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+    const probabilities = z.record(z.string(), z.number().min(0).max(1)).safeParse(response.probabilities);
     return {
       executionId: response.executionId,
       decisionId: response.decisionId,
@@ -24,6 +26,7 @@ function decisionFrom(payload: string): DecisionRecord | undefined {
       policyChecks: Array.isArray(response.policyChecks) ? response.policyChecks.filter((check): check is DecisionRecord["policyChecks"][number] => typeof check === "object" && check !== null && typeof (check as Row).name === "string") : [],
       escalated: response.escalated === true,
       recordedAt: typeof record.recordedAt === "string" ? record.recordedAt : "",
+      ...(probabilities.success ? { probabilities: probabilities.data } : {}),
     };
   } catch { return undefined; }
 }

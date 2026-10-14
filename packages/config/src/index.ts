@@ -14,6 +14,8 @@ export const repositorySchema = z.strictObject({
   defaultBranch: nonempty.default("main"),
   checks: z.array(nonempty).default([]),
   toolAllowlist: z.array(nonempty).default([]),
+  /** Existing repositories retain automatic publication; Mission Control can gate it. */
+  ship: z.enum(["approve", "auto"]).default("auto"),
 });
 export const routeSchema = z.strictObject({
   provider: nonempty.default("anthropic"),

@@ -13,7 +13,7 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 real_home=${HOME:-}
-sandbox_dir="$repo_root/.sandbox"
+sandbox_dir="${KOR_SANDBOX_ROOT:-$repo_root/.sandbox}"
 config_dir="$sandbox_dir/claude-config"
 home_dir="$sandbox_dir/home"
 mkdir -p "$config_dir" "$home_dir"
