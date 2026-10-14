@@ -110,7 +110,7 @@ function runStatus(assignment: AssignmentRecord, observedAt: string, facts: RunF
     ...(route ? { route } : {}),
     ...(facts.routeSource ? { routeSource: facts.routeSource } : {}),
     ...(facts.decisions.length ? { decisionIds: facts.decisions.map(decision => decision.decisionId) } : {}),
-    ...(manifest?.status ? { phase: manifest.status } : {}),
+    phase: assignment.status === "running" ? manifest?.status ?? assignment.status : assignment.status,
     ...(manifest?.verification ? { verification: manifest.verification } : {}),
     ...(manifest?.verification?.costUsd !== undefined ? { costUsd: manifest.verification.costUsd } : {}),
     ...(manifest?.shipping ? { shipping: manifest.shipping } : {}),
