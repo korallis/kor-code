@@ -401,6 +401,13 @@ $ integrations/firstmate/kor-dispatch cancel e9f75716-7856-4b76-b305-bcb39b68220
 
 For the raw versioned contract, use `bin/kor status --json EXECUTION-ID` or `bin/kor status --json LEE-1107`. It returns `provenance` and a `run` object containing `state`, `needsInput`, `pullRequestUrl`, and `costUsd`. Unknown executions return `run: null` and exit 1. A stopped daemon makes the selected response stale even if the last snapshot is recent; the adapter then reports `paused` and withholds captain calls. PR URL and cost are `null` until shipping and telemetry publish them.
 
+Kor command failures are concise and actionable: `FAIL <command>: <message>. Hint: <recovery>`, with a nonzero exit code and no stack trace unless `--debug` is supplied. With `--json`, the same failure is a structured object on stdout, for example:
+
+```text
+$ bin/kor cancel unknown-execution --json
+{"schemaVersion":1,"error":{"code":"execution_not_found","message":"execution not found","hint":"check the execution ID, issue ID, or stored issue key"}}
+```
+
 Firstmate reserves a kor-code slot for each distinct execution while `holdsCapacity` is true, and deduplicates captain calls by their key. A live terminal poll releases the reservation. The adapter provides these signals; it does not change the home's private configuration.
 
 ## Open the live cockpit

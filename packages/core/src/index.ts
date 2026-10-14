@@ -74,7 +74,7 @@ export interface RunStatus {
   verification?: VerificationReport;
   shipping?: ShippingReport;
   cancelRequested?: boolean;
-  errorCode?: "execution_failed" | "verification_blocked" | "shipping_blocked" | "canceled" | "recovered";
+  errorCode?: "execution_failed" | "verification_blocked" | "shipping_blocked" | "needs_input" | "canceled" | "recovered";
   pullRequestUrl?: string;
   /** Reported execution cost when persisted telemetry is available. */
   costUsd?: number;
@@ -132,8 +132,16 @@ export interface SupervisedRun {
 }
 export type KorExecutionStatusResponse =
   | { schemaVersion: 1; provenance: "live" | "stale"; observedAt: string; run: SupervisedRun; reason?: string }
-  | { schemaVersion: 1; provenance: "unavailable"; observedAt: string; run: null; reason: string };
+  | { schemaVersion: 1; provenance: "unavailable"; observedAt: string; run: null; reason: string; error?: KorCliError };
 export type StatusProvenance = "live" | "stale" | "unavailable";
 export type KorStatusResponse =
   | { schemaVersion: 1; provenance: "live" | "stale"; observedAt: string; snapshot: KorStatusSnapshot; reason?: string }
-  | { schemaVersion: 1; provenance: "unavailable"; observedAt: string; snapshot: null; reason: string };
+  | { schemaVersion: 1; provenance: "unavailable"; observedAt: string; snapshot: null; reason: string; error?: KorCliError };
+
+/** Stable machine-readable error returned by a failed Kor CLI command. */
+export interface KorCliError {
+  code: string;
+  message: string;
+  hint: string;
+}
+export interface KorCliErrorResponse { schemaVersion: 1; error: KorCliError }
