@@ -26,7 +26,7 @@ export async function readModelRegistry(path = modelRegistryPath()): Promise<Mod
   try {
     const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
     if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { models?: unknown }).models)) return { version: 1, models: [] };
-    return { version: 1, models: (parsed as { models: ModelProbeResult[] }).models.filter(item => typeof item?.model === "string" && item.verified === true) };
+    return { version: 1, models: (parsed as { models: ModelProbeResult[] }).models.filter(item => typeof item?.model === "string" && typeof item.verified === "boolean") };
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return { version: 1, models: [] };
     throw new Error(`Cannot read model registry at ${path}`);

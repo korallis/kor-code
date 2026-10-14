@@ -8,7 +8,7 @@ Run a probe against the live `/v1/models` catalogue:
 pnpm kor models probe --family claude
 ```
 
-Each selected model runs in Kor's sandbox. The probe writes a table with streaming, tool calls, thinking, structured output, cost, and duration. A model enters routing only when the probe records every capability as passing.
+Each selected model runs in its own Kor sandbox session. The probe requests a tool call, extended thinking, and a final JSON object, then checks those results independently. The table reports `pass`, `fail`, or `absent` for streaming, tool calls, thinking, and structured output. A model enters routing only when every capability is measured and passes. Use `--dry-run` to print the selected models without starting sessions.
 
 List the verified models without contacting the gateway:
 
@@ -16,4 +16,4 @@ List the verified models without contacting the gateway:
 pnpm kor models list
 ```
 
-`GatewayAdapter.catalogue()` reads the same registry and filters the live catalogue to verified models. An empty registry leaves no model routable unless a caller supplies explicit compatibility data for a one-off probe.
+`GatewayAdapter.catalogue()` reads the same registry and filters the live catalogue to verified models. Explicit `modelCapabilities` supplied by an adapter caller remain routable for fixtures and one-off proofs. An empty registry leaves live models unroutable until a probe records them.

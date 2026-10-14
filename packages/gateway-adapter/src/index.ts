@@ -126,9 +126,9 @@ export class GatewayAdapter {
   async catalogue(requirements: CapabilityRequirements = {}): Promise<GatewayModel[]> {
     const registry = await readModelRegistry();
     const configured = { ...registryCapabilities(registry), ...this.options.modelCapabilities };
-    return eligibleModels(await this.listModels(), requirements, configured).filter(model => registry.models.length === 0
-      ? Object.hasOwn(this.options.modelCapabilities ?? {}, model.id)
-      : registry.models.some(item => item.model === model.id && item.verified));
+    return eligibleModels(await this.listModels(), requirements, configured).filter(model =>
+      Object.hasOwn(this.options.modelCapabilities ?? {}, model.id)
+      || registry.models.some(item => item.model === model.id && item.verified));
   }
   async accountHealth(): Promise<GatewayAccountHealth[]> { return accountHealthFrom(await this.rawManagement()); }
   async route(request: RouteRequest = {}): Promise<RouteDecision> {
