@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
-exec pnpm --dir "$repo_root" exec tsx "$repo_root/scripts/kor.ts" "$@"
+exec pnpm --dir "$repo_root" run kor "$@"
