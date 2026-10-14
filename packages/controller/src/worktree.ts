@@ -1,4 +1,4 @@
-import { access, mkdir, rm } from "node:fs/promises";
+import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { execFile as execFileCallback } from "node:child_process";
@@ -27,6 +27,7 @@ export class GitWorktreeManager implements WorktreeManager {
     const branchExists = await execFile("git", ["-C", input.repository.path, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`]).then(() => true).catch(() => false);
     const addArgs = branchExists ? ["worktree", "add", path, branch] : ["worktree", "add", "-b", branch, path, input.repository.defaultBranch ?? "HEAD"];
     await execFile("git", ["-C", input.repository.path, ...addArgs]);
+    await writeFile(join(path, ".kor-worktree.json"), `${JSON.stringify({ executionId: input.executionId, issueId: input.issueId })}\n`, { mode: 0o600 });
     return { executionId: input.executionId, issueId: input.issueId, path, branch, repository: input.repository.path };
   }
   async remove(worktree: Worktree): Promise<void> { await execFile("git", ["-C", worktree.repository, "worktree", "remove", "--force", worktree.path]).catch(() => undefined); }

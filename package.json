@@ -22,7 +22,8 @@
     "phase5:proof": "tsx scripts/phase5-proof.ts",
     "cockpit": "bash scripts/sandbox.sh --interactive",
     "cockpit:proof": "tsx scripts/cockpit-proof.ts",
-    "isolation:proof": "bash scripts/isolation-proof.sh"
+    "isolation:proof": "bash scripts/isolation-proof.sh",
+    "daemon:proof": "tsx scripts/daemon-proof.ts"
   },
   "devDependencies": {
     "@types/node": "^24.8.0",

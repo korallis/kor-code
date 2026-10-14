@@ -33,3 +33,29 @@ export interface RouteTelemetry { provider: string; model: string; accountSlot?:
 export type Provenance = "live" | "stale" | "fixture" | "unavailable";
 /** A value an adapter hands the cockpit, with the provenance the cockpit must label it with. */
 export interface Labelled<T> { value: T; provenance: Provenance; observedAt?: string }
+
+/** Stable read-only shape consumed by the cockpit and `kor status --json`. */
+export type RunLifecycle = "queued" | "running" | "complete" | "failed" | "canceled" | "blocked";
+export interface RunStatus {
+  executionId: string;
+  issueId: string;
+  status: RunLifecycle;
+  attempts: number;
+  repository?: string;
+  worktree?: string;
+  branch?: string;
+  sessionPid?: number;
+  heartbeatAt?: string;
+  error?: string;
+  observedAt: string;
+}
+export interface KorStatusSnapshot {
+  schemaVersion: 1;
+  observedAt: string;
+  daemon: { pid: number; startedAt: string; pollIntervalSeconds: number; lastPollAt?: string; lastError?: string };
+  runs: RunStatus[];
+}
+export type StatusProvenance = "live" | "stale" | "unavailable";
+export type KorStatusResponse =
+  | { schemaVersion: 1; provenance: "live" | "stale"; observedAt: string; snapshot: KorStatusSnapshot; reason?: string }
+  | { schemaVersion: 1; provenance: "unavailable"; observedAt: string; snapshot: null; reason: string };

@@ -42,7 +42,7 @@ export interface ControllerRunResult {
   claim?: ExecutionClaim;
 }
 export interface Controller {
-  dispatch(execution: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[] }): Promise<ControllerRunResult>;
+  dispatch(execution: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[]; onSpawn?: (pid: number) => void }): Promise<ControllerRunResult>;
   runIssue(issueId: string, evidence?: Evidence[]): Promise<ControllerRunResult>;
   runNext(): Promise<ControllerRunResult | undefined>;
   reconcile(): Promise<ReconciliationReport>;
@@ -86,7 +86,7 @@ class ExecutionController implements Controller {
       this.reconciler = new RestartReconciler(options.linear.store, options.worktrees);
     }
   }
-  async dispatch(input: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[] }): Promise<ControllerRunResult> {
+  async dispatch(input: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[]; onSpawn?: (pid: number) => void }): Promise<ControllerRunResult> {
     const issue = input.issue ?? (this.snapshots ? (await this.snapshots.read(input.issueId)).issue : undefined);
     if (!issue) throw new Error("Controller dispatch requires an issue or a Linear runtime");
     const repository = await this.options.repositories.resolve(input.repository);
@@ -108,7 +108,7 @@ class ExecutionController implements Controller {
         this.writer.start(claim, execution);
         await this.writer.flush();
       }
-      const launch: SessionLaunch = { execution, repositoryPath: repository.path, worktreePath: worktree.path, prompt: input.prompt ?? promptFor(issue, this.options.promptPrefix), ...(route ? { route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}) };
+      const launch: SessionLaunch = { execution, repositoryPath: repository.path, worktreePath: worktree.path, prompt: input.prompt ?? promptFor(issue, this.options.promptPrefix), ...(route ? { route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}) };
       heartbeat = claim && this.lease ? this.startHeartbeat(claim) : undefined;
       const sessionPromise = this.options.launcher.launch(launch);
       const session = await Promise.race([sessionPromise, ...(heartbeat ? [heartbeat.failed] : [])]);

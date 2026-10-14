@@ -13,6 +13,8 @@ export interface LinearIssue extends Issue {
   comments: Array<{ id: string; body: string }>;
   sessions: Array<{ id: string; status: string }>;
   resources: Array<{ title: string; url: string }>;
+  /** Label names are used by the daemon's explicit intake opt-in. */
+  labels: string[];
 }
 
 export type LinearStateType = "backlog" | "unstarted" | "started" | "completed" | "canceled" | "triage" | "duplicate";
@@ -93,5 +95,6 @@ export function parseIssue(value: unknown): LinearIssue {
     comments: connection(data.comments).map(value => { const comment = object(value); return { id: string(comment.id), body: string(comment.body) }; }),
     sessions: connection(data.agentSessions).map(value => { const session = object(value); return { id: string(session.id), status: string(session.status) }; }),
     resources: connection(data.attachments).map(value => { const attachment = object(value); return { title: string(attachment.title), url: string(attachment.url) }; }),
+    labels: data.labels === undefined ? [] : connection(data.labels).map(value => string(object(value).name)),
   };
 }

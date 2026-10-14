@@ -1,0 +1,14 @@
+[Unit]
+Description=Kor Code Linear execution daemon
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/kor serve
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
