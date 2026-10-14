@@ -222,6 +222,49 @@ apply1=0 apply2=0 cancel1=0 cancel2=0
 {"state":"unstarted","comments":[{"id":"a15e1d22-06dc-4638-b2ee-b63f6e791d22","body":"Kor canceled execution for 036ad937-df51-4954-a163-1cd61a6450a3; state → Todo"},{"id":"9d60278e-8942-44a5-a220-50691ae26be3","body":"Kor started execution d9c8e4eb-64e7-48b7-a90a-358185be6a4b; state → In Progress"}]}
 ```
 
+### Calibrate Jev routing against a baseline
+
+Calibration is **Validated locally** with a persistent SQLite store and paired replay proof; live provider runs are **Blocked** until runtime gateway and Linear credentials are supplied; the daemon runner is wired. The sample rate defaults to `0.25` and is stable per execution id. Configure it under `calibration.sampleRate` and set the fixed route with `calibration.baselineRoute` in `~/.config/kor/config.yaml`. Baseline work is evaluated in a throwaway worktree and never shipped. Start the daemon with `kor serve --jev` to enable verified gateway catalogue routing; use `--no-calibration` to disable recording, `--calibration-rate` to override sampling for one process, and `--baseline-model` to override the fixed comparison model.
+
+Seed and inspect the local proof:
+
+```sh
+pnpm calibration:proof
+XDG_STATE_HOME=/tmp/kor-t12-calibration-proof/state pnpm kor calibrate report
+```
+
+The command prints both arms, all requested operational metrics, and the confidence table. This representative run uses the real controller proof; wall-clock values vary:
+
+```text
+Kor calibration report
+Completed Jev/baseline pairs: 1
+Since: all time
+Success = identical verification gate in both arms. Terminal merge outcomes are separate.
+Metric	Jev-route (all)	baseline (sampled)	Paired delta (Jev - baseline)
+Runs (finished/total)	1/1	1/1	1 pairs
+Merged/terminal outcomes	1/1	0/0	n/a (baseline never ships)
+successRate	1.0000 (n=1)	1.0000 (n=1)	0.0000 (n=1)
+repairs	0.0000 (n=1)	0.0000 (n=1)	0.0000 (n=1)
+costUsd	0.0400 (n=1)	0.0400 (n=1)	0.0000 (n=1)
+cacheHitRate	0.3125 (n=1)	0.3125 (n=1)	0.0000 (n=1)
+wallClockMs	10.0000 (n=1)	9.0000 (n=1)	1.0000 (n=1)
+failovers	unavailable (n=0)	unavailable (n=0)	unavailable (n=0)
+verificationFailures	0.0000 (n=1)	0.0000 (n=1)	0.0000 (n=1)
+policyBlocks	0.0000 (n=1)	0.0000 (n=1)	0.0000 (n=1)
+clarifications	unavailable (n=0)	unavailable (n=0)	unavailable (n=0)
+
+Confidence calibration against terminal merge success (outcome proxy, not decision-correctness probability)
+Kind	Bin	N	Mean signal	Observed success	Brier (proxy)
+route	0.8–1.0	1	1.0000	1.0000	0.0000
+readiness	all	0	unavailable	unavailable	unavailable
+acceptance	0.8–1.0	1	1.0000	1.0000	0.0000
+```
+
+For the live scratch run, the script's repository allowlist contains `Read,Write,Edit` and the three `git` commands needed to commit the hello file. To prove a policy failure, remove `Write` from `KOR_E2E_ALLOWED_TOOLS` and set `KOR_E2E_EXPECT_FAILURE=1`; the command reports the provider's permission denial and failed attempt. A launcher with no repository allowlist defaults to `Read`, so mutation is opt-in. Credentials are runtime-only and are never written to the repository or printed.
+
+
+The daemon records rejected, escalated, and abandoned terminal observations. Merge observation is the T6 integration point; the local proof calls that hook directly, so live reports show merged outcomes only when the merge observer supplies them.
+
 ## Run the Kor daemon
 
 After `pnpm install` and a `~/.config/kor/config.yaml`, install the user service with `cp systemd/kor.service ~/.config/systemd/user/kor.service`, then run `systemctl --user daemon-reload` and `systemctl --user enable --now kor`.
