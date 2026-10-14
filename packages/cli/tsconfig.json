@@ -11,6 +11,18 @@
   "references": [
     {
       "path": "../config"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../gateway-adapter"
+    },
+    {
+      "path": "../jev"
+    },
+    {
+      "path": "../linear"
     }
   ]
 }

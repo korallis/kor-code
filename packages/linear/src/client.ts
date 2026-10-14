@@ -17,7 +17,7 @@ export interface LinearClientOptions {
   envFile?: string;
   fetcher?: typeof globalThis.fetch;
   // Write access is opt-in and also requires an app user for agent sessions.
-  writes?: { appUserId: string };
+  writes?: { appUserId?: string };
 }
 
 export async function resolveLinearApiKey(envFile = `${process.env.HOME ?? ''}/.config/linear/env`): Promise<string> {
@@ -95,6 +95,7 @@ export class HttpLinearClient implements LinearClient {
     let data: Record<string, unknown>;
     switch (write.kind) {
       case 'session': {
+        if (!writes.appUserId) throw new Error('Linear agent-session writes require an OAuth app user; use comments with a personal key');
         // Reconcile stable IDs before replaying creates after a process crash.
         const existing = await this.query('query KorSession($id: String!) { agentSession(id: $id) { id issue { id } context } }', { id: write.session.id });
         if (existing.agentSession !== null) {
@@ -125,10 +126,16 @@ export class HttpLinearClient implements LinearClient {
         break;
       }
       case 'comment': {
-        const existing = await this.query('query KorComment($id: String!) { comment(id: $id) { id issue { id } } }', { id: write.id });
-        if (existing.comment !== null) {
-          if (string(object(object(existing.comment).issue).id) !== write.issueId) throw new Error('Linear comment ownership mismatch');
-          return;
+        // Linear returns a GraphQL error for a missing comment instead of null.
+        // A stable client UUID still makes a replay visible to the API as a duplicate.
+        try {
+          const existing = await this.query('query KorComment($id: String!) { comment(id: $id) { id issue { id } } }', { id: write.id });
+          if (existing.comment !== null) {
+            if (string(object(object(existing.comment).issue).id) !== write.issueId) throw new Error('Linear comment ownership mismatch');
+            return;
+          }
+        } catch (error) {
+          if (error instanceof Error && error.message === 'Linear comment ownership mismatch') throw error;
         }
         data = await this.query('mutation KorComment($input: CommentCreateInput!) { commentCreate(input: $input) { success } }', { input: { id: write.id, issueId: write.issueId, body: write.body } });
         break;

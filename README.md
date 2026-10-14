@@ -4,7 +4,7 @@ Kor Code is the documentation project for a Linear-first engineering environment
 
 The design gives one control plane to read project intent from Linear, choose models and agents, run isolated Claude Code sessions, use an account-aware subscription gateway, and write evidence back to Linear.
 
-This repository contains the foundation monorepo and documentation. The foundation exposes typed integration boundaries and runnable probes. Model compatibility is recorded by `pnpm kor models probe --family claude` and listed by `pnpm kor models list`.
+This repository contains the foundation monorepo and documentation. The foundation exposes typed integration boundaries and runnable probes. Model compatibility is recorded by `pnpm kor models probe --family claude` and listed by `pnpm kor models list`. `kor plan LEE-57` runs one Jev preflight for readiness, complexity, risk, route, skill, and agent choices, then records the decisions in SQLite.
 
 ## Read first
 
@@ -152,4 +152,28 @@ With the key removed, the gateway line is red and the command exits one:
 
 ```text
 FAIL CLIProxyAPI with Kor key: missing; CLIProxyAPI addition: - kor-<generated-value>
+```
+
+## Plan a Linear issue
+
+Run a preflight for an issue identifier that you can read with the configured personal Linear key:
+
+```sh
+pnpm kor plan LEE-1101
+```
+
+The command prints the route, each decision, and its confidence. It writes redacted decision records to `~/.local/state/kor/kor.db`. A missing or invalid TypeSafe response keeps readiness `blocked` and marks the configured route `fallback`. When a decision needs captain input, Kor writes one stable-ID clarification comment to the Linear issue. The command exits one while readiness is blocked or a fallback route is in use.
+
+```text
+PLAN plan-<uuid>
+route: anthropic/claude-sonnet-5-5 [fallback]
+fallback: true
+jev: unavailable (TypeSafe API key not found ...)
+readiness: blocked (0.00); confidence=0.00; status=blocked
+complexity: escalate (0.00); confidence=0.00; status=blocked
+risk: escalate (0.00); confidence=0.00; status=blocked
+route: claude-sonnet-5-5; confidence=0.00; status=blocked
+skill: escalate; confidence=0.00; status=blocked
+agent: escalate; confidence=0.00; status=blocked
+linear: clarification comment written
 ```

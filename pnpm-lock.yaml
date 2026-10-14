@@ -183,6 +183,18 @@ importers:
       '@kor-code/config':
         specifier: workspace:*
         version: link:../config
+      '@kor-code/core':
+        specifier: workspace:*
+        version: link:../core
+      '@kor-code/gateway-adapter':
+        specifier: workspace:*
+        version: link:../gateway-adapter
+      '@kor-code/jev':
+        specifier: workspace:*
+        version: link:../jev
+      '@kor-code/linear':
+        specifier: workspace:*
+        version: link:../linear
 
   packages/config:
     dependencies:

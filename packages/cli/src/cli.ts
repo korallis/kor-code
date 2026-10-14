@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { fileURLToPath } from "node:url";
 import { formatDoctor, runDoctor } from "./doctor.js";
+import { runPlan } from "./plan.js";
 
 export async function main(args: readonly string[] = process.argv.slice(2)): Promise<number> {
   const command = args[0] ?? "help";
@@ -14,7 +15,17 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
       return 1;
     }
   }
-  process.stdout.write("Usage: kor doctor | kor models list | kor models probe [--family family] [--model model]\n");
+  if (command === "plan" && args.length === 2) {
+    try {
+      const result = await runPlan(args[1]!);
+      process.stdout.write(`${result.output}\n${result.commentWritten ? "linear: clarification comment written" : "linear: no clarification needed"}\n`);
+      return result.plan.fallback || result.plan.decisions.some(decision => decision.kind === "readiness" && decision.choice === "blocked") ? 1 : 0;
+    } catch (error) {
+      process.stdout.write(`FAIL plan: ${error instanceof Error ? error.message : "unable to plan"}\n`);
+      return 1;
+    }
+  }
+  process.stdout.write("Usage: kor doctor | kor plan LEE-57 | kor models list | kor models probe [--family family] [--model model]\n");
   return ["help", "--help", "-h"].includes(command) ? 0 : 2;
 }
 

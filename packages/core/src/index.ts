@@ -15,7 +15,7 @@ export interface ContextManifest { executionId: string; repository: string; work
 export interface Execution { id: string; issueId: string; repository: string; worktree: string; branch: string; status: ExecutionStatus; route?: Route; manifest?: ExecutionManifest }
 export type AccountPolicy = "fill-first" | "manual" | "least-used";
 export type ReasoningLevel = "low" | "medium" | "high";
-export interface Route { provider: string; model: string; accountPolicy: AccountPolicy; sessionAffinity: boolean; reasoningLevel?: ReasoningLevel }
+export interface Route { provider: string; model: string; accountPolicy: AccountPolicy; sessionAffinity: boolean; reasoningLevel?: ReasoningLevel; label?: "jev" | "fallback" }
 export interface CatalogueCapability { name: string; supported: boolean; details?: string }
 export interface CatalogueModel { provider: string; model: string; capabilities: CatalogueCapability[]; available?: boolean }
 export interface Evidence { id: string; kind: "test" | "review" | "provider" | "git" | "policy" | "linear"; summary: string; source?: string; status: "pass" | "fail" | "unresolved"; acceptanceId?: string; executionId?: string }
