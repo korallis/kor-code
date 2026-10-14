@@ -2,7 +2,8 @@
 import type { KorConfig } from "@kor-code/config";
 import type { CalibrationReport } from "@kor-code/calibration";
 import type { LinearIssue } from "@kor-code/linear";
-import type { DecisionRecord, GatewayAccountHealth, GatewayModel, JsonValue, KorStatusResponse, Labelled, OverrideRecord, RunStatus } from "@kor-code/core";
+import type { DecisionRecord, GatewayAccountHealth, GatewayModel, JsonValue, KorStatusResponse, Labelled, OverrideRecord, RunStatus, VerificationAttempt, VerificationReport } from "@kor-code/core";
+import type { RunMetric } from "@kor-code/calibration";
 
 export const API_VERSION = 1;
 export const API_PREFIX = "/api";
@@ -16,10 +17,34 @@ export type ApiErrorCode = "unauthorized" | "forbidden" | "invalid_request" | "n
 export interface ApiError { schemaVersion: 1; error: { code: ApiErrorCode; message: string; hint: string } }
 export type ApiResult<T> = T | ApiError;
 export type Stage = "discover" | "preflight" | "context" | "execute" | "supervise" | "verify" | "synchronise";
-export interface MissionRun extends RunStatus {
+/** ISO-8601 times from durable records. Null means a historical time was never
+ * recorded; never substitute observedAt for creation, execution or completion. */
+export interface RunTimes {
+  createdAt: string | null;
+  updatedAt: string | null;
+  /** Start of the latest execution attempt; reset when queued for another attempt. */
+  startedAt: string | null;
+  /** Terminal transition (complete/failed/canceled), cleared on retry. */
+  completedAt: string | null;
+}
+export interface MissionVerificationAttempt extends VerificationAttempt {
+  startedAt: string | null;
+  completedAt: string | null;
+}
+export interface MissionVerificationReport extends Omit<VerificationReport, "attempts"> {
+  attempts: MissionVerificationAttempt[];
+}
+/** Individual persisted measurements, including previous attempts. Compute
+ * spend today from recordedAt, never from the run's cumulative cost or age. */
+export type SpendRecord = Pick<RunMetric, "attempt" | "attemptId" | "recordedAt" | "model" | "costUsd" | "inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheCreationTokens">;
+export interface MissionRun extends Omit<RunStatus, "verification">, RunTimes {
   stage: Stage;
   needsInput: { reason: string } | null;
   accountSlot: Labelled<string | null>;
+  verification?: MissionVerificationReport;
+  /** Completion of the latest successful verification, independent of shipping. */
+  verifiedAt: string | null;
+  spend: Labelled<SpendRecord[]>;
 }
 export interface Project {
   id: string;
@@ -49,7 +74,7 @@ export interface ActionResponse { schemaVersion: 1; executionId: string; accepte
 export type ConnectRequest =
   | { provider: "linear"; apiKey: string }
   | { provider: "github"; token: string }
-  | { provider: "gateway"; baseUrl: string; apiKey: string; managementKey?: string }
+  | { provider: "gateway"; baseUrl: string; apiKey: string; managementKey?: string | undefined }
   | { provider: "jev"; apiKey: string };
 /** Credentials are write-only and never appear in a response or event. */
 export interface ProbeResponse { schemaVersion: 1; model: string; verified: boolean }
