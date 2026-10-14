@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    env:
+      HOME: ${{ runner.temp }}/kor-home
+      CLAUDE_CONFIG_DIR: ${{ runner.temp }}/kor-claude
+      XDG_CONFIG_HOME: ${{ runner.temp }}/kor-home/.config
+      XDG_STATE_HOME: ${{ runner.temp }}/kor-home/.local/state
+      XDG_DATA_HOME: ${{ runner.temp }}/kor-home/.local/share
+      KOR_PROOF_DIR: ${{ runner.temp }}/kor-proof
+      DISABLE_AUTOUPDATER: "1"
+    steps:
+      - name: Prepare isolated home
+        run: mkdir -p "$HOME" "$CLAUDE_CONFIG_DIR" "$KOR_PROOF_DIR"
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.9.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - name: Install Claude Code
+        run: |
+          npm install --prefix "$RUNNER_TEMP/kor-tools" @anthropic-ai/claude-code@2.1.299
+          echo "$RUNNER_TEMP/kor-tools/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Prepare
+        run: pnpm install --frozen-lockfile && pnpm build
+      - name: Typecheck and validate plugin
+        run: pnpm typecheck
+      - name: Offline proofs
+        run: pnpm jev:fixture && pnpm gateway:quota-proof && pnpm controller:fixture && pnpm phase5:proof && pnpm verification:proof && pnpm daemon:proof && pnpm shipping:proof && pnpm calibration:proof && pnpm cockpit:proof

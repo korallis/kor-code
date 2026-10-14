@@ -45,6 +45,10 @@ function parseWrite(value: unknown): LinearWrite {
       return { kind: 'session', session: { id: string(session.id), executionId: string(session.executionId), issueId: string(session.issueId) } };
     }
     case 'state': return { kind: 'state', issueId: string(write.issueId), stateId: string(write.stateId) };
+    case 'label': {
+      if (typeof write.present !== 'boolean') throw new Error('Invalid label presence');
+      return { kind: 'label', issueId: string(write.issueId), name: string(write.name), present: write.present };
+    }
     case 'summary': return { kind: 'summary', sessionId: string(write.sessionId), summary: string(write.summary) };
     case 'comment': return { kind: 'comment', id: string(write.id), issueId: string(write.issueId), body: string(write.body) };
     case 'attachment': return { kind: 'attachment', issueId: string(write.issueId), url: string(write.url), ...(write.title === undefined ? {} : { title: string(write.title) }) };

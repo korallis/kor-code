@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import type { Execution } from '@kor-code/core';
-import { array, connection, object, parseIssue, stateType, string, type LinearClient, type LinearWrite, type LinearWorkflowState } from './contract.js';
+import { array, connection, object, parseIssue, stableId, stateType, string, type LinearClient, type LinearWrite, type LinearWorkflowState } from './contract.js';
 
 const page = 'pageInfo { hasNextPage }';
 const issueFields = `id identifier url title description updatedAt priority team { id key } state { id type name }
@@ -131,6 +131,30 @@ export class HttpLinearClient implements LinearClient {
       case 'state':
         data = await this.query('mutation KorState($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }', { id: write.issueId, input: { stateId: write.stateId } });
         break;
+      case 'label': {
+        const issue = await this.getIssue(write.issueId);
+        if (issue.labels.includes(write.name) === write.present) return;
+        const labels = await this.query(`query KorLabels($name: String!) {
+          issueLabels(filter: { name: { eq: $name } }) { nodes { id team { id } } ${page} }
+        }`, { name: write.name });
+        const candidates = connection(labels.issueLabels).map(value => {
+          const label = object(value);
+          return { id: string(label.id), teamId: label.team === null ? undefined : string(object(label.team).id) };
+        });
+        let labelId = (candidates.find(label => label.teamId === issue.teamId) ?? candidates.find(label => label.teamId === undefined))?.id;
+        if (!labelId) {
+          if (!write.present) return;
+          labelId = stableId('kor-label', `${issue.teamId}:${write.name}`);
+          const created = await this.query('mutation KorLabel($input: IssueLabelCreateInput!) { issueLabelCreate(input: $input) { success } }', {
+            input: { id: labelId, name: write.name, teamId: issue.teamId, color: '#EF4444' },
+          });
+          if (object(created.issueLabelCreate).success !== true) throw new Error('Linear label creation did not succeed');
+        }
+        data = await this.query('mutation KorIssueLabel($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }', {
+          id: write.issueId, input: write.present ? { addedLabelIds: [labelId] } : { removedLabelIds: [labelId] },
+        });
+        break;
+      }
       case 'summary':
         data = await this.query('mutation KorSummary($id: String!, $input: AgentSessionUpdateInput!) { agentSessionUpdate(id: $id, input: $input) { success } }', { id: write.sessionId, input: { summary: write.summary } });
         break;

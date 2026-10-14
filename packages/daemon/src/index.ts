@@ -19,7 +19,7 @@ export { OverrideStore } from "./overrides.js";
 
 export { readSnapshot, readStatus, readExecutionStatus } from "./status.js";
 const exec = promisify(execFile);
-class NeedsInputError extends Error {}
+export class NeedsInputError extends Error {}
 export interface DaemonRunInput {
   claim: ExecutionClaim;
   issue: LinearIssue;
@@ -81,7 +81,7 @@ function overrideComment(record: OverrideRecord): string {
 }
 function runStatus(assignment: AssignmentRecord, observedAt: string, facts: RunFacts = { decisions: [] }): RunStatus {
   const manifest = assignment.manifest;
-  const blockedErrorCode = assignment.lastError?.startsWith("Add a # Acceptance section") ? "needs_input" : "verification_blocked";
+  const blockedErrorCode = assignment.lastError?.startsWith("Needs input:") || assignment.lastError?.startsWith("Add a # Acceptance section") ? "needs_input" : "verification_blocked";
   const route = facts.route ?? manifest?.route;
   const issue = facts.issue
     ? { key: facts.issue.key, title: facts.issue.title, ...(facts.issue.url ? { url: facts.issue.url } : {}), ...(facts.issue.state ? { state: facts.issue.state } : {}) }
@@ -283,6 +283,7 @@ export class KorDaemon {
         const changed = previous.shipping.stage.kind !== report.stage.kind || previous.status !== execution.status || previous.shipping.error !== report.error;
         const writes: LinearWrite[] = [];
         if (changed) {
+          writes.push({ kind: 'label', issueId: issue.id, name: 'kor:blocked', present: execution.status === 'blocked' });
           const stage = report.stage;
           if (stage.kind === 'review' || stage.kind === 'merged') {
             writes.push({ kind: 'attachment', issueId: issue.id, url: stage.url, title: 'GitHub pull request' });
@@ -508,12 +509,14 @@ export class KorDaemon {
       this.remember(claim.assignment.issueId, issue);
       this.store.setIssueMetadata(claim, issue.identifier ?? issue.id, issue.title);
       if (issue.acceptanceCriteria.length === 0) throw new NeedsInputError("Add a # Acceptance section with explicit criteria to the Linear issue, then retry this execution.");
+      if (issue.dependencies.some(dependency => dependency.stateType !== 'completed')) throw new NeedsInputError('Complete the blocking dependencies in Linear, then retry this execution.');
       // The configured mapping (linearProject, then linearTeam) names the checkout.
       const repository = repositoryKeyForIssue(issue, this.options.config);
       const route = await this.routeFor(id, issue);
       const previousBranch = this.store.listAssignments().find(assignment => assignment.executionId === id)?.manifest?.branch;
       const manifest: Execution = { id, issueId: issue.id, repository, worktree: "", branch: previousBranch || `kor/${issue.identifier ?? issue.id}`, status: "running", ...(route ? { route } : {}) };
       this.store.markRunning(claim, manifest);
+      if (issue.labels.includes('kor:blocked')) this.store.record(claim, [{ kind: 'label', issueId: issue.id, name: 'kor:blocked', present: false }]);
       if (this.options.shipping) {
         const states = workflowMapping(await this.options.linear.listWorkflowStates(issue.teamKey));
         if (!states.review) throw new Error(`Linear team ${issue.teamKey} has no In Review state`);
@@ -540,11 +543,18 @@ export class KorDaemon {
     } else if (this.store.isCancelRequested(claim.assignment.issueId)) this.store.cancelClaim(claim);
     else if (this.stopping) this.store.recover(claim.assignment.issueId, "daemon stopped; session stopped; re-queued");
     else if (failure !== undefined) {
+      if (failure instanceof NeedsInputError) this.store.record(claim, [
+        { kind: 'comment', id: stableId('kor-progress', `${id}:needs-input`), issueId: claim.assignment.issueId, body: `Kor needs input for execution ${id}: ${failure.message}` },
+        { kind: 'label', issueId: claim.assignment.issueId, name: 'kor:blocked', present: true },
+      ]);
       if (failure instanceof ExecutionVerificationError) {
         const manifest = this.store.listAssignments().find(item => item.executionId === id)?.manifest;
-        if (manifest) this.store.record(claim, [{ kind: 'comment', id: stableId('kor-shipping', `${id}:verification-blocked`), issueId: manifest.issueId, body: `Kor verification blocked: ${safeMessage(failure)}\n${failure.findings.map(finding => `${finding.conditionId}: ${finding.status}`).join('\n')}` }], { ...manifest, status: 'blocked', verification: failure.report });
+        if (manifest) this.store.record(claim, [
+          { kind: 'comment', id: stableId('kor-shipping', `${id}:verification-blocked`), issueId: manifest.issueId, body: `Kor verification blocked: ${safeMessage(failure)}\n${failure.findings.map(finding => `${finding.conditionId}: ${finding.status}`).join('\n')}` },
+          { kind: 'label', issueId: manifest.issueId, name: 'kor:blocked', present: true },
+        ], { ...manifest, status: 'blocked', verification: failure.report });
       }
-      this.store.failClaim(claim, safeMessage(failure), failure instanceof ExecutionVerificationError || failure instanceof NeedsInputError ? "blocked" : "failed");
+      this.store.failClaim(claim, failure instanceof NeedsInputError ? `Needs input: ${safeMessage(failure)}` : safeMessage(failure), failure instanceof ExecutionVerificationError || failure instanceof NeedsInputError ? "blocked" : "failed");
     }
     else if (result?.execution.status === "failed" || result?.execution.status === "blocked") this.store.finishClaim(claim, result.execution.status, "execution did not complete", result.execution);
     else if (result && result.execution.status !== "complete") this.store.failClaim(claim, `Unexpected execution outcome: ${result.execution.status}`);
@@ -565,6 +575,7 @@ export class KorDaemon {
       // provenance and decision id instead of reconstructing only a model.
       try { return (await this.options.chooseRoute({ executionId, issue })).route; }
       catch (error) {
+        if (error instanceof NeedsInputError) throw error;
         await this.log(executionId, `route preflight unavailable; default route stands: ${safeMessage(error)}`);
         return { ...defaultRoute, label: "fallback" };
       }

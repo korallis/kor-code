@@ -1,0 +1,14 @@
+commands:
+  prepare: pnpm install --frozen-lockfile && pnpm build
+  lint: pnpm typecheck
+  test: >-
+    export KOR_PROOF_DIR="$(mktemp -d)" &&
+    pnpm jev:fixture && pnpm gateway:quota-proof && pnpm controller:fixture &&
+    pnpm phase5:proof && pnpm verification:proof && pnpm daemon:proof &&
+    pnpm shipping:proof && pnpm calibration:proof && pnpm cockpit:proof
+
+document:
+  instructions: Keep product guidance under docs/ and the introduction and setup commands in README.md. Do not add or extend tests during the pilot.
+
+pr:
+  publish_intent: false

@@ -67,6 +67,10 @@ export class FakeLinearClient implements LinearClient {
       if (!type) throw new Error('Fake workflow state missing');
       issue.stateId = write.stateId;
       issue.stateType = type;
+    } else if (write.kind === 'label') {
+      const issue = this.issue(write.issueId);
+      if (write.present && !issue.labels.includes(write.name)) issue.labels.push(write.name);
+      else if (!write.present) issue.labels = issue.labels.filter(name => name !== write.name);
     } else if (write.kind === 'summary') {
       this.sessionIssue(write.sessionId);
     } else if (write.kind === 'attachment') {

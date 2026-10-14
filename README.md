@@ -293,7 +293,7 @@ enqueue durable assignment
 run isolated session when kor serve is active
 ```
 
-Run it without `--dry-run` to enqueue the canonical assignment and return its `executionId`. This daemon path owns the durable queue and execution status; its CLI does not perform the direct Linear progress writes from the standalone preflight command. `kor status --json EXECUTION-ID|ISSUE-ID`, `kor cancel EXECUTION-ID|ISSUE-ID`, and `kor retry EXECUTION-ID|ISSUE-ID` find the durable assignment locally, without a Linear request. Missing acceptance criteria produce `blocked` with a needs-input reason before a model session starts.
+Run it without `--dry-run` to enqueue the canonical assignment and return its `executionId`. This daemon path owns the durable queue and execution status; its CLI does not perform the direct Linear progress writes from the standalone preflight command. `kor status --json EXECUTION-ID|ISSUE-ID`, `kor cancel EXECUTION-ID|ISSUE-ID`, and `kor retry EXECUTION-ID|ISSUE-ID` find the durable assignment locally, without a Linear request. Missing acceptance criteria, incomplete dependencies, and healthy Jev readiness rejections produce `blocked` with a needs-input reason before a model session starts. The daemon records a replayable clarification comment and adds `kor:blocked` on Linear, then removes that label when execution resumes.
 
 ### Calibrate Jev routing against a baseline
 
@@ -301,7 +301,7 @@ Calibration is **Validated locally** through the daemon with a persistent SQLite
 
 After `pnpm install --frozen-lockfile` and `pnpm build`, configure `calibration.sampleRate` (default `0.25`) and `calibration.baselineRoute` in `~/.config/kor/config.yaml`. `kor serve` runs one Jev preflight over the verified model registry, and records the selected provider, model, label and decision ID for calibration. `kor serve --jev` additionally filters the candidates against the live gateway catalogue. Both modes use the same preflight and acceptance judge. Use `--no-calibration` to disable metrics and baseline runs, `--calibration-rate 1` to sample every Jev execution, or `--baseline-model MODEL` to override the comparison model for one process.
 
-Sampling is stable per execution ID. A sampled baseline uses the same base revision, prompt, checks, acceptance judge and repair budget in a throwaway worktree; it never ships. Retries reuse the preflight audit and keep attempt costs, while clearing the previous terminal outcome until a new outcome is observed. An escalated, unavailable or no-longer-eligible route is labelled `fallback` and does not create a new Jev sample.
+Sampling is stable per execution ID. A sampled baseline uses the same base revision, prompt, checks, acceptance judge and repair budget in a throwaway worktree; it never ships. Retries reuse the preflight audit while the issue and eligible models are unchanged; clarified intent or a changed catalogue creates a new immutable decision revision. Attempt costs remain recorded, while the previous terminal outcome is cleared until a new outcome is observed. An escalated, unavailable or no-longer-eligible route is labelled `fallback` and does not create a new Jev sample.
 
 ```sh
 pnpm kor calibrate report
