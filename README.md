@@ -122,6 +122,7 @@ repos:
   kor-code:
     path: /home/lee/Projects/kor-code
     remote: https://github.com/korallis/kor-code.git
+    linearTeam: LEE
     defaultBranch: main
     checks: [pnpm typecheck]
     toolAllowlist: [Read, Write, Edit, "Bash(git status*)"]
@@ -153,3 +154,19 @@ With the key removed, the gateway line is red and the command exits one:
 ```text
 FAIL CLIProxyAPI with Kor key: missing; CLIProxyAPI addition: - kor-<generated-value>
 ```
+
+### Run an issue and write Linear progress
+
+Add a `linearTeam` or `linearProject` mapping to the repository entry in `config.yaml`, then preview the writes for an issue. The dry run reads the issue and the real workflow names (including Todo, In Progress, In Review, and Done) and does not mutate Linear:
+
+```sh
+pnpm kor run LEE-123 --dry-run
+```
+
+```text
+Kor run 15208d73-d97c-4ed5-8cb8-a69482549b99; repository=kor-code; state=completed; mode=dry-run
+PLAN state 6aa47e87-031d-4fe7-b8bd-9f5e76d8d709
+PLAN comment ed084ae9-dec5-5ccd-b631-5ff0434765d7 (Kor started execution c2bceea1-a40b-5506-b391-23b476171547; state → In Progress)
+```
+
+Run it without `--dry-run` to move the issue to In Progress and add that Kor comment. The comment ID is deterministic, so a retry is idempotent. `kor cancel LEE-123` moves the issue back to Todo and adds one cancellation comment. Pull-request completion writes use Linear's `attachmentLinkGitHubPR`; native agent-session writes stay off until an OAuth app capability is configured.

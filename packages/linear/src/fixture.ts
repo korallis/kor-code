@@ -1,9 +1,11 @@
 import { object, string, type LinearIssue, type LinearWorkflowState, type WorkflowMapping } from './contract.js';
 
 export const workflowMappingFixture: WorkflowMapping = {
-  queued: { id: '00000000-0000-4000-8000-000000000101', type: 'backlog' },
-  running: { id: '00000000-0000-4000-8000-000000000102', type: 'started' },
-  complete: { id: '00000000-0000-4000-8000-000000000103', type: 'completed' },
+  queued: { id: '00000000-0000-4000-8000-000000000101', type: 'unstarted', name: 'Todo' },
+  running: { id: '00000000-0000-4000-8000-000000000102', type: 'started', name: 'In Progress' },
+  review: { id: '00000000-0000-4000-8000-000000000104', type: 'started', name: 'In Review' },
+  complete: { id: '00000000-0000-4000-8000-000000000103', type: 'completed', name: 'Done' },
+  canceled: { id: '00000000-0000-4000-8000-000000000105', type: 'canceled', name: 'Canceled' },
 };
 export const workflowStatesFixture: readonly LinearWorkflowState[] = Object.values(workflowMappingFixture);
 export const linearIssueFixture: LinearIssue = {
@@ -45,6 +47,8 @@ export function fixtureFetcher(seed: LinearIssue = linearIssueFixture): typeof g
       data = { issue: variables.id === issue.id ? graphqlIssue(issue) : null };
     } else if (query.startsWith('query KorIssues(')) {
       data = { issues: page(variables.key === issue.teamKey ? [graphqlIssue(issue)] : []) };
+    } else if (query.startsWith('query KorWorkflowStates(')) {
+      data = { workflowStates: page(workflowStatesFixture.map(state => ({ id: state.id, name: state.name ?? state.type, type: state.type }))) };
     } else if (query.startsWith('query KorSession(')) {
       const session = sessions.get(string(variables.id));
       data = { agentSession: session ? { id: variables.id, issue: { id: session.issueId }, context: { executionId: session.executionId } } : null };
@@ -82,6 +86,10 @@ export function fixtureFetcher(seed: LinearIssue = linearIssueFixture): typeof g
         if (input.issueId !== issue.id || comments.has(id)) throw new Error('Invalid fixture comment create');
         comments.set(id, issue.id); issue.comments.push({ id, body: string(input.body) });
         data = { commentCreate: { success: true } };
+      } else if (query.startsWith('mutation KorAttachment(')) {
+        if (input.issueId !== issue.id) throw new Error('Invalid fixture attachment');
+        issue.resources.push({ title: typeof input.title === 'string' ? input.title : 'GitHub pull request', url: string(input.url) });
+        data = { attachmentLinkGitHubPR: { success: true } };
       } else throw new Error('Unexpected fixture operation');
     }
     return new Response(JSON.stringify({ data }), { status: 200, headers: { 'content-type': 'application/json' } });

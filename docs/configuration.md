@@ -16,6 +16,8 @@ repos:
   team/project:
     path: /absolute/path/to/checkout
     remote: https://github.com/org/project.git
+    linearTeam: LEE
+    linearProject: 00000000-0000-0000-0000-000000000000
     defaultBranch: main
     checks:
       - pnpm typecheck
@@ -40,6 +42,10 @@ intakeLabel: kor
 ```
 
 `defaultBranch` defaults to `main`, `checks` and `toolAllowlist` default to empty lists, and the default route is `anthropic / claude-sonnet-5-5` with fill-first account selection. Unknown fields and invalid values fail before a configuration reaches the controller.
+
+`linearTeam` and `linearProject` map a Linear issue to this repository. `linearProject` wins when both match; otherwise Kor uses the team mapping. A repository key that exactly matches the issue's team key or project ID is also accepted for small pilots.
+
+Use `kor run LEE-123 --dry-run` to read the issue and its team's workflow states, resolve the configured repository, and print the exact state and comment writes without changing Linear. The live command applies the same writes with a deterministic comment ID, so retrying it does not create a duplicate progress comment. `kor cancel LEE-123` writes Todo and a deterministic cancellation comment. Agent-session mutations remain disabled for a personal key; they require the later OAuth app capability.
 
 Run `pnpm kor doctor` (or the installed `kor doctor`) for bounded checks of the credentials, CLIProxyAPI, management endpoint, quota-axi, Claude Code, no-mistakes, and every configured repository. A missing Kor client key reports the exact one-line proxy addition to make:
 

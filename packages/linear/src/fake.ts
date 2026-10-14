@@ -8,18 +8,21 @@ export interface FakeLinearOptions {
 }
 
 export class FakeLinearClient implements LinearClient {
+  readonly capabilities = { agentSessions: true };
   readonly writes: LinearWrite[] = [];
   private readonly issues = new Map<string, LinearIssue>();
   private readonly sessions = new Map<string, AgentSessionRecord>();
   private readonly creations = new Map<string, LinearWrite>();
   private readonly teamIds: ReadonlyMap<string, string>;
   private readonly stateTypes: ReadonlyMap<string, LinearWorkflowState['type']>;
+  private readonly workflowStates: LinearWorkflowState[];
 
   constructor(issues: readonly LinearIssue[] = [], options: FakeLinearOptions = {}) {
     const teams = new Map(Object.entries(options.teams ?? { [linearIssueFixture.teamKey]: linearIssueFixture.teamId }));
     for (const issue of issues) teams.set(issue.teamKey, issue.teamId);
     this.teamIds = teams;
-    const states = new Map((options.workflowStates ?? workflowStatesFixture).map(state => [state.id, state.type]));
+    this.workflowStates = [...(options.workflowStates ?? workflowStatesFixture)].map(state => structuredClone(state));
+    const states = new Map(this.workflowStates.map(state => [state.id, state.type]));
     for (const issue of issues) states.set(issue.stateId, issue.stateType);
     this.stateTypes = states;
     for (const issue of issues) this.issues.set(issue.id, structuredClone(issue));
@@ -45,6 +48,10 @@ export class FakeLinearClient implements LinearClient {
     return [...this.issues.values()].filter(issue => issue.teamId === teamId).slice(0, limit).map(issue => structuredClone(issue));
   }
 
+  async listWorkflowStates(_teamKey: string): Promise<LinearWorkflowState[]> {
+    return structuredClone(this.workflowStates);
+  }
+
   async apply(write: LinearWrite): Promise<void> {
     if (write.kind === 'session') {
       const previous = this.sessions.get(write.session.id);
@@ -62,6 +69,9 @@ export class FakeLinearClient implements LinearClient {
       issue.stateType = type;
     } else if (write.kind === 'summary') {
       this.sessionIssue(write.sessionId);
+    } else if (write.kind === 'attachment') {
+      const issue = this.issue(write.issueId);
+      if (!issue.resources.some(resource => resource.url === write.url)) issue.resources.push({ title: write.title ?? 'GitHub pull request', url: write.url });
     } else {
       const previous = this.creations.get(write.id);
       if (previous) {
