@@ -54,9 +54,11 @@ export function fixtureFetcher(seed: LinearIssue = linearIssueFixture): typeof g
       data = { agentSession: session ? { id: variables.id, issue: { id: session.issueId }, context: { executionId: session.executionId } } : null };
     } else if (query.startsWith('query KorActivity(')) {
       const sessionId = activities.get(string(variables.id));
+      if (!sessionId) return new Response(JSON.stringify({ data: null, errors: [{ extensions: { code: 'INPUT_ERROR' } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
       data = { agentActivity: sessionId ? { id: variables.id, agentSession: { id: sessionId } } : null };
     } else if (query.startsWith('query KorComment(')) {
       const issueId = comments.get(string(variables.id));
+      if (!issueId) return new Response(JSON.stringify({ data: null, errors: [{ extensions: { code: 'INPUT_ERROR' } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
       data = { comment: issueId ? { id: variables.id, issue: { id: issueId } } : null };
     } else {
       const input = object(variables.input);
@@ -83,9 +85,19 @@ export function fixtureFetcher(seed: LinearIssue = linearIssueFixture): typeof g
         data = { agentActivityCreate: { success: true } };
       } else if (query.startsWith('mutation KorComment(')) {
         const id = string(input.id);
+        if (!/^\w{8}-\w{4}-4\w{3}-[89ab]\w{3}-\w{12}$/i.test(id)) throw new Error('Fixture comment IDs must be UUID v4');
         if (input.issueId !== issue.id || comments.has(id)) throw new Error('Invalid fixture comment create');
         comments.set(id, issue.id); issue.comments.push({ id, body: string(input.body) });
         data = { commentCreate: { success: true } };
+      } else if (query.startsWith('mutation KorCommentUpdate(')) {
+        const id = string(variables.id);
+        if (!comments.has(id)) throw new Error('Invalid fixture comment update');
+        const index = issue.comments.findIndex(comment => comment.id === id);
+        if (index < 0) throw new Error('Invalid fixture comment issue');
+        const comment = issue.comments[index];
+        if (!comment) throw new Error('Invalid fixture comment issue');
+        issue.comments[index] = { id: comment.id, body: string(input.body) };
+        data = { commentUpdate: { success: true } };
       } else if (query.startsWith('mutation KorAttachment(')) {
         if (input.issueId !== issue.id) throw new Error('Invalid fixture attachment');
         issue.resources.push({ title: typeof input.title === 'string' ? input.title : 'GitHub pull request', url: string(input.url) });

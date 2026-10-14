@@ -24,6 +24,7 @@ async function runLinear(args: readonly string[]): Promise<number> {
   const issue = await client.getIssue(issueId);
   const repositoryKey = repositoryKeyForIssue(issue, loaded.config);
   const states = workflowMapping(await client.listWorkflowStates(issue.teamKey));
+  if (issue.stateId !== states.queued.id && issue.stateId !== states.running.id) throw new Error(`Linear issue is ${issue.stateType}; kor run accepts Todo or an existing In Progress run only`);
   const executionId = stableId("kor-execution", issue.id);
   const assignment = { executionId, issueId: issue.id, sessionId: stableId("kor-session", issue.id), status: "queued" as const };
   const writes = startWrites(assignment, states, client);
@@ -43,7 +44,7 @@ async function cancelLinear(args: readonly string[]): Promise<number> {
   const states = workflowMapping(await client.listWorkflowStates(issue.teamKey));
   const writes: LinearWrite[] = [
     { kind: "state", issueId: issue.id, stateId: states.queued.id },
-    { kind: "comment", id: stableId("kor-progress", `${issue.id}:cancel`), issueId: issue.id, body: `Kor canceled execution for ${issue.id}; state → Todo` },
+    { kind: "comment", id: stableId("kor-progress", `${issue.id}:cancel`), issueId: issue.id, body: `Kor canceled execution for ${issue.id}; state → ${states.queued.name ?? "Todo"}` },
   ];
   process.stdout.write(`Kor cancel ${issue.id}; repository=${repositoryKey}\n`);
   for (const write of writes) { process.stdout.write(`WRITE ${writeDescription(write)}\n`); await client.apply(write); }

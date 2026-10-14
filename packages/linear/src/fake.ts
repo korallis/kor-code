@@ -76,10 +76,26 @@ export class FakeLinearClient implements LinearClient {
       const previous = this.creations.get(write.id);
       if (previous) {
         if (write.kind === 'activity' && (previous.kind !== 'activity' || previous.sessionId !== write.sessionId)) throw new Error('Linear activity ownership mismatch');
-        if (write.kind === 'comment' && (previous.kind !== 'comment' || previous.issueId !== write.issueId)) throw new Error('Linear comment ownership mismatch');
+        if (write.kind === 'comment') {
+          if (previous.kind !== 'comment' || previous.issueId !== write.issueId) throw new Error('Linear comment ownership mismatch');
+          const issue = this.issue(write.issueId);
+          const index = issue.comments.findIndex(comment => comment.id === write.id);
+          const existing = index >= 0 ? issue.comments[index] : undefined;
+          if (existing && existing.body !== write.body) issue.comments[index] = { id: existing.id, body: write.body };
+          this.writes.push(structuredClone(write));
+        }
         return;
       }
-      if (write.kind === 'comment') this.issue(write.issueId).comments.push({ id: write.id, body: write.body });
+      if (write.kind === 'comment') {
+        if (!/^\w{8}-\w{4}-4\w{3}-[89ab]\w{3}-\w{12}$/i.test(write.id)) throw new Error('Fake comment IDs must be UUID v4');
+        const issue = this.issue(write.issueId);
+        const existing = issue.comments.findIndex(comment => comment.id === write.id);
+        if (existing >= 0) {
+          const comment = issue.comments[existing];
+          if (comment) issue.comments[existing] = { id: comment.id, body: write.body };
+        }
+        else issue.comments.push({ id: write.id, body: write.body });
+      }
       else this.sessionIssue(write.sessionId);
       this.creations.set(write.id, structuredClone(write));
     }

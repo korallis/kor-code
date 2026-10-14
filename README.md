@@ -157,16 +157,23 @@ FAIL CLIProxyAPI with Kor key: missing; CLIProxyAPI addition: - kor-<generated-v
 
 ### Run an issue and write Linear progress
 
-Add a `linearTeam` or `linearProject` mapping to the repository entry in `config.yaml`, then preview the writes for an issue. The dry run reads the issue and the real workflow names (including Todo, In Progress, In Review, and Done) and does not mutate Linear:
+Add a `linearTeam` or `linearProject` mapping to the repository entry in `config.yaml`, then preview the writes for a Todo issue. The dry run reads the issue and the real workflow names (including Todo, In Progress, In Review, and Done) and does not mutate Linear:
 
 ```sh
 pnpm kor run LEE-123 --dry-run
 ```
 
 ```text
-Kor run 15208d73-d97c-4ed5-8cb8-a69482549b99; repository=kor-code; state=completed; mode=dry-run
+Kor run LEE-1105; repository=kor-code; state=unstarted; mode=dry-run
 PLAN state 6aa47e87-031d-4fe7-b8bd-9f5e76d8d709
-PLAN comment ed084ae9-dec5-5ccd-b631-5ff0434765d7 (Kor started execution c2bceea1-a40b-5506-b391-23b476171547; state → In Progress)
+PLAN comment 0cc5dd4b-3f18-4142-8b6a-e7373e39c911 (Kor started execution d9c8e4eb-64e7-48b7-a90a-358185be6a4b; state → In Progress)
 ```
 
 Run it without `--dry-run` to move the issue to In Progress and add that Kor comment. The comment ID is deterministic, so a retry is idempotent. `kor cancel LEE-123` moves the issue back to Todo and adds one cancellation comment. Pull-request completion writes use Linear's `attachmentLinkGitHubPR`; native agent-session writes stay off until an OAuth app capability is configured.
+
+A live throwaway run on LEE-1105 produced two successful applies and two successful cancels. The second run reused the existing UUID v4 comment, and the final issue snapshot was Todo with exactly one start and one cancel comment:
+
+```text
+apply1=0 apply2=0 cancel1=0 cancel2=0
+{"state":"unstarted","comments":[{"id":"a15e1d22-06dc-4638-b2ee-b63f6e791d22","body":"Kor canceled execution for 036ad937-df51-4954-a163-1cd61a6450a3; state → Todo"},{"id":"9d60278e-8942-44a5-a220-50691ae26be3","body":"Kor started execution d9c8e4eb-64e7-48b7-a90a-358185be6a4b; state → In Progress"}]}
+```

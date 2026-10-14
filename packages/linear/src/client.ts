@@ -74,7 +74,12 @@ export class HttpLinearClient implements LinearClient {
     } catch { throw new Error('Linear transport failed; upstream details redacted'); }
     const payload = object(await readBoundedJson(response));
     if (payload.errors !== undefined && array(payload.errors).length > 0) {
-      throw new Error(`Linear GraphQL request failed: errors=${array(payload.errors).length}; upstream details redacted`);
+      const codes = array(payload.errors).map(error => {
+        const value = object(error);
+        const extensions = value.extensions === undefined ? undefined : object(value.extensions);
+        return extensions?.code === undefined ? 'UNKNOWN' : string(extensions.code);
+      });
+      throw new Error(`Linear GraphQL request failed: errors=${codes.length}; codes=${[...new Set(codes)].join(',')}; upstream details redacted`);
     }
     return object(payload.data);
   }
@@ -140,10 +145,12 @@ export class HttpLinearClient implements LinearClient {
         break;
       }
       case 'comment': {
-        const existing = await this.query('query KorComment($id: String!) { comment(id: $id) { id issue { id } } }', { id: write.id });
-        if (existing.comment !== null) {
-          if (string(object(object(existing.comment).issue).id) !== write.issueId) throw new Error('Linear comment ownership mismatch');
-          return;
+        const issue = await this.getIssue(write.issueId);
+        const existing = issue.comments.find(comment => comment.id === write.id);
+        if (existing?.body === write.body) return;
+        if (existing) {
+          data = await this.query('mutation KorCommentUpdate($id: String!, $input: CommentUpdateInput!) { commentUpdate(id: $id, input: $input) { success } }', { id: write.id, input: { body: write.body } });
+          break;
         }
         data = await this.query('mutation KorComment($input: CommentCreateInput!) { commentCreate(input: $input) { success } }', { input: { id: write.id, issueId: write.issueId, body: write.body } });
         break;

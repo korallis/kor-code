@@ -60,10 +60,11 @@ export class AgentSessionWriter {
 
   cancel(claim: ExecutionClaim, reason = 'Execution canceled by operator'): void {
     const state = this.states.queued;
-    this.store.transition(claim, 'complete', [
+    this.store.record(claim, [
       { kind: 'comment', id: stableId('kor-progress', `${claim.assignment.executionId}:cancel`), issueId: claim.assignment.issueId, body: `Kor canceled execution ${claim.assignment.executionId}: ${reason}` },
       { kind: 'state', issueId: claim.assignment.issueId, stateId: state.id },
     ]);
+    this.store.release(claim);
   }
 
   recordVerificationBlock(claim: ExecutionClaim, execution: Execution, findings: readonly AcceptanceFinding[]): void {
@@ -96,7 +97,7 @@ export class AgentSessionWriter {
 export function startWrites(assignment: ExecutionClaim['assignment'], states: WorkflowMapping, client?: LinearClient): LinearWrite[] {
   const writes: LinearWrite[] = [
     { kind: 'state', issueId: assignment.issueId, stateId: states.running.id },
-    { kind: 'comment', id: stableId('kor-progress', `${assignment.executionId}:start`), issueId: assignment.issueId, body: `Kor started execution ${assignment.executionId}; state → In Progress` },
+    { kind: 'comment', id: stableId('kor-progress', `${assignment.executionId}:start`), issueId: assignment.issueId, body: `Kor started execution ${assignment.executionId}; state → ${states.running.name ?? 'In Progress'}` },
   ];
   if (client?.capabilities?.agentSessions) writes.push(
     { kind: 'session', session: sessionRecord(assignment) },

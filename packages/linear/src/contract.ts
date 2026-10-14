@@ -58,7 +58,8 @@ export interface Completion { summary: string; evidence: Evidence[]; pullRequest
 /** UUID-shaped deterministic IDs make comment/activity retries idempotent. */
 export function stableId(namespace: string, key: string): string {
   const bytes = createHash('sha256').update(`${namespace}:${key}`).digest().subarray(0, 16);
-  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x50;
+  // Linear validates client supplied IDs as RFC 4122 UUID v4 values.
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
   bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
   const hex = bytes.toString('hex');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
@@ -92,7 +93,7 @@ export function workflowMapping(states: readonly LinearWorkflowState[]): Workflo
   const complete = find(state => /^(done|complete|completed)$/.test(normalizedName(state))) ?? find(state => state.type === 'completed');
   if (!queued || !running || !complete) throw new Error('Linear team workflow is missing Todo, In Progress, or Done');
   const review = find(state => /review/.test(normalizedName(state))) ?? find(state => state.type === 'started' && state.id !== running.id);
-  const canceled = find(state => /^(canceled|cancelled|duplicate)$/.test(normalizedName(state))) ?? find(state => state.type === 'canceled');
+  const canceled = find(state => /^(canceled|cancelled)$/.test(normalizedName(state))) ?? find(state => state.type === 'canceled') ?? find(state => /^duplicate$/.test(normalizedName(state)));
   return { queued, running, complete, ...(review ? { review } : {}), ...(canceled ? { canceled } : {}) };
 }
 export function connection(value: unknown): unknown[] {
