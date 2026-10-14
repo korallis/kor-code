@@ -21,13 +21,17 @@ await probe("gateway", async () => {
   const models = await gateway.listModels();
   const management = await gateway.readManagement();
   const ids = Array.isArray(models.data) ? models.data.map((model) => model.id).filter(Boolean).slice(0, 3).join(", ") : "catalogue returned";
-  const candidates = [process.env.KOR_GATEWAY_MODEL ?? "claude-haiku-4-5-20251001"];
+  const catalogue = Array.isArray(models.data) ? models.data.map((model) => model.id).filter((id): id is string => typeof id === "string") : [];
+  const candidates = process.env.KOR_GATEWAY_MODEL ? [process.env.KOR_GATEWAY_MODEL] : catalogue.filter(id => id.toLowerCase().startsWith("claude-")).slice(0, 3);
   if (candidates.length === 0) throw new Error("catalogue contained no model ids");
   let completion = "";
   let model = "";
   const failures: string[] = [];
   for (const candidate of candidates) {
-    try { completion = await gateway.streamCompletion("Reply with exactly one word: ready", candidate); model = candidate; break; }
+    try {
+      const probeGateway = new GatewayAdapter({ modelCapabilities: { [candidate]: { streaming: true } } });
+      completion = await probeGateway.streamCompletion("Reply with exactly one word: ready", candidate); model = candidate; break;
+    }
     catch (error) { failures.push(`${candidate}: ${error instanceof Error ? error.message : String(error)}`); }
   }
   if (!model) throw new Error(`no catalogue model streamed a completion; route failures=${failures.join(" | ")}`);
