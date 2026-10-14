@@ -1,0 +1,422 @@
+{
+  "version": 1,
+  "basePath": "/motion/",
+  "notes": [
+    "Every asset is generated with Higgsfield (GPT Image 2.5 keyframes, Seedance 2.5 clips) and post-processed with ffmpeg.",
+    "Video slots list sources in preference order (AV1 WebM, VP9 WebM, H.264 MP4): put them inside <video autoplay muted loop playsinline poster=...> unless loop is false.",
+    "Backgrounds are #03050f navy, so use mix-blend-mode: screen instead of an alpha channel.",
+    "Under prefers-reduced-motion, show the poster for video and animated-image slots."
+  ],
+  "slots": {
+    "jev-orb-idle": {
+      "kind": "video",
+      "width": 256,
+      "height": 256,
+      "loop": true,
+      "durationSeconds": 6,
+      "sources": [
+        {
+          "src": "jev-orb-idle.av1.webm",
+          "type": "video/webm; codecs=\"av01.0.00M.08\"",
+          "bytes": 77283
+        },
+        {
+          "src": "jev-orb-idle.vp9.webm",
+          "type": "video/webm; codecs=\"vp9\"",
+          "bytes": 71763
+        },
+        {
+          "src": "jev-orb-idle.mp4",
+          "type": "video/mp4",
+          "bytes": 72265
+        }
+      ],
+      "poster": [
+        {
+          "src": "jev-orb-idle.poster.avif",
+          "type": "image/avif",
+          "bytes": 6752
+        },
+        {
+          "src": "jev-orb-idle.poster.webp",
+          "type": "image/webp",
+          "bytes": 7588
+        }
+      ],
+      "reducedMotion": "poster",
+      "placement": "Jev's resting presence: sidebar card, composer, decision panel, Brain header (render at 18-52 px)",
+      "description": "Violet plasma sphere with a pearl core and a cyan orbit ring, breathing glow"
+    },
+    "jev-orb-thinking": {
+      "kind": "video",
+      "width": 256,
+      "height": 256,
+      "loop": true,
+      "durationSeconds": 3.5,
+      "sources": [
+        {
+          "src": "jev-orb-thinking.av1.webm",
+          "type": "video/webm; codecs=\"av01.0.00M.08\"",
+          "bytes": 68407
+        },
+        {
+          "src": "jev-orb-thinking.vp9.webm",
+          "type": "video/webm; codecs=\"vp9\"",
+          "bytes": 102770
+        },
+        {
+          "src": "jev-orb-thinking.mp4",
+          "type": "video/mp4",
+          "bytes": 93477
+        }
+      ],
+      "poster": [
+        {
+          "src": "jev-orb-thinking.poster.avif",
+          "type": "image/avif",
+          "bytes": 6962
+        },
+        {
+          "src": "jev-orb-thinking.poster.webp",
+          "type": "image/webp",
+          "bytes": 7994
+        }
+      ],
+      "reducedMotion": "poster",
+      "placement": "While Jev evaluates: evaluating status, Ask Jev pending, preflight",
+      "description": "Faster inner swirl, brighter ring and data motes; crossfaded so the 3.5 s loop has no seam"
+    },
+    "jev-orb-deciding": {
+      "kind": "video",
+      "width": 256,
+      "height": 256,
+      "loop": false,
+      "durationSeconds": 2.4,
+      "sources": [
+        {
+          "src": "jev-orb-deciding.av1.webm",
+          "type": "video/webm; codecs=\"av01.0.00M.08\"",
+          "bytes": 64757
+        },
+        {
+          "src": "jev-orb-deciding.vp9.webm",
+          "type": "video/webm; codecs=\"vp9\"",
+          "bytes": 98533
+        },
+        {
+          "src": "jev-orb-deciding.mp4",
+          "type": "video/mp4",
+          "bytes": 69962
+        }
+      ],
+      "poster": [
+        {
+          "src": "jev-orb-deciding.poster.avif",
+          "type": "image/avif",
+          "bytes": 5964
+        },
+        {
+          "src": "jev-orb-deciding.poster.webp",
+          "type": "image/webp",
+          "bytes": 6936
+        }
+      ],
+      "reducedMotion": "poster",
+      "placement": "One-shot when a decision lands (decision panel reveal, override applied); then swap back to jev-orb-idle",
+      "description": "Sphere contracts, a cyan ring pings outward, core flashes and settles on the idle frame"
+    },
+    "hero-background": {
+      "kind": "video",
+      "width": 1600,
+      "height": 560,
+      "loop": true,
+      "durationSeconds": 6,
+      "sources": [
+        {
+          "src": "hero-background.av1.webm",
+          "type": "video/webm; codecs=\"av01.0.05M.08\"",
+          "bytes": 216325
+        },
+        {
+          "src": "hero-background.vp9.webm",
+          "type": "video/webm; codecs=\"vp9\"",
+          "bytes": 279695
+        },
+        {
+          "src": "hero-background.mp4",
+          "type": "video/mp4",
+          "bytes": 441610
+        }
+      ],
+      "poster": [
+        {
+          "src": "hero-background.poster.avif",
+          "type": "image/avif",
+          "bytes": 14009
+        },
+        {
+          "src": "hero-background.poster.webp",
+          "type": "image/webp",
+          "bytes": 21610
+        }
+      ],
+      "reducedMotion": "poster",
+      "placement": "Behind the Command Centre greeting card; composite with mix-blend-mode: screen; left third is empty for text",
+      "description": "Orbital Kor core at right with three orbits and five coloured satellites"
+    },
+    "pr-shipped": {
+      "kind": "video",
+      "width": 480,
+      "height": 480,
+      "loop": false,
+      "durationSeconds": 4.0,
+      "sources": [
+        {
+          "src": "pr-shipped.av1.webm",
+          "type": "video/webm; codecs=\"av01.0.01M.08\"",
+          "bytes": 120873
+        },
+        {
+          "src": "pr-shipped.vp9.webm",
+          "type": "video/webm; codecs=\"vp9\"",
+          "bytes": 217982
+        },
+        {
+          "src": "pr-shipped.mp4",
+          "type": "video/mp4",
+          "bytes": 302467
+        }
+      ],
+      "poster": [
+        {
+          "src": "pr-shipped.poster.avif",
+          "type": "image/avif",
+          "bytes": 2399
+        },
+        {
+          "src": "pr-shipped.poster.webp",
+          "type": "image/webp",
+          "bytes": 3334
+        }
+      ],
+      "reducedMotion": "poster",
+      "placement": "Plays once when a run reaches review (PR opened) or complete (merged): over the run card and as a Home toast",
+      "description": "Light ribbon arcs, bursts into fine sparks and settles into a glowing check mark; the poster is the final frame"
+    },
+    "connect-splash": {
+      "kind": "video",
+      "width": 1600,
+      "height": 1000,
+      "loop": true,
+      "durationSeconds": 12,
+      "sources": [
+        {
+          "src": "connect-splash.av1.webm",
+          "type": "video/webm; codecs=\"av01.0.08M.08\"",
+          "bytes": 729174
+        },
+        {
+          "src": "connect-splash.vp9.webm",
+          "type": "video/webm; codecs=\"vp9\"",
+          "bytes": 939596
+        },
+        {
+          "src": "connect-splash.mp4",
+          "type": "video/mp4",
+          "bytes": 1424364
+        }
+      ],
+      "poster": [
+        {
+          "src": "connect-splash.poster.avif",
+          "type": "image/avif",
+          "bytes": 28530
+        },
+        {
+          "src": "connect-splash.poster.webp",
+          "type": "image/webp",
+          "bytes": 42832
+        }
+      ],
+      "reducedMotion": "poster",
+      "placement": "Full-bleed behind the connect dialog for Linear, GitHub and gateway",
+      "description": "Violet, cyan and green threads join into one beam through a glowing hexagonal core"
+    },
+    "agent-avatar-generalist": {
+      "kind": "animated-image",
+      "width": 96,
+      "height": 96,
+      "loop": true,
+      "durationSeconds": 4,
+      "sources": [
+        {
+          "src": "agent-avatar-generalist.webp",
+          "type": "image/webp",
+          "bytes": 53716
+        }
+      ],
+      "poster": [
+        {
+          "src": "agent-avatar-generalist.poster.webp",
+          "type": "image/webp",
+          "bytes": 1898
+        }
+      ],
+      "reducedMotion": "poster",
+      "placement": "Agent cards and terminal header, 28-40 px: generalist profile",
+      "description": "Glass hexagon with a branching node glyph, rim light sweeps once per loop"
+    },
+    "agent-avatar-specialist": {
+      "kind": "animated-image",
+      "width": 96,
+      "height": 96,
+      "loop": true,
+      "durationSeconds": 4,
+      "sources": [
+        {
+          "src": "agent-avatar-specialist.webp",
+          "type": "image/webp",
+          "bytes": 59292
+        }
+      ],
+      "poster": [
+        {
+          "src": "agent-avatar-specialist.poster.webp",
+          "type": "image/webp",
+          "bytes": 1946
+        }
+      ],
+      "reducedMotion": "poster",
+      "placement": "Agent cards and terminal header, 28-40 px: specialist profile",
+      "description": "Glass hexagon with a magnifying lens glyph, rim light sweeps once per loop"
+    },
+    "agent-avatar-reviewer": {
+      "kind": "animated-image",
+      "width": 96,
+      "height": 96,
+      "loop": true,
+      "durationSeconds": 4,
+      "sources": [
+        {
+          "src": "agent-avatar-reviewer.webp",
+          "type": "image/webp",
+          "bytes": 51652
+        }
+      ],
+      "poster": [
+        {
+          "src": "agent-avatar-reviewer.poster.webp",
+          "type": "image/webp",
+          "bytes": 1754
+        }
+      ],
+      "reducedMotion": "poster",
+      "placement": "Agent cards and terminal header, 28-40 px: reviewer profile",
+      "description": "Glass hexagon with a check mark glyph, rim light sweeps once per loop"
+    },
+    "agent-avatar-jev": {
+      "kind": "animated-image",
+      "width": 96,
+      "height": 96,
+      "loop": true,
+      "durationSeconds": 4,
+      "sources": [
+        {
+          "src": "agent-avatar-jev.webp",
+          "type": "image/webp",
+          "bytes": 57304
+        }
+      ],
+      "poster": [
+        {
+          "src": "agent-avatar-jev.poster.webp",
+          "type": "image/webp",
+          "bytes": 2054
+        }
+      ],
+      "reducedMotion": "poster",
+      "placement": "Agent cards and terminal header, 28-40 px: Jev (preflight)",
+      "description": "Glass hexagon with a small plasma orb glyph, rim light sweeps once per loop"
+    },
+    "empty-no-runs": {
+      "kind": "image",
+      "width": 640,
+      "height": 400,
+      "loop": false,
+      "sources": [
+        {
+          "src": "empty-no-runs.webp",
+          "type": "image/webp",
+          "bytes": 13930
+        }
+      ],
+      "reducedMotion": "same",
+      "placement": "Centre of the empty Runs panel",
+      "description": "A dormant violet orb resting on a faint glass ring"
+    },
+    "empty-no-issues": {
+      "kind": "image",
+      "width": 640,
+      "height": 400,
+      "loop": false,
+      "sources": [
+        {
+          "src": "empty-no-issues.webp",
+          "type": "image/webp",
+          "bytes": 18044
+        }
+      ],
+      "reducedMotion": "same",
+      "placement": "Centre of the empty 'no issues ready' panel",
+      "description": "An empty glass tray with drifting dust motes"
+    },
+    "empty-pool-unavailable": {
+      "kind": "image",
+      "width": 640,
+      "height": 400,
+      "loop": false,
+      "sources": [
+        {
+          "src": "empty-pool-unavailable.webp",
+          "type": "image/webp",
+          "bytes": 11676
+        }
+      ],
+      "reducedMotion": "same",
+      "placement": "Centre of the panel shown when the account pool is unavailable",
+      "description": "A dim constellation with one cyan node waiting"
+    },
+    "empty-daemon-offline": {
+      "kind": "image",
+      "width": 640,
+      "height": 400,
+      "loop": false,
+      "sources": [
+        {
+          "src": "empty-daemon-offline.webp",
+          "type": "image/webp",
+          "bytes": 16920
+        }
+      ],
+      "reducedMotion": "same",
+      "placement": "Centre of the panel shown when the daemon is offline",
+      "description": "A disconnected glowing cable end with a few sparks"
+    },
+    "needs-you-ember": {
+      "kind": "image",
+      "width": 512,
+      "height": 256,
+      "loop": false,
+      "sources": [
+        {
+          "src": "needs-you-ember.webp",
+          "type": "image/webp",
+          "bytes": 6310
+        }
+      ],
+      "reducedMotion": "same",
+      "placement": "Texture behind the amber needs-you card and the Home nav badge; the pulse itself is a CSS keyframe",
+      "description": "Soft amber ember haze with faint sparks on navy"
+    }
+  }
+}
