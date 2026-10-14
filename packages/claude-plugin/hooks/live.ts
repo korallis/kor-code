@@ -84,14 +84,14 @@ function executionsOf(payload: Json): Json[] {
 
 /** The execution the cockpit follows: one still running, else the most recently active; the daemon lists runs oldest first. */
 function current(executions: Json[]): Json | undefined {
-  const active = ['running', 'evaluating', 'verifying', 'repairing', 'waiting', 'ready', 'queued']
+  const active = ['running', 'evaluating', 'verifying', 'repairing', 'waiting', 'ready', 'queued', 'shipping', 'review']
   const updated = (one: Json) => Math.max(Date.parse(text(pick(one, 'updatedAt', 'heartbeatAt', 'startedAt'))) || 0, ...list(pick(one, 'decisions')).map(decision => Date.parse(text(pick(object(decision), 'recordedAt'))) || 0))
   const sorted = executions.map((one, index) => ({ one, index })).sort((left, right) => updated(right.one) - updated(left.one) || right.index - left.index).map(entry => entry.one)
   return sorted.find(one => active.includes(text(pick(one, 'status', 'state')))) ?? sorted[0]
 }
 
 /** The lifecycle stage a run status stands for, until the daemon reports stages itself. */
-const STAGE_OF: Record<string, string> = { queued: 'discover', ready: 'discover', evaluating: 'preflight', running: 'execute', waiting: 'supervise', verifying: 'verify', repairing: 'verify', review: 'synchronise', complete: 'synchronise' }
+const STAGE_OF: Record<string, string> = { queued: 'discover', ready: 'discover', evaluating: 'preflight', running: 'execute', waiting: 'supervise', verifying: 'verify', repairing: 'verify', shipping: 'synchronise', review: 'synchronise', complete: 'synchronise' }
 
 function routeText(value: unknown): { route: string; source: string } {
   const route = object(value)

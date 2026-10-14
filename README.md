@@ -219,7 +219,7 @@ Install the user service with `cp systemd/kor.service ~/.config/systemd/user/kor
 The daemon polls Todo issues carrying the configured `kor` label, stores leases in `~/.local/state/kor/kor.db`, and publishes snapshots under `~/.local/state/kor/snapshots/`.
 Use `kor status --json`, `kor run ISSUE-ID`, `kor cancel ISSUE-ID`, `kor retry ISSUE-ID`, and `kor logs EXECUTION-ID`.
 The read-only HTTP equivalent is `http://127.0.0.1:8327/status`.
-Status values are `queued`, `running`, `complete`, `failed`, `blocked`, and `canceled`; response provenance is `live`, `stale`, or `unavailable`.
+Status values are `queued`, `running`, `shipping`, `review`, `complete`, `failed`, `blocked`, and `canceled`; response provenance is `live`, `stale`, or `unavailable`. With shipping enabled by `kor serve`, `complete` means GitHub reports a merged PR.
 
 The local daemon proof covers lease renewal, restart recovery, queued and running cancellation, terminal failure and retry, orphan worktree cleanup, and PID identity protection:
 
@@ -233,9 +233,9 @@ daemon proof passed; picked=LEE-57; status=live; restart=queued; attempts=1; orp
 After `pnpm install` and a `~/.config/kor/config.yaml`, install the user service with `cp systemd/kor.service ~/.config/systemd/user/kor.service`, then run `systemctl --user daemon-reload` and `systemctl --user enable --now kor`.
 The daemon polls Todo issues carrying the configured `kor` label, stores leases in `~/.local/state/kor/kor.db`, and publishes snapshots under `~/.local/state/kor/snapshots/`.
 It polls each repository's `linearTeam` (else the team part of its map key) and runs a claimed issue in the checkout `repositoryKeyForIssue` maps it to (`linearProject`, then `linearTeam`).
-Use `kor status --json`, `kor run LEE-n` (the Linear writes above, then a queue entry for the daemon), `kor cancel LEE-n`, `kor retry ISSUE-ID`, and `kor logs EXECUTION-ID`.
+Use `kor status --json`, `kor run LEE-n` (a queue entry; the daemon writes Linear progress), `kor cancel LEE-n`, `kor retry ISSUE-ID`, and `kor logs EXECUTION-ID`.
 The HTTP equivalent is `http://127.0.0.1:8327/status`; the cockpit also posts overrides there (see [Open the live cockpit](#open-the-live-cockpit)).
-Status values are `queued`, `running`, `complete`, `failed`, `blocked`, and `canceled`; response provenance is `live`, `stale`, or `unavailable`.
+Status values are `queued`, `running`, `shipping`, `review`, `complete`, `failed`, `blocked`, and `canceled`; response provenance is `live`, `stale`, or `unavailable`.
 `retry` is explicit for terminal failures and verification blocks, while a running cancellation stops the detached session group before recording `canceled`.
 
 The local daemon proof exercises intake, the loopback endpoint, lease renewal during an 800 ms run with a 200 ms lease, restart recovery, queued and running cancellation, terminal failure and retry, orphan worktree cleanup, and PID identity protection:
@@ -246,6 +246,40 @@ daemon proof passed; picked=LEE-57; status=live; restart=queued; attempts=1; orp
 ```
 
 No live Linear or gateway credential was used for this proof; credentials are supplied at runtime by the configured environment.
+
+### Ship a verified issue
+
+After `pnpm install --frozen-lockfile` and `pnpm build`, the daemon host needs Git,
+authenticated `gh-axi`, and no-mistakes. Set the repository's GitHub URL in `remote`
+(or use its GitHub `origin`), configure checks and tool permissions, and supply the
+existing Linear and TypeSafe runtime credentials. Run the daemon and queue an issue:
+
+```sh
+pnpm kor serve
+# In another terminal:
+pnpm kor run LEE-123 --dry-run
+pnpm kor run LEE-123
+pnpm kor status --json
+```
+
+Passing checks and Jev acceptance judgments move the execution to `shipping`.
+Kor commits on `kor/LEE-123` and runs the repository's no-mistakes gate. Only an
+explicit “repo not initialized” response selects the direct `gh-axi pr create`
+fallback. Approval gates stay `blocked` for an operator to resolve; an outage never
+bypasses the gate. The existing run resumes on later polls without another session.
+
+An open, ready PR is linked on Linear in **In Review** and appears as `review` in
+status. `verification`, `shipping.evidence`, and `pullRequestUrl` show the local
+checks, pipeline steps, and GitHub CI results. No CI checks means **unresolved**.
+After an operator merges, Kor observes the merge, moves Linear to **Done**, reports
+`complete`, and removes only its owned clean worktree. Dirty worktrees remain with
+a cleanup error; PRs closed without merge remain `failed` and retain their worktree.
+
+The shipping flow is **Validated locally** for real Git, SQLite, HTTP snapshots,
+and live Jev judgments; the gate, forge and Linear writes, and cleanup are
+**Illustrative contract replays**. The live initialized-repository pilot has not
+run under T6's direct-PR worker contract. See the [shipping specification](docs/specs/shipping.md)
+for recovery rules, operator actions, and the exact validation boundary.
 
 ## Open the live cockpit
 

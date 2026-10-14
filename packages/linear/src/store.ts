@@ -9,7 +9,7 @@ export interface Assignment {
   executionId: string;
   issueId: string;
   sessionId: string;
-  status: 'queued' | 'running' | 'complete' | 'failed' | 'canceled' | 'blocked';
+  status: 'queued' | 'running' | 'shipping' | 'review' | 'complete' | 'failed' | 'canceled' | 'blocked';
 }
 export interface ExecutionClaim { assignment: Assignment; token: string; owner: string; expiresAt: number }
 export interface PendingWrite { sequence: number; write: LinearWrite }
@@ -34,7 +34,7 @@ function number(value: unknown): number {
 function parseAssignment(value: unknown): Assignment {
   const row = object(value);
   const status = string(row.status);
-  if (status !== 'queued' && status !== 'running' && status !== 'complete' && status !== 'failed' && status !== 'canceled' && status !== 'blocked') throw new Error('Invalid assignment status');
+  if (status !== 'queued' && status !== 'running' && status !== 'shipping' && status !== 'review' && status !== 'complete' && status !== 'failed' && status !== 'canceled' && status !== 'blocked') throw new Error('Invalid assignment status');
   return { issueId: string(row.issue_id), executionId: string(row.execution_id), sessionId: string(row.session_id), status };
 }
 function parseWrite(value: unknown): LinearWrite {
@@ -79,7 +79,7 @@ export class LinearStore {
       INSERT OR IGNORE INTO writer(id) VALUES (1);`);
     this.transaction(() => {
       const version = number(this.db.prepare('PRAGMA user_version').get()?.user_version);
-      if (version > 4) throw new Error('Kor database schema is newer than this binary');
+      if (version > 5) throw new Error('Kor database schema is newer than this binary');
       if (version >= 2) return;
       const columns = new Set(this.db.prepare('PRAGMA table_info(assignments)').all().map(row => string(row.name)));
       for (const [name, definition] of [
@@ -117,6 +117,20 @@ export class LinearStore {
       }
     });
     this.db.exec('CREATE TABLE IF NOT EXISTS daemon_owner (id INTEGER PRIMARY KEY CHECK(id=1), owner TEXT NOT NULL, pid INTEGER NOT NULL, boot_id TEXT NOT NULL, start_ticks TEXT NOT NULL)');
+    this.transaction(() => {
+      if (number(this.db.prepare('PRAGMA user_version').get()?.user_version) >= 5) return;
+      this.db.exec(`CREATE TABLE assignments_v5 (
+        issue_id TEXT PRIMARY KEY, execution_id TEXT NOT NULL UNIQUE, session_id TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL CHECK(status IN ('queued','running','shipping','review','complete','failed','canceled','blocked')), manifest TEXT,
+        token TEXT, owner TEXT, expires_at INTEGER, available_at INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+        session_pid INTEGER, session_pgid INTEGER, session_boot_id TEXT, session_start_ticks TEXT, heartbeat_at INTEGER,
+        cancel_requested INTEGER NOT NULL DEFAULT 0, last_error TEXT, issue_key TEXT, issue_title TEXT
+      );
+      INSERT INTO assignments_v5 SELECT issue_id,execution_id,session_id,status,manifest,token,owner,expires_at,available_at,attempts,session_pid,session_pgid,session_boot_id,session_start_ticks,heartbeat_at,cancel_requested,last_error,issue_key,issue_title FROM assignments;
+      DROP TABLE assignments;
+      ALTER TABLE assignments_v5 RENAME TO assignments;
+      PRAGMA user_version=5;`);
+    });
   }
 
   private transaction<T>(action: () => T): T {
@@ -245,6 +259,9 @@ export class LinearStore {
     return this.transaction(() => this.db.prepare("UPDATE assignments SET status='queued',token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_pgid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,cancel_requested=0,available_at=?,last_error=? WHERE issue_id=? AND status IN ('running','queued')").run(this.now() + delayMs, lastError ?? null, issueId).changes === 1);
   }
   retry(issueId: string): boolean {
+    // Shipping resumes its persisted stage; it must never rerun an accepted session.
+    const shipping = this.listAssignments().find(item => item.issueId === issueId)?.manifest?.shipping;
+    if (shipping) return false;
     return this.transaction(() => this.db.prepare("UPDATE assignments SET status='queued',token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_pgid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,cancel_requested=0,available_at=?,last_error=NULL WHERE issue_id=? AND status IN ('failed','blocked','canceled')").run(this.now(), issueId).changes === 1);
   }
   recover(issueId: string, message: string): boolean {
@@ -268,7 +285,7 @@ export class LinearStore {
     if (!row || row.token !== claim.token) throw new Error('Execution lease ownership was superseded');
   }
   /** Only settle after the session and verification have stopped, even if the lease expired. */
-  finishClaim(claim: ExecutionClaim, status: 'complete' | 'failed' | 'blocked' | 'canceled', message?: string, manifest?: Execution): void {
+  finishClaim(claim: ExecutionClaim, status: 'shipping' | 'review' | 'complete' | 'failed' | 'blocked' | 'canceled', message?: string, manifest?: Execution): void {
     this.transaction(() => {
       this.assertOwner(claim);
       const current = this.db.prepare('SELECT cancel_requested FROM assignments WHERE issue_id=?').get(claim.assignment.issueId) as { cancel_requested?: unknown } | undefined;
@@ -276,6 +293,17 @@ export class LinearStore {
       const finalStatus = canceled ? 'canceled' : status;
       this.db.prepare('UPDATE assignments SET status=?,manifest=COALESCE(?,manifest),last_error=?,token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_pgid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,cancel_requested=0 WHERE issue_id=?')
         .run(finalStatus, manifest ? JSON.stringify(manifest) : null, message ?? null, claim.assignment.issueId);
+    });
+  }
+  /** The exclusively owned daemon advances delivery without reopening an execution lease. */
+  updateShipping(execution: Execution, writes: readonly LinearWrite[] = []): void {
+    if (!execution.shipping || !['shipping', 'review', 'blocked', 'complete', 'failed'].includes(execution.status)) throw new Error('Invalid shipping transition');
+    this.transaction(() => {
+      const result = this.db.prepare(`UPDATE assignments SET status=?,manifest=?,last_error=?
+        WHERE execution_id=? AND issue_id=? AND token IS NULL AND status IN ('shipping','review','blocked','complete','failed')`)
+        .run(execution.status, JSON.stringify(execution), execution.shipping?.error ?? null, execution.id, execution.issueId);
+      if (result.changes !== 1) throw new Error('Shipping assignment changed ownership');
+      for (const write of writes) this.db.prepare('INSERT INTO outbox(payload) VALUES(?)').run(JSON.stringify(write));
     });
   }
   daemonOwner(): { owner: string; process: SessionProcessIdentity } | undefined {

@@ -9,9 +9,11 @@ import type { DecisionRecord, Execution, GatewayAccountHealth, KorRunSnapshot, K
 import { repositoryKeyForIssue, type KorConfig, type KorPaths } from "@kor-code/config";
 import { ExecutionVerificationError, type Controller } from "@kor-code/controller";
 import type { LinearClient, LinearIssue } from "@kor-code/linear";
-import { LinearStore, type AssignmentRecord, type ExecutionClaim } from "@kor-code/linear";
+import { AgentSessionWriter, LinearStore, flushLinearWrites, stableId, workflowMapping, type LinearWrite, type AssignmentRecord, type ExecutionClaim } from "@kor-code/linear";
 import { captureProcess, processExists, processMatches, stopSession } from "./process.js";
 import { OverrideStore } from "./overrides.js";
+import type { ShippingDriver } from "./shipping.js";
+export { GitHubShipping, type ShippingDriver, type ShippingCommand } from "./shipping.js";
 
 export { OverrideStore } from "./overrides.js";
 
@@ -31,6 +33,8 @@ export interface DaemonOptions {
   store?: LinearStore;
   linear?: LinearClient;
   controller?: Controller;
+  /** When enabled, verified executions remain shipping/review until GitHub reports a merge. */
+  shipping?: ShippingDriver;
   runner?: DaemonRunner;
   host?: string;
   port?: number;
@@ -89,9 +93,12 @@ function runStatus(assignment: AssignmentRecord, observedAt: string, facts: RunF
     ...(facts.routeSource ? { routeSource: facts.routeSource } : {}),
     ...(facts.decisions.length ? { decisionIds: facts.decisions.map(decision => decision.decisionId) } : {}),
     ...(manifest?.status ? { phase: manifest.status } : {}),
+    ...(manifest?.verification ? { verification: manifest.verification } : {}),
+    ...(manifest?.shipping ? { shipping: manifest.shipping } : {}),
+    ...(manifest?.shipping && "url" in manifest.shipping.stage ? { pullRequestUrl: manifest.shipping.stage.url } : {}),
     ...(assignment.cancelRequested ? { cancelRequested: true } : {}),
     ...(assignment.status === "failed" ? { errorCode: "execution_failed" } : {}),
-    ...(assignment.status === "blocked" ? { errorCode: "verification_blocked" } : {}),
+    ...(assignment.status === "blocked" ? { errorCode: manifest?.shipping ? "shipping_blocked" : "verification_blocked" } : {}),
     ...(assignment.status === "canceled" ? { errorCode: "canceled" } : {}),
     ...(manifest?.repository ? { repository: manifest.repository } : {}),
     ...(manifest?.worktree ? { worktree: manifest.worktree } : {}),
@@ -229,6 +236,8 @@ export class KorDaemon {
     await this.refreshAccounts();
     await this.flushOverrideComments();
     try {
+      if (this.options.linear) await flushLinearWrites(this.store, this.options.linear);
+      await this.advanceShipping();
       let found = 0;
       if (this.options.linear) for (const key of teamKeys(this.options.config)) {
         const issues = await this.options.linear.listIssues(key, 100);
@@ -247,6 +256,56 @@ export class KorDaemon {
       this.lastPollAt = new Date(this.now()).toISOString();
       await this.reportError(error);
       return 0;
+    }
+  }
+  /** One daemon owns these stages; no execution lease or model session is reopened. */
+  private async advanceShipping(): Promise<void> {
+    const { shipping, linear } = this.options;
+    if (!shipping || !linear) return;
+    for (const assignment of this.store.listAssignments()) {
+      const previous = assignment.manifest;
+      if (this.stopping || !previous?.shipping) continue;
+      if (!['shipping', 'review', 'blocked', 'complete', 'failed'].includes(assignment.status)) continue;
+      try {
+        const issue = await linear.getIssue(assignment.issueId);
+        this.remember(assignment.issueId, issue);
+        const repository = this.options.config.repos[previous.repository];
+        if (!repository) throw new Error(`Shipping repository missing: ${previous.repository}`);
+        const states = workflowMapping(await linear.listWorkflowStates(issue.teamKey));
+        if (!states.review) throw new Error(`Linear team ${issue.teamKey} has no In Review state`);
+        const writer = new AgentSessionWriter(this.store, linear, states);
+        await writer.flush();
+        let execution = await shipping.advance({ execution: previous, issue, repository });
+        const report = execution.shipping;
+        if (!report) throw new Error('Shipping driver lost its durable report');
+        const changed = previous.shipping.stage.kind !== report.stage.kind || previous.status !== execution.status || previous.shipping.error !== report.error;
+        const writes: LinearWrite[] = [];
+        if (changed) {
+          const stage = report.stage;
+          if (stage.kind === 'review' || stage.kind === 'merged') {
+            writes.push({ kind: 'attachment', issueId: issue.id, url: stage.url, title: 'GitHub pull request' });
+            writes.push({ kind: 'state', issueId: issue.id, stateId: stage.kind === 'merged' ? states.complete.id : states.review.id });
+          }
+          writes.push({ kind: 'comment', id: stableId('kor-shipping', `${execution.id}:${execution.status}`), issueId: issue.id,
+            body: [`Kor execution ${execution.id}: ${execution.status}`, 'url' in stage ? stage.url : '', report.error ?? '', ...report.evidence.map(item => `${item.kind}: ${item.status} — ${item.summary}`)].filter(Boolean).join('\n') });
+        }
+        this.store.updateShipping(execution, writes);
+        await writer.flush();
+        if (report.stage.kind === 'merged' && report.cleanup !== 'removed' && this.store.counts().pendingWrites === 0) {
+          if (resolve(execution.worktree) !== join(resolve(this.options.paths.worktreesDir), execution.id)) throw new Error('Cleanup path is outside this execution worktree');
+          execution = await shipping.cleanup({ execution, issue, repository });
+          this.store.updateShipping(execution);
+        }
+        if (changed) await this.log(execution.id, `shipping ${execution.status}${report.error ? `: ${report.error}` : ''}`);
+      } catch (error) {
+        const current = this.store.listAssignments().find(item => item.executionId === assignment.executionId)?.manifest;
+        if (current?.shipping) this.store.updateShipping({ ...current,
+          status: current.status === 'complete' || current.status === 'failed' ? current.status : 'blocked',
+          shipping: { ...current.shipping, error: `Synchronization will retry: ${safeMessage(error)}` },
+        });
+        await this.log(assignment.executionId, `shipping synchronization will retry: ${safeMessage(error)}`);
+        await this.reportError(error);
+      }
     }
   }
   async enqueue(issueId: string): Promise<AssignmentRecord> {
@@ -446,10 +505,19 @@ export class KorDaemon {
       const repository = repositoryKeyForIssue(issue, this.options.config);
       const route = await this.routeFor(id, issue);
       this.store.setIssueMetadata(claim, issue.identifier ?? issue.id, issue.title);
-      this.store.markRunning(claim, { id, issueId: issue.id, repository, worktree: "", branch: `kor/${issue.id}`, status: "running", route });
+      const previousBranch = this.store.listAssignments().find(assignment => assignment.executionId === id)?.manifest?.branch;
+      const manifest: Execution = { id, issueId: issue.id, repository, worktree: "", branch: previousBranch || `kor/${issue.identifier ?? issue.id}`, status: "running", route };
+      this.store.markRunning(claim, manifest);
+      if (this.options.shipping) {
+        const states = workflowMapping(await this.options.linear.listWorkflowStates(issue.teamKey));
+        if (!states.review) throw new Error(`Linear team ${issue.teamKey} has no In Review state`);
+        const writer = new AgentSessionWriter(this.store, this.options.linear, states);
+        writer.start(claim, manifest);
+        await writer.flush();
+      }
       abort.signal.throwIfAborted();
       if (this.options.runner) result = await this.options.runner({ claim, issue, onSpawn, signal: abort.signal });
-      else if (this.options.controller) result = await this.options.controller.dispatch({ id, issueId: issue.id, repository, worktree: "", branch: `kor/${issue.id}`, status: "queued", issue, claim, onSpawn, signal: abort.signal, route });
+      else if (this.options.controller) result = await this.options.controller.dispatch({ ...manifest, status: "queued", issue, claim, onSpawn, signal: abort.signal });
       else throw new Error("Daemon controller unavailable");
       abort.signal.throwIfAborted();
     } catch (error) { failure = error; }
@@ -465,10 +533,19 @@ export class KorDaemon {
       this.store.failClaim(claim, `session cleanup failed: ${safeMessage(cleanupFailure)}`);
     } else if (this.store.isCancelRequested(claim.assignment.issueId)) this.store.cancelClaim(claim);
     else if (this.stopping) this.store.recover(claim.assignment.issueId, "daemon stopped; session stopped; re-queued");
-    else if (failure !== undefined) this.store.failClaim(claim, safeMessage(failure), failure instanceof ExecutionVerificationError ? "blocked" : "failed");
+    else if (failure !== undefined) {
+      if (failure instanceof ExecutionVerificationError) {
+        const manifest = this.store.listAssignments().find(item => item.executionId === id)?.manifest;
+        if (manifest) this.store.record(claim, [{ kind: 'comment', id: stableId('kor-shipping', `${id}:verification-blocked`), issueId: manifest.issueId, body: `Kor verification blocked: ${safeMessage(failure)}\n${failure.findings.map(finding => `${finding.conditionId}: ${finding.status}`).join('\n')}` }], { ...manifest, status: 'blocked', verification: failure.report });
+      }
+      this.store.failClaim(claim, safeMessage(failure), failure instanceof ExecutionVerificationError ? "blocked" : "failed");
+    }
     else if (result?.execution.status === "failed" || result?.execution.status === "blocked") this.store.finishClaim(claim, result.execution.status, "execution did not complete", result.execution);
     else if (result && result.execution.status !== "complete") this.store.failClaim(claim, `Unexpected execution outcome: ${result.execution.status}`);
-    else this.store.completeClaim(claim, result?.execution);
+    else if (this.options.shipping) {
+      if (!result?.execution.verification?.passed) this.store.failClaim(claim, 'Shipping requires a passing verification report', 'blocked');
+      else this.store.finishClaim(claim, 'shipping', undefined, { ...result.execution, status: 'shipping', shipping: { stage: { kind: 'commit' }, evidence: [], cleanup: 'pending' } });
+    } else this.store.completeClaim(claim, result?.execution);
     await this.log(id, `execution ${this.store.getAssignment(claim.assignment.issueId).status}${failure ? `: ${safeMessage(failure)}` : ""}`);
   }
 

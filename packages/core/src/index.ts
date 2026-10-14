@@ -2,7 +2,7 @@ export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 export interface JsonObject { [key: string]: JsonValue | undefined }
 
-export type ExecutionStatus = "queued" | "ready" | "evaluating" | "running" | "waiting" | "verifying" | "repairing" | "review" | "blocked" | "complete" | "failed" | "escalated";
+export type ExecutionStatus = "queued" | "ready" | "evaluating" | "running" | "waiting" | "verifying" | "repairing" | "shipping" | "review" | "blocked" | "complete" | "failed" | "escalated";
 export interface Issue { id: string; title: string; description?: string; acceptanceCriteria: string[]; projectId?: string; repository?: string }
 export interface AcceptanceCondition { id: string; description: string; required: boolean }
 export type AcceptanceStatus = "pending" | "pass" | "fail" | "unresolved";
@@ -22,7 +22,13 @@ export interface ExecutionManifest { executionId: string; issueId: string; repos
 export interface ContextSource { id: string; path: string; purpose: "rule" | "issue" | "document" | "decision" | "evidence"; relevance: number; content: string; truncated?: boolean }
 export interface ContextSourceReference { id: string; path: string; purpose: ContextSource["purpose"] }
 export interface ContextManifest { executionId: string; repository: string; worktree: string; sources: ContextSource[]; droppedSources: ContextSourceReference[]; compacted: boolean; redacted: boolean; relevanceOverride?: { source: "caller"; reason: string } }
-export interface Execution { id: string; issueId: string; repository: string; worktree: string; branch: string; status: ExecutionStatus; route?: Route; manifest?: ExecutionManifest; verification?: VerificationReport }
+export type ShippingStage =
+  | { kind: "commit" }
+  | { kind: "pipeline"; head: string; runId?: string }
+  | { kind: "publish"; head: string }
+  | { kind: "review" | "merged" | "closed"; mode: "no-mistakes" | "direct"; head: string; url: string; number: number; runId?: string };
+export interface ShippingReport { stage: ShippingStage; evidence: Evidence[]; cleanup: "pending" | "removed"; error?: string }
+export interface Execution { id: string; issueId: string; repository: string; worktree: string; branch: string; status: ExecutionStatus; route?: Route; manifest?: ExecutionManifest; verification?: VerificationReport; shipping?: ShippingReport }
 export type AccountPolicy = "fill-first" | "manual" | "least-used";
 export type ReasoningLevel = "low" | "medium" | "high";
 export interface Route { provider: string; model: string; accountPolicy: AccountPolicy; sessionAffinity: boolean; reasoningLevel?: ReasoningLevel; label?: "jev" | "fallback" | "escalated" }
@@ -64,8 +70,9 @@ export interface RunStatus {
   routeSource?: RouteSource;
   phase?: ExecutionStatus;
   verification?: VerificationReport;
+  shipping?: ShippingReport;
   cancelRequested?: boolean;
-  errorCode?: "execution_failed" | "verification_blocked" | "canceled" | "recovered";
+  errorCode?: "execution_failed" | "verification_blocked" | "shipping_blocked" | "canceled" | "recovered";
   pullRequestUrl?: string;
   decisionIds?: string[];
   repository?: string;

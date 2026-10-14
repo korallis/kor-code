@@ -6,6 +6,7 @@
     { "path": "../config" },
     { "path": "../controller" },
     { "path": "../core" },
+    { "path": "../jev" },
     { "path": "../linear" }
   ]
 }
