@@ -29,7 +29,7 @@ import { keyOf } from '../lib/runs';
 import { clock, shortDate, useNow } from '../lib/time';
 import { page, QueryError } from './shared';
 
-const NARROW = '@media (max-width: 1439px)';
+const NARROW = '@media (max-width: 1499px)';
 
 const styles = stylex.create({
   head: { display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' },

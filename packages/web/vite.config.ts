@@ -6,7 +6,7 @@ import stylex from "@stylexjs/unplugin";
 // development, `pnpm dev` proxies /api to a running daemon on the same port.
 export default defineConfig({
   base: "/",
-  plugins: [stylex.vite({ useCSSLayers: true }), react()],
+  plugins: [stylex.vite(), react()],
   build: { outDir: "dist", emptyOutDir: true, assetsInlineLimit: 0, sourcemap: false },
   server: { port: 5327, strictPort: true, proxy: { "/api": { target: "http://127.0.0.1:8327", changeOrigin: true } } },
 });

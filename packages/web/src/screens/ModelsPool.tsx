@@ -29,7 +29,7 @@ import { keyOf } from '../lib/runs';
 import { ago, clock, shortDate, until, useNow } from '../lib/time';
 import { page, QueryError } from './shared';
 
-const NARROW = '@media (max-width: 1439px)';
+const NARROW = '@media (max-width: 1499px)';
 
 const styles = stylex.create({
   head: { display: 'flex', alignItems: 'flex-end', gap: '12px', flexWrap: 'wrap' },
@@ -68,7 +68,7 @@ function ProviderCard({ provider, accounts, index, now }: { provider: QuotaProvi
         <ProviderBadge provider={providerKind(provider.provider)} large />
         <div>
           <div {...stylex.props(styles.provName)}>{providerTitle(provider.provider)}</div>
-          <div {...stylex.props(text.mono, text.xs, text.muted)}>{provider.plan ?? provider.status ?? ''}{accounts.length ? ` · ${accounts.length} slots · ${available} available` : ''}</div>
+          <div {...stylex.props(text.mono, text.xs, text.muted)}>{[provider.plan, accounts.length ? `${accounts.length} slots` : null, accounts.length ? `${available} available` : null].filter(Boolean).join(' · ')}</div>
         </div>
         <span {...stylex.props(styles.dots)}>{accounts.map(account => <i key={account.id} title={`${account.id}: ${account.status}`} {...stylex.props(styles.dot, toneSolid[STATUS_TONE[account.status]])} />)}</span>
       </div>

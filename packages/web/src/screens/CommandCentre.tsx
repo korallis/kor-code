@@ -33,7 +33,7 @@ import { parseQuota, sessionWindow, weeklyWindow, providerTitle } from '../lib/q
 import { ago, clock, greeting, isToday, longDate, shortDate, useNow } from '../lib/time';
 import { page, QueryError, RunRow } from './shared';
 
-const NARROW = '@media (max-width: 1439px)';
+const NARROW = '@media (max-width: 1499px)';
 
 const styles = stylex.create({
   hero: { display: 'grid', gridTemplateColumns: { default: 'minmax(0, 1fr) 432px', [NARROW]: 'minmax(0, 1fr) 380px' }, gap: space.s4 },
@@ -75,6 +75,8 @@ const styles = stylex.create({
   insight: { padding: '18px' },
   donutTotal: { fontFamily: font.display, fontSize: '24px', fontWeight: 600 },
   donutLabel: { fontFamily: font.mono, fontSize: '10px', letterSpacing: '.08em', color: color.textMuted },
+  now: { marginTop: '12px', paddingBlock: '14px', paddingInline: '16px', borderRadius: '14px', backgroundImage: tint.jevAnswer, borderWidth: '1px', borderStyle: 'solid', borderColor: tint.violetSoftEdge, position: 'relative' },
+  nowText: { marginTop: '8px', color: color.textSecondary, fontSize: '13.5px', lineHeight: 1.6 },
   more: { fontSize: '12px', color: color.violetBright, display: 'inline-flex', alignItems: 'center', gap: '4px' },
 });
 
@@ -154,6 +156,31 @@ function NeedsYou({ run, now, linearUrl }: { run: MissionRun | undefined; now: n
         <Button variant="danger-ghost" busy={action.isPending} onClick={() => action.mutate({ action: 'cancel', executionId: run.executionId })}>Cancel run</Button>
       </div>
     </Card>
+  );
+}
+
+/** Until Jev answers, the hero shows what needs attention right now, straight from the live runs. */
+function RightNow({ attention, ready, queued }: { attention: MissionRun[]; ready: MissionRun[]; queued: MissionRun[] }) {
+  const items = [
+    ...attention.slice(0, 1).map(run => ({ run, text: `is ${run.status}: ${run.needsInput?.reason ?? run.error ?? 'it needs your direction.'}` })),
+    ...ready.slice(0, 1).map(run => {
+      const checks = run.verification?.attempts.at(-1)?.checks ?? [];
+      const findings = run.verification?.attempts.at(-1)?.findings ?? [];
+      return { run, text: `passed ${checks.filter(c => c.status === 'pass').length} of ${checks.length} checks and ${findings.filter(f => f.status === 'pass').length} of ${findings.length} acceptance conditions, and is waiting for your approval to ship.` };
+    }),
+    ...queued.slice(0, 1).map(run => ({ run, text: 'is queued; it starts when a slot frees under the limits.' })),
+  ];
+  if (items.length === 0) return null;
+  return (
+    <div {...stylex.props(styles.now)}>
+      <div {...stylex.props(layout.row)}><span {...stylex.props(text.eyebrow, text.violet)}>Right now</span><span {...stylex.props(text.mono, text.faint, text.xs)}>from the live runs</span></div>
+      <p {...stylex.props(styles.nowText)}>{items.map(({ run, text: line }) => <span key={run.executionId}><b {...stylex.props(text.key)}>{keyOf(run)}</b> {line} </span>)}</p>
+      <div {...stylex.props(layout.rowWrap, layout.mt3)}>
+        {ready[0] && <Button size="sm" variant="primary" icon={GitPullRequest} onClick={() => navigate('linear', ready[0]!.executionId)}>Review {keyOf(ready[0])} and ship</Button>}
+        {attention[0] && <Button size="sm" icon={MessageSquare} onClick={() => navigate('linear', attention[0]!.executionId)}>Open {keyOf(attention[0])}</Button>}
+        {queued[0] && <Button size="sm" icon={Bot} onClick={() => navigate('agents', queued[0]!.executionId)}>See {keyOf(queued[0])} in Agents</Button>}
+      </div>
+    </div>
   );
 }
 
@@ -256,7 +283,7 @@ export function CommandCentre() {
               <Pill tone="violet" dot>{prsOpen.length} PRs open</Pill>
             </div>
             <div {...stylex.props(styles.ask)}>
-              <AskJev placeholder="Ask Jev — what's blocked, and what can ship today?" />
+              <AskJev placeholder="Ask Jev — what's blocked, and what can ship today?" idle={<RightNow attention={attention} ready={ready} queued={queued} />} />
             </div>
           </Card>
           <NeedsYou run={attention[0]} now={now} />
@@ -266,12 +293,12 @@ export function CommandCentre() {
 
         <section {...stylex.props(styles.kpis)} aria-label="Today">
           <Kpi index={2} icon={Bot} tone="cyan" label="Active runs" value={<CountUp value={active.length} format={String} />} small={<><b {...stylex.props(text.secondary)}>+{queued.length}</b> queued</>}
-            art={activeSeries && <Spark values={activeSeries} tone="cyan" label="active runs since this page opened" />} />
+            art={activeSeries && <Spark width={84} values={activeSeries} tone="cyan" label="active runs since this page opened" />} />
           <Kpi index={3} icon={ShieldCheck} tone="green" label="Verified today" value={<CountUp value={verifiedToday.length} format={String} />} small={firstPass === null ? 'none yet' : <><b {...stylex.props(text.secondary)}>{Math.round(firstPass * 100)}%</b> first pass</>}
-            art={verifiedToday.length > 0 && <Spark values={cumulative(verifiedToday.map(run => ({ at: Date.parse(run.observedAt), value: 1 })))} tone="green" label="verified runs today" />} />
+            art={verifiedToday.length > 0 && <Spark width={84} values={cumulative(verifiedToday.map(run => ({ at: Date.parse(run.observedAt), value: 1 })))} tone="green" label="verified runs today" />} />
           <Kpi index={4} icon={GitPullRequest} tone="violet" label="Pull requests" value={<CountUp value={prsOpen.length} format={String} />} small={<>open for <b {...stylex.props(text.secondary)}>review</b></>} />
           <Kpi index={5} icon={Coins} tone="amber" label="Spend today · costUsd" value={<CountUp value={spendToday} format={value => usd(value)} />} small={<><b {...stylex.props(text.secondary)}>{today.length}</b> runs</>}
-            art={today.some(run => run.costUsd) && <Spark values={cumulative(today.map(run => ({ at: Date.parse(run.observedAt), value: run.costUsd ?? 0 })))} tone="amber" label="spend today" />} />
+            art={today.some(run => run.costUsd) && <Spark width={84} values={cumulative(today.map(run => ({ at: Date.parse(run.observedAt), value: run.costUsd ?? 0 })))} tone="amber" label="spend today" />} />
           <Kpi index={6} icon={Gauge} tone="violet" label={`${claude ? 'Claude' : 'Pool'} 5-hour pool`} value={five?.percentRemaining != null ? <CountUp value={five.percentRemaining} format={value => `${Math.round(value)}%`} /> : '—'}
             small={five?.resetsAt ? <>resets <b {...stylex.props(text.secondary)}>{clock(five.resetsAt)}</b></> : <ProvenanceChip provenance={pool.quota?.provenance ?? 'unavailable'} reason={pool.quota?.reason}>{pool.quota ? pool.quota.provenance : 'unavailable'}</ProvenanceChip>}
             art={five?.percentRemaining != null && <Ring pct={five.percentRemaining} size={38} stroke={5} label="5-hour window remaining" />} />

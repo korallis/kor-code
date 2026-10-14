@@ -13,7 +13,7 @@ import { usd, shortModel } from '../lib/format';
 import { keyOf, slotOf } from '../lib/runs';
 import { duration } from '../lib/time';
 
-const NARROW = '@media (max-width: 1439px)';
+const NARROW = '@media (max-width: 1499px)';
 
 export const page = stylex.create({
   page: { padding: { default: space.s6, [NARROW]: space.s5 }, display: 'flex', flexDirection: 'column', gap: space.s4, minWidth: 0 },

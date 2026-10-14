@@ -10,7 +10,7 @@ export const text = stylex.create({
   faint: { color: color.textFaint },
   secondary: { color: color.textSecondary },
   strong: { color: color.text, fontWeight: fontWeight.medium },
-  key: { fontFamily: font.mono, color: color.violetBright, fontWeight: fontWeight.medium },
+  key: { fontFamily: font.mono, color: color.violetBright, fontWeight: fontWeight.medium, whiteSpace: 'nowrap', flex: 'none' },
   link: { color: color.cyan },
   grad: { backgroundImage: gradient.brandText, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' },
   ellipsis: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 },

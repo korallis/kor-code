@@ -50,8 +50,8 @@ function sessionLines(key: string, time: string, event: Record<string, unknown>)
     else if (block.type === 'tool_result') {
       const text = typeof block.content === 'string' ? block.content : Array.isArray(block.content) ? (block.content as Record<string, unknown>[]).map(part => str(part.text)).join(' ') : '';
       const first = text.trim().split('\n').filter(Boolean).slice(-1)[0] ?? '';
-      if (block.is_error === true) out.push({ key: k, time, who: '', whoTone: 'dim', body: `✗ ${first.slice(0, 300)}`, tone: 'warn' });
-      else if (/pass|✓|ok\b|exit 0/i.test(first)) out.push({ key: k, time, who: '', whoTone: 'dim', body: `✓ ${first.slice(0, 300)}`, tone: 'ok' });
+      if (block.is_error === true) out.push({ key: k, time, who: '', whoTone: 'dim', body: /^[✗✕×]/.test(first) ? first.slice(0, 300) : `✗ ${first.slice(0, 300)}`, tone: 'warn' });
+      else if (/pass|✓|ok\b|exit 0/i.test(first)) out.push({ key: k, time, who: '', whoTone: 'dim', body: /^[✓✔]/.test(first) ? first.slice(0, 300) : `✓ ${first.slice(0, 300)}`, tone: 'ok' });
     }
   });
   return out;

@@ -89,7 +89,7 @@ export function AskAnswer({ response, onFollowUp }: { response: AskResponse; onF
 }
 
 /** The composer plus its latest answer. `executionId` scopes the question to one run. */
-export function AskJev({ executionId, initial = '', autoFocus = false, placeholder = 'Ask Jev — queue an issue, explain a decision, change a route…' }: { executionId?: string; initial?: string; autoFocus?: boolean; placeholder?: string }) {
+export function AskJev({ executionId, initial = '', autoFocus = false, placeholder = 'Ask Jev — queue an issue, explain a decision, change a route…', idle }: { executionId?: string; initial?: string; autoFocus?: boolean; placeholder?: string; idle?: ReactNode }) {
   const [message, setMessage] = useState(initial);
   const ask = useAsk();
   const submit = (value = message) => {
@@ -123,7 +123,7 @@ export function AskJev({ executionId, initial = '', autoFocus = false, placehold
         </div>
       </form>
       {ask.error && <div {...stylex.props(layout.mt3)}><Notice title={ask.error.message} hint={ask.error instanceof ApiFailure ? ask.error.hint : undefined} /></div>}
-      {ask.data && <AskAnswer key={ask.data.id} response={ask.data} onFollowUp={() => setMessage('')} />}
+      {ask.data ? <AskAnswer key={ask.data.id} response={ask.data} onFollowUp={() => setMessage('')} /> : !ask.isPending && idle}
     </div>
   );
 }

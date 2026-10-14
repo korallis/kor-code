@@ -26,7 +26,7 @@ import { KorMark } from './Mark';
 import { openAsk } from './askStore';
 import { projectTone } from './projectTone';
 
-const NARROW = '@media (max-width: 1439px)';
+const NARROW = '@media (max-width: 1499px)';
 
 const styles = stylex.create({
   app: {
@@ -60,7 +60,7 @@ const styles = stylex.create({
   liveOk: { backgroundColor: color.greenDim, borderColor: tint.livePillEdge, color: color.green },
   liveWarn: { backgroundColor: color.amberDim, borderColor: tint.amberEdge, color: color.amber, cursor: 'pointer' },
   liveDot: { width: '7px', height: '7px', borderRadius: '50%', backgroundColor: 'currentColor', boxShadow: '0 0 8px currentColor' },
-  liveSub: { color: color.textSecondary, letterSpacing: 0, display: { default: null, [NARROW]: 'none' } },
+  liveSub: { color: color.textSecondary, letterSpacing: 0, display: { default: 'inline', [NARROW]: 'none' } },
   iconBtn: { position: 'relative', width: '34px', height: '34px', borderRadius: '10px', display: 'grid', placeItems: 'center', color: color.textSecondary, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline, backgroundColor: { default: tint.ghost, ':hover': tint.ghostStrong } },
   badge: { position: 'absolute', top: '6px', right: '7px', width: '7px', height: '7px', borderRadius: '50%', backgroundColor: color.amber, boxShadow: glow.amber },
   clock: { textAlign: 'right', lineHeight: 1.2 },
@@ -99,7 +99,8 @@ const styles = stylex.create({
   claude: { color: tint.providerClaude },
   codex: { color: tint.providerCodex },
   copilot: { color: color.violetBright },
-  hideNarrow: { display: { default: null, [NARROW]: 'none' } },
+  hideNarrow: { display: { default: 'flex', [NARROW]: 'none' } },
+  hideNarrowInline: { display: { default: 'inline', [NARROW]: 'none' } },
 });
 
 interface NavItem { screen: Screen; label: string; icon?: LucideIcon; brand?: Brand; count?: ReactNode; tone?: 'hot' | 'warn'; kbd?: string }
@@ -270,7 +271,7 @@ function StatusBar() {
         <span {...stylex.props(styles.lbl)}>Today</span><b {...stylex.props(styles.b)}>{usd(spend)}</b><span>{verified} verified · {prs} PRs</span>
       </div>
       <div {...stylex.props(styles.seg, styles.segRight)}>
-        {daemon && <span {...stylex.props(styles.hideNarrow)}>pid {daemon.pid} · poll {daemon.pollIntervalSeconds}s · last {ago(daemon.lastPollAt, now)} ago</span>}
+        {daemon && <span {...stylex.props(styles.hideNarrowInline)}>pid {daemon.pid} · poll {daemon.pollIntervalSeconds}s · last {ago(daemon.lastPollAt, now)} ago</span>}
         <ProvenanceChip provenance={status?.provenance ?? 'unavailable'} reason={status?.reason}>{status ? status.provenance : 'connecting'}{lastEventAt ? ` · ${ago(new Date(lastEventAt).toISOString(), now)}` : ''}</ProvenanceChip>
       </div>
     </footer>

@@ -28,7 +28,7 @@ const styles = stylex.create({
   codex: { color: tint.providerCodex, backgroundColor: tint.providerCodexFill, borderColor: tint.providerCodexEdge },
   grok: { color: tint.providerGrok, backgroundColor: tint.providerGrokFill },
   copilot: { color: tint.providerCopilot, backgroundColor: tint.providerCopilotFill, borderColor: tint.providerCopilotEdge },
-  swatch: { width: '8px', height: '8px', borderRadius: '3px', flex: 'none', boxShadow: '0 0 8px currentColor' },
+  swatch: { display: 'inline-block', width: '8px', height: '8px', borderRadius: '3px', flex: 'none', boxShadow: '0 0 8px currentColor' },
   tile: { width: '30px', height: '30px', borderRadius: '9px', display: 'grid', placeItems: 'center', fontFamily: font.display, fontWeight: 700, fontSize: '12px', flex: 'none', borderWidth: '1px', borderStyle: 'solid' },
   feedDot: { width: '22px', height: '22px', borderRadius: '7px', display: 'grid', placeItems: 'center', flex: 'none', borderWidth: '1px', borderStyle: 'solid' },
 });

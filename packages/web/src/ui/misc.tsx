@@ -62,7 +62,7 @@ export function Empty({ slot, title, children }: { slot?: MotionSlot; title: Rea
     <div {...stylex.props(styles.empty)}>
       {slot && <MotionMedia slot={slot} contain fallback={<span {...stylex.props(styles.emptyArtFallback)} />} style={styles.emptyArt} />}
       <span {...stylex.props(styles.emptyTitle)}>{title}</span>
-      {children}
+      {children && <span>{children}</span>}
     </div>
   );
 }

@@ -35,7 +35,7 @@ import { ago, shortDate, useNow } from '../lib/time';
 import { page, QueryError } from './shared';
 import { QueueDialog } from './QueueDialog';
 
-const NARROW = '@media (max-width: 1439px)';
+const NARROW = '@media (max-width: 1499px)';
 
 const styles = stylex.create({
   head: { display: 'flex', alignItems: 'center', gap: '18px', paddingBlock: '18px', paddingInline: '20px', overflow: 'hidden', flexWrap: 'wrap' },
@@ -47,7 +47,7 @@ const styles = stylex.create({
   body: { display: 'grid', gridTemplateColumns: { default: 'minmax(0, 1fr) 404px', [NARROW]: 'minmax(0, 1fr) 340px' }, gap: space.s4, alignItems: 'start' },
   toolbar: { display: 'flex', alignItems: 'center', gap: '10px', paddingBlock: '14px', paddingInline: '18px', borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: color.hairline, flexWrap: 'wrap' },
   tableWrap: { paddingInline: '8px', overflowX: 'auto' },
-  title: { maxWidth: '320px' },
+  title: { maxWidth: '262px' },
   korCell: { display: 'grid', gap: '5px', width: '150px' },
   mdl: { fontFamily: font.mono, fontSize: '11.5px', color: color.textSecondary, lineHeight: 1.35 },
   mdlSub: { color: color.textMuted, fontSize: '10.5px' },
@@ -193,7 +193,7 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
     return (
       <AppFrame active="projects" crumbs={['Projects']}>
         <div {...stylex.props(page.page)}>
-          {projects.error ? <QueryError error={projects.error} what="Projects" /> : <Card pad><Empty slot="empty-no-issues" title={projects.isPending ? 'Reading the configured projects…' : 'No projects configured.'}>Add a repository in <a href={href('settings')} {...stylex.props(text.link)}>Settings</a>.</Empty></Card>}
+          {projects.error ? <QueryError error={projects.error} what="Projects" /> : <Card pad>{projects.isPending ? <Empty title="Reading the configured projects…" /> : <Empty slot="empty-no-issues" title="No projects configured.">Add a repository in <a href={href('settings')} {...stylex.props(text.link)}>Settings</a>.</Empty>}</Card>}
         </div>
       </AppFrame>
     );

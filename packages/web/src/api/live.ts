@@ -168,7 +168,7 @@ async function connect(): Promise<void> {
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
-  if (listeners.size === 1 && controller === null && retryTimer === null) void connect();
+  if (listeners.size === 1 && controller === null && retryTimer === null && document.visibilityState !== 'hidden') void connect();
   return () => {
     listeners.delete(listener);
     if (listeners.size === 0) {
@@ -177,6 +177,21 @@ function subscribe(listener: () => void): () => void {
       if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
     }
   };
+}
+
+// A hidden tab releases its stream (browsers allow six connections per host,
+// and every open tab would otherwise hold one) and resumes from its last event.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      controller?.abort();
+      controller = null;
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    } else if (listeners.size > 0 && controller === null && retryTimer === null) {
+      retries = 0;
+      void connect();
+    }
+  });
 }
 
 /** Reconnect now (the offline banner's button). */

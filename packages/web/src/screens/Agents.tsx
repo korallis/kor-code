@@ -14,7 +14,7 @@ import { AppFrame } from '../shell/AppFrame';
 import { color, font, gradient, space, tint } from '../theme/tokens.stylex';
 import { animate } from '../theme/animate';
 import { Button } from '../ui/button';
-import { Card, CardHeader } from '../ui/card';
+import { Card, CardBody, CardHeader } from '../ui/card';
 import { TextArea, Segmented } from '../ui/form';
 import { Empty, Notice } from '../ui/misc';
 import { JevOrb } from '../ui/orb';
@@ -36,7 +36,7 @@ import { page } from './shared';
 import { nextStep } from './runText';
 import { QueueDialog } from './QueueDialog';
 
-const NARROW = '@media (max-width: 1439px)';
+const NARROW = '@media (max-width: 1499px)';
 
 const styles = stylex.create({
   head: { display: 'flex', alignItems: 'center', gap: '18px', flexWrap: 'wrap' },
@@ -51,7 +51,7 @@ const styles = stylex.create({
   agentSel: { backgroundImage: `linear-gradient(135deg, ${color.violetDim}, ${color.cyanDim})` },
   agentTop: { display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 },
   agentTitle: { fontSize: '13.5px', fontWeight: 500 },
-  meta: { display: 'flex', gap: '10px', fontFamily: font.mono, fontSize: '10.5px', color: color.textMuted, alignItems: 'center', minWidth: 0 },
+  meta: { display: 'flex', gap: '10px', fontFamily: font.mono, fontSize: '10.5px', color: color.textMuted, alignItems: 'center', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden' },
   nx: { fontSize: '12px', color: color.textSecondary, display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 },
   nxLabel: { fontFamily: font.mono, fontSize: '9.5px', letterSpacing: '.1em', color: color.textFaint, fontWeight: 500, flex: 'none' },
   finished: { display: 'grid', gridTemplateColumns: 'auto 74px minmax(0, 1fr) auto', gap: '10px', alignItems: 'center', paddingBlock: '5px', fontSize: '13px' },
@@ -112,7 +112,6 @@ function AgentCard({ run, selected, now, index }: { run: MissionRun; selected: b
         <span {...stylex.props(text.ellipsis, layout.grow)}>{step.text}</span>
         {run.status === 'waiting' && <Button size="sm" variant="primary" onClick={() => navigate('linear', run.executionId)}>Review</Button>}
         {(run.status === 'blocked' || run.status === 'escalated') && <Button size="sm" variant="warn" onClick={() => navigate('home')}>Answer</Button>}
-        {run.status === 'queued' && <span title="Kor starts queued runs as slots free; there is no jump-the-queue control in the daemon."><Pill tone="slate" small>queued</Pill></span>}
         {(run.status === 'failed' || run.status === 'canceled') && <Button size="sm" icon={RotateCcw} busy={action.isPending} onClick={() => action.mutate({ action: 'retry', executionId: run.executionId })}>Retry</Button>}
       </div>
     </Card>
@@ -301,8 +300,9 @@ export function Agents({ executionId, terminal = false }: { executionId?: string
             {shown.map((run, index) => <AgentCard key={run.executionId} run={run} selected={run.executionId === selected?.executionId} now={now} index={index} />)}
             {shown.length === 0 && <Card pad><Empty slot="empty-no-runs" title={filter === 'finished' ? 'Nothing finished today.' : 'No runs.'}>Queue an issue to start one.</Empty></Card>}
             {filter === 'live' && finishedToday.length > 0 && (
-              <Card index={shown.length} pad>
+              <Card index={shown.length}>
                 <CardHeader icon={History} title="Finished today" count={finishedToday.length} aside={<button type="button" onClick={() => setFilter('finished')} {...stylex.props(text.violet, text.sm)}>History</button>} />
+                <CardBody>
                 {finishedToday.slice(0, 5).map(run => (
                   <a key={run.executionId} href={href('agents', run.executionId)} {...stylex.props(styles.finished)}>
                     <StatusPill status={run.status} small />
@@ -311,6 +311,7 @@ export function Agents({ executionId, terminal = false }: { executionId?: string
                     <span {...stylex.props(text.mono, text.xs, run.pullRequestUrl ? text.cyan : text.muted)}>{run.pullRequestUrl ? prNumber(run.pullRequestUrl) : run.status === 'failed' ? 'Retry' : ''}</span>
                   </a>
                 ))}
+                </CardBody>
               </Card>
             )}
           </div>

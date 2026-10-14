@@ -39,7 +39,7 @@ import { clock, useNow } from '../lib/time';
 import { nextStep } from './runText';
 import { OverrideDialog } from './OverrideDialog';
 
-const NARROW = '@media (max-width: 1439px)';
+const NARROW = '@media (max-width: 1499px)';
 
 const styles = stylex.create({
   grid: { display: 'grid', gridTemplateColumns: { default: '272px minmax(0, 1fr) 348px', [NARROW]: '236px minmax(0, 1fr) 312px' }, gap: { default: space.s4, [NARROW]: '12px' }, paddingBlock: '18px', paddingInline: { default: '20px', [NARROW]: '16px' }, height: '100%', minHeight: '760px' },

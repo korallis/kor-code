@@ -12,7 +12,7 @@ const styles = stylex.create({
     boxShadow: { default: null, ':focus-within': glow.focus }, color: color.textMuted, fontSize: '13px',
     transitionProperty: 'box-shadow, border-color', transitionDuration: motion.fast, minWidth: 0,
   },
-  input: { flex: '1', minWidth: 0, backgroundColor: 'transparent', borderWidth: 0, outline: 'none', color: color.text, fontSize: 'inherit', '::placeholder': { color: color.textMuted } },
+  input: { flex: '1', minWidth: 0, width: '100%', backgroundColor: 'transparent', borderWidth: 0, outline: 'none', color: color.text, fontSize: 'inherit', MozAppearance: 'textfield', '::placeholder': { color: color.textMuted }, '::-webkit-inner-spin-button': { WebkitAppearance: 'none', margin: 0 }, '::-webkit-outer-spin-button': { WebkitAppearance: 'none', margin: 0 } },
   mono: { fontFamily: font.mono, fontSize: '12px' },
   area: {
     width: '100%', resize: 'vertical', paddingBlock: '10px', paddingInline: '12px', borderRadius: radius.md, backgroundColor: color.surfaceSunken,
