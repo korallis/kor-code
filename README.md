@@ -4,7 +4,7 @@ Kor Code is the documentation project for a Linear-first engineering environment
 
 The design gives one control plane to read project intent from Linear, choose models and agents, run isolated Claude Code sessions, use an account-aware subscription gateway, and write evidence back to Linear.
 
-This repository contains the foundation monorepo and documentation. The foundation exposes typed integration boundaries and runnable Phase 0 probes; later phases remain unimplemented until their contracts are validated.
+This repository contains the foundation monorepo and documentation. The foundation exposes typed integration boundaries and runnable probes. Model compatibility is recorded by `pnpm kor models probe --family claude` and listed by `pnpm kor models list`.
 
 ## Read first
 
@@ -15,6 +15,7 @@ This repository contains the foundation monorepo and documentation. The foundati
 5. [Decision records](docs/adr/)
 6. [Implementation plan](docs/implementation-plan.md)
 7. [Open questions](docs/open-questions.md)
+8. [Model compatibility](docs/model-compatibility.md)
 
 ## Responsibility split
 
@@ -34,6 +35,7 @@ Linear is the source of truth for intent. GitHub is the source of truth for vers
 - **Validated** means a local or integration check supports the statement.
 - **Blocked** means an external account, provider, or product behaviour prevents validation.
 - **Illustrative** means a mock value or UI state, not live telemetry.
+- **Verified** means a model passed the recorded sandbox compatibility probe and is routable.
 
 ## Foundation
 
@@ -74,3 +76,38 @@ The session then reports permission denials and does not report success:
 e2e:live failed; branch=kor/e2e-1791974375194; hello=no; committed=no; model=claude-haiku-4-5-20251001; cost_usd=0.05174289999999999; duration_ms=8983; permission_denials=2
 e2e:live failure=2 permission denials
 ```
+
+## Check model compatibility
+
+Install the workspace before using the `kor` commands:
+
+```sh
+pnpm install
+```
+
+Run a probe with a gateway key supplied at runtime. The probe discovers models from the gateway's `/v1/models` response, starts one isolated sandbox session per selected model, and writes verified results to `~/.local/state/kor/models.json`.
+
+```sh
+export KOR_GATEWAY_KEY="<your runtime gateway key>"
+pnpm kor models probe --model claude-haiku-5-5
+```
+
+The table reports each capability independently. A model is routable only when streaming, tool calls, thinking, and structured output all pass.
+
+```text
+MODEL	STREAMING	TOOL_CALLS	THINKING	STRUCTURED_OUTPUT	COST_USD	DURATION_MS
+claude-haiku-5-5	pass	pass	pass	pass	0.004184965	5118
+```
+
+Use `--family claude` to probe every Claude model returned by the gateway. Use `--dry-run` to list the selected models without starting sessions. To inspect the verified models later, run:
+
+```sh
+pnpm kor models list
+```
+
+```text
+MODEL	FAMILY	CAPABILITIES	COST_USD	DURATION_MS
+claude-haiku-5-5	claude	streaming,tool_calls,thinking,structured_output	0.004184965	5118
+```
+
+Set `KOR_MODEL_REGISTRY` when you need a disposable registry for a proof or a CI job. The gateway key is never written to the registry or printed by these commands.
