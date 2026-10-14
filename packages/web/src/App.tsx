@@ -1,6 +1,6 @@
 import * as stylex from '@stylexjs/stylex';
 import { KeyRound } from 'lucide-react';
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { hasToken, setToken } from './api/client';
 import { reconnect, useLive } from './api/live';
 import { queryClient } from './api/query';
@@ -15,12 +15,14 @@ import { TextInput } from './ui/form';
 import { text } from './ui/text';
 import { MotionMedia } from './motion/MotionMedia';
 import { CommandCentre } from './screens/CommandCentre';
-import { ProjectWorkspace } from './screens/ProjectWorkspace';
-import { Agents } from './screens/Agents';
-import { JevDecision } from './screens/JevDecision';
-import { ModelsPool } from './screens/ModelsPool';
-import { JevBrain } from './screens/JevBrain';
-import { Settings } from './screens/Settings';
+
+// Home ships in the first chunk; every other screen loads when first opened.
+const ProjectWorkspace = lazy(() => import('./screens/ProjectWorkspace').then(module => ({ default: module.ProjectWorkspace })));
+const Agents = lazy(() => import('./screens/Agents').then(module => ({ default: module.Agents })));
+const JevDecision = lazy(() => import('./screens/JevDecision').then(module => ({ default: module.JevDecision })));
+const ModelsPool = lazy(() => import('./screens/ModelsPool').then(module => ({ default: module.ModelsPool })));
+const JevBrain = lazy(() => import('./screens/JevBrain').then(module => ({ default: module.JevBrain })));
+const Settings = lazy(() => import('./screens/Settings').then(module => ({ default: module.Settings })));
 
 const styles = stylex.create({
   gate: { position: 'relative', minHeight: '100vh', display: 'grid', placeItems: 'center', backgroundImage: gradient.canvas, backgroundColor: color.canvas, color: color.text, fontFamily: font.sans, isolation: 'isolate', padding: space.s6 },
@@ -77,5 +79,5 @@ function Screen() {
 export function App() {
   const connection = useLive(live => live.connection);
   if (!hasToken() || connection === 'unauthorized') return <Connect />;
-  return <><Screen /><AskOverlay /></>;
+  return <><Suspense fallback={null}><Screen /></Suspense><AskOverlay /></>;
 }
