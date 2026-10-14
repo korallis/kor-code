@@ -148,7 +148,7 @@ function NeedsYou({ run, now, linearUrl, decisions }: { run: MissionRun | undefi
         <a href={href('linear', run.executionId)} {...stylex.props(text.key)}>{keyOf(run)}</a>
         <span {...stylex.props(text.muted, text.mono, text.xs, text.ellipsis)}>{run.status}{run.errorCode ? ` · ${run.errorCode}` : ''}</span>
         <span {...stylex.props(layout.grow)} />
-        <span {...stylex.props(text.muted, text.mono, text.xs)}>{runUpdatedAt(run) ? `${ago(runUpdatedAt(run), now)} ago` : 'undated'}</span>
+        <span {...stylex.props(text.muted, text.mono, text.xs, text.nowrap)}>{runUpdatedAt(run) ? `${ago(runUpdatedAt(run), now)} ago` : 'undated'}</span>
       </div>
       <h3 {...stylex.props(styles.needsTitle)}>{run.issueTitle ?? run.issueId}</h3>
       <div {...stylex.props(layout.row, text.muted, text.sm, layout.mt1)}>
@@ -316,7 +316,7 @@ export function CommandCentre() {
           <Kpi index={5} icon={Coins} tone="amber" label="Spend today · costUsd" value={<CountUp value={spendToday} format={value => usd(value)} />} small={<><b {...stylex.props(text.secondary)}>{new Set(spentToday.map(entry => entry.run.executionId)).size}</b> runs</>}
             art={spentToday.length > 0 && <Spark width={84} values={cumulative(spentToday.map(entry => ({ at: Date.parse(entry.record.recordedAt), value: entry.costUsd })))} tone="amber" label="spend today" />} />
           <Kpi index={6} icon={Gauge} tone="violet" label={`${claude ? 'Claude' : 'Pool'} 5-hour pool`} value={five?.percentRemaining != null ? <CountUp value={five.percentRemaining} format={value => `${Math.round(value)}%`} /> : '—'}
-            small={five?.resetsAt ? <>resets <b {...stylex.props(text.secondary)}>{clock(five.resetsAt)}</b></> : <ProvenanceChip provenance={pool.quota?.provenance ?? 'unavailable'} reason={pool.quota?.reason}>{pool.quota ? pool.quota.provenance : 'unavailable'}</ProvenanceChip>}
+            small={five?.resetsAt ? <>resets <b {...stylex.props(text.secondary)}>{clock(five.resetsAt)}</b></> : <ProvenanceChip provenance="unavailable" reason={pool.quota?.reason ?? 'quota-axi reported no 5-hour window'}>{pool.quota ? 'no 5-hour window' : 'unavailable'}</ProvenanceChip>}
             art={five?.percentRemaining != null && <Ring pct={five.percentRemaining} size={38} stroke={5} label="5-hour window remaining" />} />
         </section>
 
