@@ -67,8 +67,8 @@ export class AgentSessionWriter {
     this.store.release(claim);
   }
 
-  recordVerificationBlock(claim: ExecutionClaim, execution: Execution, findings: readonly AcceptanceFinding[]): void {
-    const body = [`Execution ${execution.id} blocked: acceptance evidence is incomplete`, ...findings.map(finding => `${finding.conditionId}: ${finding.status}${finding.evidenceIds.length > 0 ? ` (${finding.evidenceIds.join(', ')})` : ''}`)].join('\n');
+  recordVerificationBlock(claim: ExecutionClaim, execution: Execution, findings: readonly AcceptanceFinding[], blockers: readonly string[] = []): void {
+    const body = [`Execution ${execution.id} blocked: acceptance evidence is incomplete`, ...(blockers.length > 0 ? ['Blockers:', ...blockers.map(blocker => `- ${blocker}`)] : []), ...findings.map(finding => `${finding.conditionId}: ${finding.status}${finding.evidenceIds.length > 0 ? ` (${finding.evidenceIds.join(', ')})` : ''}${finding.note ? ` — ${finding.note}` : ''}`)].join('\n');
     const writes: LinearWrite[] = [{ kind: 'comment', id: stableId('kor-progress', `${claim.assignment.executionId}:blocked`), issueId: claim.assignment.issueId, body }];
     if (this.client.capabilities?.agentSessions) writes.unshift(
       { kind: 'summary', sessionId: claim.assignment.sessionId, summary: body },
