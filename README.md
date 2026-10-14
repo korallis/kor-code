@@ -42,3 +42,35 @@ The TypeScript pnpm workspace contains `core`, `jev`, `gateway-adapter`, `linear
 The Phase 6 cockpit (`packages/claude-plugin`) is Validated on fixture data: `pnpm cockpit` opens it in the sandboxed Claude Code (`/kor`), and `pnpm cockpit:proof` replays the fixture execution and checks every view's labels. Execution sessions are Validated locally with parsed stream-json telemetry and policy checks; `pnpm e2e:live` runs the scratch-repository hello-file check when supplied a runtime `KOR_GATEWAY_KEY` or `KOR_GATEWAY_KEY_FILE` (without a key it reports the external validation as Blocked and makes no provider call). With `dontAsk`, removing `Write` from the repository allowlist is a failed attempt with a permission denial. See the [cockpit specification](docs/specs/cockpit-mockups.md).
 
 For the live scratch run, the script's repository allowlist contains `Read,Write,Edit` and the three `git` commands needed to commit the hello file. To prove a policy failure, remove `Write` from `KOR_E2E_ALLOWED_TOOLS` and set `KOR_E2E_EXPECT_FAILURE=1`; the command reports the provider's permission denial and failed attempt. A launcher with no repository allowlist defaults to `Read`, so mutation is opt-in. Credentials are runtime-only and are never written to the repository or printed.
+
+### Run a live execution
+
+Load the gateway settings into the current shell, then run the disposable hello-file session:
+
+```sh
+set -a
+source ~/.config/kor/gateway.env
+set +a
+KOR_E2E_DIR=/tmp/kor-t1-live-success pnpm e2e:live
+```
+
+The command creates a scratch repository, creates a `kor/e2e-*` branch, commits `hello.txt`, and prints the selected model and cost. A successful run produced:
+
+```text
+e2e:live passed; branch=kor/e2e-1791974354926; hello=yes; committed=yes; model=claude-haiku-4-5-20251001; cost_usd=0.04701935; duration_ms=5450; permission_denials=0
+```
+
+Remove `Write` from the allowlist to check the failure path:
+
+```sh
+KOR_E2E_DIR=/tmp/kor-t1-live-denial \
+KOR_E2E_ALLOWED_TOOLS='Read,Edit,Bash(git status *),Bash(git add *),Bash(git commit *)' \
+KOR_E2E_EXPECT_FAILURE=1 pnpm e2e:live
+```
+
+The session then reports permission denials and does not report success:
+
+```text
+e2e:live failed; branch=kor/e2e-1791974375194; hello=no; committed=no; model=claude-haiku-4-5-20251001; cost_usd=0.05174289999999999; duration_ms=8983; permission_denials=2
+e2e:live failure=2 permission denials
+```
