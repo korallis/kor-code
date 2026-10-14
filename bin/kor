@@ -1,4 +1,4 @@
-#!/usr/bin/env node
-import { main } from "../packages/cli/dist/cli.js";
-
-process.exitCode = await main();
+#!/usr/bin/env bash
+set -euo pipefail
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+exec pnpm --dir "$repo_root" run kor "$@"

@@ -39,7 +39,7 @@ const fakeFetch: typeof fetch = async (input, init) => {
 };
 
 const telemetry: RouteTelemetry[] = [];
-const gateway = new GatewayAdapter({ baseUrl: "http://fake", managementKey: "management-fixture", fetch: fakeFetch, telemetry: (event) => telemetry.push(event) });
+const gateway = new GatewayAdapter({ baseUrl: "http://fake", managementKey: "management-fixture", fetch: fakeFetch, modelCapabilities: { "claude/fixture": { streaming: true } }, telemetry: (event) => telemetry.push(event) });
 const result = await gateway.stream({ model: "claude/fixture", sessionId: "session-fixture", requestId: "request-fixture", prompt: "ready", idempotent: true });
 if (result.text !== "ready") throw new Error(`expected ready, got ${result.text}`);
 if (telemetry.length !== 2 || telemetry[0]?.failoverReason !== "quota" || telemetry[0].streamStarted || telemetry[1]?.streamStarted !== true) throw new Error(`unexpected telemetry: ${JSON.stringify(telemetry)}`);
@@ -62,7 +62,7 @@ async function proveNoReplay(body: string, contentType: string): Promise<number>
     if (url.endsWith("/v1/chat/completions")) { completionAttempts += 1; return new Response(body, { headers: { "content-type": contentType } }); }
     return new Response("missing", { status: 404 });
   };
-  const probe = new GatewayAdapter({ baseUrl: "http://fake", managementKey: "management-fixture", fetch: fetcher });
+  const probe = new GatewayAdapter({ baseUrl: "http://fake", managementKey: "management-fixture", fetch: fetcher, modelCapabilities: { "claude/fixture": { streaming: true } } });
   try { await probe.stream({ model: "claude/fixture", idempotent: true }); } catch { /* expected terminal failure */ }
   return completionAttempts;
 }

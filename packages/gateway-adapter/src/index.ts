@@ -4,6 +4,9 @@ import { promisify } from "node:util";
 import type { AccountHealthStatus, GatewayAccountHealth, GatewayCapability, GatewayFacts, GatewayModel, JsonValue, RouteFailureReason, RouteTelemetry } from "@kor-code/core";
 import { consumeStream } from "./stream.js";
 import { GatewayError, json, publicJson, readJson, record, runtimeConfig, text, type RuntimeConfig } from "./transport.js";
+import { readModelRegistry, registryCapabilities } from "./registry.js";
+
+export * from "./registry.js";
 
 const execFileAsync = promisify(execFile);
 const MANAGEMENT_PATHS = ["/v0/management/auth-files", "/v0/management/config", "/v0/management/usage", "/v0/management/api-key-usage"] as const;
@@ -120,7 +123,13 @@ export class GatewayAdapter {
     const { baseUrl, apiKey } = await this.config();
     return modelsFrom(await readJson(await this.fetcher(`${baseUrl}/v1/models`, { headers: headers(apiKey) })));
   }
-  async catalogue(requirements: CapabilityRequirements = {}): Promise<GatewayModel[]> { return eligibleModels(await this.listModels(), requirements, this.options.modelCapabilities); }
+  async catalogue(requirements: CapabilityRequirements = {}): Promise<GatewayModel[]> {
+    const registry = await readModelRegistry();
+    const configured = { ...registryCapabilities(registry), ...this.options.modelCapabilities };
+    return eligibleModels(await this.listModels(), requirements, configured).filter(model =>
+      Object.hasOwn(this.options.modelCapabilities ?? {}, model.id)
+      || registry.models.some(item => item.model === model.id && item.verified));
+  }
   async accountHealth(): Promise<GatewayAccountHealth[]> { return accountHealthFrom(await this.rawManagement()); }
   async route(request: RouteRequest = {}): Promise<RouteDecision> {
     const required = request.capabilities ?? ["streaming"];
