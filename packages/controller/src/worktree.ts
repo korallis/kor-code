@@ -6,7 +6,7 @@ import type { Repository } from "./repository.js";
 const execFile = promisify(execFileCallback);
 
 export interface Worktree { executionId: string; issueId: string; path: string; branch: string; repository: string }
-export interface WorktreeCreateInput { executionId: string; issueId: string; repository: Repository; branch: string }
+export interface WorktreeCreateInput { executionId: string; issueId: string; repository: Repository; branch: string; baseRevision?: string; detached?: boolean }
 export interface WorktreeManager { create(input: WorktreeCreateInput): Promise<Worktree>; remove?(worktree: Worktree): Promise<void>; exists?(worktree: Worktree): Promise<boolean> }
 
 export class GitWorktreeManager implements WorktreeManager {
@@ -15,6 +15,11 @@ export class GitWorktreeManager implements WorktreeManager {
     const path = join(resolve(this.root), input.executionId);
     await mkdir(resolve(this.root), { recursive: true, mode: 0o700 });
     const branch = input.branch || `kor/${basename(input.issueId)}`;
+    if (input.detached) {
+      await execFile("git", ["-C", input.repository.path, "worktree", "add", "--detach", path, input.baseRevision ?? input.repository.defaultBranch ?? "HEAD"]);
+      await writeFile(join(resolve(this.root), `${input.executionId}.kor-worktree.json`), `${JSON.stringify({ executionId: input.executionId, issueId: input.issueId, path, repository: input.repository.path })}\n`, { mode: 0o600 });
+      return { executionId: input.executionId, issueId: input.issueId, path, branch: "(detached)", repository: input.repository.path };
+    }
     try {
       await execFile("git", ["-C", path, "rev-parse", "--show-toplevel"]);
       const currentBranch = (await execFile("git", ["-C", path, "branch", "--show-current"])).stdout.trim();

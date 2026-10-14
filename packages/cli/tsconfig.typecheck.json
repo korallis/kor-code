@@ -4,7 +4,17 @@
     "composite": false,
     "rootDir": "..",
     "baseUrl": ".",
-    "paths": { "@kor-code/config": ["../config/src/index.ts"] }
+    "paths": {
+      "@kor-code/config": ["../config/src/index.ts"],
+      "@kor-code/core": ["../core/src/index.ts"],
+      "@kor-code/linear": ["../linear/src/index.ts"],
+      "@kor-code/daemon": ["../daemon/src/index.ts"],
+      "@kor-code/calibration": ["../calibration/src/index.ts"],
+      "@kor-code/controller": ["../controller/src/index.ts"],
+      "@kor-code/verification": ["../verification/src/index.ts"],
+      "@kor-code/gateway-adapter": ["../gateway-adapter/src/index.ts"],
+      "@kor-code/jev": ["../jev/src/index.ts"]
+    }
   },
   "references": []
 }

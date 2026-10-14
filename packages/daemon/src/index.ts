@@ -44,7 +44,7 @@ export interface DaemonOptions {
   /** Models the compatibility probe verified; a route override must name one. */
   verifiedModels?: () => Promise<string[]>;
   /**
-   * Plans an execution's route on its first attempt (Jev preflight). A thrown
+   * Plans an execution's route or replays its durable preflight on retry. A thrown
    * error leaves the configured default standing, labelled `fallback`; it never
    * fails the run.
    */
@@ -273,10 +273,10 @@ export class KorDaemon {
     const issue = this.issues.get(assignment.issueId);
     const decisions = this.overrides.decisions(assignment.executionId);
     const override = this.overrides.activeRoute(assignment.executionId);
-    const base = assignment.manifest?.route ?? this.options.config.defaultRoute;
+    const base: Route = assignment.manifest?.route ?? this.options.config.defaultRoute;
     if (override) return { ...(issue ? { issue } : {}), route: { ...base, model: override.choice }, routeSource: "override", decisions };
     const decided = [...decisions].reverse().find(decision => decision.kind === "route");
-    const routeSource: RouteSource = !decided ? "config" : !decided.escalated && decided.choice === base.model ? "jev" : "fallback";
+    const routeSource: RouteSource = base.label === "fallback" || base.label === "escalated" ? "fallback" : !decided ? "config" : !decided.escalated && decided.choice === base.model ? "jev" : "fallback";
     return { ...(issue ? { issue } : {}), route: base, routeSource, decisions };
   }
 
@@ -448,10 +448,10 @@ export class KorDaemon {
       // The configured mapping (linearProject, then linearTeam) names the checkout.
       const repository = repositoryKeyForIssue(issue, this.options.config);
       const route = await this.routeFor(id, issue);
-      this.store.markRunning(claim, { id, issueId: issue.id, repository, worktree: "", branch: `kor/${issue.id}`, status: "running", route });
+      this.store.markRunning(claim, { id, issueId: issue.id, repository, worktree: "", branch: `kor/${issue.id}`, status: "running", ...(route ? { route } : {}) });
       abort.signal.throwIfAborted();
       if (this.options.runner) result = await this.options.runner({ claim, issue, onSpawn, signal: abort.signal });
-      else if (this.options.controller) result = await this.options.controller.dispatch({ id, issueId: issue.id, repository, worktree: "", branch: `kor/${issue.id}`, status: "queued", issue, claim, onSpawn, signal: abort.signal, route });
+      else if (this.options.controller) result = await this.options.controller.dispatch({ id, issueId: issue.id, repository, worktree: "", branch: `kor/${issue.id}`, status: "queued", issue, claim, onSpawn, signal: abort.signal, ...(route ? { route } : {}) });
       else throw new Error("Daemon controller unavailable");
       abort.signal.throwIfAborted();
     } catch (error) { failure = error; }
@@ -475,15 +475,23 @@ export class KorDaemon {
   }
 
   /** An applied override wins; then Jev's preflight (planned once per execution); then the default route. */
-  private async routeFor(executionId: string, issue: LinearIssue): Promise<Route> {
+  private async routeFor(executionId: string, issue: LinearIssue): Promise<Route | undefined> {
     const defaultRoute = this.options.config.defaultRoute;
     const override = this.overrides.activeRoute(executionId);
     if (override) return { ...defaultRoute, model: override.choice };
+    if (this.options.chooseRoute) {
+      // The planner replays its durable audit on retry, preserving provider,
+      // provenance and decision id instead of reconstructing only a model.
+      try { return (await this.options.chooseRoute({ executionId, issue })).route; }
+      catch (error) {
+        await this.log(executionId, `route preflight unavailable; default route stands: ${safeMessage(error)}`);
+        return { ...defaultRoute, label: "fallback" };
+      }
+    }
+    if (this.options.controller) return undefined;
     const planned = [...this.overrides.decisions(executionId)].reverse().find(decision => decision.kind === "route");
-    if (planned) return !planned.escalated && planned.choice ? { ...defaultRoute, model: planned.choice } : defaultRoute;
-    if (!this.options.chooseRoute) return defaultRoute;
-    try { return (await this.options.chooseRoute({ executionId, issue })).route; }
-    catch (error) { await this.log(executionId, `route preflight unavailable; default route stands: ${safeMessage(error)}`); return defaultRoute; }
+    if (planned) return { ...defaultRoute, model: !planned.escalated && planned.choice ? planned.choice : defaultRoute.model, label: planned.escalated ? "fallback" : "jev", decisionId: planned.decisionId };
+    return defaultRoute;
   }
 
   private writeSnapshot(): Promise<void> {

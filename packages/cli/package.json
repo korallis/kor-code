@@ -18,6 +18,7 @@
   "dependencies": {
     "@kor-code/config": "workspace:*",
     "@kor-code/controller": "workspace:*",
+    "@kor-code/calibration": "workspace:*",
     "@kor-code/core": "workspace:*",
     "@kor-code/daemon": "workspace:*",
     "@kor-code/gateway-adapter": "workspace:*",
