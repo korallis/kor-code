@@ -70,11 +70,13 @@ export class CalibrationStore implements DecisionAuditLog {
     this.db.prepare("UPDATE calibration_runs SET payload=? WHERE execution_id=?").run(JSON.stringify({ ...run, status, finishedAt: new Date().toISOString() }), executionId);
   }
   /** Re-open an interrupted or failed primary when the daemon retries its execution id. */
-  resumeRun(executionId: string, startedAt = new Date().toISOString()): void {
+  resumeRun(executionId: string, startedAt = new Date().toISOString(), route?: CalibrationRun["route"]): void {
     const run = this.run(executionId);
     if (!run || run.status === "running") return;
+    const currentRoute = route ?? run.route;
+    const arm = run.arm === "baseline" ? "baseline" : currentRoute.label === "jev" ? "jev" : "fallback";
     this.transaction(() => {
-      this.db.prepare("UPDATE calibration_runs SET started_at=?, payload=? WHERE execution_id=?").run(startedAt, JSON.stringify({ ...run, status: "running", startedAt, finishedAt: undefined }), executionId);
+      this.db.prepare("UPDATE calibration_runs SET arm=?, started_at=?, payload=? WHERE execution_id=?").run(arm, startedAt, JSON.stringify({ ...run, route: currentRoute, arm, sampled: arm !== "fallback" && run.sampled, status: "running", startedAt, finishedAt: undefined }), executionId);
       // A retried execution is no longer terminal. Keep attempt history, but do
       // not score the new attempt against the previous abandoned/rejected state.
       this.db.prepare("DELETE FROM run_outcomes WHERE execution_id=?").run(executionId);

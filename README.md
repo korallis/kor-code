@@ -230,18 +230,25 @@ daemon proof passed; picked=LEE-57; status=live; restart=queued; attempts=1; orp
 
 ### Calibrate Jev routing against a baseline
 
-Calibration is **Validated locally** with a persistent SQLite store and paired replay proof; live provider runs are **Blocked** until runtime gateway and Linear credentials are supplied; the daemon runner is wired. The sample rate defaults to `0.25` and is stable per execution id. Configure it under `calibration.sampleRate` and set the fixed route with `calibration.baselineRoute` in `~/.config/kor/config.yaml`. Baseline work is evaluated in a throwaway worktree and never shipped. Start the daemon with `kor serve --jev` to enable verified gateway catalogue routing; use `--no-calibration` to disable recording, `--calibration-rate` to override sampling for one process, and `--baseline-model` to override the fixed comparison model.
+Calibration is **Validated locally** through the daemon with a persistent SQLite store, restart/retry, and paired replay. Live Jev preflight and acceptance calls are **Validated**. The proof uses fixture Linear data and session generation, so gateway model execution and live Linear intake are not exercised by this proof.
 
-Seed and inspect the local proof:
+After `pnpm install --frozen-lockfile` and `pnpm build`, configure `calibration.sampleRate` (default `0.25`) and `calibration.baselineRoute` in `~/.config/kor/config.yaml`. `kor serve` runs one Jev preflight over the verified model registry, and records the selected provider, model, label and decision ID for calibration. `kor serve --jev` additionally filters the candidates against the live gateway catalogue. Both modes use the same preflight and acceptance judge. Use `--no-calibration` to disable metrics and baseline runs, `--calibration-rate 1` to sample every Jev execution, or `--baseline-model MODEL` to override the comparison model for one process.
+
+Sampling is stable per execution ID. A sampled baseline uses the same base revision, prompt, checks, acceptance judge and repair budget in a throwaway worktree; it never ships. Retries reuse the preflight audit and keep attempt costs, while clearing the previous terminal outcome until a new outcome is observed. An escalated, unavailable or no-longer-eligible route is labelled `fallback` and does not create a new Jev sample.
 
 ```sh
-pnpm calibration:proof
-XDG_STATE_HOME=/tmp/kor-t12-calibration-proof/state pnpm kor calibrate report
+pnpm kor calibrate report
+pnpm kor calibrate report --since 2026-10-01T00:00:00.000Z --json
+pnpm calibration:proof              # offline daemon/retry proof
+pnpm calibration:proof --live-jev   # runtime TypeSafe key; real preflight and acceptance calls
+pnpm calibration:proof --fallback   # forced Jev outage; no external calls
 ```
 
-The command prints both arms, all requested operational metrics, and the confidence table. This representative run uses the real controller proof; wall-clock values vary:
+Each proof prints a `report_command` for its own isolated state directory. Run that command to inspect its stored report. The live Jev run on 2026-10-14 produced:
 
 ```text
+calibration:proof passed; mode=live-jev; daemon=true; preflight_calls=1; route=claude-sonnet-5-5; confidence=1.0000; arm=jev; pairs=1; retry=replayed; terminal_outcome=recorded
+
 Kor calibration report
 Completed Jev/baseline pairs: 1
 Since: all time
@@ -250,26 +257,33 @@ Metric	Jev-route (all)	baseline (sampled)	Paired delta (Jev - baseline)
 Runs (finished/total)	1/1	1/1	1 pairs
 Merged/terminal outcomes	1/1	0/0	n/a (baseline never ships)
 successRate	1.0000 (n=1)	1.0000 (n=1)	0.0000 (n=1)
-repairs	0.0000 (n=1)	0.0000 (n=1)	0.0000 (n=1)
-costUsd	0.0400 (n=1)	0.0400 (n=1)	0.0000 (n=1)
-cacheHitRate	0.3125 (n=1)	0.3125 (n=1)	0.0000 (n=1)
-wallClockMs	10.0000 (n=1)	9.0000 (n=1)	1.0000 (n=1)
+repairs	1.0000 (n=1)	0.0000 (n=1)	1.0000 (n=1)
+costUsd	unavailable (n=0)	0.0400 (n=1)	unavailable (n=0)
+cacheHitRate	unavailable (n=0)	0.3125 (n=1)	unavailable (n=0)
+wallClockMs	305.0000 (n=1)	248.0000 (n=1)	57.0000 (n=1)
 failovers	unavailable (n=0)	unavailable (n=0)	unavailable (n=0)
 verificationFailures	0.0000 (n=1)	0.0000 (n=1)	0.0000 (n=1)
-policyBlocks	0.0000 (n=1)	0.0000 (n=1)	0.0000 (n=1)
+policyBlocks	unavailable (n=0)	0.0000 (n=1)	unavailable (n=0)
 clarifications	unavailable (n=0)	unavailable (n=0)	unavailable (n=0)
 
 Confidence calibration against terminal merge success (outcome proxy, not decision-correctness probability)
 Kind	Bin	N	Mean signal	Observed success	Brier (proxy)
 route	0.8–1.0	1	1.0000	1.0000	0.0000
-readiness	all	0	unavailable	unavailable	unavailable
-acceptance	0.8–1.0	1	1.0000	1.0000	0.0000
+readiness	0.8–1.0	1	0.9700	1.0000	0.0009
+acceptance	0.8–1.0	1	0.8200	1.0000	0.0324
+Route uses Choice confidence; readiness/acceptance use Noul probability. Missing outcomes excluded; final acceptance attempt only.
+Fewer than 20 completed pairs; insufficient evidence to conclude routing wins.
 ```
 
-For the live scratch run, the script's repository allowlist contains `Read,Write,Edit` and the three `git` commands needed to commit the hello file. To prove a policy failure, remove `Write` from `KOR_E2E_ALLOWED_TOOLS` and set `KOR_E2E_EXPECT_FAILURE=1`; the command reports the provider's permission denial and failed attempt. A launcher with no repository allowlist defaults to `Read`, so mutation is opt-in. Credentials are runtime-only and are never written to the repository or printed.
+The forced-outage run produced:
 
+```text
+calibration:proof passed; mode=forced-fallback; daemon=true; preflight_calls=1; route=claude-sonnet-5-5; confidence=0.0000; arm=fallback; pairs=0; retry=not-needed; terminal_outcome=recorded
+```
 
-The daemon records rejected, escalated, and abandoned terminal observations. Merge observation is the T6 integration point; the local proof calls that hook directly, so live reports show merged outcomes only when the merge observer supplies them.
+The outage still launches the configured default route, but unavailable acceptance judgment leaves the execution blocked and records a rejected outcome. It creates no baseline and appears in the report's fallback column. The live proof deliberately crashes its first session, so missing cost/cache counters for that attempt remain `unavailable`; baseline cost and token counts are fixture telemetry. Jev confidence and acceptance probabilities above came from live calls, and wall-clock values vary.
+
+Rejected, escalated, and abandoned outcomes are recorded by the controller. Merge observation remains the T6 integration point; the proof invokes that hook locally and does not merge a real PR. Credentials are read at runtime and never printed or committed.
 
 ## Run the Kor daemon
 

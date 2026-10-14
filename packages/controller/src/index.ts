@@ -138,7 +138,7 @@ class ExecutionController implements Controller {
       if (this.options.calibration && calibrationRoute) {
         const arm = route?.label === "jev" ? "jev" : "fallback";
         const existing = this.options.calibration.store.run(input.id);
-        if (existing) this.options.calibration.store.resumeRun(input.id, calibrationStartedAt);
+        if (existing) this.options.calibration.store.resumeRun(input.id, calibrationStartedAt, calibrationRoute);
         else this.options.calibration.store.beginRun({ executionId: input.id, pairId: input.id, issueId: input.issueId, arm, baseRevision, route: calibrationRoute, sampled: arm === "jev" && sampledPair(input.id, this.options.calibration.sampleRate ?? 0.25), startedAt: calibrationStartedAt, status: "running" });
       }
       const initialPrompt = input.prompt ?? promptFor(issue, this.options.promptPrefix);

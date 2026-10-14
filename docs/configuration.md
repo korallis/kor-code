@@ -35,6 +35,12 @@ verified models and records its decisions; an escalation or a Jev outage leaves
 the configured default route, labelled `fallback`, and never fails the run.
 Execution sessions receive `KOR_STATUS_URL` and `KOR_STATE_DIR`, so the cockpit
 inside them reads this daemon.
+The route handoff retains Jev's provider, model, label and `decisionId`; controller
+metrics and terminal observations refer to that preflight audit. Retry replays the
+same decision without another preflight, and rechecks that its model is eligible.
+`--jev` filters candidates against the live gateway catalogue at startup; plain
+`serve` reads the verified registry. Both modes use Jev for acceptance judgments,
+which stay blocked during an outage even though execution uses the default route.
 
 The cockpit posts overrides to `POST /overrides` (`{ executionId, target, choice }`,
 `target` being `route` or a decision ID) and reverts them with
@@ -101,7 +107,7 @@ The doctor prints one generated key-list item, such as `CLIProxyAPI addition: - 
 
 ## Calibration
 
-Calibration rows share `kor.db` with the daemon. Each Jev or baseline arm records one `run_metrics` row per attempt, including cost, token and cache counters, wall-clock time, failovers, verification failures, policy blocks, and clarifications. Terminal outcomes are recorded separately; the product observes rejected, escalated, and abandoned outcomes, while merge observation remains a T6 integration point.
+Calibration rows share `kor.db` with the daemon. Each Jev or baseline arm records one `run_metrics` row per attempt, including cost, token and cache counters, wall-clock time, failovers, verification failures, policy blocks, and clarifications. Terminal outcomes are recorded separately; the product observes rejected, escalated, and abandoned outcomes, while merge observation remains a T6 integration point. Outcome recording updates the persisted preflight audit even when the controller did not select the route itself. A retry clears its stale terminal outcome and decision observations while retaining all attempts. Its run records the route actually used on retry; a lost model or operator override cannot remain in the Jev sample.
 
 Run the report with:
 
@@ -111,3 +117,15 @@ kor calibrate report --since 2026-10-01T00:00:00.000Z --json
 ```
 
 The text report shows Jev and baseline arms side by side and a confidence reliability table with sample sizes and Brier scores. Fewer than 20 completed pairs are labelled directional. Clarifications remain unavailable until the clarification path supplies them; failovers use the provider API error signal when present.
+
+
+`kor serve --calibration-rate RATE` overrides sampling for that process (0–1).
+`--baseline-model MODEL` overrides the fixed comparison model; `--no-calibration`
+disables metrics and paired replays while retaining preflight and acceptance audit.
+Only Jev-labelled primary executions are sampled. A fallback is shown separately
+and never represented as a successful Jev route.
+
+`pnpm calibration:proof` exercises the actual daemon handoff with fixture responses.
+`pnpm calibration:proof --live-jev` uses the runtime TypeSafe key for preflight and
+acceptance; `--fallback` forces an outage without external calls. Each run prints
+its own report command. Both retain fixture Linear data and session generation.
