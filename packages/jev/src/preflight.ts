@@ -87,14 +87,13 @@ export async function planPreflight(inputData: PreflightInput, core: JevDecision
   try {
     const result = await core.preflight(requests);
     const routeDecision = result.decisions.find(decision => decision.kind === "route")!;
-    const selectedVerifiedModel = routeDecision.applied && inputData.verifiedModels.some(model => model.model === routeDecision.choice);
-    const routeModel = selectedVerifiedModel ? routeDecision.choice : inputData.defaultRoute.model;
-    const route = { ...inputData.defaultRoute, model: routeModel, label: selectedVerifiedModel ? "jev" as const : "escalated" as const };
+    const selected = routeDecision.applied ? inputData.verifiedModels.find(model => model.model === routeDecision.choice && model.available !== false) : undefined;
+    const route: Route = { ...inputData.defaultRoute, ...(selected ? { model: selected.model, provider: selected.provider } : {}), label: selected ? "jev" : "fallback", decisionId: routeDecision.decisionId };
     return { executionId: inputData.executionId, route, decisions: result.decisions, response: result.response, fallback: false };
   } catch (error) {
     if (!(error instanceof JevUnavailableError)) throw error;
     const reason = error.message;
-    const route = { ...inputData.defaultRoute, label: "fallback" as const };
+    const route: Route = { ...inputData.defaultRoute, label: "fallback", decisionId: `route-${inputData.executionId}` };
     return { executionId: inputData.executionId, route, decisions: appendFallback(audit, requests, route, `Jev unavailable. Default route is labelled fallback. ${reason}`), fallback: true, outage: reason };
   }
 }

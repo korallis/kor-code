@@ -46,6 +46,8 @@ Completion criterion: a fixture execution is visible and every non-live value is
 
 Status: Validated on fixture data. `pnpm cockpit:proof` runs the fixture execution through all seven stages and every view in the sandboxed Claude Code and checks each row's provenance label; live data arrives as Phases 1-5 land.
 
-## Phase 7: calibration
+## Phase 7: calibration — Validated locally
 
-Compare real tasks with a fixed-route baseline. Track completion quality, repair attempts, token use, cache hit rate, wall-clock time, failovers, verification failures, policy blocks, and clarification rate.
+Compare real tasks with a fixed-route baseline. `@kor-code/calibration` adds additive `calibration_runs`, `run_metrics`, `run_outcomes`, and decision-audit tables to the daemon's SQLite database. Sampling is a stable execution-id hash, so daemon restarts cannot silently spend a second baseline run. The baseline callback receives the same pair id and base revision and records only a throwaway arm. `kor calibrate report` prints Jev and baseline side by side (success rate, repairs, cost, cache hit rate, wall clock, failovers, verification failures, policy blocks, and clarifications) with sample sizes and confidence bins/Brier scores.
+
+`pnpm calibration:proof` drives the actual daemon, the same preflight factory as `kor serve`, and the controller. It demonstrates a paired sample, crash/restart/retry with one durable route decision, cleared stale outcomes, and the report. `--live-jev` is **Validated** with real TypeSafe preflight and acceptance calls; `--fallback` is **Validated locally** with a forced outage, a blocked execution and zero pairs. The proof uses fixture Linear data, session generation and telemetry; gateway execution and live Linear intake are not exercised by this proof. T7 daemon wiring is complete.

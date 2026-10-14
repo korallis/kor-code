@@ -4,13 +4,15 @@ import { basename, join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { formatDoctor, runDoctor } from "./doctor.js";
 import { runPlan } from "./plan.js";
-import { ensureRuntimeDirectories, loadKorConfig, repositoryKeyForIssue, runtimePaths } from "@kor-code/config";
+import { createServeRouting } from "./serve-routing.js";
+import { ensureRuntimeDirectories, loadGatewayEnvironment, loadKorConfig, repositoryKeyForIssue, runtimePaths } from "@kor-code/config";
 import { HttpLinearClient, LinearStore } from "@kor-code/linear";
-import { KorDaemon, readExecutionStatus, readStatus, type RouteChoice } from "@kor-code/daemon";
+import { KorDaemon, readExecutionStatus, readStatus } from "@kor-code/daemon";
 import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController } from "@kor-code/controller";
 import { GatewayAdapter, readModelRegistry } from "@kor-code/gateway-adapter";
-import { JevClient, JevDecisionCore, PersistentDecisionAuditLog, planPreflight } from "@kor-code/jev";
-import type { KorCliError } from "@kor-code/core";
+import { PersistentDecisionAuditLog } from "@kor-code/jev";
+import { CalibrationStore, buildReport, formatReport } from "@kor-code/calibration";
+import type { CatalogueModel, KorCliError } from "@kor-code/core";
 
 class CliFailure extends Error {
   constructor(readonly code: string, message: string, readonly hint: string, readonly exitCode = 1) { super(message); }
@@ -127,6 +129,18 @@ async function logs(args: readonly string[]): Promise<number> {
   return 0;
 }
 
+async function calibrationReport(args: readonly string[]): Promise<number> {
+  if (args[0] !== "report") throw new Error("Usage: kor calibrate report [--since ISO-8601] [--json]");
+  const since = valueAfter(args, "--since");
+  if (since !== undefined && !Number.isFinite(Date.parse(since))) throw new Error("--since must be an ISO-8601 timestamp");
+  const store = new CalibrationStore(runtimePaths().databaseFile);
+  try {
+    const report = buildReport(store, since);
+    print(jsonFlag(args) ? report : formatReport(report), false);
+    return 0;
+  } finally { store.close(); }
+}
+
 async function serve(args: readonly string[]): Promise<number> {
   const paths = runtimePaths();
   const loaded = await loadKorConfig(paths.configFile, { home: paths.home });
@@ -135,33 +149,49 @@ async function serve(args: readonly string[]): Promise<number> {
   const port = portValue ? Number(portValue) : 8327;
   if (!Number.isSafeInteger(port) || port < 0 || port > 65_535 || port === 8317) throw new CliFailure("invalid_port", "--port must be a valid non-8317 TCP port", "choose an available TCP port between 0 and 65535");
   const statusUrl = `http://127.0.0.1:${port}/status`;
+  const jevEnabled = args.includes("--jev");
+  const calibrationEnabled = !args.includes("--no-calibration");
+  const sampleRateValue = valueAfter(args, "--calibration-rate");
+  const sampleRate = sampleRateValue === undefined ? loaded.config.calibration.sampleRate : Number(sampleRateValue);
+  if (!Number.isFinite(sampleRate) || sampleRate < 0 || sampleRate > 1) throw new Error("--calibration-rate must be between 0 and 1");
+  const baselineModel = valueAfter(args, "--baseline-model");
+  const calibrationConfig = { ...loaded.config.calibration, sampleRate, baselineRoute: { ...loaded.config.calibration.baselineRoute, ...(baselineModel ? { model: baselineModel } : {}) } };
   const repositories = new RepositoryRegistry(Object.entries(loaded.config.repos).map(([key, repository]) => ({ key, path: repository.path, defaultBranch: repository.defaultBranch, allowedTools: repository.toolAllowlist, checks: repository.checks })));
+  const calibration = calibrationEnabled ? new CalibrationStore(paths.databaseFile) : undefined;
+  let catalogue: CatalogueModel[] | undefined;
+  if (jevEnabled) {
+    const gatewayConfig = await loadGatewayEnvironment(paths.gatewayEnvFile);
+    const gatewayAdapter = new GatewayAdapter({ baseUrl: gatewayConfig.baseUrl, ...(gatewayConfig.key ? { apiKey: gatewayConfig.key } : {}) });
+    const models = await gatewayAdapter.catalogue({ capabilities: ["streaming", "tool_calls"] });
+    if (models.length === 0) throw new Error("--jev requires at least one verified gateway model");
+    catalogue = models.map(model => ({ provider: model.provider ?? "unknown", model: model.id, capabilities: Object.entries(model.capabilities).map(([name, supported]) => ({ name, supported })) }));
+  }
+  const store = new LinearStore(paths.databaseFile);
+  const audit = calibration ?? new PersistentDecisionAuditLog({ read: id => store.readDecisionAudit(id), write: (id, at, payload) => store.writeDecisionAudit(id, at, payload), update: (id, at, payload) => store.updateDecisionAudit(id, at, payload) });
+  const routing = createServeRouting({ audit, defaultRoute: loaded.config.defaultRoute, models: async () => {
+    if (catalogue) return catalogue;
+    const registry = await readModelRegistry(paths.modelsFile);
+    return registry.models.filter(result => result.verified).map(result => ({ provider: result.model.startsWith("claude-") ? "anthropic" : result.model.split("/")[0] ?? "unknown", model: result.model, capabilities: Object.entries(result.capabilities).map(([name, supported]) => ({ name, supported: supported === true })), ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) }));
+  } });
   const controller = createController({
     repositories,
     worktrees: new GitWorktreeManager(paths.worktreesDir),
     launcher: new SessionLauncher({ repoRoot: process.cwd(), cockpit: { statusUrl, stateDir: paths.stateDir } }),
     limits: new ConcurrencyLimiter({ total: loaded.config.limits.total, perRepository: loaded.config.limits.perRepository, ...(loaded.config.limits.perProvider ? { perProvider: loaded.config.limits.perProvider } : {}) }),
     defaultRoute: loaded.config.defaultRoute,
+    jev: routing.jev,
+    ...(calibration ? { calibration: { store: calibration, sampleRate: calibrationConfig.sampleRate, baselineRoute: calibrationConfig.baselineRoute } } : {}),
   });
   const gateway = new GatewayAdapter();
   const verifiedModels = async () => (await readModelRegistry(paths.modelsFile)).models.filter(model => model.verified).map(model => model.model);
-  let daemon: KorDaemon | undefined;
-  const chooseRoute = async ({ executionId, issue }: Parameters<NonNullable<ConstructorParameters<typeof KorDaemon>[0]["chooseRoute"]>>[0]): Promise<RouteChoice> => {
-    const store = daemon!.store;
-    const audit = new PersistentDecisionAuditLog({ read: id => store.readDecisionAudit(id), write: (id, at, payload) => store.writeDecisionAudit(id, at, payload), update: (id, at, payload) => store.updateDecisionAudit(id, at, payload) });
-    const registry = await readModelRegistry(paths.modelsFile);
-    const verified = registry.models.filter(result => result.verified).map(result => ({ provider: result.model.startsWith("claude-") ? "anthropic" : result.model.split("/")[0] ?? "unknown", model: result.model, capabilities: Object.entries(result.capabilities).map(([name, supported]) => ({ name, supported: supported === true })), ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) }));
-    const plan = await planPreflight({ executionId, issue: { id: issue.id, title: issue.title, ...(issue.description !== undefined ? { description: issue.description } : {}), acceptanceCriteria: issue.acceptanceCriteria, dependencies: issue.dependencies.map(dependency => ({ id: dependency.id, state: dependency.stateType })) }, verifiedModels: verified, defaultRoute: loaded.config.defaultRoute }, new JevDecisionCore(new JevClient(), audit), audit);
-    const { label: _, ...route } = plan.route as typeof plan.route & { label?: string };
-    return { route, source: plan.fallback || (plan.route as { label?: string }).label !== "jev" ? "fallback" : "jev" };
-  };
-  daemon = new KorDaemon({ paths, config: loaded.config, linear: new HttpLinearClient({ writes: {} }), controller, port, gateway, verifiedModels, chooseRoute });
+  const daemon = new KorDaemon({ paths, config: loaded.config, store, linear: new HttpLinearClient({ writes: {} }), controller, port, gateway, verifiedModels, chooseRoute: routing.chooseRoute });
   const handle = await daemon.start();
   process.stdout.write(`kor daemon listening on ${statusUrl}\n`);
   await new Promise<void>(resolve => {
     const stop = () => { void handle.stop().then(resolve); };
     process.once("SIGINT", stop); process.once("SIGTERM", stop);
   });
+  calibration?.close();
   return 0;
 }
 
@@ -189,6 +219,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     if (command === "run") return await runIssue(cleanArgs.slice(1));
     if (command === "cancel" || command === "retry") return await updateQueue(command, cleanArgs.slice(1));
     if (command === "logs") return await logs(cleanArgs.slice(1));
+    if (command === "calibrate") return await calibrationReport(cleanArgs.slice(1));
     if (command === "serve") return await serve(cleanArgs.slice(1));
     if (!["help", "--help", "-h"].includes(command)) throw new CliFailure("unknown_command", `unknown command \"${command}\"`, "run `kor --help` to list available commands", 2);
   } catch (error) {
@@ -198,7 +229,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     if (debug && error instanceof Error && error.stack) process.stderr.write(`${error.stack}\n`);
     return error instanceof CliFailure ? error.exitCode : 1;
   }
-  process.stdout.write("Usage: kor serve | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor plan ISSUE-ID | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor | kor models list | kor models probe [--family family] [--model model]\n");
+  process.stdout.write("Usage: kor serve [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor plan ISSUE-ID | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor | kor models list | kor models probe [--family family] [--model model]\n");
   return 0;
 }
 

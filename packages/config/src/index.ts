@@ -22,6 +22,10 @@ export const routeSchema = z.strictObject({
   sessionAffinity: z.boolean().default(true),
   reasoningLevel: z.enum(["low", "medium", "high"]).default("medium"),
 });
+export const calibrationSchema = z.strictObject({
+  sampleRate: z.number().min(0).max(1).default(0.25),
+  baselineRoute: routeSchema.prefault({}),
+});
 export const korConfigSchema = z.strictObject({
   repos: z.record(nonempty, repositorySchema).default({}),
   limits: z.strictObject({
@@ -32,6 +36,7 @@ export const korConfigSchema = z.strictObject({
   defaultRoute: routeSchema.prefault({}),
   pollIntervalSeconds: positiveInteger.default(60),
   intakeLabel: nonempty.default("kor"),
+  calibration: calibrationSchema.prefault({}),
 });
 export type KorRepositoryConfig = z.infer<typeof repositorySchema>;
 export type KorLimits = KorConfig["limits"];

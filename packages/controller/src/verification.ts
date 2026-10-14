@@ -101,7 +101,7 @@ export async function verifyAttempt(input: {
   let judgmentError: string | undefined;
   try {
     if (!input.jev) throw new Error("TypeSafe acceptance judge is not configured");
-    judgments = await input.jev.judgeAcceptance({ executionId: execution.id, state: { diff, checks: checks.map(check => ({ ...check })), session: { exitCode: session.exitCode, failed: blockers.length > 0 }, evidenceErrors: blockers }, criteria: acceptance, threshold: settings.acceptanceThreshold });
+    judgments = await input.jev.judgeAcceptance({ executionId: execution.id, attempt: input.attempt, state: { diff, checks: checks.map(check => ({ ...check })), session: { exitCode: session.exitCode, failed: blockers.length > 0 }, evidenceErrors: blockers }, criteria: acceptance, threshold: settings.acceptanceThreshold });
   } catch (error) {
     if (input.enforceSemantic) { judgmentError = `Jev acceptance unavailable: ${failureText(error)}`; blockers.push(judgmentError); }
   }
