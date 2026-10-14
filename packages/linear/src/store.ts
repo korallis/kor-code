@@ -2,18 +2,22 @@ import { DatabaseSync } from 'node:sqlite';
 import { chmodSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { Execution, SessionProcessIdentity } from '@kor-code/core';
+import type { Execution, SessionProcessIdentity, SessionSpend } from '@kor-code/core';
 import { object, string, type AgentSessionRecord, type LinearWrite } from './contract.js';
 
 export interface Assignment {
   executionId: string;
   issueId: string;
   sessionId: string;
-  status: 'queued' | 'running' | 'shipping' | 'review' | 'complete' | 'failed' | 'canceled' | 'blocked';
+  status: 'queued' | 'running' | 'waiting' | 'shipping' | 'review' | 'complete' | 'failed' | 'canceled' | 'blocked';
 }
 export interface ExecutionClaim { assignment: Assignment; token: string; owner: string; expiresAt: number }
 export interface PendingWrite { sequence: number; write: LinearWrite }
 export interface AssignmentRecord extends Assignment {
+  createdAt?: number;
+  updatedAt?: number;
+  startedAt?: number;
+  completedAt?: number;
   manifest?: Execution;
   owner?: string;
   expiresAt?: number;
@@ -31,10 +35,17 @@ function number(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('Invalid durable numeric value');
   return value;
 }
+function spendFrom(value: unknown): Omit<SessionSpend, 'attemptId'> & { attemptId?: string } {
+  const row = object(value);
+  const measurement = (input: unknown) => input === null ? null : number(input);
+  return { attempt: number(row.attempt), ...(typeof row.attemptId === 'string' ? { attemptId: row.attemptId } : {}), recordedAt: string(row.recordedAt), model: string(row.model),
+    costUsd: measurement(row.costUsd), inputTokens: measurement(row.inputTokens), outputTokens: measurement(row.outputTokens),
+    cacheReadTokens: measurement(row.cacheReadTokens), cacheCreationTokens: measurement(row.cacheCreationTokens) };
+}
 function parseAssignment(value: unknown): Assignment {
   const row = object(value);
   const status = string(row.status);
-  if (status !== 'queued' && status !== 'running' && status !== 'shipping' && status !== 'review' && status !== 'complete' && status !== 'failed' && status !== 'canceled' && status !== 'blocked') throw new Error('Invalid assignment status');
+  if (status !== 'queued' && status !== 'running' && status !== 'waiting' && status !== 'shipping' && status !== 'review' && status !== 'complete' && status !== 'failed' && status !== 'canceled' && status !== 'blocked') throw new Error('Invalid assignment status');
   return { issueId: string(row.issue_id), executionId: string(row.execution_id), sessionId: string(row.session_id), status };
 }
 function parseWrite(value: unknown): LinearWrite {
@@ -68,6 +79,7 @@ export class LinearStore {
   constructor(file: string, private readonly now: () => number = Date.now) {
     if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(file);
+    this.db.function('kor_now_ms', () => this.now());
     if (file !== ':memory:') chmodSync(file, 0o600);
     this.db.exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
       CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, digest TEXT NOT NULL, issue_id TEXT, received_at INTEGER NOT NULL);
@@ -78,13 +90,14 @@ export class LinearStore {
         session_pid INTEGER, session_pgid INTEGER, session_boot_id TEXT, session_start_ticks TEXT, heartbeat_at INTEGER, cancel_requested INTEGER NOT NULL DEFAULT 0, last_error TEXT, issue_key TEXT, issue_title TEXT
       );
       CREATE TABLE IF NOT EXISTS outbox (sequence INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS run_messages (id TEXT PRIMARY KEY, execution_id TEXT NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL, recorded_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS writer (id INTEGER PRIMARY KEY CHECK(id=1), token TEXT, expires_at INTEGER);
       CREATE TABLE IF NOT EXISTS decision_audit (decision_id TEXT PRIMARY KEY, recorded_at TEXT NOT NULL, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS verification_attempts (attempt_id TEXT PRIMARY KEY, execution_id TEXT NOT NULL, attempt_number INTEGER NOT NULL, started_at INTEGER NOT NULL);
       INSERT OR IGNORE INTO writer(id) VALUES (1);`);
     this.transaction(() => {
       const version = number(this.db.prepare('PRAGMA user_version').get()?.user_version);
-      if (version > 5) throw new Error('Kor database schema is newer than this binary');
+      if (version > 7) throw new Error('Kor database schema is newer than this binary');
       if (version >= 2) return;
       const columns = new Set(this.db.prepare('PRAGMA table_info(assignments)').all().map(row => string(row.name)));
       for (const [name, definition] of [
@@ -136,6 +149,44 @@ export class LinearStore {
       ALTER TABLE assignments_v5 RENAME TO assignments;
       PRAGMA user_version=5;`);
     });
+    this.transaction(() => {
+      if (number(this.db.prepare('PRAGMA user_version').get()?.user_version) >= 6) return;
+      this.db.exec(`CREATE TABLE assignments_v6 (
+        issue_id TEXT PRIMARY KEY, execution_id TEXT NOT NULL UNIQUE, session_id TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL CHECK(status IN ('queued','running','waiting','shipping','review','complete','failed','canceled','blocked')), manifest TEXT,
+        token TEXT, owner TEXT, expires_at INTEGER, available_at INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+        session_pid INTEGER, session_pgid INTEGER, session_boot_id TEXT, session_start_ticks TEXT, heartbeat_at INTEGER,
+        cancel_requested INTEGER NOT NULL DEFAULT 0, last_error TEXT, issue_key TEXT, issue_title TEXT
+      );
+      INSERT INTO assignments_v6 SELECT * FROM assignments;
+      DROP TABLE assignments;
+      ALTER TABLE assignments_v6 RENAME TO assignments;
+      PRAGMA user_version=6;`);
+    });
+    this.transaction(() => {
+      if (number(this.db.prepare('PRAGMA user_version').get()?.user_version) >= 7) return;
+      // Retry availability and heartbeat freshness cannot establish historical times.
+      this.db.exec(`ALTER TABLE assignments ADD COLUMN created_at INTEGER;
+        ALTER TABLE assignments ADD COLUMN updated_at INTEGER;
+        ALTER TABLE assignments ADD COLUMN started_at INTEGER;
+        ALTER TABLE assignments ADD COLUMN completed_at INTEGER;
+        PRAGMA user_version=7;`);
+    });
+    this.db.exec(`CREATE TABLE IF NOT EXISTS session_spend (
+      attempt_id TEXT PRIMARY KEY, execution_id TEXT NOT NULL, recorded_at TEXT NOT NULL, payload TEXT NOT NULL
+    );
+    CREATE TRIGGER IF NOT EXISTS assignment_created AFTER INSERT ON assignments BEGIN
+      UPDATE assignments SET created_at=kor_now_ms(),updated_at=kor_now_ms() WHERE execution_id=NEW.execution_id;
+    END;
+    CREATE TRIGGER IF NOT EXISTS assignment_changed AFTER UPDATE OF status,manifest,last_error,cancel_requested,issue_key,issue_title ON assignments
+    WHEN NEW.status IS NOT OLD.status OR NEW.manifest IS NOT OLD.manifest OR NEW.last_error IS NOT OLD.last_error
+      OR NEW.cancel_requested IS NOT OLD.cancel_requested OR NEW.issue_key IS NOT OLD.issue_key OR NEW.issue_title IS NOT OLD.issue_title
+    BEGIN
+      UPDATE assignments SET updated_at=kor_now_ms(),
+        started_at=CASE WHEN NEW.status='queued' THEN NULL WHEN NEW.status='running' AND OLD.status!='running' THEN kor_now_ms() ELSE started_at END,
+        completed_at=CASE WHEN NEW.status IN ('complete','failed','canceled') THEN CASE WHEN NEW.status!=OLD.status THEN kor_now_ms() ELSE completed_at END ELSE NULL END
+      WHERE execution_id=NEW.execution_id;
+    END;`);
   }
 
   private transaction<T>(action: () => T): T {
@@ -151,6 +202,24 @@ export class LinearStore {
     const id = randomUUID();
     this.db.prepare('INSERT INTO verification_attempts VALUES(?,?,?,?)').run(id, executionId, attempt, this.now());
     return id;
+  }
+  /** Persist costs as soon as a session returns, even if verification is aborted. */
+  recordSpend(executionId: string, spend: SessionSpend): void {
+    this.transaction(() => {
+      this.db.prepare('INSERT INTO session_spend VALUES(?,?,?,?)').run(spend.attemptId, executionId, spend.recordedAt, JSON.stringify(spend));
+      this.db.prepare('UPDATE assignments SET updated_at=? WHERE execution_id=?').run(this.now(), executionId);
+    });
+  }
+  spend(executionId: string): SessionSpend[] {
+    return this.db.prepare('SELECT payload FROM session_spend WHERE execution_id=? ORDER BY recorded_at,rowid').all(executionId).map(row => {
+      const value = object(JSON.parse(string(row.payload)));
+      return { ...spendFrom(value), attemptId: string(value.attemptId) };
+    });
+  }
+  /** Reuse calibration measurements from before Mission Control billing existed. */
+  spendHistory(): Array<Omit<SessionSpend, 'attemptId'> & { attemptId?: string; executionId: string }> {
+    if (!this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='run_metrics'").get()) return [];
+    return this.db.prepare('SELECT execution_id,payload FROM run_metrics ORDER BY recorded_at').all().map(row => ({ executionId: string(row.execution_id), ...spendFrom(JSON.parse(string(row.payload))) }));
   }
 
   readDecisionAudit(decisionId: string): string | undefined {
@@ -185,10 +254,11 @@ export class LinearStore {
     });
   }
 
-  enqueue(issueId: string, metadata?: { issueKey: string; issueTitle: string }): Assignment {
+  enqueue(issueId: string, metadata?: { issueKey: string; issueTitle: string; repository?: string }): Assignment {
     return this.transaction(() => {
       const assignment = this.enqueueInTransaction(issueId);
       if (metadata) this.db.prepare('UPDATE assignments SET issue_key=?,issue_title=? WHERE issue_id=?').run(metadata.issueKey, metadata.issueTitle, issueId);
+      if (metadata?.repository) this.db.prepare('UPDATE assignments SET manifest=COALESCE(manifest,?) WHERE issue_id=?').run(JSON.stringify({ id: assignment.executionId, issueId, repository: metadata.repository, worktree: "", branch: `kor/${metadata.issueKey}`, status: "queued" } satisfies Execution), issueId);
       return assignment;
     });
   }
@@ -219,7 +289,13 @@ export class LinearStore {
       const processIdentity = sessionPid && sessionPgid && bootId && startTicks ? { pid: sessionPid, pgid: sessionPgid, bootId, startTicks } : undefined;
       const issueKey = typeof value.issue_key === 'string' ? value.issue_key : undefined;
       const issueTitle = typeof value.issue_title === 'string' ? value.issue_title : undefined;
-      return { ...parsed, ...(manifest ? { manifest } : {}), ...(owner ? { owner } : {}), ...(expiresAt ? { expiresAt } : {}), ...(sessionPid ? { sessionPid } : {}), ...(heartbeatAt ? { heartbeatAt } : {}), ...(value.cancel_requested === 1 ? { cancelRequested: true } : {}), ...(lastError ? { lastError } : {}), ...(processIdentity ? { processIdentity } : {}), ...(issueKey ? { issueKey } : {}), ...(issueTitle ? { issueTitle } : {}), attempts };
+      const timing = {
+        ...(typeof value.created_at === 'number' ? { createdAt: value.created_at } : {}),
+        ...(typeof value.updated_at === 'number' ? { updatedAt: value.updated_at } : {}),
+        ...(typeof value.started_at === 'number' ? { startedAt: value.started_at } : {}),
+        ...(typeof value.completed_at === 'number' ? { completedAt: value.completed_at } : {}),
+      };
+      return { ...parsed, ...timing, ...(manifest ? { manifest } : {}), ...(owner ? { owner } : {}), ...(expiresAt ? { expiresAt } : {}), ...(sessionPid ? { sessionPid } : {}), ...(heartbeatAt ? { heartbeatAt } : {}), ...(value.cancel_requested === 1 ? { cancelRequested: true } : {}), ...(lastError ? { lastError } : {}), ...(processIdentity ? { processIdentity } : {}), ...(issueKey ? { issueKey } : {}), ...(issueTitle ? { issueTitle } : {}), attempts };
     });
   }
   counts(): { events: number; executions: number; pendingWrites: number } {
@@ -269,7 +345,7 @@ export class LinearStore {
   requestCancel(issueId: string): boolean {
     return this.transaction(() => {
       const row = this.db.prepare('SELECT status FROM assignments WHERE issue_id=?').get(issueId) as { status?: unknown } | undefined;
-      if (!row || (row.status !== 'queued' && row.status !== 'running' && row.status !== 'blocked')) return false;
+      if (!row || !['queued', 'running', 'blocked', 'waiting', 'shipping', 'review'].includes(String(row.status))) return false;
       if (row.status !== 'running') return this.db.prepare("UPDATE assignments SET status='canceled',cancel_requested=0,token=NULL,owner=NULL,expires_at=NULL WHERE issue_id=?").run(issueId).changes === 1;
       return this.db.prepare('UPDATE assignments SET cancel_requested=1 WHERE issue_id=?').run(issueId).changes === 1;
     });
@@ -285,6 +361,29 @@ export class LinearStore {
     const shipping = this.listAssignments().find(item => item.issueId === issueId)?.manifest?.shipping;
     if (shipping) return false;
     return this.transaction(() => this.db.prepare("UPDATE assignments SET status='queued',token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_pgid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,cancel_requested=0,available_at=?,last_error=NULL WHERE issue_id=? AND status IN ('failed','blocked','canceled')").run(this.now(), issueId).changes === 1);
+  }
+  operatorMessage(executionId: string, kind: 'answer' | 'request-changes' | 'note', message: string): void {
+    const assignment = this.findAssignment(executionId);
+    if (!assignment) throw new Error('Execution not found');
+    const id = randomUUID();
+    this.transaction(() => {
+      this.db.prepare('INSERT INTO run_messages(id,execution_id,kind,message,recorded_at) VALUES(?,?,?,?,?)').run(id, executionId, kind, message, new Date(this.now()).toISOString());
+      this.db.prepare('UPDATE assignments SET updated_at=? WHERE execution_id=?').run(this.now(), executionId);
+      const write: LinearWrite = { kind: 'comment', id, issueId: assignment.issueId, body: `Kor operator ${kind} for execution ${executionId}:\n\n${message}` };
+      this.db.prepare('INSERT INTO outbox(payload) VALUES(?)').run(JSON.stringify(write));
+    });
+  }
+  operatorMessages(executionId: string): Array<{ kind: string; message: string }> {
+    return this.db.prepare('SELECT kind,message FROM run_messages WHERE execution_id=? ORDER BY rowid').all(executionId).flatMap(row => typeof row.kind === 'string' && typeof row.message === 'string' ? [{ kind: row.kind, message: row.message }] : []);
+  }
+  /** Discard approval and verification before rerunning changes on the same issue branch. */
+  requestChanges(executionId: string): boolean {
+    const assignment = this.findAssignment(executionId);
+    if (!assignment?.manifest || !['waiting', 'review', 'blocked'].includes(assignment.status) || assignment.expiresAt !== undefined) return false;
+    if (assignment.manifest.shipping && !['commit', 'review'].includes(assignment.manifest.shipping.stage.kind)) return false;
+    const { shipping: _shipping, verification: _verification, ...previous } = assignment.manifest;
+    return this.transaction(() => this.db.prepare("UPDATE assignments SET status='queued',manifest=?,last_error=NULL,cancel_requested=0,available_at=? WHERE execution_id=? AND token IS NULL AND status IN ('waiting','review','blocked')")
+      .run(JSON.stringify({ ...previous, status: 'queued' }), this.now(), executionId).changes === 1);
   }
   recover(issueId: string, message: string): boolean {
     return this.transaction(() => this.db.prepare("UPDATE assignments SET status='queued',token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_pgid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,cancel_requested=0,available_at=?,last_error=? WHERE issue_id=? AND status IN ('running','queued')").run(this.now(), message, issueId).changes === 1);
@@ -307,7 +406,7 @@ export class LinearStore {
     if (!row || row.token !== claim.token) throw new Error('Execution lease ownership was superseded');
   }
   /** Only settle after the session and verification have stopped, even if the lease expired. */
-  finishClaim(claim: ExecutionClaim, status: 'shipping' | 'review' | 'complete' | 'failed' | 'blocked' | 'canceled', message?: string, manifest?: Execution): void {
+  finishClaim(claim: ExecutionClaim, status: 'waiting' | 'shipping' | 'review' | 'complete' | 'failed' | 'blocked' | 'canceled', message?: string, manifest?: Execution): void {
     this.transaction(() => {
       this.assertOwner(claim);
       const current = this.db.prepare('SELECT cancel_requested FROM assignments WHERE issue_id=?').get(claim.assignment.issueId) as { cancel_requested?: unknown } | undefined;
@@ -319,10 +418,10 @@ export class LinearStore {
   }
   /** The exclusively owned daemon advances delivery without reopening an execution lease. */
   updateShipping(execution: Execution, writes: readonly LinearWrite[] = []): void {
-    if (!execution.shipping || !['shipping', 'review', 'blocked', 'complete', 'failed'].includes(execution.status)) throw new Error('Invalid shipping transition');
+    if (!execution.shipping || !['waiting', 'shipping', 'review', 'blocked', 'complete', 'failed'].includes(execution.status)) throw new Error('Invalid shipping transition');
     this.transaction(() => {
       const result = this.db.prepare(`UPDATE assignments SET status=?,manifest=?,last_error=?
-        WHERE execution_id=? AND issue_id=? AND token IS NULL AND status IN ('shipping','review','blocked','complete','failed')`)
+        WHERE execution_id=? AND issue_id=? AND token IS NULL AND status IN ('waiting','shipping','review','blocked','complete','failed')`)
         .run(execution.status, JSON.stringify(execution), execution.shipping?.error ?? null, execution.id, execution.issueId);
       if (result.changes !== 1) throw new Error('Shipping assignment changed ownership');
       for (const write of writes) this.db.prepare('INSERT INTO outbox(payload) VALUES(?)').run(JSON.stringify(write));

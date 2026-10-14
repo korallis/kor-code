@@ -37,6 +37,9 @@ export interface SessionLauncherOptions {
   repoRoot?: string; command?: string; args?: string[]; env?: NodeJS.ProcessEnv; gatewayKey?: string; sandboxScript?: string; allowedTools?: readonly string[];
   /** Where the daemon publishes status, so the cockpit inside the session reads it rather than the session's own sandbox home. */
   cockpit?: { statusUrl: string; stateDir: string };
+  onOutput?: (executionId: string, channel: "stdout" | "stderr", text: string) => void;
+  gateway?: () => Promise<{ baseUrl: string; key: string | undefined }>;
+  sandboxRoot?: string;
 }
 
 // Repository policy supplies capabilities; absent policy defaults to inspection.
@@ -161,10 +164,11 @@ export class SessionLauncher implements SessionLauncherLike {
     const args = ["--run", ...commandArgs];
     const tool = commandArgs[0] ?? "claude";
     const toolDir = tool.includes("/") ? dirname(tool) : this.findToolDir(tool);
-    const gatewayKey = this.options.gatewayKey ?? this.options.env?.KOR_GATEWAY_KEY ?? process.env.KOR_GATEWAY_KEY ?? "";
+    const gateway = await this.options.gateway?.();
+    const gatewayKey = gateway?.key ?? this.options.gatewayKey ?? this.options.env?.KOR_GATEWAY_KEY ?? process.env.KOR_GATEWAY_KEY ?? "";
     const gatewayKeyFile = this.options.env?.KOR_GATEWAY_KEY_FILE ?? process.env.KOR_GATEWAY_KEY_FILE;
-    const gatewayUrl = this.options.env?.KOR_GATEWAY_URL ?? process.env.KOR_GATEWAY_URL;
-    const env = { ...this.options.env, KOR_EXECUTION_ID: input.execution.id, KOR_WORKTREE: input.worktreePath, KOR_ROUTE_MODEL: input.route?.model ?? "", KOR_CLAUDE_BIN_DIR: toolDir, KOR_GATEWAY_KEY: gatewayKey, ...(gatewayKeyFile ? { KOR_GATEWAY_KEY_FILE: gatewayKeyFile } : {}), ...(gatewayUrl ? { KOR_GATEWAY_URL: gatewayUrl } : {}), ...(this.options.cockpit ? { KOR_STATUS_URL: this.options.cockpit.statusUrl, KOR_STATE_DIR: this.options.cockpit.stateDir } : {}) };
+    const gatewayUrl = gateway?.baseUrl ?? this.options.env?.KOR_GATEWAY_URL ?? process.env.KOR_GATEWAY_URL;
+    const env = { ...this.options.env, KOR_SANDBOX_ROOT: resolve(this.options.sandboxRoot ?? join(this.repoRoot, ".sandbox")), KOR_EXECUTION_ID: input.execution.id, KOR_WORKTREE: input.worktreePath, KOR_ROUTE_MODEL: input.route?.model ?? "", KOR_CLAUDE_BIN_DIR: toolDir, KOR_GATEWAY_KEY: gatewayKey, ...(gatewayKeyFile ? { KOR_GATEWAY_KEY_FILE: gatewayKeyFile } : {}), ...(gatewayUrl ? { KOR_GATEWAY_URL: gatewayUrl } : {}), ...(this.options.cockpit ? { KOR_STATUS_URL: this.options.cockpit.statusUrl, KOR_STATE_DIR: this.options.cockpit.stateDir } : {}) };
     return new Promise((resolvePromise, reject) => {
       const child = spawn(this.options.command ?? "bash", [script, ...args], { cwd: input.worktreePath, env: this.isolatedEnv(env), stdio: ["ignore", "pipe", "pipe"], detached: true, signal: input.signal });
       if (child.pid) input.onSpawn?.(child.pid);
@@ -179,14 +183,14 @@ export class SessionLauncher implements SessionLauncherLike {
         const lines = buffer.split(/\r?\n/);
         const remainder = lines.pop() ?? "";
         if (kind === "stdout") stdoutBuffer = remainder; else stderrBuffer = remainder;
-        for (const line of lines) collector.line(kind, line);
+        for (const line of lines) { collector.line(kind, line); this.options.onOutput?.(input.execution.id, kind, `${line}\n`); }
       };
       child.stdout.on("data", (chunk: string) => collect("stdout", chunk));
       child.stderr.on("data", (chunk: string) => collect("stderr", chunk));
       child.on("error", error => { collector.add("error", error.message); reject(error); });
       child.on("close", (exitCode, signal) => {
-        if (stdoutBuffer) collector.line("stdout", stdoutBuffer);
-        if (stderrBuffer) collector.line("stderr", stderrBuffer);
+        if (stdoutBuffer) { collector.line("stdout", stdoutBuffer); this.options.onOutput?.(input.execution.id, "stdout", stdoutBuffer); }
+        if (stderrBuffer) { collector.line("stderr", stderrBuffer); this.options.onOutput?.(input.execution.id, "stderr", stderrBuffer); }
         collector.add("exited", exitCode);
         const actualExitCode = exitCode ?? 1;
         const telemetry = parseResultEvent(collector.events);
@@ -196,10 +200,11 @@ export class SessionLauncher implements SessionLauncherLike {
     });
   }
   private isolatedEnv(extra: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-    const sandboxHome = resolve(this.repoRoot, ".sandbox", "home", extra.KOR_EXECUTION_ID ?? "session");
-    const config = resolve(this.repoRoot, ".sandbox", "claude-config", extra.KOR_EXECUTION_ID ?? "session");
+    const sandboxRoot = this.options.sandboxRoot ?? resolve(this.repoRoot, ".sandbox");
+    const sandboxHome = resolve(sandboxRoot, "home", extra.KOR_EXECUTION_ID ?? "session");
+    const config = resolve(sandboxRoot, "claude-config", extra.KOR_EXECUTION_ID ?? "session");
     const safePath = "/usr/local/bin:/usr/bin:/bin";
-    return { ...extra, PATH: safePath, HOME: sandboxHome, CLAUDE_CONFIG_DIR: config, CODEX_HOME: resolve(this.repoRoot, ".sandbox", "codex", extra.KOR_EXECUTION_ID ?? "session"), XDG_CONFIG_HOME: resolve(this.repoRoot, ".sandbox", "xdg-config", extra.KOR_EXECUTION_ID ?? "session"), XDG_DATA_HOME: resolve(this.repoRoot, ".sandbox", "xdg-data", extra.KOR_EXECUTION_ID ?? "session"), KOR_SANDBOX_HOME: sandboxHome, KOR_SANDBOX_CONFIG: config, KOR_SANDBOX_PATH: safePath };
+    return { ...extra, PATH: safePath, HOME: sandboxHome, CLAUDE_CONFIG_DIR: config, CODEX_HOME: resolve(sandboxRoot, "codex", extra.KOR_EXECUTION_ID ?? "session"), XDG_CONFIG_HOME: resolve(sandboxRoot, "xdg-config", extra.KOR_EXECUTION_ID ?? "session"), XDG_DATA_HOME: resolve(sandboxRoot, "xdg-data", extra.KOR_EXECUTION_ID ?? "session"), KOR_SANDBOX_HOME: sandboxHome, KOR_SANDBOX_CONFIG: config, KOR_SANDBOX_PATH: safePath };
   }
   private findToolDir(tool: string): string {
     for (const entry of (process.env.PATH ?? "").split(":")) if (entry && existsSync(join(entry, tool))) return entry;

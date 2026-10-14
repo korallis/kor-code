@@ -6,13 +6,14 @@ import { readFile } from "node:fs/promises";
 import { formatDoctor, runDoctor } from "./doctor.js";
 import { runPlan } from "./plan.js";
 import { installKor, uninstallKor, type InstallScope } from "./install.js";
-import { runModels } from "./models.js";
+import { runModels, probeModel } from "./models.js";
+import { openUi, daemonQueueAction } from "./ui.js";
 import { createServeRouting } from "./serve-routing.js";
-import { ensureRuntimeDirectories, loadGatewayEnvironment, loadKorConfig, repositoryKeyForIssue, runtimePaths } from "@kor-code/config";
+import { ensureRuntimeDirectories, loadGatewayEnvironment, loadKorConfig, repositoryKeyForIssue, runtimePaths, type KorConfig } from "@kor-code/config";
 import { HttpLinearClient, LinearStore } from "@kor-code/linear";
-import { GitHubShipping, KorDaemon, readExecutionStatus, readStatus } from "@kor-code/daemon";
-import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController } from "@kor-code/controller";
-import { GatewayAdapter, readModelRegistry } from "@kor-code/gateway-adapter";
+import { GitHubShipping, KorDaemon, MissionServices, processMatches, readExecutionStatus, readStatus, type DaemonOptions } from "@kor-code/daemon";
+import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController, type Controller } from "@kor-code/controller";
+import { readModelRegistry, writeModelRegistry } from "@kor-code/gateway-adapter";
 import { PersistentDecisionAuditLog } from "@kor-code/jev";
 import { CalibrationStore, buildReport, formatReport } from "@kor-code/calibration";
 import type { CatalogueModel, KorCliError } from "@kor-code/core";
@@ -70,7 +71,9 @@ function print(value: unknown, json: boolean): void {
   process.stdout.write(`${json ? JSON.stringify(value, null, 2) : typeof value === "string" ? value : JSON.stringify(value, null, 2)}\n`);
 }
 async function canonicalIssue(reference: string): Promise<{ id: string; identifier: string; title: string; repository: string }> {
-  const client = new HttpLinearClient();
+  const mission = new MissionServices(runtimePaths());
+  await mission.initialize();
+  const client = mission.linear();
   const issue = await client.getIssue(reference);
   const loaded = await loadKorConfig();
   return { id: issue.id, identifier: issue.identifier ?? reference, title: issue.title, repository: repositoryKeyForIssue(issue, loaded.config) };
@@ -118,7 +121,7 @@ async function runIssue(args: readonly string[]): Promise<number> {
   }
   const store = new LinearStore(paths.databaseFile);
   try {
-    const assignment = store.enqueue(issue.id, { issueKey: issue.identifier, issueTitle: issue.title });
+    const assignment = store.enqueue(issue.id, { issueKey: issue.identifier, issueTitle: issue.title, repository: issue.repository });
     print({ schemaVersion: 1, issueId: issue.identifier, canonicalIssueId: issue.id, executionId: assignment.executionId, status: assignment.status, queued: assignment.status === "queued" }, json);
     return 0;
   } finally { store.close(); }
@@ -133,7 +136,10 @@ async function updateQueue(command: "cancel" | "retry", args: readonly string[])
   try {
     const assignment = store.findAssignment(issueReference);
     if (!assignment) throw new CliFailure("execution_not_found", "execution not found", "check the execution ID, issue ID, or stored issue key");
-    const accepted = command === "cancel" ? store.requestCancel(assignment.issueId) : store.retry(assignment.issueId);
+    const owner = store.daemonOwner();
+    let accepted: boolean;
+    if (owner && processMatches(owner.process)) { await daemonQueueAction({ executionId: assignment.executionId, action: command }); accepted = true; }
+    else accepted = command === "cancel" ? store.requestCancel(assignment.issueId) : store.retry(assignment.issueId);
     if (!accepted) throw new CliFailure("not_accepted", `${command} was not accepted for execution ${assignment.executionId}`, command === "cancel" ? "cancel only queued, running, or blocked executions" : "retry only failed, blocked, or canceled executions");
     print({ schemaVersion: 1, issueId: assignment.issueKey ?? assignment.issueId, canonicalIssueId: assignment.issueId, executionId: assignment.executionId, command, accepted }, jsonFlag(args));
     return 0;
@@ -167,6 +173,7 @@ async function serve(args: readonly string[]): Promise<number> {
   const paths = runtimePaths();
   const loaded = await loadKorConfig(paths.configFile, { home: paths.home });
   await ensureRuntimeDirectories(paths);
+  const sourceRoot = fileURLToPath(new URL("../../..", import.meta.url));
   const portValue = valueAfter(args, "--port");
   const port = portValue ? Number(portValue) : 8327;
   if (!Number.isSafeInteger(port) || port < 0 || port > 65_535 || port === 8317) throw new CliFailure("invalid_port", "--port must be a valid non-8317 TCP port", "choose an available TCP port between 0 and 65535");
@@ -178,36 +185,49 @@ async function serve(args: readonly string[]): Promise<number> {
   if (!Number.isFinite(sampleRate) || sampleRate < 0 || sampleRate > 1) throw new Error("--calibration-rate must be between 0 and 1");
   const baselineModel = valueAfter(args, "--baseline-model");
   const calibrationConfig = { ...loaded.config.calibration, sampleRate, baselineRoute: { ...loaded.config.calibration.baselineRoute, ...(baselineModel ? { model: baselineModel } : {}) } };
-  const repositories = new RepositoryRegistry(Object.entries(loaded.config.repos).map(([key, repository]) => ({ key, path: repository.path, defaultBranch: repository.defaultBranch, allowedTools: repository.toolAllowlist, checks: repository.checks })));
+  const mission: MissionServices = new MissionServices(paths, async model => {
+    const result = await probeModel(model, await mission.sessionGateway());
+    const registry = await readModelRegistry(paths.modelsFile);
+    await writeModelRegistry([...registry.models.filter(item => item.model !== model), result], paths.modelsFile);
+    return result.verified;
+  });
+  await mission.initialize();
   const calibration = calibrationEnabled ? new CalibrationStore(paths.databaseFile) : undefined;
   let catalogue: CatalogueModel[] | undefined;
   if (jevEnabled) {
-    const gatewayConfig = await loadGatewayEnvironment(paths.gatewayEnvFile);
-    const gatewayAdapter = new GatewayAdapter({ baseUrl: gatewayConfig.baseUrl, ...(gatewayConfig.key ? { apiKey: gatewayConfig.key } : {}) });
+    const gatewayAdapter = await mission.gateway();
     const models = await gatewayAdapter.catalogue({ capabilities: ["streaming", "tool_calls"] });
     if (models.length === 0) throw new Error("--jev requires at least one verified gateway model");
     catalogue = models.map(model => ({ provider: model.provider ?? "unknown", model: model.id, capabilities: Object.entries(model.capabilities).map(([name, supported]) => ({ name, supported })) }));
   }
   const store = new LinearStore(paths.databaseFile);
   const audit = calibration ?? new PersistentDecisionAuditLog({ read: id => store.readDecisionAudit(id), write: (id, at, payload) => store.writeDecisionAudit(id, at, payload), update: (id, at, payload) => store.updateDecisionAudit(id, at, payload) });
-  const routing = createServeRouting({ audit, defaultRoute: loaded.config.defaultRoute, models: async () => {
-    if (catalogue) return catalogue;
-    const registry = await readModelRegistry(paths.modelsFile);
-    return registry.models.filter(result => result.verified).map(result => ({ provider: result.model.startsWith("claude-") ? "anthropic" : result.model.split("/")[0] ?? "unknown", model: result.model, capabilities: Object.entries(result.capabilities).map(([name, supported]) => ({ name, supported: supported === true })), ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) }));
-  } });
-  const controller = createController({
-    repositories,
-    reserveAttempt: (executionId, attempt) => store.reserveVerificationAttempt(executionId, attempt),
-    worktrees: new GitWorktreeManager(paths.worktreesDir),
-    launcher: new SessionLauncher({ repoRoot: process.cwd(), cockpit: { statusUrl, stateDir: paths.stateDir } }),
-    limits: new ConcurrencyLimiter({ total: loaded.config.limits.total, perRepository: loaded.config.limits.perRepository, ...(loaded.config.limits.perProvider ? { perProvider: loaded.config.limits.perProvider } : {}) }),
-    defaultRoute: loaded.config.defaultRoute,
-    jev: routing.jev,
-    ...(calibration ? { calibration: { store: calibration, sampleRate: calibrationConfig.sampleRate, baselineRoute: calibrationConfig.baselineRoute } } : {}),
-  });
-  const gateway = new GatewayAdapter();
+  const runtime = (config: KorConfig): { controller: Controller; chooseRoute: NonNullable<DaemonOptions["chooseRoute"]> } => {
+    const repositories = new RepositoryRegistry(Object.entries(config.repos).map(([key, repository]) => ({ key, path: repository.path, defaultBranch: repository.defaultBranch, allowedTools: repository.toolAllowlist, checks: repository.checks })));
+    const routing = createServeRouting({ audit, defaultRoute: config.defaultRoute, client: { evaluate: (state, questions) => mission.jev().evaluate(state, questions) }, models: async () => {
+      if (catalogue) return catalogue;
+      const registry = await readModelRegistry(paths.modelsFile);
+      return registry.models.filter(result => result.verified).map(result => ({ provider: result.model.startsWith("claude-") ? "anthropic" : result.model.split("/")[0] ?? "unknown", model: result.model, capabilities: Object.entries(result.capabilities).map(([name, supported]) => ({ name, supported: supported === true })), ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) }));
+    } });
+    const controller = createController({
+      repositories,
+      reserveAttempt: (executionId, attempt) => store.reserveVerificationAttempt(executionId, attempt),
+      onStage: (executionId, stage) => daemon.setStage(executionId, stage),
+      onSpend: (executionId, spend) => store.recordSpend(executionId, spend),
+      worktrees: new GitWorktreeManager(paths.worktreesDir),
+      launcher: new SessionLauncher({ repoRoot: sourceRoot, sandboxRoot: paths.sessionsDir, gateway: () => mission.sessionGateway(), cockpit: { statusUrl, stateDir: paths.stateDir }, onOutput: (executionId, channel, text) => daemon.recordOutput(executionId, channel, text) }),
+      limits: new ConcurrencyLimiter({ total: config.limits.total, perRepository: config.limits.perRepository, ...(config.limits.perProvider ? { perProvider: config.limits.perProvider } : {}) }),
+      defaultRoute: config.defaultRoute,
+      jev: routing.jev,
+      ...(calibration ? { calibration: { store: calibration, sampleRate: config.calibration.sampleRate, baselineRoute: config.calibration.baselineRoute } } : {}),
+    });
+    return { controller, chooseRoute: routing.chooseRoute };
+  };
+  const initial = runtime({ ...loaded.config, calibration: calibrationConfig });
+  const gateway = await mission.gateway();
   const verifiedModels = async () => (await readModelRegistry(paths.modelsFile)).models.filter(model => model.verified).map(model => model.model);
-  const daemon = new KorDaemon({ paths, config: loaded.config, store, linear: new HttpLinearClient({ writes: {} }), controller, shipping: new GitHubShipping(), port, gateway, verifiedModels, chooseRoute: routing.chooseRoute });
+  const webRoot = valueAfter(args, "--ui-dir") ?? fileURLToPath(new URL("../../web/dist", import.meta.url));
+  const daemon = new KorDaemon({ paths, config: loaded.config, store, linear: mission.linear(), ...initial, shipping: new GitHubShipping((file, args, cwd) => mission.shippingCommand(file, args, cwd)), port, gateway, verifiedModels, webRoot, missionServices: mission, reconfigure: runtime });
   const handle = await daemon.start();
   process.stdout.write(`kor daemon listening on ${statusUrl}\n`);
   await new Promise<void>(resolve => {
@@ -253,6 +273,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     if (command === "logs") return await logs(cleanArgs.slice(1));
     if (command === "calibrate") return await calibrationReport(cleanArgs.slice(1));
     if (command === "serve") return await serve(cleanArgs.slice(1));
+    if (command === "ui") return await openUi(cleanArgs.slice(1));
     if (command === "models") return await runModels(cleanArgs.slice(1));
     if ((command === "install" || command === "uninstall") && cleanArgs.slice(1).some(arg => arg === "--help" || arg === "-h")) {
       process.stdout.write(command === "install" ? "Usage: kor install --pilot CHECKOUT [--scope local|user] [--no-systemd] [--json]\nLocal scope requires a standalone checkout. User scope defaults --pilot to the source checkout. Build first; configure credentials and repository policy before starting the installed unit.\n" : "Usage: kor uninstall [--purge] [--json]\nRestore the installation manifest. Without --purge, retain Kor data and recovery backups. Run through the source CLI to purge after the link has been removed.\n");
@@ -284,7 +305,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     if (debug && error instanceof Error && error.stack) process.stderr.write(`${error.stack}\n`);
     return failure instanceof CliFailure ? failure.exitCode : 1;
   }
-  process.stdout.write("Usage: kor serve [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list | kor models probe [--family family] [--model model]\n");
+  process.stdout.write("Usage: kor ui | kor serve [--ui-dir DIST] [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list | kor models probe [--family family] [--model model]\n");
   return 0;
 }
 

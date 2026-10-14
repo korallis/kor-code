@@ -8,16 +8,6 @@ import { GatewayAdapter, MODEL_CAPABILITIES, readModelRegistry, writeModelRegist
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 const sandbox = join(root, "scripts", "sandbox.sh");
-export async function runModels(args: readonly string[]): Promise<number> {
-  const command = args[0] ?? "list";
-  const value = (name: string): string | undefined => { const index = args.indexOf(name); return index >= 0 ? args[index + 1] : undefined; };
-  const family = value("--family");
-  const requested = value("--model");
-
-  function candidates(models: readonly { id: string }[]): string[] {
-    return models.map(item => item.id).filter(id => (!family || id.toLowerCase().startsWith(`${family.toLowerCase()}-`)) && (!requested || id === requested));
-  }
-
   function claudeBinDir(): string {
     for (const directory of (process.env.PATH ?? "").split(":")) if (directory && existsSync(join(directory, "claude"))) return directory;
     return "/usr/local/bin";
@@ -55,18 +45,17 @@ export async function runModels(args: readonly string[]): Promise<number> {
     });
   }
 
-  async function probeModel(model: string): Promise<ModelProbeResult> {
+export async function probeModel(model: string, gateway?: { baseUrl: string; key: string | undefined }): Promise<ModelProbeResult> {
     const started = Date.now();
-    await mkdir(join(root, ".sandbox"), { recursive: true });
     const scratch = await mkdtemp(join(tmpdir(), "kor-model-probe-"));
-    const sessionRoot = await mkdtemp(join(root, ".sandbox", "model-probe-"));
+    const sessionRoot = await mkdtemp(join(tmpdir(), "kor-model-home-"));
     const marker = join(scratch, "probe.txt");
     const prompt = [
-      "Compatibility probe. Use extended thinking before acting. Use the Write tool to create the requested file with exactly READY, then use Bash to print its contents.",
+      "Compatibility probe. Before acting, use extended thinking to reason through why a write followed by an independent read proves tool execution, while a model's claimed success does not. Then use the Write tool to create the requested file with exactly READY, and use Bash to print its contents.",
       `Write ${marker}. Finish with exactly the JSON object {\"ready\":true}.`,
     ].join(" ");
     try {
-      const result = await runSandbox([sandbox, "--run", "claude", "-p", prompt, "--model", model, "--effort", "medium", "--permission-mode", "acceptEdits", "--allowedTools", "Write", "Bash", "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--setting-sources", ""], { ...process.env, KOR_CLAUDE_BIN_DIR: claudeBinDir(), KOR_SANDBOX_HOME: join(sessionRoot, "home"), KOR_SANDBOX_CONFIG: join(sessionRoot, "config") }, Number(process.env.KOR_MODEL_PROBE_TIMEOUT_MS ?? 180_000));
+      const result = await runSandbox([sandbox, "--run", "claude", "-p", prompt, "--model", model, "--effort", "high", "--permission-mode", "acceptEdits", "--allowedTools", "Write", "Bash", "--output-format", "stream-json", "--include-partial-messages", "--verbose", "--no-session-persistence", "--setting-sources", ""], { ...process.env, ...(gateway ? { KOR_GATEWAY_URL: gateway.baseUrl, KOR_GATEWAY_KEY: gateway.key ?? "" } : {}), KOR_SANDBOX_ROOT: sessionRoot, KOR_CLAUDE_BIN_DIR: claudeBinDir(), KOR_SANDBOX_HOME: join(sessionRoot, "home"), KOR_SANDBOX_CONFIG: join(sessionRoot, "config") }, Number(process.env.KOR_MODEL_PROBE_TIMEOUT_MS ?? 180_000));
       const stream = result.stdout;
       const decodedResult = resultText(stream);
       const hasResult = decodedResult !== undefined;
@@ -83,6 +72,17 @@ export async function runModels(args: readonly string[]): Promise<number> {
     } catch (error) {
       return { model, family: model.split("-")[0] ?? "unknown", verified: false, capabilities: {}, durationMs: Date.now() - started, observedAt: new Date().toISOString(), error: error instanceof Error ? error.message : String(error) };
     } finally { await rm(scratch, { recursive: true, force: true }); await rm(sessionRoot, { recursive: true, force: true }); }
+  }
+
+
+export async function runModels(args: readonly string[]): Promise<number> {
+  const command = args[0] ?? "list";
+  const value = (name: string): string | undefined => { const index = args.indexOf(name); return index >= 0 ? args[index + 1] : undefined; };
+  const family = value("--family");
+  const requested = value("--model");
+
+  function candidates(models: readonly { id: string }[]): string[] {
+    return models.map(item => item.id).filter(id => (!family || id.toLowerCase().startsWith(`${family.toLowerCase()}-`)) && (!requested || id === requested));
   }
 
   if (command === "list") {

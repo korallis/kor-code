@@ -24,12 +24,16 @@ const pipelineSchema = z.object({
   run: z.object({ id: z.string(), branch: z.string(), status: z.string(), head_sha: z.string(), pr: z.string().optional(),
     steps: z.array(z.object({ step: z.string(), status: z.string(), duration_ms: z.number() })).default([]),
   }).optional(),
+  branch_sync: z.object({ pipeline: z.object({ run: z.string(), submitted_head: z.string() }).optional() }).optional(),
   gate: z.object({ step: z.string(), status: z.string(), summary: z.string().optional() }).optional(),
 });
 const pullRequestSchema = z.object({ number: z.number().int().positive(), html_url: z.url(), state: z.enum(["open", "closed"]), merged_at: z.string().nullable(), draft: z.boolean(), head: z.object({ sha: z.string(), ref: z.string() }), base: z.object({ ref: z.string() }) });
 const checksSchema = z.object({ total_count: z.number(), check_runs: z.array(z.object({ name: z.string(), status: z.string(), conclusion: z.string().nullable(), html_url: z.string().nullable() })) });
 const statusesSchema = z.object({ total_count: z.number(), statuses: z.array(z.object({ context: z.string(), state: z.string(), target_url: z.string().nullable() })) });
 const markerSchema = z.object({ executionId: z.string(), issueId: z.string(), path: z.string(), repository: z.string() });
+function pipelineStepStatus(status: string): Evidence["status"] {
+  return status === "completed" || status === "passed" ? "pass" : status === "failed" ? "fail" : "unresolved";
+}
 function safe(value: unknown): string { return String(redact(value instanceof Error ? value.message : String(value))).slice(0, 4_000); }
 /** Credential/config artifacts are never added by the publication boundary. */
 function sensitivePath(path: string): boolean {
@@ -195,10 +199,21 @@ export class GitHubShipping implements ShippingDriver {
       parsed = pipelineSchema.parse(decode(started.stdout));
       if (!parsed.run) throw new Error(parsed.error ?? "no-mistakes did not report a durable run; will inspect status before retrying");
     }
+    // Rebase and fixes may move the current head before the startup call returns.
+    // Refresh that response by run ID if it did not include submission identity.
+    if (!stage.runId && parsed.run.head_sha !== stage.head && !parsed.branch_sync?.pipeline) {
+      const refreshed = await this.run("no-mistakes", ["axi", "status", "--run", parsed.run.id], execution.worktree);
+      const snapshot = pipelineSchema.parse(decode(refreshed));
+      if (!snapshot.run || snapshot.run.id !== parsed.run.id) throw new Error("Started no-mistakes run identity changed before attachment");
+      parsed = snapshot;
+    }
     const run = parsed.run;
-    if (run.branch !== execution.branch || stage.runId && run.id !== stage.runId || !stage.runId && run.head_sha !== stage.head) throw new Error("no-mistakes run does not match this branch and submitted commit");
+    if (!run) throw new Error("no-mistakes did not return a run for attachment");
+    const submission = parsed.branch_sync?.pipeline;
+    const matchesSubmittedHead = submission ? submission.run === run.id && submission.submitted_head === stage.head : run.head_sha === stage.head;
+    if (run.branch !== execution.branch || (stage.runId ? run.id !== stage.runId : !matchesSubmittedHead)) throw new Error("no-mistakes run does not match this branch and submitted commit");
     report.stage = { ...stage, runId: run.id };
-    for (const step of run.steps) this.evidence(report, execution.id, `pipeline-${step.step}`, "review", step.status === "passed" ? "pass" : step.status === "failed" ? "fail" : "unresolved", `no-mistakes ${step.step}: ${step.status}; duration_ms=${step.duration_ms}`, `no-mistakes axi logs --run ${run.id} --step ${step.step} --full`);
+    for (const step of run.steps) this.evidence(report, execution.id, `pipeline-${step.step}`, "review", pipelineStepStatus(step.status), `no-mistakes ${step.step}: ${step.status}; duration_ms=${step.duration_ms}`, `no-mistakes axi logs --run ${run.id} --step ${step.step} --full`);
     if (parsed.error) throw new Error(parsed.error);
     if (parsed.gate) throw new Error(`no-mistakes gate ${parsed.gate.step}: ${parsed.gate.summary ?? parsed.gate.status}; operator response required in ${execution.worktree}`);
     if (["failed", "cancelled", "canceled", "blocked", "ci-monitor-interrupted"].includes(run.status)) throw new Error(`no-mistakes run ${run.id}: ${run.status}; operator action required`);
@@ -223,7 +238,7 @@ export class GitHubShipping implements ShippingDriver {
       const status = await this.command('no-mistakes', ['axi', 'status', '--run', stage.runId], execution.worktree);
       const parsed = pipelineSchema.parse(decode(status.stdout));
       if (!parsed.run || parsed.run.id !== stage.runId || parsed.run.branch !== execution.branch) throw new Error('Pipeline review run identity changed');
-      for (const step of parsed.run.steps) this.evidence(report, execution.id, `pipeline-${step.step}`, 'review', step.status === 'passed' ? 'pass' : step.status === 'failed' ? 'fail' : 'unresolved', `no-mistakes ${step.step}: ${step.status}; duration_ms=${step.duration_ms}`, `no-mistakes axi logs --run ${stage.runId} --step ${step.step} --full`);
+      for (const step of parsed.run.steps) this.evidence(report, execution.id, `pipeline-${step.step}`, 'review', pipelineStepStatus(step.status), `no-mistakes ${step.step}: ${step.status}; duration_ms=${step.duration_ms}`, `no-mistakes axi logs --run ${stage.runId} --step ${step.step} --full`);
       if (status.code !== 0 || parsed.error || parsed.gate || ['failed', 'cancelled', 'canceled', 'blocked', 'ci-monitor-interrupted'].includes(parsed.run.status)) throw new Error(parsed.error ?? `no-mistakes ${parsed.gate?.step ?? parsed.run.status} requires operator action`);
       } catch (error) { pipelineError = safe(error); }
     }

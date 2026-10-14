@@ -1,4 +1,4 @@
-import type { CatalogueModel, Evidence, Execution, Route } from "@kor-code/core";
+import type { CatalogueModel, Evidence, Execution, Route, SessionSpend } from "@kor-code/core";
 import { JevDecisionCore, routeFromDecision } from "@kor-code/jev";
 import type { LinearClient, LinearIssue, WorkflowMapping, ExecutionClaim } from "@kor-code/linear";
 import { AgentSessionWriter, DurableQueue, ExecutionLease, LinearStore, SnapshotReader } from "@kor-code/linear";
@@ -40,6 +40,8 @@ export interface ControllerOptions {
   verificationOptions?: VerificationOptions;
   /** Reserve each session identity in the owning runtime before launching it. */
   reserveAttempt?: (executionId: string, attempt: number) => string;
+  onStage?: (executionId: string, stage: "context" | "execute" | "verify") => void;
+  onSpend?: (executionId: string, spend: SessionSpend) => void;
   calibration?: { store: CalibrationStore; sampleRate?: number; baselineRoute?: Route };
 }
 export interface ControllerRunResult {
@@ -128,6 +130,7 @@ class ExecutionController implements Controller {
         claim = input.claim ?? this.lease.claim(this.owner, this.leaseTtlMs, input.issueId);
         if (!claim) throw new Error(`No execution lease available for ${input.issueId}`);
       }
+      this.options.onStage?.(input.id, "context");
       worktree = await this.options.worktrees.create({ executionId: input.id, issueId: input.issueId, repository, branch: input.branch });
       const execution: Execution = { ...input, repository: repository.key, worktree: worktree.path, branch: worktree.branch, status: "running", ...(route ? { route } : {}), manifest: { executionId: input.id, issueId: input.issueId, repository: repository.key, worktree: worktree.path, branch: worktree.branch, agents: [], acceptance: acceptance(issue) } };
       const verification = this.options.verification?.(execution) ?? (this.writer ? new VerificationTracker(execution.manifest?.acceptance ?? [], execution.id) : undefined);
@@ -149,7 +152,7 @@ class ExecutionController implements Controller {
       const settings = verificationSettings(this.options.verificationOptions);
       heartbeat = claim && this.lease ? this.startHeartbeat(claim) : undefined;
       const { session, latest, verificationReport } = await runVerifiedSessions({ execution, repository, initialPrompt, baseRevision,
-        launcher: this.options.launcher, settings, reserveAttempt: this.reserveAttempt, ...(this.options.jev ? { jev: this.options.jev } : {}),
+        launcher: this.options.launcher, settings, reserveAttempt: this.reserveAttempt, ...(this.options.onStage ? { onStage: this.options.onStage } : {}), ...(this.options.onSpend ? { onSpend: this.options.onSpend } : {}), ...(this.options.jev ? { jev: this.options.jev } : {}),
         ...(this.options.calibration && calibrationRoute ? { calibration: this.options.calibration.store } : {}),
         ...(decisionId ? { decisionId } : {}),
         ...(heartbeat ? { leaseFailure: heartbeat.failed } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}), ...(input.signal ? { signal: input.signal } : {}) });
@@ -224,6 +227,7 @@ class ExecutionController implements Controller {
       worktree = await this.options.worktrees.create({ executionId: id, issueId: issue.id, repository, branch: `kor/calibration/${id}`, baseRevision, detached: true });
       const baseline: Execution = { id, issueId: issue.id, repository: repository.key, route: calibration.baselineRoute, worktree: worktree.path, branch: worktree.branch, status: "running", manifest: { executionId: id, issueId: issue.id, repository: repository.key, worktree: worktree.path, branch: worktree.branch, agents: [], acceptance: acceptance(issue) } };
       const result = await runVerifiedSessions({ execution: baseline, repository, initialPrompt, baseRevision, launcher: this.options.launcher, settings, reserveAttempt: this.reserveAttempt,
+        ...(this.options.onSpend ? { onSpend: this.options.onSpend } : {}),
         ...(this.options.jev ? { jev: this.options.jev } : {}), calibration: calibration.store,
         ...(input.leaseFailure ? { leaseFailure: input.leaseFailure } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}) });
       calibration.store.finishRun(id, result.verificationReport.passed ? "verified" : "failed");
