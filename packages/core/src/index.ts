@@ -15,6 +15,8 @@ export interface VerificationAttempt {
   evidence: Evidence[];
   findings: AcceptanceFinding[];
   blockers: string[];
+  /** Exact repository paths observed during verification; shipping cannot discover extra files. */
+  publication?: { baseRevision: string; paths: string[] };
 }
 export interface VerificationReport { attempts: VerificationAttempt[]; passed: boolean }
 export interface AgentManifest { id: string; name: string; description?: string; skills: string[]; capabilities: string[]; acceptance: AcceptanceCondition[] }

@@ -281,6 +281,30 @@ and live Jev judgments; the gate, forge and Linear writes, and cleanup are
 run under T6's direct-PR worker contract. See the [shipping specification](docs/specs/shipping.md)
 for recovery rules, operator actions, and the exact validation boundary.
 
+Run the committed offline replay after building:
+
+```sh
+pnpm build
+pnpm shipping:proof
+```
+
+It exercises real Git, SQLite and HTTP, with external-service and cleanup fixtures.
+The replay proves that shipping stages only verified paths, leaves a decoy
+`.env.local` and unrelated files untracked, blocks sensitive paths already staged
+or committed by a session, and redacts/caps the public PR content:
+
+```text
+publication proof: verified files committed; .env.local and unrelated file excluded; PR secrets/local paths redacted; body <= 60000 characters; literal filename preserved
+sensitive-path proof: staged and session-committed .env.local blocked before publication
+migration proof: v4 -> v5; execution/lease/metadata/outbox preserved; shipping not claimable; retry does not rerun verified work
+```
+
+The command prints its scratch directory for inspection. No credentials are needed.
+The filename policy excludes common secret/config/log paths; it is not a content
+secret scanner. Direct PR content strips credentials and local paths, and gated
+delivery uses `--no-publish-intent` to keep the Linear description out of the public
+Intent section.
+
 ## Open the live cockpit
 
 The cockpit is the Claude Code mod in `packages/claude-plugin`. Until `kor install` lands, load it in the sandboxed Claude Code with the daemon running:

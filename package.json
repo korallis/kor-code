@@ -24,7 +24,8 @@
     "cockpit": "bash scripts/sandbox.sh --interactive",
     "cockpit:proof": "tsx scripts/cockpit-proof.ts",
     "isolation:proof": "bash scripts/isolation-proof.sh",
-    "daemon:proof": "tsx scripts/daemon-proof.ts"
+    "daemon:proof": "tsx scripts/daemon-proof.ts",
+    "shipping:proof": "node scripts/shipping-proof.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.8.0",

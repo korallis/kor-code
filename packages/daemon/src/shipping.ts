@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { decode } from "@toon-format/toon";
 import { z } from "zod";
-import type { Evidence, Execution, ShippingReport, ShippingStage } from "@kor-code/core";
+import type { Evidence, Execution, ShippingReport, ShippingStage, VerificationAttempt } from "@kor-code/core";
 import type { KorRepositoryConfig } from "@kor-code/config";
 import { redact } from "@kor-code/jev";
 import type { LinearIssue } from "@kor-code/linear";
@@ -31,6 +31,22 @@ const checksSchema = z.object({ total_count: z.number(), check_runs: z.array(z.o
 const statusesSchema = z.object({ total_count: z.number(), statuses: z.array(z.object({ context: z.string(), state: z.string(), target_url: z.string().nullable() })) });
 const markerSchema = z.object({ executionId: z.string(), issueId: z.string(), path: z.string(), repository: z.string() });
 function safe(value: unknown): string { return String(redact(value instanceof Error ? value.message : String(value))).slice(0, 4_000); }
+/** Credential/config artifacts are never added by the publication boundary. */
+function sensitivePath(path: string): boolean {
+  return path.split('/').some(part => /^(?:\.env(?:\..*)?|\.claude|\.codex|\.agents|\.ssh|\.aws|\.gnupg|\.npmrc|\.pypirc|id_.*|credentials(?:\..*)?|secrets?(?:\..*)?)$/i.test(part)
+    || /\.(?:pem|key|p12|pfx|log)$/i.test(part));
+}
+function publicText(value: string, input: ShippingInput): string {
+  let text = String(redact(value));
+  for (const path of [input.execution.worktree, input.repository.path, process.env.HOME].filter((path): path is string => Boolean(path)).sort((a, b) => b.length - a.length)) text = text.split(path).join('[local-path]');
+  // Standalone provider tokens may have no assignment or Bearer prefix.
+  text = text.replace(/\b(?:sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9_]{8,}|github_pat_[A-Za-z0-9_]{8,}|xox[baprs]-[A-Za-z0-9-]+)\b/g, '[redacted]');
+  text = text.replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?(?:-----END [^-]*PRIVATE KEY-----|$)/g, '[redacted private key]');
+  // Preserve web links, but remove Unix, Windows and home-relative local paths.
+  text = text.replace(/(["'`])(?:[A-Za-z]:[\\/]|\\\\|~[\\/]|\/)[^\r\n]*?\1/g, '[local-path]');
+  text = text.replace(/https?:\/\/[^\s<>"`]+|file:\/\/[^\s<>"`]+|(?<![\w:/])(?:[A-Za-z]:[\\/]|\\\\|~[\\/]|\/)[^\s<>"`]+/g, path => /^https?:\/\//.test(path) ? path : '[local-path]');
+  return text;
+}
 const defaultCommand: ShippingCommand = async (file, args, cwd) => {
   try { const result = await exec(file, args, { cwd, timeout: 30_000, maxBuffer: 2_097_152 }); return { code: 0, ...result }; }
   catch (error) {
@@ -71,6 +87,39 @@ export class GitHubShipping implements ShippingDriver {
     const index = report.evidence.findIndex(item => item.id === id);
     if (index < 0) report.evidence.push(evidence); else report.evidence[index] = evidence;
   }
+  private async stageVerifiedPaths(execution: Execution, verified: VerificationAttempt): Promise<void> {
+    const publication = verified.publication;
+    if (!publication || !/^[a-f0-9]{40,64}$/.test(publication.baseRevision)) throw new Error('Shipping requires the path manifest captured by verification; reverify before publication');
+    const paths = new Set(publication.paths);
+    for (const path of paths) {
+      if (!path || path.startsWith('/') || path.includes('\0') || path.split('/').some(part => part === '..' || part === '.git')) throw new Error('Verification contains an invalid repository path');
+    }
+    const readPaths = async (args: string[]) => {
+      const result = await this.command('git', args, execution.worktree);
+      if (result.code !== 0) throw new Error('Unable to inspect publication paths');
+      return result.stdout.split('\0').filter(Boolean);
+    };
+    // Inspect both existing commits and the index: a session may have staged or committed a secret itself.
+    const included = await readPaths(['diff', '--name-only', '--no-renames', '-z', publication.baseRevision, 'HEAD', '--']);
+    const staged = await readPaths(['diff', '--cached', '--name-only', '--no-renames', '-z', '--']);
+    for (const path of [...included, ...staged]) {
+      if (!paths.has(path) || sensitivePath(path)) throw new Error('Commit or index contains a sensitive or unverified path; remove it and reverify before publication');
+    }
+    const untracked = new Set(await readPaths(['ls-files', '--others', '--exclude-standard', '-z']));
+    const pending = new Set([...await readPaths(['diff', '--name-only', '--no-renames', '-z', 'HEAD', '--']), ...untracked]);
+    for (const path of pending) {
+      if (!paths.has(path)) {
+        if (!untracked.has(path)) throw new Error('Tracked changes appeared after verification; reverify before publication');
+        continue;
+      }
+      if (sensitivePath(path)) {
+        if (!untracked.has(path)) throw new Error('Sensitive tracked file changed; remove it and reverify before publication');
+        continue;
+      }
+      // Literal pathspecs preserve spaces, newlines, glob characters, and leading dashes as filenames.
+      await this.run('git', ['add', '--', `:(literal)${path}`], execution.worktree);
+    }
+  }
   async advance(input: ShippingInput): Promise<Execution> {
     const execution = structuredClone(input.execution);
     const report = execution.shipping;
@@ -86,7 +135,7 @@ export class GitHubShipping implements ShippingDriver {
       if (stage.kind === "commit") {
         const branch = await this.run("git", ["branch", "--show-current"], execution.worktree);
         if (branch !== execution.branch) throw new Error("Shipping worktree branch no longer matches the execution");
-        await this.run("git", ["add", "--all", "--", "."], execution.worktree);
+        await this.stageVerifiedPaths(execution, verified);
         const diff = await this.command("git", ["diff", "--cached", "--quiet"], execution.worktree);
         if (diff.code === 1) await this.run("git", ["commit", "-m", `${input.issue.identifier ?? input.issue.id}: ${input.issue.title}`], execution.worktree);
         else if (diff.code !== 0) throw new Error("Cannot inspect staged changes before shipping");
@@ -105,7 +154,7 @@ export class GitHubShipping implements ShippingDriver {
       } else if (stage.kind === "pipeline") {
         await this.pipeline(input, execution, report, stage);
       } else if (stage.kind === "publish") {
-        if (await this.run("git", ["rev-parse", "HEAD"], execution.worktree) !== stage.head || await this.run("git", ["status", "--porcelain"], execution.worktree)) throw new Error("Verified commit changed before publication");
+        if (await this.run("git", ["rev-parse", "HEAD"], execution.worktree) !== stage.head || await this.run("git", ["status", "--porcelain", "--untracked-files=no"], execution.worktree)) throw new Error("Verified commit changed before publication");
         await this.run("git", ["push", target.remote, `${stage.head}:refs/heads/${execution.branch}`], execution.worktree);
         this.evidence(report, execution.id, "push", "git", "pass", `Pushed ${stage.head} to ${execution.branch}`);
         let prs = z.array(pullRequestSchema).parse(await this.api(`/repos/${target.slug}/pulls?state=all&head=${encodeURIComponent(`${target.slug.split('/')[0]}:${execution.branch}`)}&base=${encodeURIComponent(input.repository.defaultBranch)}&per_page=100`, execution.worktree));
@@ -116,7 +165,7 @@ export class GitHubShipping implements ShippingDriver {
           try {
             const bodyFile = join(directory, "body.md");
             await writeFile(bodyFile, this.body(input), { mode: 0o600 });
-            await this.run("gh-axi", ["pr", "create", "--repo", target.slug, "--head", execution.branch, "--base", input.repository.defaultBranch, "--title", `${input.issue.identifier ?? input.issue.id}: ${input.issue.title}`, "--body-file", bodyFile], execution.worktree);
+            await this.run("gh-axi", ["pr", "create", "--repo", target.slug, "--head", execution.branch, "--base", input.repository.defaultBranch, "--title", publicText(`${input.issue.identifier ?? input.issue.id}: ${input.issue.title}`, input).slice(0, 200), "--body-file", bodyFile], execution.worktree);
           } finally { await rm(directory, { recursive: true, force: true }); }
           prs = z.array(pullRequestSchema).parse(await this.api(`/repos/${target.slug}/pulls?state=all&head=${encodeURIComponent(`${target.slug.split('/')[0]}:${execution.branch}`)}&per_page=100`, execution.worktree));
           pr = prs.find(item => item.head.ref === execution.branch && item.head.sha === stage.head);
@@ -142,7 +191,7 @@ export class GitHubShipping implements ShippingDriver {
     if (!parsed.run) {
       if (stage.runId) throw new Error("Recorded no-mistakes run disappeared; refusing to start another run");
       if (parsed.runs_on_current_branch !== 0) throw new Error('Unrecognized no-mistakes status; refusing to start another run');
-      const started = await this.command("no-mistakes", ["axi", "run", "--intent", `${input.issue.title}\n\n${input.issue.description ?? ''}`, "--base-branch", input.repository.defaultBranch, "--wait", "1s"], execution.worktree);
+      const started = await this.command("no-mistakes", ["axi", "run", "--intent", `${input.issue.title}\n\n${input.issue.description ?? ''}`, "--no-publish-intent", "--base-branch", input.repository.defaultBranch, "--wait", "1s"], execution.worktree);
       parsed = pipelineSchema.parse(decode(started.stdout));
       if (!parsed.run) throw new Error(parsed.error ?? "no-mistakes did not report a durable run; will inspect status before retrying");
     }
@@ -237,6 +286,8 @@ export class GitHubShipping implements ShippingDriver {
   }
   private body(input: ShippingInput): string {
     const latest = input.execution.verification?.attempts.at(-1);
-    return [`## Summary`, `${input.issue.identifier ?? input.issue.id}: ${input.issue.title}`, input.issue.url ?? '', `## Evidence`, `Execution: ${input.execution.id}`, `Repository is not initialized for no-mistakes; direct PR fallback.`, ...(latest?.checks.map(check => `\n\`\`\`text\n$ ${check.command}\nexit ${check.exitCode}\n${check.output}\n\`\`\``) ?? []), ...(latest?.findings.map(finding => `- ${finding.conditionId}: ${finding.status} — ${finding.note ?? ''}`) ?? []), `\nMerge is an operator decision. Kor observes GitHub and updates Linear after merge.`].join('\n\n');
+    const field = (text: string) => publicText(text, input).slice(0, 4_000);
+    const body = [`## Summary`, field(`${input.issue.identifier ?? input.issue.id}: ${input.issue.title}`), field(input.issue.url ?? ''), `## Evidence`, field(`Execution: ${input.execution.id}`), `Repository is not initialized for no-mistakes; direct PR fallback.`, ...(latest?.checks.map(check => `\n\`\`\`text\n$ ${field(check.command)}\nexit ${check.exitCode}\n${field(check.output)}\n\`\`\``) ?? []), ...(latest?.findings.map(finding => field(`- ${finding.conditionId}: ${finding.status} — ${finding.note ?? ''}`)) ?? []), `\nMerge is an operator decision. Kor observes GitHub and updates Linear after merge.`].join('\n\n');
+    return body.length > 60_000 ? `${body.slice(0, 59_900)}\n\n[Evidence truncated; see local Kor status for the full report.]` : body;
   }
 }
