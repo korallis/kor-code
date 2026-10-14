@@ -89,7 +89,15 @@ export async function verifyAttempt(input: {
   for (const command of input.checks) checks.push(await runCheck(command, execution.worktree, settings.checkTimeoutMs));
   blockers.push(...checks.filter(check => check.status !== "pass").map(check => `Check failed: ${check.command} (exit ${check.exitCode ?? "unavailable"})${check.output ? ` — ${check.output.slice(-2_000)}` : ""}`));
   let diff = "";
-  try { if (input.baseRevision) diff = await collectDiff(execution.worktree, input.baseRevision); }
+  let publication: VerificationAttempt["publication"];
+  try {
+    if (input.baseRevision) {
+      diff = await collectDiff(execution.worktree, input.baseRevision);
+      const changed = await git(execution.worktree, ["diff", "--name-only", "--no-renames", "-z", input.baseRevision, "--"]);
+      const untracked = await git(execution.worktree, ["ls-files", "--others", "--exclude-standard", "-z"]);
+      publication = { baseRevision: input.baseRevision, paths: [...new Set([...changed.split("\0"), ...untracked.split("\0")].filter(Boolean))] };
+    }
+  }
   catch (error) { blockers.push(`Diff unavailable: ${failureText(error)}`); }
   if (input.enforceSemantic && acceptance.length === 0) blockers.push("Explicit acceptance criteria are required");
   const tracker = new VerificationTracker(acceptance, execution.id);
@@ -111,7 +119,7 @@ export async function verifyAttempt(input: {
   tracker.addMany(evidence);
   const findings = tracker.findings().map(finding => ({ ...finding, note: evidence.find(item => item.acceptanceId === finding.conditionId)?.summary ?? judgmentError ?? "No acceptance judgment returned" }));
   if (input.enforceSemantic) blockers.push(...findings.filter(finding => finding.status !== "pass").map(finding => `${finding.conditionId}: ${finding.status} — ${finding.note}`));
-  return { attempt: input.attempt, checks, diff, evidence, findings, blockers };
+  return { attempt: input.attempt, checks, diff, evidence, findings, blockers, ...(publication ? { publication } : {}) };
 }
 export function repairPrompt(initial: string, attempt: VerificationAttempt): string {
   return `${initial}\n\nRepair attempt ${attempt.attempt + 1}. Resolve these verification failures and preserve the acceptance requirements:\n${attempt.blockers.join("\n")}\n\nAuthoritative check output:\n${attempt.checks.map(check => `${check.command}: exit ${check.exitCode ?? "unavailable"}\n${check.output}`).join("\n").slice(0, 100_000)}\n\nPer-criterion findings:\n${attempt.findings.map(finding => `${finding.conditionId}: ${finding.status} — ${finding.note ?? ""}`).join("\n")}`;

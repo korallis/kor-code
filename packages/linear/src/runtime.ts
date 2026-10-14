@@ -78,20 +78,25 @@ export class AgentSessionWriter {
   }
 
   async flush(maximum = 100): Promise<number> {
+    return flushLinearWrites(this.store, this.client, maximum);
+  }
+}
+
+/** Flush already-authorized outbox writes even when no execution is running. */
+export async function flushLinearWrites(store: LinearStore, client: LinearClient, maximum = 100): Promise<number> {
     if (!Number.isSafeInteger(maximum) || maximum < 1) throw new Error('Write batch limit must be positive');
-    const token = this.store.claimWriter();
+    const token = store.claimWriter();
     if (!token) return 0;
     let count = 0;
     try {
       for (; count < maximum; count++) {
-        const pending = this.store.nextWrite(token);
+        const pending = store.nextWrite(token);
         if (!pending) break;
-        await this.client.apply(pending.write);
-        this.store.acknowledgeWrite(token, pending.sequence);
+        await client.apply(pending.write);
+        store.acknowledgeWrite(token, pending.sequence);
       }
       return count;
-    } finally { this.store.releaseWriter(token); }
-  }
+    } finally { store.releaseWriter(token); }
 }
 
 export function startWrites(assignment: ExecutionClaim['assignment'], states: WorkflowMapping, client?: LinearClient): LinearWrite[] {

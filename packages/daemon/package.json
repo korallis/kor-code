@@ -8,7 +8,9 @@
     "@kor-code/config": "workspace:*",
     "@kor-code/controller": "workspace:*",
     "@kor-code/core": "workspace:*",
+    "@kor-code/jev": "workspace:*",
     "@kor-code/linear": "workspace:*",
+    "@toon-format/toon": "^4.4.0",
     "zod": "^4.6.6"
   }
 }

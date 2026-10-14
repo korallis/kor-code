@@ -266,9 +266,15 @@ importers:
       '@kor-code/core':
         specifier: workspace:*
         version: link:../core
+      '@kor-code/jev':
+        specifier: workspace:*
+        version: link:../jev
       '@kor-code/linear':
         specifier: workspace:*
         version: link:../linear
+      '@toon-format/toon':
+        specifier: ^4.4.0
+        version: 4.4.0
       zod:
         specifier: ^4.6.6
         version: 4.6.6
@@ -461,6 +467,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@toon-format/toon@4.4.0':
+    resolution: {integrity: sha512-A6UcsVoWbNdhdLNhJbe6JpRlocmf/DZGG57fur3bd8oQtsjBaKWo2hHbOU2zTuy+byUmLIOyP1xJeitopCZzpQ==}
+
   '@types/node@24.19.2':
     resolution: {integrity: sha512-93d49wCWJkCyN87MxLpNN6KXPCwFw7bVUg79mGUV1OS40JGWwVCr8n61DXCSqz7CV6/VfPkb7xec7uP2M+QHWQ==}
 
@@ -574,6 +583,8 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.2':
     optional: true
+
+  '@toon-format/toon@4.4.0': {}
 
   '@types/node@24.19.2':
     dependencies:

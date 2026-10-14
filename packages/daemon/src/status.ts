@@ -6,7 +6,7 @@ import type { KorCliError, KorExecutionStatusResponse, KorStatusResponse, KorSta
 import { LinearStore } from "@kor-code/linear";
 import { processMatches } from "./process.js";
 
-const runSchema = z.object({ executionId: z.string().min(1), issueId: z.string().min(1), status: z.enum(["queued", "ready", "evaluating", "running", "waiting", "verifying", "repairing", "review", "blocked", "complete", "failed", "escalated", "canceled"]), attempts: z.number().int().nonnegative(), observedAt: z.string().datetime(), pullRequestUrl: z.string().url().optional(), costUsd: z.number().nonnegative().finite().optional() }).passthrough();
+const runSchema = z.object({ executionId: z.string().min(1), issueId: z.string().min(1), status: z.enum(["queued", "ready", "evaluating", "running", "waiting", "verifying", "repairing", "shipping", "review", "blocked", "complete", "failed", "escalated", "canceled"]), attempts: z.number().int().nonnegative(), observedAt: z.string().datetime(), pullRequestUrl: z.string().url().optional(), costUsd: z.number().nonnegative().finite().optional() }).passthrough();
 const snapshotSchema = z.object({ schemaVersion: z.literal(1), observedAt: z.string().datetime(), daemon: z.object({ pid: z.number().int().positive(), startedAt: z.string().datetime(), pollIntervalSeconds: z.number().positive() }).passthrough(), runs: z.array(runSchema) }).passthrough();
 function parseSnapshot(value: unknown): KorStatusSnapshot {
   return snapshotSchema.parse(value) as KorStatusSnapshot;

@@ -27,6 +27,7 @@
     "cockpit:proof": "tsx scripts/cockpit-proof.ts",
     "isolation:proof": "bash scripts/isolation-proof.sh",
     "daemon:proof": "tsx scripts/daemon-proof.ts",
+    "shipping:proof": "node scripts/shipping-proof.mjs",
     "calibration:proof": "tsx --tsconfig scripts/tsconfig.json scripts/calibration-proof.ts"
   },
   "devDependencies": {

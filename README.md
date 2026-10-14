@@ -223,7 +223,7 @@ Install the user service with `cp systemd/kor.service ~/.config/systemd/user/kor
 The daemon polls Todo issues carrying the configured `kor` label, stores leases in `~/.local/state/kor/kor.db`, and publishes snapshots under `~/.local/state/kor/snapshots/`.
 Use `kor status --json`, `kor run ISSUE-ID`, `kor cancel ISSUE-ID`, `kor retry ISSUE-ID`, and `kor logs EXECUTION-ID`.
 The read-only HTTP equivalent is `http://127.0.0.1:8327/status`.
-Status values are `queued`, `running`, `complete`, `failed`, `blocked`, and `canceled`; response provenance is `live`, `stale`, or `unavailable`.
+Status values are `queued`, `running`, `shipping`, `review`, `complete`, `failed`, `blocked`, and `canceled`; response provenance is `live`, `stale`, or `unavailable`. With shipping enabled by `kor serve`, `complete` means GitHub reports a merged PR.
 
 The local daemon proof covers lease renewal, restart recovery, queued and running cancellation, terminal failure and retry, orphan worktree cleanup, and PID identity protection:
 
@@ -287,16 +287,16 @@ calibration:proof passed; mode=forced-fallback; daemon=true; preflight_calls=1; 
 
 The outage still launches the configured default route, but unavailable acceptance judgment leaves the execution blocked and records a rejected outcome. It creates no baseline and appears in the report's fallback column. The live proof deliberately crashes its first session, so missing cost/cache counters for that attempt remain `unavailable`; baseline cost and token counts are fixture telemetry. Jev confidence and acceptance probabilities above came from live calls, and wall-clock values vary.
 
-Rejected, escalated, and abandoned outcomes are recorded by the controller. Merge observation remains the T6 integration point; the proof invokes that hook locally and does not merge a real PR. Credentials are read at runtime and never printed or committed.
+Rejected, escalated, and abandoned outcomes are recorded by the controller. The shipping daemon records merged or rejected outcomes when it observes a PR merge or closure. The calibration proof invokes that hook locally; the shipping replay exercises the observation path with forge fixtures. Neither proof merges a real PR. Credentials are read at runtime and never printed or committed.
 
 ## Run the Kor daemon
 
 After `pnpm install` and a `~/.config/kor/config.yaml`, install the user service with `cp systemd/kor.service ~/.config/systemd/user/kor.service`, then run `systemctl --user daemon-reload` and `systemctl --user enable --now kor`.
 The daemon polls Todo issues carrying the configured `kor` label, stores leases in `~/.local/state/kor/kor.db`, and publishes snapshots under `~/.local/state/kor/snapshots/`.
 It polls each repository's `linearTeam` (else the team part of its map key) and runs a claimed issue in the checkout `repositoryKeyForIssue` maps it to (`linearProject`, then `linearTeam`).
-Use `kor status --json`, `kor run LEE-n` (a durable queue entry), `kor cancel EXECUTION-ID|ISSUE-ID`, `kor retry EXECUTION-ID|ISSUE-ID`, and `kor logs EXECUTION-ID`.
+Use `kor status --json`, `kor run LEE-n` (a durable queue entry; the daemon writes Linear progress), `kor cancel EXECUTION-ID|ISSUE-ID`, `kor retry EXECUTION-ID|ISSUE-ID`, and `kor logs EXECUTION-ID`.
 The HTTP equivalent is `http://127.0.0.1:8327/status`; the cockpit also posts overrides there (see [Open the live cockpit](#open-the-live-cockpit)).
-Status values are `queued`, `running`, `complete`, `failed`, `blocked`, and `canceled`; response provenance is `live`, `stale`, or `unavailable`.
+Status values are `queued`, `running`, `shipping`, `review`, `complete`, `failed`, `blocked`, and `canceled`; response provenance is `live`, `stale`, or `unavailable`.
 `retry` is explicit for terminal failures and verification blocks, while a running cancellation stops the detached session group before recording `canceled`.
 
 The local daemon proof exercises intake, the loopback endpoint, lease renewal during an 800 ms run with a 200 ms lease, restart recovery, queued and running cancellation, terminal failure and retry, orphan worktree cleanup, and PID identity protection:
@@ -307,6 +307,65 @@ daemon proof passed; picked=LEE-57; status=live; restart=queued; attempts=1; orp
 ```
 
 No live Linear or gateway credential was used for this proof; credentials are supplied at runtime by the configured environment.
+
+### Ship a verified issue
+
+After `pnpm install --frozen-lockfile` and `pnpm build`, the daemon host needs Git,
+authenticated `gh-axi`, and no-mistakes. Set the repository's GitHub URL in `remote`
+(or use its GitHub `origin`), configure checks and tool permissions, and supply the
+existing Linear and TypeSafe runtime credentials. Run the daemon and queue an issue:
+
+```sh
+pnpm kor serve
+# In another terminal:
+pnpm kor run LEE-123 --dry-run
+pnpm kor run LEE-123
+pnpm kor status --json
+```
+
+Passing checks and Jev acceptance judgments move the execution to `shipping`.
+Kor commits on `kor/LEE-123` and runs the repository's no-mistakes gate. Only an
+explicit “repo not initialized” response selects the direct `gh-axi pr create`
+fallback. Approval gates stay `blocked` for an operator to resolve; an outage never
+bypasses the gate. The existing run resumes on later polls without another session.
+
+An open, ready PR is linked on Linear in **In Review** and appears as `review` in
+status. `verification`, `shipping.evidence`, and `pullRequestUrl` show the local
+checks, pipeline steps, and GitHub CI results. No CI checks means **unresolved**.
+After an operator merges, Kor observes the merge, moves Linear to **Done**, reports
+`complete`, and removes only its owned clean worktree. Dirty worktrees remain with
+a cleanup error; PRs closed without merge remain `failed` and retain their worktree.
+
+The shipping flow is **Validated locally** for real Git, SQLite, HTTP snapshots,
+and live Jev judgments; the gate, forge and Linear writes, and cleanup are
+**Illustrative contract replays**. The live initialized-repository pilot has not
+run under T6's direct-PR worker contract. See the [shipping specification](docs/specs/shipping.md)
+for recovery rules, operator actions, and the exact validation boundary.
+
+Run the committed offline replay after building:
+
+```sh
+pnpm build
+pnpm shipping:proof
+```
+
+It exercises real Git, SQLite and HTTP, with external-service and cleanup fixtures.
+The replay proves that shipping stages only verified paths, leaves a decoy
+`.env.local` and unrelated files untracked, blocks sensitive paths already staged
+or committed by a session, records calibration outcomes, and redacts/caps the public
+PR content:
+
+```text
+publication proof: verified files committed; .env.local and unrelated file excluded; PR secrets/local paths redacted; body <= 60000 characters; literal filename preserved
+sensitive-path proof: staged and session-committed .env.local blocked before publication
+migration proof: v4 -> v5; execution/lease/metadata/outbox preserved; shipping not claimable; retry does not rerun verified work
+```
+
+The command prints its scratch directory for inspection. No credentials are needed.
+The filename policy excludes common secret/config/log paths; it is not a content
+secret scanner. Direct PR content strips credentials and local paths, and gated
+delivery uses `--no-publish-intent` to keep the Linear description out of the public
+Intent section.
 
 ## Dispatch from Firstmate
 

@@ -7,7 +7,7 @@ import { runPlan } from "./plan.js";
 import { createServeRouting } from "./serve-routing.js";
 import { ensureRuntimeDirectories, loadGatewayEnvironment, loadKorConfig, repositoryKeyForIssue, runtimePaths } from "@kor-code/config";
 import { HttpLinearClient, LinearStore } from "@kor-code/linear";
-import { KorDaemon, readExecutionStatus, readStatus } from "@kor-code/daemon";
+import { GitHubShipping, KorDaemon, readExecutionStatus, readStatus } from "@kor-code/daemon";
 import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController } from "@kor-code/controller";
 import { GatewayAdapter, readModelRegistry } from "@kor-code/gateway-adapter";
 import { PersistentDecisionAuditLog } from "@kor-code/jev";
@@ -184,7 +184,7 @@ async function serve(args: readonly string[]): Promise<number> {
   });
   const gateway = new GatewayAdapter();
   const verifiedModels = async () => (await readModelRegistry(paths.modelsFile)).models.filter(model => model.verified).map(model => model.model);
-  const daemon = new KorDaemon({ paths, config: loaded.config, store, linear: new HttpLinearClient({ writes: {} }), controller, port, gateway, verifiedModels, chooseRoute: routing.chooseRoute });
+  const daemon = new KorDaemon({ paths, config: loaded.config, store, linear: new HttpLinearClient({ writes: {} }), controller, shipping: new GitHubShipping(), port, gateway, verifiedModels, chooseRoute: routing.chooseRoute });
   const handle = await daemon.start();
   process.stdout.write(`kor daemon listening on ${statusUrl}\n`);
   await new Promise<void>(resolve => {
