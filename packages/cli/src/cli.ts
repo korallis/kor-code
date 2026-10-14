@@ -6,6 +6,7 @@ import { formatDoctor, runDoctor } from "./doctor.js";
 import { ensureRuntimeDirectories, loadKorConfig, runtimePaths } from "@kor-code/config";
 import { HttpLinearClient, LinearStore } from "@kor-code/linear";
 import { KorDaemon, readStatus } from "@kor-code/daemon";
+import { CalibrationStore, buildReport, formatReport } from "@kor-code/calibration";
 import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController } from "@kor-code/controller";
 
 function jsonFlag(args: readonly string[]): boolean { return args.includes("--json"); }
@@ -55,6 +56,20 @@ async function updateQueue(command: "cancel" | "retry", args: readonly string[])
   } finally { store.close(); }
 }
 
+async function calibrationReport(args: readonly string[]): Promise<number> {
+  const subcommand = args.find(arg => !arg.startsWith("-"));
+  if (subcommand !== "report") { process.stderr.write("Usage: kor calibrate report [--since ISO-8601] [--json]\n"); return 2; }
+  const since = valueAfter(args, "--since");
+  if (since !== undefined && !Number.isFinite(Date.parse(since))) { process.stderr.write("--since must be an ISO-8601 timestamp\n"); return 2; }
+  const store = new CalibrationStore(runtimePaths().databaseFile);
+  try {
+    const report = buildReport(store, since);
+    if (jsonFlag(args)) print(report, true);
+    else process.stdout.write(`${formatReport(report)}\n`);
+    return 0;
+  } finally { store.close(); }
+}
+
 async function logs(args: readonly string[]): Promise<number> {
   const executionId = args.find(arg => !arg.startsWith("-"));
   if (!executionId) { process.stderr.write("Usage: kor logs EXECUTION-ID [--json]\n"); return 2; }
@@ -74,12 +89,14 @@ async function serve(args: readonly string[]): Promise<number> {
   const port = portValue ? Number(portValue) : 8327;
   if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) throw new Error("--port must be a valid TCP port");
   const repositories = new RepositoryRegistry(Object.entries(loaded.config.repos).map(([key, repository]) => ({ key, path: repository.path, defaultBranch: repository.defaultBranch, allowedTools: repository.toolAllowlist })));
+  const calibration = new CalibrationStore(paths.databaseFile);
   const controller = createController({
     repositories,
     worktrees: new GitWorktreeManager(paths.worktreesDir),
     launcher: new SessionLauncher({ repoRoot: process.cwd() }),
     limits: new ConcurrencyLimiter({ total: loaded.config.limits.total, perRepository: loaded.config.limits.perRepository, ...(loaded.config.limits.perProvider ? { perProvider: loaded.config.limits.perProvider } : {}) }),
     defaultRoute: loaded.config.defaultRoute,
+    calibration: { store: calibration, sampleRate: loaded.config.calibration.sampleRate, baselineRoute: loaded.config.calibration.baselineRoute },
   });
   const daemon = new KorDaemon({ paths, config: loaded.config, linear: new HttpLinearClient(), controller, port });
   const handle = await daemon.start();
@@ -103,12 +120,13 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     if (command === "run") return runIssue(args.slice(1));
     if (command === "cancel" || command === "retry") return updateQueue(command, args.slice(1));
     if (command === "logs") return logs(args.slice(1));
+    if (command === "calibrate") return calibrationReport(args.slice(1));
     if (command === "serve") return serve(args.slice(1));
   } catch (error) {
     process.stderr.write(`FAIL ${command}: ${error instanceof Error ? error.message : "unable to run"}\n`);
     return 1;
   }
-  process.stdout.write("Usage: kor serve | kor status [--json] | kor run ISSUE-ID [--dry-run] | kor cancel ISSUE-ID | kor retry ISSUE-ID | kor logs EXECUTION-ID | kor doctor | kor models list | kor models probe [--family family] [--model model]\n");
+  process.stdout.write("Usage: kor serve | kor status [--json] | kor run ISSUE-ID [--dry-run] | kor cancel ISSUE-ID | kor retry ISSUE-ID | kor logs EXECUTION-ID | kor calibrate report [--since ISO-8601] [--json] | kor doctor | kor models list | kor models probe [--family family] [--model model]\n");
   return ["help", "--help", "-h"].includes(command) ? 0 : 2;
 }
 

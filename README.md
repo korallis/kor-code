@@ -40,9 +40,9 @@ Linear is the source of truth for intent. GitHub is the source of truth for vers
 
 ## Foundation
 
-The TypeScript pnpm workspace contains `core`, `jev`, `gateway-adapter`, `linear`, `controller`, `context`, `verification`, `config`, `cli`, and `claude-plugin` packages. Run `pnpm probe` for the external contract checks and read the [Phase 0 probe record](docs/phase-0-probe.md). Use `scripts/sandbox.sh` to load the Claude Code plugin in a disposable `CLAUDE_CONFIG_DIR`; it never installs the plugin globally or changes the existing Claude Code configuration, runs offline unless `--live-model` opts in to CLIProxyAPI, and `pnpm isolation:proof` traces the sandboxed session to show it never touches the real Claude, Codex or agents homes or port 8317.
+The TypeScript pnpm workspace contains `core`, `jev`, `gateway-adapter`, `linear`, `controller`, `context`, `verification`, `config`, `calibration`, `daemon`, `cli`, and `claude-plugin` packages. Run `pnpm probe` for the external contract checks and read the [Phase 0 probe record](docs/phase-0-probe.md). Use `scripts/sandbox.sh` to load the Claude Code plugin in a disposable `CLAUDE_CONFIG_DIR`; it never installs the plugin globally or changes the existing Claude Code configuration, runs offline unless `--live-model` opts in to CLIProxyAPI, and `pnpm isolation:proof` traces the sandboxed session to show it never touches the real Claude, Codex or agents homes or port 8317.
 
-The Phase 6 cockpit (`packages/claude-plugin`) is Validated on fixture data: `pnpm cockpit` opens it in the sandboxed Claude Code (`/kor`), and `pnpm cockpit:proof` replays the fixture execution and checks every view's labels. Execution sessions are Validated locally with parsed stream-json telemetry and policy checks; `pnpm e2e:live` runs the scratch-repository hello-file check when supplied a runtime `KOR_GATEWAY_KEY` or `KOR_GATEWAY_KEY_FILE` (without a key it reports the external validation as Blocked and makes no provider call). With `dontAsk`, removing `Write` from the repository allowlist is a failed attempt with a permission denial. The daemon and status contract are Validated locally with a persistent SQLite queue, atomic snapshots, and a loopback endpoint; a live Linear poll remains Blocked until a runtime Linear key and configured repository are supplied. See the [cockpit specification](docs/specs/cockpit-mockups.md).
+The Phase 6 cockpit (`packages/claude-plugin`) is Validated on fixture data: `pnpm cockpit` opens it in the sandboxed Claude Code (`/kor`), and `pnpm cockpit:proof` replays the fixture execution and checks every view's labels. Execution sessions are Validated locally with parsed stream-json telemetry and policy checks; `pnpm e2e:live` runs the scratch-repository hello-file check when supplied a runtime `KOR_GATEWAY_KEY` or `KOR_GATEWAY_KEY_FILE` (without a key it reports the external validation as Blocked and makes no provider call). With `acceptEdits`, removing `Write` from the repository allowlist is a failed attempt with a permission denial. The daemon and status contract are Validated locally with a persistent SQLite queue, atomic snapshots, and a loopback endpoint; a live Linear poll remains Blocked until a runtime Linear key and configured repository are supplied. See the [cockpit specification](docs/specs/cockpit-mockups.md).
 
 ### Run the daemon and inspect a queue
 
@@ -61,6 +61,44 @@ status response on port 8327. A local run with no daemon snapshot reports:
 
 ```text
 {"schemaVersion":1,"provenance":"unavailable","snapshot":null,"reason":"daemon has not published a snapshot"}
+```
+
+### Calibrate Jev routing against a baseline
+
+Calibration is **Validated locally** with a persistent SQLite store and paired replay proof; live paired runs are **Blocked** until a configured daemon runner and repository are available. The sample rate defaults to `0.25` and is stable per execution id. Configure it under `calibration.sampleRate` and set the fixed route with `calibration.baselineRoute` in `~/.config/kor/config.yaml`. Baseline work is evaluated in a throwaway worktree and never shipped.
+
+Seed and inspect the local proof:
+
+```sh
+pnpm calibration:proof
+XDG_STATE_HOME=/tmp/kor-t12-calibration-proof/state pnpm kor calibrate report
+```
+
+The command prints both arms, all requested operational metrics, and the confidence table:
+
+```text
+Kor calibration report
+Completed Jev/baseline pairs: 1
+Since: all time
+Success = identical verification gate in both arms. Terminal merge outcomes are separate.
+Metric	Jev-route	baseline	Paired delta (Jev - baseline)
+Runs (finished/total)	1/1	1/1	1 pairs
+Merged/terminal outcomes	1/1	0/1	n/a (baseline never ships)
+successRate	1.0000 (n=1)	0.0000 (n=1)	1.0000 (n=1)
+repairs	0.0000 (n=1)	0.0000 (n=1)	0.0000 (n=1)
+costUsd	0.0400 (n=1)	0.0600 (n=1)	-0.0200 (n=1)
+cacheHitRate	0.3125 (n=1)	0.3125 (n=1)	0.0000 (n=1)
+wallClockMs	2000.0000 (n=1)	2000.0000 (n=1)	0.0000 (n=1)
+failovers	0.0000 (n=1)	0.0000 (n=1)	0.0000 (n=1)
+verificationFailures	0.0000 (n=1)	1.0000 (n=1)	-1.0000 (n=1)
+policyBlocks	0.0000 (n=1)	0.0000 (n=1)	0.0000 (n=1)
+clarifications	0.0000 (n=1)	0.0000 (n=1)	0.0000 (n=1)
+
+Confidence calibration against terminal merge success (outcome proxy, not decision-correctness probability)
+Kind	Bin	N	Mean signal	Observed success	Brier (proxy)
+route	0.8–1.0	1	0.8000	1.0000	0.0400
+readiness	all	0	unavailable	unavailable	unavailable
+acceptance	all	0	unavailable	unavailable	unavailable
 ```
 
 For the live scratch run, the script's repository allowlist contains `Read,Write,Edit` and the three `git` commands needed to commit the hello file. To prove a policy failure, remove `Write` from `KOR_E2E_ALLOWED_TOOLS` and set `KOR_E2E_EXPECT_FAILURE=1`; the command reports the provider's permission denial and failed attempt. A launcher with no repository allowlist defaults to `Read`, so mutation is opt-in. Credentials are runtime-only and are never written to the repository or printed.

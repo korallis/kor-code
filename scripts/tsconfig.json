@@ -13,7 +13,8 @@
       "@kor-code/controller": ["../packages/controller/src/index.ts"],
       "@kor-code/context": ["../packages/context/src/index.ts"],
       "@kor-code/verification": ["../packages/verification/src/index.ts"],
-      "@kor-code/daemon": ["../packages/daemon/src/index.ts"]
+      "@kor-code/daemon": ["../packages/daemon/src/index.ts"],
+      "@kor-code/calibration": ["../packages/calibration/src/index.ts"]
     }
   },
   "include": ["*.ts"]

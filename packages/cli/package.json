@@ -18,6 +18,8 @@
   "dependencies": {
     "@kor-code/config": "workspace:*",
     "@kor-code/daemon": "workspace:*",
-    "@kor-code/linear": "workspace:*"
+    "@kor-code/linear": "workspace:*",
+    "@kor-code/calibration": "workspace:*",
+    "@kor-code/controller": "workspace:*"
   }
 }

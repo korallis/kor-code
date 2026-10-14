@@ -7,9 +7,10 @@ import { answerSchema, type JevAnswer, type JevQuestion, type JevResponse } from
 import type { JevClient } from "./client.js";
 import { redact } from "./redact.js";
 
-export type DecisionKind = "route" | "skill" | "agent" | "context";
+export type DecisionKind = "route" | "skill" | "agent" | "context" | "acceptance";
 export interface AcceptanceJudgmentRequest {
   executionId: string;
+  attempt?: number;
   state: JsonValue;
   criteria: readonly { id: string; description: string }[];
   threshold?: number;
@@ -27,15 +28,19 @@ export interface DecisionAuditLog { append(record: DecisionAuditRecord): void; g
 const jsonValue = z.json();
 const policyCheckSchema = z.object({ name: z.string(), result: z.enum(["pass", "fail", "unresolved"]) });
 const decisionRequestSchema = z.object({
-  decisionId: z.string(), executionId: z.string(), kind: z.enum(["route", "skill", "agent", "context"]), question: z.string(), state: jsonValue,
+  decisionId: z.string(), executionId: z.string(), kind: z.enum(["route", "skill", "agent", "context", "acceptance"]), question: z.string(), state: jsonValue,
   inputs: z.array(z.object({ name: z.string(), value: jsonValue, source: z.string().optional() })), candidates: z.array(z.string()), evidenceRefs: z.array(z.string()).optional(),
   policyChecks: z.array(policyCheckSchema).optional(), threshold: z.number().optional(), overrides: jsonValue.optional(),
 });
 const appliedDecisionSchema = z.object({
-  decisionId: z.string(), executionId: z.string(), question: z.string(), inputs: z.array(z.object({ name: z.string(), value: jsonValue, source: z.string().optional() })), choice: z.string(), candidates: z.array(z.string()), confidence: z.number(), reasons: z.array(z.string()), evidenceRefs: z.array(z.string()), policyChecks: z.array(policyCheckSchema), kind: z.enum(["route", "skill", "agent", "context"]), applied: z.boolean(), escalated: z.boolean(), model: z.string().optional(), probabilities: z.record(z.string(), z.number()).optional(), overrides: jsonValue.optional(), observedOutcome: jsonValue.optional(),
+  decisionId: z.string(), executionId: z.string(), question: z.string(), inputs: z.array(z.object({ name: z.string(), value: jsonValue, source: z.string().optional() })), choice: z.string(), candidates: z.array(z.string()), confidence: z.number(), reasons: z.array(z.string()), evidenceRefs: z.array(z.string()), policyChecks: z.array(policyCheckSchema), kind: z.enum(["route", "skill", "agent", "context", "acceptance"]), applied: z.boolean(), escalated: z.boolean(), model: z.string().optional(), probabilities: z.record(z.string(), z.number()).optional(), overrides: jsonValue.optional(), observedOutcome: jsonValue.optional(),
 });
 const auditRecordSchema = z.object({ request: decisionRequestSchema, response: appliedDecisionSchema, recordedAt: z.string(), rawAnswer: answerSchema.optional(), overrides: jsonValue.optional(), observedOutcome: jsonValue.optional() });
 function applyDecision(request: DecisionRequest, answer: JevAnswer | undefined, model?: string): AppliedDecision {
+  if (request.kind === "acceptance" && answer?.type === "noul") {
+    const applied = answer.noul >= (request.threshold ?? 0.7);
+    return { decisionId: request.decisionId, executionId: request.executionId, question: request.question, inputs: request.inputs, choice: answer.noul >= 0.5 ? "yes" : "no", candidates: request.candidates, confidence: answer.noul, reasons: ["Acceptance Noul probability of yes."], evidenceRefs: request.evidenceRefs ?? [], policyChecks: request.policyChecks ?? [], kind: request.kind, applied, escalated: !applied, ...(model ? { model } : {}) };
+  }
   const choiceAnswer = answer?.type === "choice" ? answer : undefined;
   const confidence = choiceAnswer?.confidence ?? 0;
   const threshold = request.threshold ?? 0.7;
@@ -110,6 +115,7 @@ export class JevDecisionCore {
     return request.criteria.map(criterion => {
       const answer = response.answers[criterion.id];
       if (!answer || answer.type !== "noul") throw new Error(`Jev acceptance answer missing for ${criterion.id}`);
+      this.apply({ decisionId: `acceptance-${request.executionId}-${request.attempt ?? 1}-${criterion.id}`, executionId: request.executionId, kind: "acceptance", question: `Does the implementation satisfy: ${criterion.description}?`, state: request.state, inputs: [{ name: "attempt", value: request.attempt ?? 1 }], candidates: ["yes", "no"], threshold }, answer, response.model);
       return { criterionId: criterion.id, probability: answer.noul, passed: answer.noul >= threshold };
     });
   }
@@ -120,6 +126,7 @@ export class JevDecisionCore {
   }
   explain(decisionId: string): DecisionAuditRecord { return this.audit.explain(decisionId); }
   replay(decisionId: string): AppliedDecision { return this.audit.replay(decisionId); }
+  recordOutcome(decisionId: string, outcome: JsonValue): void { this.audit.recordOutcome(decisionId, outcome); }
 }
 export function routeFromDecision(decision: AppliedDecision, catalogue: readonly CatalogueModel[], base: Omit<Route, "model" | "provider">): Route {
   if (!decision.applied || decision.escalated) throw new Error(`Cannot create a route from an unapplied decision: ${decision.decisionId}`);

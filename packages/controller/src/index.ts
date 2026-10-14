@@ -6,9 +6,13 @@ import { randomUUID } from "node:crypto";
 import { RepositoryRegistry, type RepositoryLookup, type Repository } from "./repository.js";
 import { type Worktree, type WorktreeManager } from "./worktree.js";
 import { ConcurrencyLimiter } from "./limiter.js";
-import { type SessionLaunch, type SessionResult, type SessionLauncherLike } from "./launcher.js";
+import { type SessionResult, type SessionLauncherLike } from "./launcher.js";
 import { RestartReconciler, type ReconciliationReport } from "./reconcile.js";
 import { VerificationError, VerificationTracker } from "@kor-code/verification";
+import { CalibrationStore, sampledPair } from "@kor-code/calibration";
+import { ExecutionVerificationError, verificationBase, verificationSettings, type VerificationOptions } from "./verification.js";
+
+import { runVerifiedSessions } from "./attempts.js";
 
 export * from "./repository.js";
 export * from "./worktree.js";
@@ -16,6 +20,7 @@ export * from "./limiter.js";
 export * from "./events.js";
 export * from "./launcher.js";
 export * from "./reconcile.js";
+export * from "./verification.js";
 
 export interface ControllerLinearRuntime { store: LinearStore; client: LinearClient; workflow: WorkflowMapping }
 export type VerificationFactory = (execution: Execution) => VerificationTracker;
@@ -32,6 +37,8 @@ export interface ControllerOptions {
   promptPrefix?: string;
   leaseTtlMs?: number;
   verification?: VerificationFactory;
+  verificationOptions?: VerificationOptions;
+  calibration?: { store: CalibrationStore; sampleRate?: number; baselineRoute?: Route };
 }
 export interface ControllerRunResult {
   execution: Execution;
@@ -103,41 +110,52 @@ class ExecutionController implements Controller {
       worktree = await this.options.worktrees.create({ executionId: input.id, issueId: input.issueId, repository, branch: input.branch });
       const execution: Execution = { ...input, repository: repository.key, worktree: worktree.path, branch: worktree.branch, status: "running", ...(route ? { route } : {}), manifest: { executionId: input.id, issueId: input.issueId, repository: repository.key, worktree: worktree.path, branch: worktree.branch, agents: [], acceptance: acceptance(issue) } };
       const verification = this.options.verification?.(execution) ?? (this.writer ? new VerificationTracker(execution.manifest?.acceptance ?? [], execution.id) : undefined);
+      const calibrationRoute = route ?? this.options.calibration?.baselineRoute;
       if (this.lease && this.writer) {
         if (!claim) throw new Error(`No execution lease available for ${input.issueId}`);
         this.writer.start(claim, execution);
         await this.writer.flush();
       }
-      const launch: SessionLaunch = { execution, repositoryPath: repository.path, worktreePath: worktree.path, prompt: input.prompt ?? promptFor(issue, this.options.promptPrefix), ...(route ? { route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}) };
+      const baseRevision = this.options.calibration?.store.run(input.id)?.baseRevision ?? await verificationBase(worktree.path);
+      const calibrationStartedAt = new Date().toISOString();
+      if (this.options.calibration && calibrationRoute) {
+        this.options.calibration.store.beginRun({ executionId: input.id, pairId: input.id, issueId: input.issueId, arm: !input.route && this.options.jev && (this.options.catalogue?.length ?? 0) > 0 ? "jev" : "fallback", baseRevision, route: calibrationRoute, sampled: sampledPair(input.id, this.options.calibration.sampleRate ?? 0.25), startedAt: calibrationStartedAt, status: "running" });
+      }
+      const initialPrompt = input.prompt ?? promptFor(issue, this.options.promptPrefix);
+      const settings = verificationSettings(this.options.verificationOptions);
       heartbeat = claim && this.lease ? this.startHeartbeat(claim) : undefined;
-      const sessionPromise = this.options.launcher.launch(launch);
-      const session = await Promise.race([sessionPromise, ...(heartbeat ? [heartbeat.failed] : [])]);
-      heartbeat?.stop();
-      const failed = session.failed ?? session.exitCode !== 0;
-      const completedExecution = { ...execution, status: failed ? "failed" as const : "complete" as const };
+      const { session, latest, verificationReport } = await runVerifiedSessions({ execution, repository, initialPrompt, baseRevision,
+        launcher: this.options.launcher, settings, ...(this.options.jev ? { jev: this.options.jev } : {}),
+        ...(this.options.calibration && calibrationRoute ? { calibration: this.options.calibration.store } : {}),
+        ...(heartbeat ? { leaseFailure: heartbeat.failed } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}) });
+      if (this.options.calibration && calibrationRoute) {
+        this.options.calibration.store.finishRun(input.id, verificationReport.passed ? "verified" : "failed");
+        if (this.options.calibration.store.run(input.id)?.arm === "jev" && this.options.calibration.store.run(input.id)?.sampled) await this.runBaseline({ execution, issue, repository, baseRevision, initialPrompt, settings, calibration: this.options.calibration, ...(heartbeat ? { leaseFailure: heartbeat.failed } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}) });
+      }
+      const completedExecution = { ...execution, status: "complete" as const, verification: verificationReport };
       if (this.writer && claim) {
-        if (!failed) {
-          try {
-            verification?.addMany(input.evidence ?? []);
-            verification?.assertComplete();
-          } catch (error) {
-            if (verification && this.writer && claim) {
-              const failure = error instanceof VerificationError
-                ? error
-                : new VerificationError(error instanceof Error ? error.message : String(error), verification.findings());
-              await this.writer.recordVerificationBlock(claim, { ...execution, status: "blocked" }, failure.findings);
-              await this.writer.flush();
-              throw failure;
-            }
-            throw error;
-          }
-          await this.writer.complete(claim, { summary: `Execution ${input.id} completed`, evidence: verification?.evidence() ?? [] });
+        try {
+          verification?.addMany(input.evidence ?? []);
+          verification?.addMany(latest.evidence);
+          if (latest.blockers.length > 0) throw new VerificationError(latest.blockers.join("; "), latest.findings);
+          verification?.assertComplete();
+        } catch (error) {
+          const failure = error instanceof VerificationError
+            ? error
+            : new VerificationError(error instanceof Error ? error.message : String(error), verification?.findings() ?? latest.findings);
+          await this.writer.recordVerificationBlock(claim, { ...execution, status: "blocked", verification: verificationReport }, failure.findings, latest.blockers);
+          await this.writer.flush();
+          throw failure;
         }
-        else this.options.linear?.store.release(claim, 1_000);
+        await this.writer.complete(claim, { summary: `Execution ${input.id} completed`, evidence: verification?.evidence() ?? [] });
         await this.writer.flush();
       }
+      if (latest.blockers.length > 0) throw new ExecutionVerificationError(verificationReport);
       return { execution: completedExecution, issue, repository, worktree, session, ...(claim ? { claim } : {}) };
     } catch (error) {
+      if (this.options.calibration && this.options.calibration.store.run(input.id)?.status === "running") {
+        this.options.calibration.store.finishRun(input.id, "interrupted");
+      }
       if (claim && this.options.linear) {
         try { this.options.linear.store.release(claim, 1_000); } catch { /* expired claims are reclaimed on restart */ }
       }
@@ -147,6 +165,25 @@ class ExecutionController implements Controller {
       permit.release();
     }
   }
+  private async runBaseline(input: { execution: Execution; issue: LinearIssue; repository: Repository; baseRevision: string; initialPrompt: string; settings: ReturnType<typeof verificationSettings>; calibration: NonNullable<ControllerOptions["calibration"]>; leaseFailure?: Promise<never>; onSpawn?: (pid: number) => void }): Promise<void> {
+    const { execution, issue, repository, baseRevision, initialPrompt, settings, calibration } = input;
+    if (!calibration.baselineRoute || !baseRevision) return;
+    const id = `${execution.id}-baseline`;
+    if (!calibration.store.beginRun({ executionId: id, pairId: execution.id, issueId: issue.id, arm: "baseline", baseRevision, route: calibration.baselineRoute, sampled: true, startedAt: new Date().toISOString(), status: "running" })) return;
+    let worktree: Worktree | undefined;
+    try {
+      worktree = await this.options.worktrees.create({ executionId: id, issueId: issue.id, repository, branch: `kor/calibration/${id}`, baseRevision, detached: true });
+      const baseline: Execution = { id, issueId: issue.id, repository: repository.key, route: calibration.baselineRoute, worktree: worktree.path, branch: worktree.branch, status: "running", manifest: { executionId: id, issueId: issue.id, repository: repository.key, worktree: worktree.path, branch: worktree.branch, agents: [], acceptance: acceptance(issue) } };
+      const result = await runVerifiedSessions({ execution: baseline, repository, initialPrompt, baseRevision, launcher: this.options.launcher, settings,
+        ...(this.options.jev ? { jev: this.options.jev } : {}), calibration: calibration.store,
+        ...(input.leaseFailure ? { leaseFailure: input.leaseFailure } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}) });
+      calibration.store.finishRun(id, result.verificationReport.passed ? "verified" : "failed");
+    } catch {
+      // Baseline failures are visible in the report; never change the real issue's outcome.
+      calibration.store.finishRun(id, "interrupted");
+    } finally { if (worktree) await this.options.worktrees.remove?.(worktree); }
+  }
+
   private startHeartbeat(claim: ExecutionClaim): { failed: Promise<never>; stop: () => void } {
     let timer: ReturnType<typeof setInterval> | undefined;
     let rejectFailure: (error: unknown) => void = () => undefined;

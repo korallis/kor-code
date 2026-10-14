@@ -17,6 +17,8 @@
     },
     {
       "path": "../daemon"
-    }
+    },
+    { "path": "../calibration" },
+    { "path": "../controller" }
   ]
 }

@@ -13,6 +13,7 @@ export interface SessionTelemetry {
   durationMs?: number;
   durationApiMs?: number;
   numTurns?: number;
+  apiErrorStatus?: number;
   model?: string;
   usage?: Readonly<Record<string, number>>;
 }
@@ -62,6 +63,7 @@ function parseResultEvent(events: readonly SessionEvent[]): SessionTelemetry | u
   const durationMs = numberField(value.duration_ms);
   const durationApiMs = numberField(value.duration_api_ms);
   const numTurns = numberField(value.num_turns);
+  const apiErrorStatus = numberField(value.api_error_status);
   return {
     result: stringField(value.result) ?? "",
     isError: value.is_error === true,
@@ -70,6 +72,7 @@ function parseResultEvent(events: readonly SessionEvent[]): SessionTelemetry | u
     ...(durationMs !== undefined ? { durationMs } : {}),
     ...(durationApiMs !== undefined ? { durationApiMs } : {}),
     ...(numTurns !== undefined ? { numTurns } : {}),
+    ...(apiErrorStatus !== undefined ? { apiErrorStatus } : {}),
     ...(model ? { model } : {}),
     ...(usage ? { usage } : {}),
   };
@@ -97,7 +100,7 @@ export class SessionLauncher implements SessionLauncherLike {
       ...(input.route?.model ? ["--model", input.route.model] : []),
       ...(input.route?.reasoningLevel ? ["--effort", input.route.reasoningLevel] : []),
     ];
-    const commandArgs = this.options.args ?? ["claude", "-p", input.prompt, ...routeArgs, "--plugin-dir", resolve(this.repoRoot, "packages/claude-plugin"), "--no-session-persistence", "--permission-mode", "dontAsk", "--allowedTools", ...toolArgs, "--output-format", "stream-json", "--verbose", "--setting-sources", ""];
+    const commandArgs = this.options.args ?? ["claude", "-p", input.prompt, ...routeArgs, "--plugin-dir", resolve(this.repoRoot, "packages/claude-plugin"), "--no-session-persistence", "--permission-mode", "acceptEdits", "--allowedTools", ...toolArgs, "--output-format", "stream-json", "--verbose", "--setting-sources", ""];
     const args = ["--run", ...commandArgs];
     const tool = commandArgs[0] ?? "claude";
     const toolDir = tool.includes("/") ? dirname(tool) : this.findToolDir(tool);

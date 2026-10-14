@@ -2,9 +2,9 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
-import { fakeIssue, FakeLinearClient, type LinearIssue } from "@kor-code/linear";
-import { parseKorConfig, runtimePaths } from "@kor-code/config";
-import { KorDaemon } from "@kor-code/daemon";
+import { fakeIssue, FakeLinearClient, type LinearIssue } from "../packages/linear/src/index.js";
+import { parseKorConfig, runtimePaths } from "../packages/config/src/index.js";
+import { KorDaemon } from "../packages/daemon/src/index.js";
 
 const root = await mkdtemp(join(tmpdir(), "kor-daemon-proof-"));
 const paths = runtimePaths({ HOME: root, XDG_CONFIG_HOME: join(root, "config"), XDG_STATE_HOME: join(root, "state"), XDG_DATA_HOME: join(root, "share") });

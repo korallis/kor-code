@@ -53,10 +53,31 @@ defaultRoute:
   reasoningLevel: medium
 pollIntervalSeconds: 60
 intakeLabel: kor
+calibration:
+  sampleRate: 0.25
+  baselineRoute:
+    provider: anthropic
+    model: claude-sonnet-5-5
+    accountPolicy: fill-first
+    sessionAffinity: true
+    reasoningLevel: medium
 ```
 
-`defaultBranch` defaults to `main`, `checks` and `toolAllowlist` default to empty lists, and the default route is `anthropic / claude-sonnet-5-5` with fill-first account selection. Unknown fields and invalid values fail before a configuration reaches the controller.
+`defaultBranch` defaults to `main`, `checks` and `toolAllowlist` default to empty lists, and the default route is `anthropic / claude-sonnet-5-5` with fill-first account selection. Calibration samples one quarter of primary executions by a stable execution-id hash unless `calibration.sampleRate` is changed. The fixed baseline defaults to `claude-sonnet-5-5`; sampled baseline replays use the primary run's base revision in a throwaway worktree and never ship. Unknown fields and invalid values fail before a configuration reaches the controller.
 
 Run `pnpm kor doctor` (or the installed `kor doctor`) for bounded checks of the credentials, CLIProxyAPI, management endpoint, quota-axi, Claude Code, no-mistakes, and every configured repository. A missing Kor client key reports the exact one-line proxy addition to make:
 
 The doctor prints one generated key-list item, such as `CLIProxyAPI addition: - kor-<generated-value>`. Add that exact item to the proxy's `api-keys` list and put the same value in `KOR_GATEWAY_KEY` in `gateway.env`.
+
+## Calibration
+
+Calibration rows share `kor.db` with the daemon. Each Jev or baseline arm records one `run_metrics` row per attempt, including cost, token and cache counters, wall-clock time, failovers, verification failures, policy blocks, and clarifications. Terminal outcomes are recorded separately so a verified run is not reported as merged before the merge outcome exists.
+
+Run the report with:
+
+```sh
+kor calibrate report
+kor calibrate report --since 2026-10-01T00:00:00.000Z --json
+```
+
+The text report shows Jev and baseline arms side by side and a confidence reliability table with sample sizes and Brier scores. Fewer than 20 outcomes in either arm are labelled directional.

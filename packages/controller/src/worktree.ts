@@ -6,7 +6,7 @@ import type { Repository } from "./repository.js";
 const execFile = promisify(execFileCallback);
 
 export interface Worktree { executionId: string; issueId: string; path: string; branch: string; repository: string }
-export interface WorktreeCreateInput { executionId: string; issueId: string; repository: Repository; branch: string }
+export interface WorktreeCreateInput { executionId: string; issueId: string; repository: Repository; branch: string; baseRevision?: string; detached?: boolean }
 export interface WorktreeManager { create(input: WorktreeCreateInput): Promise<Worktree>; remove?(worktree: Worktree): Promise<void>; exists?(worktree: Worktree): Promise<boolean> }
 
 export class GitWorktreeManager implements WorktreeManager {
@@ -18,14 +18,14 @@ export class GitWorktreeManager implements WorktreeManager {
     try {
       await execFile("git", ["-C", path, "rev-parse", "--show-toplevel"]);
       const currentBranch = (await execFile("git", ["-C", path, "branch", "--show-current"])).stdout.trim();
-      if (currentBranch === branch) return { executionId: input.executionId, issueId: input.issueId, path, branch, repository: input.repository.path };
+      if (currentBranch === branch || (input.detached && currentBranch === "")) return { executionId: input.executionId, issueId: input.issueId, path, branch, repository: input.repository.path };
       throw new Error(`Existing worktree ${path} belongs to branch ${currentBranch}`);
     } catch (error) {
       if (error instanceof Error && error.message.startsWith("Existing worktree")) throw error;
       await rm(path, { recursive: true, force: true });
     }
     const branchExists = await execFile("git", ["-C", input.repository.path, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`]).then(() => true).catch(() => false);
-    const addArgs = branchExists ? ["worktree", "add", path, branch] : ["worktree", "add", "-b", branch, path, input.repository.defaultBranch ?? "HEAD"];
+    const addArgs = input.detached ? ["worktree", "add", "--detach", path, input.baseRevision ?? "HEAD"] : branchExists ? ["worktree", "add", path, branch] : ["worktree", "add", "-b", branch, path, input.baseRevision ?? input.repository.defaultBranch ?? "HEAD"];
     await execFile("git", ["-C", input.repository.path, ...addArgs]);
     await writeFile(join(path, ".kor-worktree.json"), `${JSON.stringify({ executionId: input.executionId, issueId: input.issueId })}\n`, { mode: 0o600 });
     return { executionId: input.executionId, issueId: input.issueId, path, branch, repository: input.repository.path };
