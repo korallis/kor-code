@@ -147,8 +147,9 @@ export class MissionApi {
         }
         if (path === "/api/connections") {
           const body = connect.parse(input);
-          send(200, await services.connect(body));
-          await this.daemon.connectionsChanged(body.provider); return;
+          const connections = await services.connect(body);
+          await this.daemon.connectionsChanged(body.provider);
+          send(200, connections); return;
         }
         const probe = /^\/api\/models\/([^/]+)\/probe$/.exec(path);
         if (probe?.[1]) { empty.parse(input); const model = decodeURIComponent(probe[1]); send(200, { schemaVersion: 1, model, verified: await services.probeModel(model) }); return; }
