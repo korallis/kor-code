@@ -5,15 +5,15 @@ import { CircleCheck, CircleX, GitPullRequest, Route, TriangleAlert, WandSparkle
 import type { MissionRun } from '@kor-code/mission-control';
 import type { DecisionRecord, OverrideRecord } from '@kor-code/core';
 import type { Tone } from '../ui/text';
-import { acceptanceSummary, checksSummary, keyOf, prNumber } from './runs';
+import { acceptanceSummary, checksSummary, keyOf, prNumber, runUpdatedAt } from './runs';
 
-export interface Activity { id: string; at: string; tone: Tone; icon: LucideIcon; key: string; executionId: string; text: string }
+export interface Activity { id: string; at: string | undefined; tone: Tone; icon: LucideIcon; key: string; executionId: string; text: string }
 
 export function buildActivity(runs: readonly MissionRun[], overrides: readonly OverrideRecord[], decisions: readonly DecisionRecord[] = []): Activity[] {
   const out: Activity[] = [];
   for (const run of runs) {
     const key = keyOf(run);
-    const base = { at: run.observedAt, key, executionId: run.executionId };
+    const base = { at: runUpdatedAt(run, decisions), key, executionId: run.executionId };
     const checks = checksSummary(run), acceptance = acceptanceSummary(run);
     const detail = [checks && `${checks.passed}/${checks.total} checks`, acceptance && `${acceptance.passed}/${acceptance.total} acceptance conditions`].filter(Boolean).join(', ');
     switch (run.status) {
@@ -35,5 +35,5 @@ export function buildActivity(runs: readonly MissionRun[], overrides: readonly O
     const run = runs.find(one => one.executionId === decision.executionId);
     out.push({ id: `d:${decision.decisionId}`, at: decision.recordedAt, tone: 'amber', icon: Route, key: run ? keyOf(run) : decision.executionId.slice(0, 8), executionId: decision.executionId, text: `Jev escalated ${decision.kind}: ${decision.choice}` });
   }
-  return out.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+  return out.sort((a, b) => (b.at ? Date.parse(b.at) : 0) - (a.at ? Date.parse(a.at) : 0));
 }

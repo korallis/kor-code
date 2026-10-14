@@ -21,7 +21,7 @@ import { Swatch } from '../ui/glyphs';
 import { text } from '../ui/text';
 import { ago, clock, day, isToday, useNow } from '../lib/time';
 import { usd } from '../lib/format';
-import { isActive, needsYou } from '../lib/runs';
+import { isActive, needsYou, runUpdatedAt } from '../lib/runs';
 import { parseQuota, providerTitle, sessionWindow, weeklyWindow } from '../lib/quota';
 import { KorMark } from './Mark';
 import { Card } from '../ui/card';
@@ -237,6 +237,7 @@ function SideBar({ active, project }: { active: Screen; project?: string }) {
 
 function StatusBar() {
   const now = useNow();
+  const decisions = useDecisions();
   const status = useStatusResponse();
   const { runs } = useMissionRuns();
   const pool = usePoolLive();
@@ -254,7 +255,7 @@ function StatusBar() {
   const claude = quota.find(provider => provider.provider === 'claude');
   const five = sessionWindow(claude), week = weeklyWindow(claude);
   const limits = config.data?.config.limits;
-  const today = runs.filter(run => isToday(run.observedAt, now));
+  const today = runs.filter(run => isToday(runUpdatedAt(run, decisions), now));
   const spend = today.reduce((sum, run) => sum + (run.costUsd ?? 0), 0);
   const verified = today.filter(run => run.verification?.passed).length;
   const prs = runs.filter(run => run.pullRequestUrl && run.status === 'review').length;

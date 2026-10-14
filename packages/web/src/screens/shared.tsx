@@ -31,8 +31,7 @@ const styles = stylex.create({
 });
 
 export function RunRow({ run, now }: { run: MissionRun; now: number }) {
-  const started = run.heartbeatAt ?? run.observedAt;
-  const detail = run.status === 'waiting' ? 'your go-ahead' : run.status === 'running' ? duration(now - Date.parse(started)) : run.stage;
+  const detail = run.status === 'waiting' ? 'your go-ahead' : run.heartbeatAt && run.status === 'running' ? `${run.stage} · ♥ ${duration(now - Date.parse(run.heartbeatAt))}` : run.stage;
   return (
     <a href={href('agents', run.executionId)} {...stylex.props(styles.run, run.status === 'waiting' && styles.waiting)}>
       <div {...stylex.props(styles.t)}><span {...stylex.props(text.key)}>{keyOf(run)}</span><span {...stylex.props(text.ellipsis)}>{run.issueTitle ?? run.issueId}</span></div>

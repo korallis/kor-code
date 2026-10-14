@@ -4,6 +4,7 @@ import { Activity as ActivityIcon, ArrowRight, Bot, BrainCircuit, Coins, Cpu, Fo
 import { useState } from 'react';
 import type { MissionRun } from '@kor-code/mission-control';
 import type { LinearIssue } from '@kor-code/linear';
+import type { DecisionRecord } from '@kor-code/core';
 import { ApiFailure } from '../api/client';
 import { useMissionRuns, useOverrides, usePoolLive, useDecisions } from '../api/data';
 import { isOpen, issueKey, useAllIssues } from '../api/issues';
@@ -28,7 +29,7 @@ import { CountUp } from '../ui/count';
 import { MotionMedia } from '../motion/MotionMedia';
 import { buildActivity } from '../lib/activity';
 import { plural, shortModel, usd } from '../lib/format';
-import { isActive, keyOf, needsYou, readyToShip } from '../lib/runs';
+import { isActive, keyOf, needsYou, readyToShip, runUpdatedAt } from '../lib/runs';
 import { parseQuota, sessionWindow, weeklyWindow, providerTitle } from '../lib/quota';
 import { ago, clock, greeting, isToday, longDate, shortDate, useNow } from '../lib/time';
 import { page, QueryError, RunRow } from './shared';
@@ -125,7 +126,7 @@ const orbitTone = stylex.create({
   violet: { fill: color.violetBright, filter: `drop-shadow(0 0 6px ${color.violetBright})` },
 });
 
-function NeedsYou({ run, now, linearUrl }: { run: MissionRun | undefined; now: number; linearUrl?: string | undefined }) {
+function NeedsYou({ run, now, linearUrl, decisions }: { run: MissionRun | undefined; now: number; linearUrl?: string | undefined; decisions: DecisionRecord[] }) {
   const [answer, setAnswer] = useState('');
   const message = useRunMessage();
   const action = useRunAction();
@@ -147,7 +148,7 @@ function NeedsYou({ run, now, linearUrl }: { run: MissionRun | undefined; now: n
         <a href={href('linear', run.executionId)} {...stylex.props(text.key)}>{keyOf(run)}</a>
         <span {...stylex.props(text.muted, text.mono, text.xs, text.ellipsis)}>{run.status}{run.errorCode ? ` · ${run.errorCode}` : ''}</span>
         <span {...stylex.props(layout.grow)} />
-        <span {...stylex.props(text.muted, text.mono, text.xs)}>{ago(run.observedAt, now)} ago</span>
+        {runUpdatedAt(run, decisions) && <span {...stylex.props(text.muted, text.mono, text.xs)}>{ago(runUpdatedAt(run, decisions), now)} ago</span>}
       </div>
       <h3 {...stylex.props(styles.needsTitle)}>{run.issueTitle ?? run.issueId}</h3>
       <div {...stylex.props(layout.row, text.muted, text.sm, layout.mt1)}>
@@ -259,8 +260,9 @@ export function CommandCentre() {
   const attention = runs.filter(needsYou);
   const ready = runs.filter(readyToShip);
   const prsOpen = runs.filter(run => run.status === 'review' && run.pullRequestUrl);
-  const today = runs.filter(run => isToday(run.observedAt, now));
+  const today = runs.filter(run => isToday(runUpdatedAt(run, decisions), now));
   const verifiedToday = today.filter(run => run.verification?.passed);
+  const timeOf = (run: MissionRun) => Date.parse(runUpdatedAt(run, decisions) ?? '') || 0;
   const firstPass = verifiedToday.length ? verifiedToday.filter(run => (run.verification?.attempts.length ?? 0) <= 1).length / verifiedToday.length : null;
   const spendToday = today.reduce((sum, run) => sum + (run.costUsd ?? 0), 0);
   const quota = parseQuota(pool.quota?.value ?? null);
@@ -300,7 +302,7 @@ export function CommandCentre() {
             </div>
             </div>
           </Card>
-          <NeedsYou run={attention[0]} now={now} />
+          <NeedsYou key={attention[0]?.executionId ?? 'none'} run={attention[0]} now={now} decisions={decisions} />
         </section>
 
         {runsError && <QueryError error={runsError} what="Runs" />}
@@ -309,10 +311,10 @@ export function CommandCentre() {
           <Kpi index={2} icon={Bot} tone="cyan" label="Active runs" value={<CountUp value={active.length} format={String} />} small={<><b {...stylex.props(text.secondary)}>+{queued.length}</b> queued</>}
             art={activeSeries && <Spark width={84} values={activeSeries} tone="cyan" label="active runs since this page opened" />} />
           <Kpi index={3} icon={ShieldCheck} tone="green" label="Verified today" value={<CountUp value={verifiedToday.length} format={String} />} small={firstPass === null ? 'none yet' : <><b {...stylex.props(text.secondary)}>{Math.round(firstPass * 100)}%</b> first pass</>}
-            art={verifiedToday.length > 0 && <Spark width={84} values={cumulative(verifiedToday.map(run => ({ at: Date.parse(run.observedAt), value: 1 })))} tone="green" label="verified runs today" />} />
+            art={verifiedToday.length > 0 && <Spark width={84} values={cumulative(verifiedToday.map(run => ({ at: timeOf(run), value: 1 })))} tone="green" label="verified runs today" />} />
           <Kpi index={4} icon={GitPullRequest} tone="violet" label="Pull requests" value={<CountUp value={prsOpen.length} format={String} />} small={<>open for <b {...stylex.props(text.secondary)}>review</b></>} />
           <Kpi index={5} icon={Coins} tone="amber" label="Spend today · costUsd" value={<CountUp value={spendToday} format={value => usd(value)} />} small={<><b {...stylex.props(text.secondary)}>{today.length}</b> runs</>}
-            art={today.some(run => run.costUsd) && <Spark width={84} values={cumulative(today.map(run => ({ at: Date.parse(run.observedAt), value: run.costUsd ?? 0 })))} tone="amber" label="spend today" />} />
+            art={today.some(run => run.costUsd) && <Spark width={84} values={cumulative(today.map(run => ({ at: timeOf(run), value: run.costUsd ?? 0 })))} tone="amber" label="spend today" />} />
           <Kpi index={6} icon={Gauge} tone="violet" label={`${claude ? 'Claude' : 'Pool'} 5-hour pool`} value={five?.percentRemaining != null ? <CountUp value={five.percentRemaining} format={value => `${Math.round(value)}%`} /> : '—'}
             small={five?.resetsAt ? <>resets <b {...stylex.props(text.secondary)}>{clock(five.resetsAt)}</b></> : <ProvenanceChip provenance={pool.quota?.provenance ?? 'unavailable'} reason={pool.quota?.reason}>{pool.quota ? pool.quota.provenance : 'unavailable'}</ProvenanceChip>}
             art={five?.percentRemaining != null && <Ring pct={five.percentRemaining} size={38} stroke={5} label="5-hour window remaining" />} />

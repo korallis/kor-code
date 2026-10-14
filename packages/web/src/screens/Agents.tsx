@@ -31,7 +31,7 @@ import { AgentAvatar, profileOf } from '../ui/avatar';
 import { compact, prob, shortModel, usd } from '../lib/format';
 import { parseDiff } from '../lib/diff';
 import { parseTerminal, sessionUsage } from '../lib/terminal';
-import { byAttention, decisionsFor, isActive, keyOf, latestVerification, prNumber, slotOf, FINISHED } from '../lib/runs';
+import { byAttention, decisionsFor, isActive, keyOf, latestVerification, prNumber, runStartedAt, runUpdatedAt, slotOf, FINISHED } from '../lib/runs';
 import { ago, duration, isToday, useNow } from '../lib/time';
 import { page } from './shared';
 import { nextStep } from './runText';
@@ -84,10 +84,11 @@ const styles = stylex.create({
   steer: { minHeight: '64px' },
 });
 
-function AgentCard({ run, selected, now, index }: { run: MissionRun; selected: boolean; now: number; index: number }) {
+function AgentCard({ run, selected, now, index, decisions }: { run: MissionRun; selected: boolean; now: number; index: number; decisions: DecisionRecord[] }) {
   const action = useRunAction();
   const step = nextStep(run);
-  const elapsed = run.heartbeatAt ? duration(now - Date.parse(run.observedAt) + (Date.parse(run.observedAt) - Date.parse(run.heartbeatAt))) : null;
+  const started = runStartedAt(run, decisions);
+  const elapsed = started ? duration(now - Date.parse(started)) : null;
   return (
     <Card index={index} variant={selected ? 'neon' : run.status === 'blocked' ? 'attention' : 'plain'} style={[styles.agent, selected && styles.agentSel]} as="article" label={keyOf(run)}>
       <a href={href('agents', run.executionId)} {...stylex.props(layout.stackTight)}>
@@ -273,7 +274,7 @@ export function Agents({ executionId, terminal = false }: { executionId?: string
   const sorted = [...runs].sort(byAttention);
   const liveRuns = sorted.filter(run => !FINISHED.has(run.status) && run.status !== 'queued');
   const queued = sorted.filter(run => run.status === 'queued');
-  const finishedToday = sorted.filter(run => FINISHED.has(run.status) && isToday(run.observedAt, now));
+  const finishedToday = sorted.filter(run => FINISHED.has(run.status) && isToday(runUpdatedAt(run, decisions), now));
   const shown = filter === 'live' ? [...liveRuns, ...queued] : filter === 'queued' ? queued : finishedToday;
   const selected = runs.find(run => run.executionId === executionId) ?? liveRuns[0] ?? queued[0] ?? sorted[0];
   const limits = config.data?.config.limits;
@@ -299,7 +300,7 @@ export function Agents({ executionId, terminal = false }: { executionId?: string
         {error && <Notice title={`Runs unavailable: ${error.message}`} />}
         <div {...stylex.props(styles.body)}>
           <div {...stylex.props(styles.list)}>
-            {shown.map((run, index) => <AgentCard key={run.executionId} run={run} selected={run.executionId === selected?.executionId} now={now} index={index} />)}
+            {shown.map((run, index) => <AgentCard key={run.executionId} run={run} selected={run.executionId === selected?.executionId} now={now} index={index} decisions={decisions} />)}
             {shown.length === 0 && <Card pad><Empty slot="empty-no-runs" title={filter === 'finished' ? 'Nothing finished today.' : 'No runs.'}>Queue an issue to start one.</Empty></Card>}
             {filter === 'live' && finishedToday.length > 0 && (
               <Card index={shown.length}>

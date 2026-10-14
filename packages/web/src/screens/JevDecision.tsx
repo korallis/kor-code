@@ -34,7 +34,7 @@ import { toneOf, toneSolid } from '../ui/tone';
 import { parseDiff } from '../lib/diff';
 import { parseTerminal, toolSteps } from '../lib/terminal';
 import { prob, shortModel, usd } from '../lib/format';
-import { byAttention, decisionsFor, FINISHED, keyOf, latestVerification, prNumber } from '../lib/runs';
+import { byAttention, decisionsFor, FINISHED, keyOf, latestVerification, prNumber, probabilityOf } from '../lib/runs';
 import { clock, useNow } from '../lib/time';
 import { nextStep } from './runText';
 import { OverrideDialog } from './OverrideDialog';
@@ -86,6 +86,7 @@ const styles = stylex.create({
   candWin: { color: color.text },
   candBar: { height: '4px', borderRadius: '99px', backgroundColor: tint.track, overflow: 'hidden' },
   candFill: { height: '100%', backgroundImage: gradient.progress, boxShadow: tint.barGlowCyan },
+  candLose: { backgroundImage: 'none', backgroundColor: color.textMuted, boxShadow: 'none' },
   big: { fontFamily: font.display, fontSize: '22px', fontWeight: 600 },
   risk: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3px' },
   riskSeg: { height: '6px', borderRadius: '3px', backgroundColor: tint.stageTrack },
@@ -168,11 +169,12 @@ function DecisionPanel({ run, decisions, issue, onRequestChanges }: { run: Missi
           </div>
           {route?.candidates.map(candidate => {
             const win = candidate === route.choice;
+            const p = probabilityOf(route, candidate);
             return (
               <div key={candidate} {...stylex.props(styles.cand, win && styles.candWin)}>
                 <span {...stylex.props(text.ellipsis)}>{shortModel(candidate)}</span>
-                <div {...stylex.props(styles.candBar)}>{win && <div {...stylex.props(styles.candFill, animate.grow, delayBy.ms(240), fill.w(route.confidence))} />}</div>
-                <span>{win ? prob(route.confidence) : '—'}</span>
+                <div {...stylex.props(styles.candBar)}>{p !== undefined && <div {...stylex.props(styles.candFill, animate.grow, delayBy.ms(win ? 420 : 240), fill.w(p), !win && styles.candLose)} />}</div>
+                <span>{prob(p)}</span>
               </div>
             );
           })}

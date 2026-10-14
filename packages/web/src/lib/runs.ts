@@ -49,3 +49,30 @@ export function prNumber(url: string | undefined): string | null {
 
 /** The repository key a run belongs to: its configured repository, if the daemon reported it. */
 export const repoOf = (run: MissionRun) => run.repository;
+
+type Timed = MissionRun & { updatedAt?: string; createdAt?: string; startedAt?: string };
+
+/**
+ * When a run last moved. The daemon's own run timestamps are used when it
+ * reports them; until then, the run's latest Jev decision. Undefined means the
+ * run is undated, and time-based figures leave it out rather than guess.
+ */
+export function runUpdatedAt(run: MissionRun, decisions: readonly DecisionRecord[]): string | undefined {
+  const own = run as Timed;
+  if (own.updatedAt) return own.updatedAt;
+  const times = decisions.filter(decision => decision.executionId === run.executionId).map(decision => decision.recordedAt).sort();
+  return times.at(-1);
+}
+
+/** When a run started: the daemon's timestamp, else its first Jev decision. */
+export function runStartedAt(run: MissionRun, decisions: readonly DecisionRecord[]): string | undefined {
+  const own = run as Timed;
+  if (own.startedAt ?? own.createdAt) return own.startedAt ?? own.createdAt;
+  return decisions.filter(decision => decision.executionId === run.executionId).map(decision => decision.recordedAt).sort()[0];
+}
+
+/** A candidate's probability, when the decision reports per-candidate probabilities. */
+export function probabilityOf(decision: DecisionRecord, candidate: string): number | undefined {
+  const probabilities = (decision as DecisionRecord & { probabilities?: Record<string, number> }).probabilities;
+  return probabilities?.[candidate] ?? (candidate === decision.choice ? decision.confidence : undefined);
+}

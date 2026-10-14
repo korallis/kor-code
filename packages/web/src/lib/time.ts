@@ -21,7 +21,7 @@ export function useNow(): number {
 }
 
 export function ago(iso: string | undefined | null, at: number): string {
-  if (!iso) return '—';
+  if (!iso) return 'undated';
   const ms = at - Date.parse(iso);
   if (!Number.isFinite(ms)) return '—';
   const s = Math.max(0, Math.round(ms / 1000));

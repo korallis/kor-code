@@ -31,7 +31,8 @@ export function Terminal({ lines, live, empty, label }: { lines: readonly TermLi
     pinned.current = node.scrollHeight - node.scrollTop - node.clientHeight < 24;
   };
   const follow = (node: HTMLDivElement | null) => {
-    if (node && pinned.current) node.scrollIntoView({ block: 'end' });
+    const log = node?.parentElement;
+    if (log && pinned.current) log.scrollTop = log.scrollHeight;
   };
   return (
     <div role="log" aria-live="polite" aria-label={label} onScroll={onScroll} {...stylex.props(styles.term)}>
