@@ -192,6 +192,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@kor-code/calibration':
+        specifier: workspace:*
+        version: link:../calibration
       '@kor-code/config':
         specifier: workspace:*
         version: link:../config

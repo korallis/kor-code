@@ -6,10 +6,10 @@ import { formatDoctor, runDoctor } from "./doctor.js";
 import { runPlan } from "./plan.js";
 import { ensureRuntimeDirectories, loadGatewayEnvironment, loadKorConfig, repositoryKeyForIssue, runtimePaths } from "@kor-code/config";
 import { HttpLinearClient, LinearStore, stableId, startWrites, workflowMapping, type LinearWrite } from "@kor-code/linear";
-import { KorDaemon, readStatus } from "@kor-code/daemon";
+import { KorDaemon, readStatus, type RouteChoice } from "@kor-code/daemon";
 import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController } from "@kor-code/controller";
 import { GatewayAdapter, readModelRegistry } from "@kor-code/gateway-adapter";
-import { JevClient, JevDecisionCore } from "@kor-code/jev";
+import { JevClient, JevDecisionCore, PersistentDecisionAuditLog, planPreflight } from "@kor-code/jev";
 import { CalibrationStore, buildReport, formatReport } from "@kor-code/calibration";
 import type { CatalogueModel } from "@kor-code/core";
 
@@ -166,7 +166,20 @@ async function serve(args: readonly string[]): Promise<number> {
   // management API and the verified model registry through the daemon.
   const gateway = new GatewayAdapter();
   const verifiedModels = async () => (await readModelRegistry(paths.modelsFile)).models.filter(model => model.verified).map(model => model.model);
-  const daemon = new KorDaemon({ paths, config: loaded.config, linear: new HttpLinearClient({ writes: {} }), controller, port, gateway, verifiedModels });
+  let daemon: KorDaemon | undefined;
+  // Preserve the T8 daemon preflight alongside calibration. It runs once per
+  // execution, persists all decisions to decision_audit, and labels a default
+  // route as fallback when Jev escalates or is unavailable.
+  const chooseRoute = async ({ executionId, issue }: Parameters<NonNullable<ConstructorParameters<typeof KorDaemon>[0]["chooseRoute"]>>[0]): Promise<RouteChoice> => {
+    const store = daemon!.store;
+    const audit = new PersistentDecisionAuditLog({ read: id => store.readDecisionAudit(id), write: (id, at, payload) => store.writeDecisionAudit(id, at, payload), update: (id, at, payload) => store.updateDecisionAudit(id, at, payload) });
+    const registry = await readModelRegistry(paths.modelsFile);
+    const verified = registry.models.filter(result => result.verified).map(result => ({ provider: result.model.startsWith("claude-") ? "anthropic" : result.model.split("/")[0] ?? "unknown", model: result.model, capabilities: Object.entries(result.capabilities).map(([name, supported]) => ({ name, supported: supported === true })), ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) }));
+    const plan = await planPreflight({ executionId, issue: { id: issue.id, title: issue.title, ...(issue.description !== undefined ? { description: issue.description } : {}), acceptanceCriteria: issue.acceptanceCriteria, dependencies: issue.dependencies.map(dependency => ({ id: dependency.id, state: dependency.stateType })) }, verifiedModels: verified, defaultRoute: loaded.config.defaultRoute }, new JevDecisionCore(new JevClient(), audit), audit);
+    const { label: _, ...route } = plan.route as typeof plan.route & { label?: string };
+    return { route, source: plan.fallback || (plan.route as { label?: string }).label !== "jev" ? "fallback" : "jev" };
+  };
+  daemon = new KorDaemon({ paths, config: loaded.config, linear: new HttpLinearClient({ writes: {} }), controller, port, gateway, verifiedModels, chooseRoute });
   const handle = await daemon.start();
   process.stdout.write(`kor daemon listening on ${statusUrl}\n`);
   await new Promise<void>(resolve => {
