@@ -18,14 +18,15 @@ async function keyFromRuntimeFile(): Promise<string | undefined> {
       if (key) return key;
     }
   } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw new Error("Unable to read TypeSafe runtime credential file");
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw new JevUnavailableError("Unable to read TypeSafe runtime credential file");
   }
   return undefined;
 }
 export async function resolveJevApiKey(explicit?: string): Promise<string | undefined> {
   return explicit || process.env.TYPESAFE_API_KEY || process.env.TYPESAFE_KEY || process.env.JEV_API_KEY || await keyFromRuntimeFile();
 }
-export class JevRequestError extends Error {
+export class JevUnavailableError extends Error {}
+export class JevRequestError extends JevUnavailableError {
   constructor(readonly status: number, body: string) {
     super(`Jev request failed: HTTP ${status}; upstream body (capped and redacted): ${body || "<empty>"}`);
     this.name = "JevRequestError";
@@ -75,11 +76,11 @@ export class JevClient {
     const validated = Object.fromEntries(Object.entries(questions).map(([id, question]) => [id, questionSchema.parse(question)]));
     if (Object.keys(validated).length === 0) throw new Error("Jev evaluation requires at least one question");
     const key = await resolveJevApiKey(this.options.apiKey);
-    if (!key) throw new Error("TypeSafe API key not found (set TYPESAFE_API_KEY or ~/.config/typesafe/env)");
+    if (!key) throw new JevUnavailableError("TypeSafe API key not found (set TYPESAFE_API_KEY or ~/.config/typesafe/env)");
     let response: Response;
     try {
       response = await this.options.fetch(this.options.endpoint, { method: "POST", redirect: "error", signal: AbortSignal.timeout(this.options.timeoutMs), headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify({ state: redact(state, [key, ...runtimeSecrets()]), model: this.options.model, questions: redact(validated, [key, ...runtimeSecrets()]) }) });
-    } catch (error) { throw new Error("Jev transport unavailable or timed out", { cause: error }); }
+    } catch (error) { throw new JevUnavailableError("Jev transport unavailable or timed out", { cause: error }); }
     if (!response.ok) {
       const secrets = [key, ...runtimeSecrets()];
       const longestSecret = Math.max(0, ...secrets.map(secret => Buffer.byteLength(secret)));
@@ -88,7 +89,10 @@ export class JevClient {
       throw new JevRequestError(response.status, safeBody);
     }
     try { return parseResponse(JSON.parse(await readBounded(response, 1_048_576)), validated); }
-    catch (error) { throw new Error("Jev response failed typed validation", { cause: error }); }
+    catch (error) {
+      const detail = String(redact(error instanceof Error ? error.message : "unknown validation error", [key, ...runtimeSecrets()])).slice(0, 2048);
+      throw new JevUnavailableError(`Jev response failed typed validation: ${detail}`, { cause: error });
+    }
   }
   async choice<T extends string>(state: unknown, instructions: string, criteria: Record<T, string | null>): Promise<ChoiceAnswer & { choice: T }> {
     const response = await this.evaluate(state, { choice: { type: "choice", instructions, criteria } });

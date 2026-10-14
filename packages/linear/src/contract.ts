@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Evidence, Execution, Issue } from '@kor-code/core';
 
 export interface LinearIssue extends Issue {
@@ -18,7 +19,7 @@ export interface LinearIssue extends Issue {
 }
 
 export type LinearStateType = "backlog" | "unstarted" | "started" | "completed" | "canceled" | "triage" | "duplicate";
-export interface LinearWorkflowState { id: string; type: LinearStateType }
+export interface LinearWorkflowState { id: string; type: LinearStateType; name?: string }
 
 export interface AgentSessionRecord {
   id: string;
@@ -32,17 +33,39 @@ export type LinearWrite =
   | { kind: 'state'; issueId: string; stateId: string }
   | { kind: 'summary'; sessionId: string; summary: string }
   | { kind: 'activity'; id: string; sessionId: string; activity: 'thought' | 'response' | 'error'; body: string }
-  | { kind: 'comment'; id: string; issueId: string; body: string };
+  | { kind: 'comment'; id: string; issueId: string; body: string }
+  | { kind: 'attachment'; issueId: string; url: string; title?: string };
+
+export interface LinearClientCapabilities { agentSessions?: boolean }
 
 export interface LinearClient {
   getIssue(id: string): Promise<LinearIssue>;
   listIssues(teamKey: string, limit?: number): Promise<LinearIssue[]>;
+  listWorkflowStates(teamKey: string): Promise<LinearWorkflowState[]>;
   apply(write: LinearWrite): Promise<void>;
   recordExecution(execution: Execution): Promise<void>;
+  readonly capabilities?: LinearClientCapabilities;
 }
 
-export interface WorkflowMapping { queued: LinearWorkflowState; running: LinearWorkflowState; complete: LinearWorkflowState }
+export interface WorkflowMapping {
+  /** Todo, deliberately never Backlog: Kor only starts opted-in work. */
+  queued: LinearWorkflowState;
+  running: LinearWorkflowState;
+  complete: LinearWorkflowState;
+  review?: LinearWorkflowState;
+  canceled?: LinearWorkflowState;
+}
 export interface Completion { summary: string; evidence: Evidence[]; pullRequestUrl?: string }
+
+/** UUID-shaped deterministic IDs make comment/activity retries idempotent. */
+export function stableId(namespace: string, key: string): string {
+  const bytes = createHash('sha256').update(`${namespace}:${key}`).digest().subarray(0, 16);
+  // Linear validates client supplied IDs as RFC 4122 UUID v4 values.
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 export function object(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('Linear response has an invalid object');
@@ -60,6 +83,20 @@ export function stateType(value: unknown): LinearStateType {
   const candidate = string(value);
   if (candidate === "backlog" || candidate === "unstarted" || candidate === "started" || candidate === "completed" || candidate === "canceled" || candidate === "triage" || candidate === "duplicate") return candidate;
   throw new Error("Linear response has an invalid workflow state type");
+}
+
+function normalizedName(state: LinearWorkflowState): string { return (state.name ?? '').trim().toLowerCase().replace(/\s+/g, ' '); }
+
+/** Resolve real team states by their names, with type-based fallbacks for custom workflows. */
+export function workflowMapping(states: readonly LinearWorkflowState[]): WorkflowMapping {
+  const find = (predicate: (state: LinearWorkflowState) => boolean): LinearWorkflowState | undefined => states.find(predicate);
+  const queued = find(state => /^(todo|to do)$/.test(normalizedName(state))) ?? find(state => state.type === 'unstarted' && normalizedName(state) !== 'backlog');
+  const running = find(state => /^(in progress|started)$/.test(normalizedName(state))) ?? find(state => state.type === 'started' && !/review/.test(normalizedName(state)));
+  const complete = find(state => /^(done|complete|completed)$/.test(normalizedName(state))) ?? find(state => state.type === 'completed');
+  if (!queued || !running || !complete) throw new Error('Linear team workflow is missing Todo, In Progress, or Done');
+  const review = find(state => /review/.test(normalizedName(state))) ?? find(state => state.type === 'started' && state.id !== running.id);
+  const canceled = find(state => /^(canceled|cancelled)$/.test(normalizedName(state))) ?? find(state => state.type === 'canceled') ?? find(state => /^duplicate$/.test(normalizedName(state)));
+  return { queued, running, complete, ...(review ? { review } : {}), ...(canceled ? { canceled } : {}) };
 }
 export function connection(value: unknown): unknown[] {
   const data = object(value);

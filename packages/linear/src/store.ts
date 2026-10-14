@@ -45,6 +45,7 @@ function parseWrite(value: unknown): LinearWrite {
     case 'state': return { kind: 'state', issueId: string(write.issueId), stateId: string(write.stateId) };
     case 'summary': return { kind: 'summary', sessionId: string(write.sessionId), summary: string(write.summary) };
     case 'comment': return { kind: 'comment', id: string(write.id), issueId: string(write.issueId), body: string(write.body) };
+    case 'attachment': return { kind: 'attachment', issueId: string(write.issueId), url: string(write.url), ...(write.title === undefined ? {} : { title: string(write.title) }) };
     case 'activity': {
       const activity = string(write.activity);
       if (activity !== 'thought' && activity !== 'response' && activity !== 'error') throw new Error('Invalid activity type');
@@ -72,6 +73,7 @@ export class LinearStore {
       );
       CREATE TABLE IF NOT EXISTS outbox (sequence INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS writer (id INTEGER PRIMARY KEY CHECK(id=1), token TEXT, expires_at INTEGER);
+      CREATE TABLE IF NOT EXISTS decision_audit (decision_id TEXT PRIMARY KEY, recorded_at TEXT NOT NULL, payload TEXT NOT NULL);
       INSERT OR IGNORE INTO writer(id) VALUES (1);`);
     this.transaction(() => {
       const version = number(this.db.prepare('PRAGMA user_version').get()?.user_version);
@@ -104,6 +106,25 @@ export class LinearStore {
     catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
   close(): void { this.db.close(); }
+
+  readDecisionAudit(decisionId: string): string | undefined {
+    const row = this.db.prepare('SELECT payload FROM decision_audit WHERE decision_id=?').get(decisionId) as { payload?: unknown } | undefined;
+    return typeof row?.payload === 'string' ? row.payload : undefined;
+  }
+  writeDecisionAudit(decisionId: string, recordedAt: string, payload: string): void {
+    if (!decisionId || !recordedAt || !payload) throw new Error('Decision audit fields are required');
+    this.transaction(() => {
+      const result = this.db.prepare('INSERT INTO decision_audit(decision_id,recorded_at,payload) VALUES(?,?,?) ON CONFLICT(decision_id) DO NOTHING').run(decisionId, recordedAt, payload);
+      if (result.changes !== 1) throw new Error(`Decision audit record already exists: ${decisionId}`);
+    });
+  }
+  updateDecisionAudit(decisionId: string, recordedAt: string, payload: string): void {
+    if (!decisionId || !recordedAt || !payload) throw new Error('Decision audit fields are required');
+    this.transaction(() => {
+      const result = this.db.prepare('UPDATE decision_audit SET recorded_at=?,payload=? WHERE decision_id=?').run(recordedAt, payload, decisionId);
+      if (result.changes !== 1) throw new Error(`Decision audit record not found: ${decisionId}`);
+    });
+  }
 
   acceptEvent(event: { id: string; digest: string; issueId?: string }): 'accepted' | 'duplicate' {
     return this.transaction(() => {

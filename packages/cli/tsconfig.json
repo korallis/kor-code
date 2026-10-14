@@ -13,10 +13,22 @@
       "path": "../config"
     },
     {
-      "path": "../linear"
+      "path": "../controller"
+    },
+    {
+      "path": "../core"
     },
     {
       "path": "../daemon"
+    },
+    {
+      "path": "../gateway-adapter"
+    },
+    {
+      "path": "../jev"
+    },
+    {
+      "path": "../linear"
     }
   ]
 }
