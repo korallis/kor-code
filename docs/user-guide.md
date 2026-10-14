@@ -770,8 +770,9 @@ description), then run `kor retry`. When execution resumes, Kor removes
 
 A retry with unchanged input replays the recorded preflight audit instead of
 deciding again. Clarified intent, or a change to the eligible models, creates a
-fresh immutable decision revision. Earlier decisions and attempt costs stay in the
-audit, so you can see what was decided before and what each attempt cost.
+fresh immutable decision revision. Earlier decisions stay in the audit. With
+calibration enabled, recorded attempt metrics show provider-reported costs when
+available; a provider cost may be unknown.
 
 **Retry and cancel.** `kor retry EXECUTION-ID|ISSUE-ID` works on failed, blocked
 and canceled executions and keeps the execution ID. It does not rerun a session
