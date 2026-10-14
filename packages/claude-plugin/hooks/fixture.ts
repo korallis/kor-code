@@ -1,8 +1,10 @@
-// One fixture execution, from discovery to Linear synchronisation. Phases 1-5
-// (Linear, controller, Jev, gateway, verification) are not wired into the
-// cockpit yet, so every value here is drawn with the FIXTURE label.
+// One fixture execution, from discovery to Linear synchronisation, shown by
+// `/kor demo`. Every value here is drawn with the FIXTURE label; `/kor` itself
+// draws the daemon's live status (live.ts).
 
-export type Stage = 'discover' | 'preflight' | 'context' | 'execute' | 'supervise' | 'verify' | 'synchronise'
+import type { KorOverride } from '../types'
+import { type CockpitData, type Override, type Part, type Stage } from './model'
+
 export type ExecutionStatus = 'queued' | 'evaluating' | 'running' | 'waiting' | 'verifying' | 'repairing' | 'complete' | 'failed' | 'escalated'
 export type AgentStatus = 'waiting' | 'working' | 'done'
 export type AcceptanceStatus = 'pending' | 'pass' | 'fail' | 'unresolved'
@@ -12,6 +14,7 @@ export type AccountRoute = 'preferred' | 'standby' | 'eligible' | 'blocked'
 /** The shape of core's DecisionBundle; a hooks module imports only files inside its plugin. */
 export type Decision = {
   decisionId: string
+  kind: string
   executionId: string
   question: string
   choice: string
@@ -40,8 +43,6 @@ export type ExecutionEvent = {
   linear?: string
   failover?: string
 }
-
-export const STAGES: Stage[] = ['discover', 'preflight', 'context', 'execute', 'supervise', 'verify', 'synchronise']
 
 export const PROJECT = {
   id: 'project_fixture_matilda',
@@ -119,6 +120,7 @@ export const CONTEXT_DROPPED = [
 export const DECISIONS: Decision[] = [
   {
     decisionId: 'dec_fx_select',
+    kind: 'select',
     executionId: EXECUTION.id,
     question: 'Which ready issue should run next?',
     choice: 'FIX-123',
@@ -130,6 +132,7 @@ export const DECISIONS: Decision[] = [
   },
   {
     decisionId: 'dec_fx_classify',
+    kind: 'classify',
     executionId: EXECUTION.id,
     question: 'What kind of task is this?',
     choice: 'performance investigation',
@@ -141,6 +144,7 @@ export const DECISIONS: Decision[] = [
   },
   {
     decisionId: 'dec_fx_route',
+    kind: 'route',
     executionId: EXECUTION.id,
     question: 'Which route fits this performance investigation?',
     choice: 'Claude Sonnet · medium effort',
@@ -152,6 +156,7 @@ export const DECISIONS: Decision[] = [
   },
   {
     decisionId: 'dec_fx_context',
+    kind: 'context',
     executionId: EXECUTION.id,
     question: 'Which context sources does the session need?',
     choice: '6 sources, 2 dropped',
@@ -163,6 +168,7 @@ export const DECISIONS: Decision[] = [
   },
   {
     decisionId: 'dec_fx_agents',
+    kind: 'agent',
     executionId: EXECUTION.id,
     question: 'Does this need a specialist agent?',
     choice: 'add frontend agent',
@@ -174,6 +180,7 @@ export const DECISIONS: Decision[] = [
   },
   {
     decisionId: 'dec_fx_verify',
+    kind: 'verify',
     executionId: EXECUTION.id,
     question: 'How deep should verification go?',
     choice: 'tests + bench + review',
@@ -205,3 +212,96 @@ export const EVENTS: ExecutionEvent[] = [
   { at: '10:55', stage: 'synchronise', text: 'Pull request opened', detail: EXECUTION.pullRequest, linear: 'PR link attached' },
   { at: '10:56', stage: 'synchronise', text: 'Linear updated', detail: 'evidence written, state → In Review', status: 'complete', agent: { id: 'jev', status: 'done' }, linear: 'Evidence and outcome written' },
 ]
+
+/** The choice in force for a demo decision: the latest unreverted session override, else Jev's. */
+export function demoChoice(decision: Decision, overrides: KorOverride[]): { choice: string; override?: KorOverride } {
+  const override = overrides.findLast(one => one.decisionId === decision.decisionId && !one.isReverted && one.action === 'override')
+  return override ? { choice: override.choice, override } : { choice: decision.choice }
+}
+
+const fixture = <T>(value: T): Part<T> => ({ value, provenance: 'fixture' })
+
+/** The fixture execution as it stood after the first `cursor` events (all of them when null). */
+export function demoData(cursor: number | null, overrides: KorOverride[]): CockpitData {
+  const shown = EVENTS.slice(0, cursor ?? EVENTS.length)
+  const agents = new Map(AGENTS.map(agent => [agent.id, { ...agent, status: 'waiting' }]))
+  const acceptance = new Map(ISSUE.acceptance.map(item => [item.id, { ...item, status: 'pending', evidence: 'none yet' }]))
+  const accounts = new Map(ACCOUNTS.map(account => [account.slot, { ...account }]))
+  const failovers: string[] = []
+  const linear: Array<{ at: string; text: string }> = []
+  let status: ExecutionStatus = 'queued'
+  for (const event of shown) {
+    if (event.status) status = event.status
+    if (event.agent) {
+      const agent = agents.get(event.agent.id)
+      if (agent) agent.status = event.agent.status
+    }
+    if (event.acceptance) {
+      const item = acceptance.get(event.acceptance.id)
+      if (item) Object.assign(item, { status: event.acceptance.status, evidence: event.acceptance.evidence })
+    }
+    if (event.account) {
+      const account = accounts.get(event.account.slot)
+      if (account) Object.assign(account, event.account)
+    }
+    if (event.failover) failovers.push(event.failover)
+    if (event.linear) linear.push({ at: event.at, text: event.linear })
+  }
+  const route = DECISIONS.find(decision => decision.decisionId === 'dec_fx_route')
+  const routeChoice = route ? demoChoice(route, overrides) : undefined
+  const stage: Stage = shown.at(-1)?.stage ?? 'discover'
+  const isComplete = shown.length === EVENTS.length
+  const decisions = DECISIONS.map(decision => {
+    const { choice, override } = demoChoice(decision, overrides)
+    return override ? { ...decision, choice, source: `override ${override.id}; Jev chose ${decision.choice}` } : decision
+  })
+  const records: Override[] = overrides.map(one => ({
+    id: one.id,
+    decisionId: one.decisionId,
+    action: one.action,
+    choice: one.choice,
+    at: one.at,
+    status: one.isReverted ? 'reverted' : 'active',
+    detail: 'session-local demo record; never sent to the daemon, Jev, the gateway or Linear',
+  }))
+  return {
+    mode: 'demo',
+    origin: 'hooks/fixture.ts',
+    execution: fixture({
+      id: EXECUTION.id,
+      status,
+      stage,
+      route: routeChoice?.choice ?? 'none',
+      routeSource: routeChoice?.override ? `override ${routeChoice.override.id}` : 'jev',
+      worktree: EXECUTION.worktree,
+      branch: EXECUTION.branch,
+      session: EXECUTION.session,
+      pullRequest: linear.some(item => item.text === 'PR link attached') ? EXECUTION.pullRequest : '',
+      attempts: 1,
+      updatedAt: shown.at(-1)?.at ?? '',
+      error: '',
+    }),
+    issue: fixture({ id: ISSUE.id, title: ISSUE.title, url: ISSUE.url, priority: ISSUE.priority, labels: ISSUE.labels, intent: ISSUE.intent, state: isComplete ? 'In Review' : 'In Progress' }),
+    project: fixture({ name: PROJECT.name, team: PROJECT.team, repository: PROJECT.repository, milestone: PROJECT.milestone, url: PROJECT.url, issues: PROJECT.issues, documents: PROJECT.documents }),
+    decisions: fixture(decisions),
+    events: fixture(shown.map(event => ({ at: event.at, stage: event.stage, text: event.text, ...(event.detail ? { detail: event.detail } : {}), ...(event.decisionId ? { decisionId: event.decisionId } : {}), ...(event.agent ? { agentId: event.agent.id } : {}) }))),
+    agents: fixture([...agents.values()]),
+    acceptance: fixture([...acceptance.values()]),
+    accounts: fixture([...accounts.values()]),
+    failovers: fixture(failovers),
+    context: fixture({ sources: CONTEXT, dropped: CONTEXT_DROPPED }),
+    linear: fixture({
+      records: [
+        { name: 'Issue', value: ISSUE.url },
+        { name: 'Project', value: PROJECT.url },
+        { name: 'Agent session', value: EXECUTION.session },
+        { name: 'Pull request', value: linear.some(item => item.text === 'PR link attached') ? EXECUTION.pullRequest : 'not opened yet' },
+      ],
+      writes: linear,
+    }),
+    overrides: fixture(records),
+    queue: fixture(PROJECT.issues.map(issue => ({ id: issue.note.startsWith('exec_') ? issue.note : '', issueId: issue.id, status: issue.state, route: '', updatedAt: '' }))),
+    replay: { shown: shown.length, total: EVENTS.length, isComplete },
+    overridePath: 'session-local (demo): never sent to the daemon, Jev, the gateway or Linear',
+  }
+}

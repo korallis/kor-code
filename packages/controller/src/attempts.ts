@@ -18,6 +18,7 @@ export async function runVerifiedSessions(input: {
   decisionId?: string;
   leaseFailure?: Promise<never>;
   onSpawn?: (pid: number) => void;
+  signal?: AbortSignal;
 }) {
   const { execution, repository, settings } = input;
   const attempts: VerificationAttempt[] = [];
@@ -30,7 +31,7 @@ export async function runVerifiedSessions(input: {
     try {
       session = await race(input.launcher.launch({ execution, repositoryPath: repository.path, worktreePath: execution.worktree,
         prompt: previous ? repairPrompt(input.initialPrompt, previous) : input.initialPrompt,
-        ...(execution.route ? { route: execution.route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}) }));
+        ...(execution.route ? { route: execution.route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}), ...(input.signal ? { signal: input.signal } : {}) }));
     } catch (error) {
       // Preserve the attempt and elapsed time even when the provider never emits a result.
       if (input.calibration && execution.route) input.calibration.recordAttempt(metricFromSession({ executionId: execution.id, attempt: attemptNumber, route: execution.route, startedAt, finishedAt: new Date().toISOString(), session: {}, verified: false, verificationFailures: 0 }));

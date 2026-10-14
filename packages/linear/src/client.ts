@@ -3,7 +3,7 @@ import type { Execution } from '@kor-code/core';
 import { array, connection, object, parseIssue, stateType, string, type LinearClient, type LinearWrite, type LinearWorkflowState } from './contract.js';
 
 const page = 'pageInfo { hasNextPage }';
-const issueFields = `id title description updatedAt priority team { id key } state { id type }
+const issueFields = `id identifier url title description updatedAt priority team { id key } state { id type name }
   labels { nodes { name } pageInfo { hasNextPage } }
   project { id documents(first: 100) { nodes { id title content } ${page} } }
   documents(first: 100) { nodes { id title content } ${page} }

@@ -6,7 +6,7 @@ Run it from the repository:
 
 ```sh
 ./scripts/sandbox.sh                # headless /kor-status proof
-./scripts/sandbox.sh "/kor replay"  # any headless prompt, same guards
+./scripts/sandbox.sh "/kor demo replay"  # any headless prompt, same guards
 ./scripts/sandbox.sh --interactive  # the TUI (also `pnpm cockpit`)
 ./scripts/sandbox.sh --live-model "…"  # opt in to model calls through CLIProxyAPI
 ./scripts/sandbox.sh --run claude …    # the controller's execution sessions (live)
@@ -16,7 +16,7 @@ The child sees nothing of the real user setup. Claude Code reads `CLAUDE.md`, `A
 
 ## Offline by default
 
-A sandbox run makes no model calls unless asked to. Its `ANTHROPIC_BASE_URL` is `scripts/offline-endpoint.py`, a stub the harness serves on an ephemeral loopback port for that run alone, which answers every request with a non-retryable error naming the opt-in, and its `ANTHROPIC_AUTH_TOKEN` is a placeholder. The cockpit's views, `/kor-status` and `/kor replay` are answered by the plugin's own hooks, so they need no model; a typed prompt fails at once with `Kor sandbox is offline`. An offline run never contacts CLIProxyAPI on `127.0.0.1:8317` and never reads its key.
+A sandbox run makes no model calls unless asked to. Its `ANTHROPIC_BASE_URL` is `scripts/offline-endpoint.py`, a stub the harness serves on an ephemeral loopback port for that run alone, which answers every request with a non-retryable error naming the opt-in, and its `ANTHROPIC_AUTH_TOKEN` is a placeholder. The cockpit's views, `/kor-status` and `/kor demo replay` are answered by the plugin's own hooks, so they need no model; the live views read the Kor daemon on `127.0.0.1:8327` and its snapshot files under the invoking user's `~/.local/state/kor` (`KOR_STATUS_URL`, `KOR_STATE_DIR`), never port 8317; a typed prompt fails at once with `Kor sandbox is offline`. An offline run never contacts CLIProxyAPI on `127.0.0.1:8317` and never reads its key.
 
 `--live-model` is the explicit opt-in for a session that needs model calls. It points the child at CLIProxyAPI (`KOR_GATEWAY_URL`, default `http://127.0.0.1:8317`) as a client only, the same way the Phase 4 gateway adapter uses it: nothing starts, stops or reconfigures the proxy. The key comes from `KOR_GATEWAY_KEY` or a runtime-only file named by `KOR_GATEWAY_KEY_FILE`; it is passed only through the child's environment, never on a command line, and the path is never inferred from a machine-specific location. The isolation proof below covers offline runs only and refuses `--live-model` and `--run`.
 
@@ -24,7 +24,7 @@ The harness never opens the real `~/.claude`, `~/.claude.json`, `~/.codex` or `~
 
 ## Isolation proof
 
-`pnpm isolation:proof` (or `scripts/isolation-proof.sh "/kor replay"` for another prompt, `--interactive` for the TUI) runs the sandbox under `strace` (on `PATH`, or `STRACE=/path/to/strace`) and records every file, process and network syscall of the child and its descendants. It fails if any of them names `~/.claude`, `~/.claude.json`, `~/.codex`, `~/.agents` or the CLIProxyAPI tree, or connects to, binds or sends a request naming port `8317`, and it prints the loopback ports the child connected to (only the offline endpoint's). With `KOR_CLIPROXYAPI_DIR` set to the CLIProxyAPI install directory, it also hashes that directory's configuration (YAML, TOML, JSON and key files, except the `oauth/` credentials the proxy refreshes itself) before and after the run, prints only the digests, and fails if they differ.
+`pnpm isolation:proof` (or `scripts/isolation-proof.sh "/kor demo replay"` for another prompt, `--interactive` for the TUI) runs the sandbox under `strace` (on `PATH`, or `STRACE=/path/to/strace`) and records every file, process and network syscall of the child and its descendants. It fails if any of them names `~/.claude`, `~/.claude.json`, `~/.codex`, `~/.agents` or the CLIProxyAPI tree, or connects to, binds or sends a request naming port `8317`, and it prints the loopback ports the child connected to (only the offline endpoint's). With `KOR_CLIPROXYAPI_DIR` set to the CLIProxyAPI install directory, it also hashes that directory's configuration (YAML, TOML, JSON and key files, except the `oauth/` credentials the proxy refreshes itself) before and after the run, prints only the digests, and fails if they differ.
 
 The proof is attributed by the child's own trace, not by a before/after snapshot of the user homes. On a host where other Claude Code and Codex sessions run, those sessions keep writing `~/.claude` and `~/.codex`, so a whole-tree byte comparison changes during any run and cannot tell their writes from the sandbox's; the trace shows the sandboxed session never names those paths at all.
 

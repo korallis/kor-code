@@ -38,31 +38,18 @@ Linear is the source of truth for intent. GitHub is the source of truth for vers
 - **Illustrative** means a mock value or UI state, not live telemetry.
 - **Verified** means a model passed the recorded sandbox compatibility probe and is routable.
 
+The cockpit labels every row it draws:
+
+- **LIVE** means the daemon answered over HTTP just now and the value is younger than its poll interval.
+- **STALE** means the last value the daemon published, read from its snapshot file when it did not answer, or older than the poll interval; the row's section shows its age.
+- **UNAVAILABLE** means the daemon did not report the value, or neither the daemon nor a snapshot could be read.
+- **FIXTURE** means demo data, drawn only by `/kor demo`; it is the cockpit's form of Illustrative.
+
 ## Foundation
 
-The TypeScript pnpm workspace contains `core`, `jev`, `gateway-adapter`, `linear`, `controller`, `context`, `verification`, `config`, `calibration`, `daemon`, `cli`, and `claude-plugin` packages. Run `pnpm probe` for the external contract checks and read the [Phase 0 probe record](docs/phase-0-probe.md). Use `scripts/sandbox.sh` to load the Claude Code plugin in a disposable `CLAUDE_CONFIG_DIR`; it never installs the plugin globally or changes the existing Claude Code configuration, runs offline unless `--live-model` opts in to CLIProxyAPI, and `pnpm isolation:proof` traces the sandboxed session to show it never touches the real Claude, Codex or agents homes or port 8317.
+The TypeScript pnpm workspace contains `core`, `jev`, `gateway-adapter`, `linear`, `controller`, `context`, `verification`, `config`, `cli`, and `claude-plugin` packages. Run `pnpm probe` for the external contract checks and read the [Phase 0 probe record](docs/phase-0-probe.md). Use `scripts/sandbox.sh` to load the Claude Code plugin in a disposable `CLAUDE_CONFIG_DIR`; it never installs the plugin globally or changes the existing Claude Code configuration, runs offline unless `--live-model` opts in to CLIProxyAPI, and `pnpm isolation:proof` traces the sandboxed session to show it never touches the real Claude, Codex or agents homes or port 8317.
 
-The Phase 6 cockpit (`packages/claude-plugin`) is Validated on fixture data: `pnpm cockpit` opens it in the sandboxed Claude Code (`/kor`), and `pnpm cockpit:proof` replays the fixture execution and checks every view's labels. Execution sessions are Validated locally with parsed stream-json telemetry and policy checks; `pnpm e2e:live` runs the scratch-repository hello-file check when supplied a runtime `KOR_GATEWAY_KEY` or `KOR_GATEWAY_KEY_FILE` (without a key it reports the external validation as Blocked and makes no provider call). With `acceptEdits`, removing `Write` from the repository allowlist is a failed attempt with a permission denial. The daemon and status contract are Validated locally with a persistent SQLite queue, atomic snapshots, and a loopback endpoint; a live Linear poll remains Blocked until a runtime Linear key and configured repository are supplied. See the [cockpit specification](docs/specs/cockpit-mockups.md).
-
-### Run the daemon and inspect a queue
-
-```sh
-pnpm kor run LEE-57 --dry-run
-pnpm kor run LEE-57
-pnpm kor status --json
-pnpm kor logs <execution-id>
-pnpm kor cancel LEE-57
-pnpm kor retry LEE-57
-pnpm kor serve --jev --calibration-rate 0.25 --baseline-model claude-sonnet-5-5
-```
-
-`kor serve` keeps the queue under `~/.local/state/kor/kor.db`, polls configured
-Linear teams for Todo issues carrying the `kor` label, and serves the read-only
-status response on port 8327. A local run with no daemon snapshot reports:
-
-```text
-{"schemaVersion":1,"provenance":"unavailable","snapshot":null,"reason":"daemon has not published a snapshot"}
-```
+The Phase 6 cockpit (`packages/claude-plugin`) is Validated on a live daemon run: `/kor` draws the daemon's status with LIVE, STALE and UNAVAILABLE labels, `/kor override` sends overrides to the daemon, and `/kor demo` keeps the fixture execution, which `pnpm cockpit:proof` replays (see [Open the live cockpit](#open-the-live-cockpit)). Execution sessions are Validated locally with parsed stream-json telemetry and policy checks; `pnpm e2e:live` runs the scratch-repository hello-file check when supplied a runtime `KOR_GATEWAY_KEY` or `KOR_GATEWAY_KEY_FILE` (without a key it reports the external validation as Blocked and makes no provider call). Sessions use `dontAsk` with an explicit repository tool allowlist, so removing `Write` produces a permission denial and a failed attempt. See the [cockpit specification](docs/specs/cockpit-mockups.md).
 
 Verification runs each configured repository check and treats its exit code as authoritative. It collects the worktree diff, asks Jev one Noul per acceptance criterion at the controller's verification threshold option (default `0.7`), and retries a blocked attempt at most twice with the failing evidence in the next prompt. Run the offline proof:
 
@@ -76,44 +63,6 @@ verification-proof: broken: blocked (acceptance-1=pass); launches=3; state=start
 ```
 
 Configure checks on a repository entry with `checks: ["pnpm typecheck", "pnpm test"]`. A failed check or unmet acceptance criterion leaves the execution blocked and records each criterion finding in the Linear comment.
-
-### Calibrate Jev routing against a baseline
-
-Calibration is **Validated locally** with a persistent SQLite store and paired replay proof; live paired runs are **Blocked** until a configured daemon runner and repository are available. The sample rate defaults to `0.25` and is stable per execution id. Configure it under `calibration.sampleRate` and set the fixed route with `calibration.baselineRoute` in `~/.config/kor/config.yaml`. Baseline work is evaluated in a throwaway worktree and never shipped. Start the daemon with `kor serve --jev` to enable verified gateway catalogue routing; use `--no-calibration` to disable recording, `--calibration-rate` to override sampling for one process, and `--baseline-model` to override the fixed comparison model.
-
-Seed and inspect the local proof:
-
-```sh
-pnpm calibration:proof
-XDG_STATE_HOME=/tmp/kor-t12-calibration-proof/state pnpm kor calibrate report
-```
-
-The command prints both arms, all requested operational metrics, and the confidence table. This representative run uses the real controller proof; wall-clock values vary:
-
-```text
-Kor calibration report
-Completed Jev/baseline pairs: 1
-Since: all time
-Success = identical verification gate in both arms. Terminal merge outcomes are separate.
-Metric	Jev-route (all)	baseline (sampled)	Paired delta (Jev - baseline)
-Runs (finished/total)	1/1	1/1	1 pairs
-Merged/terminal outcomes	1/1	0/0	n/a (baseline never ships)
-successRate	1.0000 (n=1)	1.0000 (n=1)	0.0000 (n=1)
-repairs	0.0000 (n=1)	0.0000 (n=1)	0.0000 (n=1)
-costUsd	0.0400 (n=1)	0.0400 (n=1)	0.0000 (n=1)
-cacheHitRate	0.3125 (n=1)	0.3125 (n=1)	0.0000 (n=1)
-wallClockMs	10.0000 (n=1)	9.0000 (n=1)	1.0000 (n=1)
-failovers	unavailable (n=0)	unavailable (n=0)	unavailable (n=0)
-verificationFailures	0.0000 (n=1)	0.0000 (n=1)	0.0000 (n=1)
-policyBlocks	0.0000 (n=1)	0.0000 (n=1)	0.0000 (n=1)
-clarifications	unavailable (n=0)	unavailable (n=0)	unavailable (n=0)
-
-Confidence calibration against terminal merge success (outcome proxy, not decision-correctness probability)
-Kind	Bin	N	Mean signal	Observed success	Brier (proxy)
-route	0.8–1.0	1	1.0000	1.0000	0.0000
-readiness	all	0	unavailable	unavailable	unavailable
-acceptance	0.8–1.0	1	1.0000	1.0000	0.0000
-```
 
 For the live scratch run, the script's repository allowlist contains `Read,Write,Edit` and the three `git` commands needed to commit the hello file. To prove a policy failure, remove `Write` from `KOR_E2E_ALLOWED_TOOLS` and set `KOR_E2E_EXPECT_FAILURE=1`; the command reports the provider's permission denial and failed attempt. A launcher with no repository allowlist defaults to `Read`, so mutation is opt-in. Credentials are runtime-only and are never written to the repository or printed.
 
@@ -272,3 +221,73 @@ A live throwaway run on LEE-1105 produced two successful applies and two success
 apply1=0 apply2=0 cancel1=0 cancel2=0
 {"state":"unstarted","comments":[{"id":"a15e1d22-06dc-4638-b2ee-b63f6e791d22","body":"Kor canceled execution for 036ad937-df51-4954-a163-1cd61a6450a3; state → Todo"},{"id":"9d60278e-8942-44a5-a220-50691ae26be3","body":"Kor started execution d9c8e4eb-64e7-48b7-a90a-358185be6a4b; state → In Progress"}]}
 ```
+
+## Run the Kor daemon
+
+After `pnpm install` and a `~/.config/kor/config.yaml`, install the user service with `cp systemd/kor.service ~/.config/systemd/user/kor.service`, then run `systemctl --user daemon-reload` and `systemctl --user enable --now kor`.
+The daemon polls Todo issues carrying the configured `kor` label, stores leases in `~/.local/state/kor/kor.db`, and publishes snapshots under `~/.local/state/kor/snapshots/`.
+It polls each repository's `linearTeam` (else the team part of its map key) and runs a claimed issue in the checkout `repositoryKeyForIssue` maps it to (`linearProject`, then `linearTeam`).
+Use `kor status --json`, `kor run LEE-n` (the Linear writes above, then a queue entry for the daemon), `kor cancel LEE-n`, `kor retry ISSUE-ID`, and `kor logs EXECUTION-ID`.
+The HTTP equivalent is `http://127.0.0.1:8327/status`; the cockpit also posts overrides there (see [Open the live cockpit](#open-the-live-cockpit)).
+Status values are `queued`, `running`, `complete`, `failed`, `blocked`, and `canceled`; response provenance is `live`, `stale`, or `unavailable`.
+`retry` is explicit for terminal failures and verification blocks, while a running cancellation stops the detached session group before recording `canceled`.
+
+The local daemon proof exercises intake, the loopback endpoint, lease renewal during an 800 ms run with a 200 ms lease, restart recovery, queued and running cancellation, terminal failure and retry, orphan worktree cleanup, and PID identity protection:
+
+```text
+$ pnpm daemon:proof
+daemon proof passed; picked=LEE-57; status=live; restart=queued; attempts=1; orphan=removed; lease=exclusive; cancel=terminal; failure=retryable; pid-guard=pass
+```
+
+No live Linear or gateway credential was used for this proof; credentials are supplied at runtime by the configured environment.
+
+## Open the live cockpit
+
+The cockpit is the Claude Code mod in `packages/claude-plugin`. Until `kor install` lands, load it in the sandboxed Claude Code with the daemon running:
+
+```sh
+pnpm kor serve &                 # or the systemd unit
+pnpm cockpit                     # the TUI; type /kor
+scripts/sandbox.sh "/kor"        # the same view, printed once
+```
+
+`/kor` reads `http://127.0.0.1:8327/status` and falls back to `~/.local/state/kor/snapshots/index.json`. Set `KOR_STATUS_URL` and `KOR_STATE_DIR` to read another daemon, `KOR_STATUS_URL=off` to read only the snapshot, and `KOR_COCKPIT=off` to hide the status line. During a real run of LEE-1108, it printed:
+
+```text
+── Execution
+  [LIVE]         Execution    10ce738c-0111-4da1-9000-6b35549e1794 · LEE-1108 · RUNNING
+  [LIVE]         Stage        4/7 execute
+  [LIVE]         Route        claude-sonnet-5-5 · medium (fallback)
+  [LIVE]         Claude Code  2.1.299
+
+── Current issue · LEE-1108
+  [LIVE]         Kor T8 cockpit live check (throwaway)
+
+── Decision stream (latest 6)
+  [LIVE]         13:27:41  route: claude-haiku-4-5-20251001  confidence 0.08 · escalated
+
+── Subscription pool
+  [LIVE]         claude  1 / 6 available
+  [LIVE]         codex   3 / 3 available
+```
+
+Jev escalated the route choice (confidence below 0.7), so the configured default route ran, labelled `fallback`. Overrides go to the daemon, which applies one only when policy allows, records it in the `override_audit` table of `kor.db` and in `kor logs`, and comments on the Linear issue:
+
+```text
+/kor override route claude-haiku-5-5
+[LIVE] ovr_ae50e254: route → claude-haiku-5-5 applied (Applies from the next attempt; the running session keeps its model.)
+
+/kor override route claude-opus-5-5
+[LIVE] daemon refused: ovr_e493c84c: route → claude-opus-5-5 rejected (Policy refused it: model verified by kor models probe.)
+```
+
+A route override must name a model `kor models probe` verified, and the execution must not be finished. Name a decision ID instead of `route` to override another Jev decision with one of its candidates; `/kor revert <override>` undoes one. Stopping the daemon turns its values STALE, with their age, from the last snapshot:
+
+```text
+── Execution · stale, observed 64s ago
+  [STALE]        Execution    911a7cab-5dbf-40ea-ad21-9e8928af73bb · LEE-1109 · COMPLETE
+  [STALE]        Route        claude-haiku-5-5 · medium (override)
+[STALE 2m] Kor LEE-1109 · synchronise 7/7 · complete · claude-haiku-5-5 · medium (override) · 1 override · [LIVE] CC 2.1.299
+```
+
+With no daemon and no snapshot every daemon value is `[UNAVAILABLE]`, and `/kor override` sends nothing. `/kor demo` (and `/kor demo replay`) draws the fixture execution instead, labelled `[FIXTURE]`; its overrides stay in the session.

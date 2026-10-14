@@ -69,6 +69,12 @@ export class CalibrationStore implements DecisionAuditLog {
     if (!run) throw new Error("Calibration run is missing");
     this.db.prepare("UPDATE calibration_runs SET payload=? WHERE execution_id=?").run(JSON.stringify({ ...run, status, finishedAt: new Date().toISOString() }), executionId);
   }
+  /** Re-open an interrupted or failed primary when the daemon retries its execution id. */
+  resumeRun(executionId: string, startedAt = new Date().toISOString()): void {
+    const run = this.run(executionId);
+    if (!run || run.status === "running") return;
+    this.db.prepare("UPDATE calibration_runs SET started_at=?, payload=? WHERE execution_id=?").run(startedAt, JSON.stringify({ ...run, status: "running", startedAt, finishedAt: undefined }), executionId);
+  }
   recordAttempt(input: RunMetric): void {
     const metric = metricSchema.parse(input);
     if (!this.run(metric.executionId)) throw new Error("Attempt requires a calibration run");

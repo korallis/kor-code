@@ -8,6 +8,7 @@
     "@kor-code/config": "workspace:*",
     "@kor-code/controller": "workspace:*",
     "@kor-code/core": "workspace:*",
-    "@kor-code/linear": "workspace:*"
+    "@kor-code/linear": "workspace:*",
+    "zod": "^4.6.6"
   }
 }

@@ -13,7 +13,13 @@
       "path": "../config"
     },
     {
+      "path": "../controller"
+    },
+    {
       "path": "../core"
+    },
+    {
+      "path": "../daemon"
     },
     {
       "path": "../gateway-adapter"

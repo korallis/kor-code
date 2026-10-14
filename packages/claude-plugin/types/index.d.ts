@@ -1,6 +1,6 @@
 // The cockpit's state contract: every value the hooks module keeps in `$.state`.
 
-/** Mirrors core's Provenance (a hooks module imports only files inside its plugin); `fixture` is the README's "Illustrative". */
+/** Mirrors core's Provenance (a hooks module imports only files inside its plugin); `fixture` is the README's "Illustrative" and only `/kor demo` draws it. */
 export type KorProvenance = 'live' | 'stale' | 'fixture' | 'unavailable'
 
 export type KorViewId =
@@ -19,7 +19,7 @@ export type KorViewId =
 /** One cockpit view; `target` names the decision or agent a drill-down shows. */
 export type KorView = { id: KorViewId; target?: string }
 
-/** A manual action on a fixture decision; reverting keeps the record visible. */
+/** A demo action on a fixture decision; reverting keeps the record visible. Live overrides are the daemon's records. */
 export type KorOverride = {
   id: string
   decisionId: string
@@ -33,6 +33,8 @@ declare module 'claude-code' {
   interface PluginState {
     'kor-code-cockpit': {
       view: KorView
+      /** `live` draws the daemon's status; `demo` draws the fixture execution. */
+      mode: 'live' | 'demo'
       /** Events of the fixture execution shown; null shows all of them. */
       cursor: number | null
       overrides: KorOverride[]

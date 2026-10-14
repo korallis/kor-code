@@ -36,21 +36,37 @@ export interface GatewayFacts { models: JsonValue; management: JsonValue | null;
 export type GatewayCapability = "streaming" | "tool_calls" | "thinking" | "structured_output";
 export type AccountHealthStatus = "available" | "quota" | "authentication" | "unavailable" | "unknown";
 export interface GatewayModel { id: string; provider?: string; capabilities: Partial<Record<GatewayCapability, boolean>>; compatibility: "verified" | "unverified" | "incompatible"; }
-export interface GatewayAccountHealth { id: string; status: AccountHealthStatus; remainingQuota?: number | undefined; resetAt?: string | undefined; }
+export interface GatewayAccountHealth { id: string; status: AccountHealthStatus; remainingQuota?: number | undefined; resetAt?: string | undefined; provider?: string | undefined; }
 export type RouteFailureReason = "quota" | "rate_limit" | "authentication" | "provider_unavailable" | "capability" | "unknown";
 export interface RouteTelemetry { provider: string; model: string; accountSlot?: string | undefined; accountSlotSource?: "health_observation" | undefined; sessionId?: string | undefined; requestId: string; decisionId?: string | undefined; failoverReason?: RouteFailureReason | undefined; retryCount: number; streamStarted: boolean; quotaResponse?: boolean | undefined; compatibility: GatewayModel["compatibility"]; }
 /** Where a displayed value comes from. The cockpit labels every value that is not `live`; `fixture` is the README's "Illustrative". */
 export type Provenance = "live" | "stale" | "fixture" | "unavailable";
 /** A value an adapter hands the cockpit, with the provenance the cockpit must label it with. */
-export interface Labelled<T> { value: T; provenance: Provenance; observedAt?: string }
+export interface Labelled<T> { value: T; provenance: Provenance; observedAt?: string; /** Why a value is stale or unavailable. */ reason?: string }
 
 /** Stable read-only shape consumed by the cockpit and `kor status --json`. */
-export type RunLifecycle = "queued" | "running" | "complete" | "failed" | "canceled" | "blocked";
+export type RunLifecycle = ExecutionStatus | "canceled";
+export interface SessionProcessIdentity { pid: number; bootId: string; startTicks: string }
 export interface RunStatus {
   executionId: string;
   issueId: string;
   status: RunLifecycle;
   attempts: number;
+  issueKey?: string;
+  issueTitle?: string;
+  issueUrl?: string;
+  /** The Linear workflow state name as the daemon last read it. */
+  issueState?: string;
+  attemptId?: string;
+  route?: Route;
+  /** Where `route` came from: the configured default, Jev, the default after Jev escalated or was unavailable, or a cockpit override. */
+  routeSource?: RouteSource;
+  phase?: ExecutionStatus;
+  verification?: VerificationReport;
+  cancelRequested?: boolean;
+  errorCode?: "execution_failed" | "verification_blocked" | "canceled" | "recovered";
+  pullRequestUrl?: string;
+  decisionIds?: string[];
   repository?: string;
   worktree?: string;
   branch?: string;
@@ -64,7 +80,32 @@ export interface KorStatusSnapshot {
   observedAt: string;
   daemon: { pid: number; startedAt: string; pollIntervalSeconds: number; lastPollAt?: string; lastError?: string };
   runs: RunStatus[];
+  accounts?: Labelled<GatewayAccountHealth[]>;
+  decisions?: Labelled<DecisionRecord[]>;
+  /** The override audit, newest first. */
+  overrides?: OverrideRecord[];
 }
+export type RouteSource = "config" | "jev" | "fallback" | "override";
+/** A recorded Jev decision as the status reports it. */
+export interface DecisionRecord extends DecisionBundle { kind: string; escalated: boolean; recordedAt: string }
+/** A cockpit override as the daemon judged and audited it. */
+export interface OverrideRecord {
+  id: string;
+  executionId: string;
+  issueId: string;
+  /** `route`, or the decision ID it overrides. */
+  target: string;
+  choice: string;
+  previous?: string;
+  status: "applied" | "rejected" | "reverted";
+  reason: string;
+  policyChecks: DecisionBundle["policyChecks"];
+  origin: string;
+  recordedAt: string;
+  /** Whether the Linear comment reached the issue; a rejected override is never commented. */
+  linearComment: "written" | "pending" | "failed" | "skipped";
+}
+export interface KorRunSnapshot { schemaVersion: 1; observedAt: string; run: RunStatus }
 export type StatusProvenance = "live" | "stale" | "unavailable";
 export type KorStatusResponse =
   | { schemaVersion: 1; provenance: "live" | "stale"; observedAt: string; snapshot: KorStatusSnapshot; reason?: string }
