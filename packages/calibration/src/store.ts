@@ -4,11 +4,11 @@ import { dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { JsonValue } from "@kor-code/core";
-import { MemoryDecisionAuditLog, redact, type AppliedDecision, type DecisionAuditLog, type DecisionAuditRecord, type JevDecisionCore } from "@kor-code/jev";
+import { MemoryDecisionAuditLog, redact, type AppliedDecision, type DecisionAuditLog, type DecisionAuditRecord } from "@kor-code/jev";
 
 const count = z.number().int().nonnegative();
 const measurement = z.number().nonnegative().nullable();
-const route = z.object({ provider: z.string(), model: z.string(), accountPolicy: z.enum(["fill-first", "manual", "least-used"]), sessionAffinity: z.boolean(), reasoningLevel: z.enum(["low", "medium", "high"]).optional(), label: z.enum(["jev", "fallback", "escalated"]).optional() });
+const route = z.object({ provider: z.string(), model: z.string(), accountPolicy: z.enum(["fill-first", "manual", "least-used"]), sessionAffinity: z.boolean(), reasoningLevel: z.enum(["low", "medium", "high"]).optional(), label: z.enum(["jev", "fallback", "escalated"]).optional(), decisionId: z.string().optional() });
 export const runSchema = z.object({
   executionId: z.string(), pairId: z.string(), issueId: z.string(), arm: z.enum(["jev", "baseline", "fallback"]),
   baseRevision: z.string(), route, sampled: z.boolean(), startedAt: z.string().datetime(),
@@ -73,7 +73,17 @@ export class CalibrationStore implements DecisionAuditLog {
   resumeRun(executionId: string, startedAt = new Date().toISOString()): void {
     const run = this.run(executionId);
     if (!run || run.status === "running") return;
-    this.db.prepare("UPDATE calibration_runs SET started_at=?, payload=? WHERE execution_id=?").run(startedAt, JSON.stringify({ ...run, status: "running", startedAt, finishedAt: undefined }), executionId);
+    this.transaction(() => {
+      this.db.prepare("UPDATE calibration_runs SET started_at=?, payload=? WHERE execution_id=?").run(startedAt, JSON.stringify({ ...run, status: "running", startedAt, finishedAt: undefined }), executionId);
+      // A retried execution is no longer terminal. Keep attempt history, but do
+      // not score the new attempt against the previous abandoned/rejected state.
+      this.db.prepare("DELETE FROM run_outcomes WHERE execution_id=?").run(executionId);
+      for (const record of this.decisions().filter(item => item.response.executionId === executionId)) {
+        const { observedOutcome: _, response, ...rest } = record;
+        const { observedOutcome: __, ...decision } = response;
+        this.db.prepare("UPDATE decision_audit SET payload=? WHERE decision_id=?").run(JSON.stringify({ ...rest, response: decision }), decision.decisionId);
+      }
+    });
   }
   recordAttempt(input: RunMetric): void {
     const metric = metricSchema.parse(input);
@@ -88,13 +98,13 @@ export class CalibrationStore implements DecisionAuditLog {
   runs(): CalibrationRun[] { return this.db.prepare("SELECT payload FROM calibration_runs ORDER BY started_at, execution_id").all().map(row => runSchema.parse(JSON.parse(payloadRow.parse(row).payload))); }
   metrics(): RunMetric[] { return this.db.prepare("SELECT payload FROM run_metrics ORDER BY execution_id, attempt").all().map(row => metricSchema.parse(JSON.parse(payloadRow.parse(row).payload))); }
   outcomes(): z.infer<typeof storedOutcome>[] { return this.db.prepare("SELECT execution_id, payload FROM run_outcomes").all().map(row => storedOutcome.parse({ ...JSON.parse(payloadRow.parse(row).payload), executionId: row.execution_id })); }
-  recordExecutionOutcome(executionId: string, input: RunOutcome, jev?: Pick<JevDecisionCore, "recordOutcome">): void {
+  recordExecutionOutcome(executionId: string, input: RunOutcome): void {
     const outcome = outcomeSchema.parse(input);
     if (!this.run(executionId)) throw new Error("Outcome requires a recorded execution");
     this.transaction(() => {
       this.db.prepare("INSERT INTO run_outcomes VALUES(?,?) ON CONFLICT(execution_id) DO UPDATE SET payload=excluded.payload").run(executionId, JSON.stringify(outcome));
-      if (jev) for (const record of this.decisions().filter(item => item.response.executionId === executionId)) {
-        jev.recordOutcome(record.response.decisionId, { ...outcome, success: outcome.status === "merged" });
+      for (const record of this.decisions().filter(item => item.response.executionId === executionId)) {
+        this.recordOutcome(record.response.decisionId, { ...outcome, success: outcome.status === "merged" });
       }
     });
   }

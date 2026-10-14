@@ -27,7 +27,7 @@
     "cockpit:proof": "tsx scripts/cockpit-proof.ts",
     "isolation:proof": "bash scripts/isolation-proof.sh",
     "daemon:proof": "tsx scripts/daemon-proof.ts",
-    "calibration:proof": "tsx scripts/calibration-proof.ts"
+    "calibration:proof": "tsx --tsconfig scripts/tsconfig.json scripts/calibration-proof.ts"
   },
   "devDependencies": {
     "@types/node": "^24.8.0",

@@ -63,7 +63,7 @@ function promptFor(issue: LinearIssue, prefix = ""): string {
 }
 interface ChosenRoute { route?: Route; decisionId?: string }
 async function chooseRoute(options: ControllerOptions, executionId: string, issue: LinearIssue, existing?: Route): Promise<ChosenRoute> {
-  if (existing) return { route: existing };
+  if (existing) return { route: existing, ...(existing.decisionId ? { decisionId: existing.decisionId } : {}) };
   const catalogue = options.catalogue ?? [];
   if (!options.jev || catalogue.length === 0) return { ...(options.defaultRoute ? { route: options.defaultRoute } : {}) };
   const candidates = catalogue.filter(item => item.available !== false).map(item => item.model);
@@ -202,7 +202,7 @@ class ExecutionController implements Controller {
     if (!calibration || !run) return;
     const status = outcome.status === "merged" ? "verified" : outcome.status === "rejected" ? "failed" : outcome.status === "escalated" ? "escalated" : "interrupted";
     if (run.status !== status) calibration.store.finishRun(executionId, status);
-    calibration.store.recordExecutionOutcome(executionId, outcome, this.options.jev);
+    calibration.store.recordExecutionOutcome(executionId, outcome);
   }
   private async runBaselineIfSampled(input: { execution: Execution; issue: LinearIssue; repository: Repository; baseRevision: string; initialPrompt: string; settings: ReturnType<typeof verificationSettings>; calibration?: NonNullable<ControllerOptions["calibration"]>; onSpawn?: (pid: number) => void }): Promise<void> {
     const calibration = input.calibration;

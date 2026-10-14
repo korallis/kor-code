@@ -4,12 +4,13 @@ import { basename, join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { formatDoctor, runDoctor } from "./doctor.js";
 import { runPlan } from "./plan.js";
+import { createServeRouting } from "./serve-routing.js";
 import { ensureRuntimeDirectories, loadGatewayEnvironment, loadKorConfig, repositoryKeyForIssue, runtimePaths } from "@kor-code/config";
 import { HttpLinearClient, LinearStore, stableId, startWrites, workflowMapping, type LinearWrite } from "@kor-code/linear";
-import { KorDaemon, readStatus, type RouteChoice } from "@kor-code/daemon";
+import { KorDaemon, readStatus } from "@kor-code/daemon";
 import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController } from "@kor-code/controller";
 import { GatewayAdapter, readModelRegistry } from "@kor-code/gateway-adapter";
-import { JevClient, JevDecisionCore, PersistentDecisionAuditLog, planPreflight } from "@kor-code/jev";
+import { PersistentDecisionAuditLog } from "@kor-code/jev";
 import { CalibrationStore, buildReport, formatReport } from "@kor-code/calibration";
 import type { CatalogueModel } from "@kor-code/core";
 
@@ -142,15 +143,20 @@ async function serve(args: readonly string[]): Promise<number> {
   const repositories = new RepositoryRegistry(Object.entries(loaded.config.repos).map(([key, repository]) => ({ key, path: repository.path, defaultBranch: repository.defaultBranch, allowedTools: repository.toolAllowlist, checks: repository.checks })));
   const calibration = calibrationEnabled ? new CalibrationStore(paths.databaseFile) : undefined;
   let catalogue: CatalogueModel[] | undefined;
-  let jev: JevDecisionCore | undefined;
   if (jevEnabled) {
     const gatewayConfig = await loadGatewayEnvironment(paths.gatewayEnvFile);
     const gatewayAdapter = new GatewayAdapter({ baseUrl: gatewayConfig.baseUrl, ...(gatewayConfig.key ? { apiKey: gatewayConfig.key } : {}) });
     const models = await gatewayAdapter.catalogue({ capabilities: ["streaming", "tool_calls"] });
     if (models.length === 0) throw new Error("--jev requires at least one verified gateway model");
     catalogue = models.map(model => ({ provider: model.provider ?? "unknown", model: model.id, capabilities: Object.entries(model.capabilities).map(([name, supported]) => ({ name, supported })) }));
-    jev = new JevDecisionCore(new JevClient(), calibration);
   }
+  const store = new LinearStore(paths.databaseFile);
+  const audit = calibration ?? new PersistentDecisionAuditLog({ read: id => store.readDecisionAudit(id), write: (id, at, payload) => store.writeDecisionAudit(id, at, payload), update: (id, at, payload) => store.updateDecisionAudit(id, at, payload) });
+  const routing = createServeRouting({ audit, defaultRoute: loaded.config.defaultRoute, models: async () => {
+    if (catalogue) return catalogue;
+    const registry = await readModelRegistry(paths.modelsFile);
+    return registry.models.filter(result => result.verified).map(result => ({ provider: result.model.startsWith("claude-") ? "anthropic" : result.model.split("/")[0] ?? "unknown", model: result.model, capabilities: Object.entries(result.capabilities).map(([name, supported]) => ({ name, supported: supported === true })), ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) }));
+  } });
   const controller = createController({
     repositories,
     worktrees: new GitWorktreeManager(paths.worktreesDir),
@@ -158,28 +164,14 @@ async function serve(args: readonly string[]): Promise<number> {
     launcher: new SessionLauncher({ repoRoot: process.cwd(), cockpit: { statusUrl, stateDir: paths.stateDir } }),
     limits: new ConcurrencyLimiter({ total: loaded.config.limits.total, perRepository: loaded.config.limits.perRepository, ...(loaded.config.limits.perProvider ? { perProvider: loaded.config.limits.perProvider } : {}) }),
     defaultRoute: loaded.config.defaultRoute,
-    ...(jev ? { jev } : {}),
-    ...(catalogue ? { catalogue } : {}),
+    jev: routing.jev,
     ...(calibration ? { calibration: { store: calibration, sampleRate: calibrationConfig.sampleRate, baselineRoute: calibrationConfig.baselineRoute } } : {}),
   });
   // The cockpit's account view and the override policy read the gateway's
   // management API and the verified model registry through the daemon.
   const gateway = new GatewayAdapter();
   const verifiedModels = async () => (await readModelRegistry(paths.modelsFile)).models.filter(model => model.verified).map(model => model.model);
-  let daemon: KorDaemon | undefined;
-  // Preserve the T8 daemon preflight alongside calibration. It runs once per
-  // execution, persists all decisions to decision_audit, and labels a default
-  // route as fallback when Jev escalates or is unavailable.
-  const chooseRoute = async ({ executionId, issue }: Parameters<NonNullable<ConstructorParameters<typeof KorDaemon>[0]["chooseRoute"]>>[0]): Promise<RouteChoice> => {
-    const store = daemon!.store;
-    const audit = new PersistentDecisionAuditLog({ read: id => store.readDecisionAudit(id), write: (id, at, payload) => store.writeDecisionAudit(id, at, payload), update: (id, at, payload) => store.updateDecisionAudit(id, at, payload) });
-    const registry = await readModelRegistry(paths.modelsFile);
-    const verified = registry.models.filter(result => result.verified).map(result => ({ provider: result.model.startsWith("claude-") ? "anthropic" : result.model.split("/")[0] ?? "unknown", model: result.model, capabilities: Object.entries(result.capabilities).map(([name, supported]) => ({ name, supported: supported === true })), ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) }));
-    const plan = await planPreflight({ executionId, issue: { id: issue.id, title: issue.title, ...(issue.description !== undefined ? { description: issue.description } : {}), acceptanceCriteria: issue.acceptanceCriteria, dependencies: issue.dependencies.map(dependency => ({ id: dependency.id, state: dependency.stateType })) }, verifiedModels: verified, defaultRoute: loaded.config.defaultRoute }, new JevDecisionCore(new JevClient(), audit), audit);
-    const { label: _, ...route } = plan.route as typeof plan.route & { label?: string };
-    return { route, source: plan.fallback || (plan.route as { label?: string }).label !== "jev" ? "fallback" : "jev" };
-  };
-  daemon = new KorDaemon({ paths, config: loaded.config, linear: new HttpLinearClient({ writes: {} }), controller, port, gateway, verifiedModels, chooseRoute });
+  const daemon = new KorDaemon({ paths, config: loaded.config, store, linear: new HttpLinearClient({ writes: {} }), controller, port, gateway, verifiedModels, chooseRoute: routing.chooseRoute });
   const handle = await daemon.start();
   process.stdout.write(`kor daemon listening on ${statusUrl}\n`);
   await new Promise<void>(resolve => {
@@ -214,7 +206,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     process.stderr.write(`FAIL ${command}: ${error instanceof Error ? error.message : "unable to run"}\n`);
     return 1;
   }
-  process.stdout.write("Usage: kor serve | kor status [--json] | kor plan LEE-57 | kor run LEE-<number> [--dry-run] | kor cancel LEE-<number> | kor retry ISSUE-ID | kor logs EXECUTION-ID | kor doctor | kor models list | kor models probe [--family family] [--model model]\n");
+  process.stdout.write("Usage: kor serve [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--json] | kor status [--json] | kor plan LEE-57 | kor run LEE-<number> [--dry-run] | kor cancel LEE-<number> | kor retry ISSUE-ID | kor logs EXECUTION-ID | kor doctor | kor models list | kor models probe [--family family] [--model model]\n");
   return ["help", "--help", "-h"].includes(command) ? 0 : 2;
 }
 
