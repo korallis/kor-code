@@ -33,7 +33,6 @@ import { prob, shortModel, usd } from '../lib/format';
 import { FINISHED, isActive, keyOf, needsYou, prNumber, latestDecision } from '../lib/runs';
 import { ago, shortDate, useNow } from '../lib/time';
 import { page, QueryError } from './shared';
-import { QueueDialog } from './QueueDialog';
 
 const NARROW = '@media (max-width: 1499px)';
 
@@ -185,7 +184,6 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<readonly string[]>([]);
-  const [queueing, setQueueing] = useState(false);
   const queue = useQueue();
   const tab = (['overview', 'issues', 'runs', 'pulls', 'documents', 'settings'].includes(tabParam ?? '') ? tabParam : 'overview') as Tab;
   const setTab = (next: Tab) => project && navigate('projects', project.id, next);
@@ -398,7 +396,6 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
         )}
         {tab === 'settings' && <Card index={1}><RepositorySettings key={project.id} project={project} /></Card>}
       </div>
-      {queueing && <QueueDialog projectId={project.id} onClose={() => setQueueing(false)} />}
     </AppFrame>
   );
 }

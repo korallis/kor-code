@@ -8,6 +8,7 @@ import type { ReactNode } from 'react';
 import { useConfig, useConnections, useModels, useProjects } from '../api/queries';
 import { useDecisions, useMissionRuns, usePoolLive, useStatusResponse } from '../api/data';
 import { useLive, reconnect } from '../api/live';
+import { isOpen, useAllIssues } from '../api/issues';
 import { href, type Screen } from '../router';
 import { color, font, glow, gradient, layout as dims, space, tint, tracking } from '../theme/tokens.stylex';
 import { animate } from '../theme/animate';
@@ -169,13 +170,15 @@ function SideBar({ active, project }: { active: Screen; project?: string }) {
   const models = useModels();
   const connections = useConnections();
   const decisions = useDecisions();
+  const issues = useAllIssues(projects.data?.projects ?? []);
+  const openIssues = issues.reduce((sum, entry) => sum + entry.issues.filter(isOpen).length, 0);
   const attention = runs.filter(needsYou).length;
   const activeRuns = runs.filter(isActive).length;
   const evaluating = runs.some(run => run.status === 'evaluating');
   const items: NavItem[] = [
     { screen: 'home', label: 'Home', icon: House, count: attention || undefined, tone: 'warn' },
     { screen: 'projects', label: 'Projects', icon: FolderKanban, count: projects.data?.projects.length },
-    { screen: 'linear', label: 'Linear', brand: 'linear', count: runs.length || undefined },
+    { screen: 'linear', label: 'Linear', brand: 'linear', count: openIssues || undefined },
     { screen: 'agents', label: 'Agents', icon: Bot, count: activeRuns || undefined, tone: 'hot' },
     { screen: 'models', label: 'Models', icon: Cpu, count: models.data?.models.value.length },
     { screen: 'brain', label: 'Jev Brain', icon: BrainCircuit },
