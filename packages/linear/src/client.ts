@@ -183,8 +183,8 @@ export class HttpLinearClient implements LinearClient {
       case 'attachment': {
         const issue = await this.getIssue(write.issueId);
         if (issue.resources.some(resource => resource.url === write.url)) return;
-        data = await this.query('mutation KorAttachment($input: AttachmentLinkGitHubPRInput!) { attachmentLinkGitHubPR(input: $input) { success } }', {
-          input: { issueId: write.issueId, url: write.url, ...(write.title ? { title: write.title } : {}) },
+        data = await this.query('mutation KorAttachment($issueId: String!, $url: String!, $title: String) { attachmentLinkGitHubPR(issueId: $issueId, url: $url, title: $title) { success } }', {
+          issueId: write.issueId, url: write.url, ...(write.title ? { title: write.title } : {}),
         });
         break;
       }
