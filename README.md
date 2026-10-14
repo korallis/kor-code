@@ -4,7 +4,7 @@ Kor Code is the documentation project for a Linear-first engineering environment
 
 The design gives one control plane to read project intent from Linear, choose models and agents, run isolated Claude Code sessions, use an account-aware subscription gateway, and write evidence back to Linear.
 
-This repository contains the foundation monorepo and documentation. The foundation exposes typed integration boundaries and runnable probes. Model compatibility is recorded by `pnpm kor models probe --family claude` and listed by `pnpm kor models list`.
+This repository contains the foundation monorepo and documentation. The foundation exposes typed integration boundaries and runnable probes. Model compatibility is recorded by `pnpm kor models probe --family claude` and listed by `pnpm kor models list`. `kor plan LEE-57` runs one Jev preflight for readiness, complexity, risk, route, skill, and agent choices, then records the decisions in SQLite.
 
 ## Read first
 
@@ -135,6 +135,7 @@ repos:
   kor-code:
     path: /home/lee/Projects/kor-code
     remote: https://github.com/korallis/kor-code.git
+    linearTeam: LEE
     defaultBranch: main
     checks: [pnpm typecheck]
     toolAllowlist: [Read, Write, Edit, "Bash(git status*)"]
@@ -167,20 +168,55 @@ With the key removed, the gateway line is red and the command exits one:
 FAIL CLIProxyAPI with Kor key: missing; CLIProxyAPI addition: - kor-<generated-value>
 ```
 
-## Run the Kor daemon
+## Plan a Linear issue
 
-After `pnpm install` and a `~/.config/kor/config.yaml`, install the user service with `cp systemd/kor.service ~/.config/systemd/user/kor.service`, then run `systemctl --user daemon-reload` and `systemctl --user enable --now kor`.
+Run a preflight for an issue identifier that you can read with the configured personal Linear key:
+
+```sh
+pnpm kor plan LEE-1101
+```
+
+The command prints the route, each decision, and its confidence. It writes redacted decision records to `~/.local/state/kor/kor.db`. A missing or invalid TypeSafe response keeps readiness `blocked` and marks the configured route `fallback`. A healthy but uncertain or non-applicable response keeps the route `escalated`, which is distinct from an outage. When a decision needs captain input, Kor writes one stable-ID clarification comment to the Linear issue. The command exits one while readiness is blocked, a decision is escalated, or a fallback route is in use.
+
+```text
+PLAN plan-<uuid>
+route: anthropic/claude-sonnet-5-5 [fallback]
+fallback: true
+jev: unavailable (TypeSafe API key not found ...)
+readiness: blocked (0.00); confidence=0.00; status=blocked
+complexity: escalate (0.00); confidence=0.00; status=blocked
+risk: escalate (0.00); confidence=0.00; status=blocked
+route: claude-sonnet-5-5; confidence=0.00; status=blocked
+skill: escalate; confidence=0.00; status=blocked
+agent: escalate; confidence=0.00; status=blocked
+linear: clarification comment written
+```
+
+### Queue an issue for the daemon
+
+Add a `linearTeam` or `linearProject` mapping to the repository entry in `config.yaml`, then preview the durable queue operation for a Todo issue. The command resolves the issue key to its canonical Linear UUID before writing SQLite, so polling and manual commands address the same assignment:
+
+```sh
+pnpm kor run LEE-123 --dry-run
+```
+
+```text
+{"issueId":"LEE-123","canonicalIssueId":"<linear-uuid>","dryRun":true,"queued":false}
+```
+
+Run it without `--dry-run` to enqueue the canonical assignment. This daemon path owns the durable queue and execution status; its CLI does not perform the direct Linear progress writes from the standalone preflight command. `kor cancel LEE-123` and `kor retry LEE-123` resolve the same canonical issue before changing the durable assignment.
+
+### Operate the daemon
+
+Install the user service with `cp systemd/kor.service ~/.config/systemd/user/kor.service`, then run `systemctl --user daemon-reload` and `systemctl --user enable --now kor`.
 The daemon polls Todo issues carrying the configured `kor` label, stores leases in `~/.local/state/kor/kor.db`, and publishes snapshots under `~/.local/state/kor/snapshots/`.
 Use `kor status --json`, `kor run ISSUE-ID`, `kor cancel ISSUE-ID`, `kor retry ISSUE-ID`, and `kor logs EXECUTION-ID`.
 The read-only HTTP equivalent is `http://127.0.0.1:8327/status`.
 Status values are `queued`, `running`, `complete`, `failed`, `blocked`, and `canceled`; response provenance is `live`, `stale`, or `unavailable`.
-`retry` is explicit for terminal failures and verification blocks, while a running cancellation stops the detached session group before recording `canceled`.
 
-The local daemon proof exercises intake, the loopback endpoint, lease renewal during an 800 ms run with a 200 ms lease, restart recovery, queued and running cancellation, terminal failure and retry, orphan worktree cleanup, and PID identity protection:
+The local daemon proof covers lease renewal, restart recovery, queued and running cancellation, terminal failure and retry, orphan worktree cleanup, and PID identity protection:
 
 ```text
 $ pnpm daemon:proof
 daemon proof passed; picked=LEE-57; status=live; restart=queued; attempts=1; orphan=removed; lease=exclusive; cancel=terminal; failure=retryable; pid-guard=pass
 ```
-
-No live Linear or gateway credential was used for this proof; credentials are supplied at runtime by the configured environment.

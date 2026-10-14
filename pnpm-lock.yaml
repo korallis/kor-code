@@ -186,9 +186,18 @@ importers:
       '@kor-code/controller':
         specifier: workspace:*
         version: link:../controller
+      '@kor-code/core':
+        specifier: workspace:*
+        version: link:../core
       '@kor-code/daemon':
         specifier: workspace:*
         version: link:../daemon
+      '@kor-code/gateway-adapter':
+        specifier: workspace:*
+        version: link:../gateway-adapter
+      '@kor-code/jev':
+        specifier: workspace:*
+        version: link:../jev
       '@kor-code/linear':
         specifier: workspace:*
         version: link:../linear

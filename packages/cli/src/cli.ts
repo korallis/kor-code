@@ -3,7 +3,8 @@ import { fileURLToPath } from "node:url";
 import { basename, join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { formatDoctor, runDoctor } from "./doctor.js";
-import { ensureRuntimeDirectories, loadKorConfig, runtimePaths } from "@kor-code/config";
+import { runPlan } from "./plan.js";
+import { ensureRuntimeDirectories, loadKorConfig, repositoryKeyForIssue, runtimePaths } from "@kor-code/config";
 import { HttpLinearClient, LinearStore } from "@kor-code/linear";
 import { KorDaemon, readStatus } from "@kor-code/daemon";
 import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController } from "@kor-code/controller";
@@ -16,6 +17,14 @@ function valueAfter(args: readonly string[], name: string): string | undefined {
 function print(value: unknown, json: boolean): void {
   process.stdout.write(`${json ? JSON.stringify(value, null, 2) : typeof value === "string" ? value : JSON.stringify(value, null, 2)}\n`);
 }
+function uuid(value: string): boolean { return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value); }
+async function canonicalIssue(reference: string): Promise<{ id: string; identifier: string; title: string; repository: string }> {
+  if (uuid(reference)) return { id: reference, identifier: reference, title: reference, repository: reference };
+  const client = new HttpLinearClient();
+  const issue = await client.getIssue(reference);
+  const loaded = await loadKorConfig();
+  return { id: issue.id, identifier: issue.identifier ?? reference, title: issue.title, repository: repositoryKeyForIssue(issue, loaded.config) };
+}
 
 async function status(args: readonly string[]): Promise<number> {
   const paths = runtimePaths();
@@ -25,32 +34,34 @@ async function status(args: readonly string[]): Promise<number> {
 }
 
 async function runIssue(args: readonly string[]): Promise<number> {
-  const issueId = args.find(arg => !arg.startsWith("-"));
-  if (!issueId) { process.stderr.write("Usage: kor run ISSUE-ID [--dry-run] [--json]\n"); return 2; }
+  const issueReference = args.find(arg => !arg.startsWith("-"));
+  if (!issueReference) { process.stderr.write("Usage: kor run ISSUE-ID [--dry-run] [--json]\n"); return 2; }
   const json = jsonFlag(args);
   const dryRun = args.includes("--dry-run");
   const paths = runtimePaths();
   const loaded = await loadKorConfig(paths.configFile, { home: paths.home });
+  const issue = await canonicalIssue(issueReference);
   if (dryRun) {
-    print({ issueId, dryRun: true, intake: loaded.config.intakeLabel, route: loaded.config.defaultRoute, planned: ["enqueue durable assignment", "run isolated session when kor serve is active"] }, json);
+    print({ issueId: issue.identifier, canonicalIssueId: issue.id, title: issue.title, dryRun: true, intake: loaded.config.intakeLabel, route: loaded.config.defaultRoute, planned: ["enqueue durable assignment", "run isolated session when kor serve is active"] }, json);
     return 0;
   }
   const store = new LinearStore(paths.databaseFile);
   try {
-    const assignment = store.enqueue(issueId);
-    print({ issueId, executionId: assignment.executionId, status: assignment.status, queued: true }, json);
+    const assignment = store.enqueue(issue.id);
+    print({ issueId: issue.identifier, canonicalIssueId: issue.id, executionId: assignment.executionId, status: assignment.status, queued: true }, json);
     return 0;
   } finally { store.close(); }
 }
 
 async function updateQueue(command: "cancel" | "retry", args: readonly string[]): Promise<number> {
-  const issueId = args.find(arg => !arg.startsWith("-"));
-  if (!issueId) { process.stderr.write(`Usage: kor ${command} ISSUE-ID [--json]\n`); return 2; }
+  const issueReference = args.find(arg => !arg.startsWith("-"));
+  if (!issueReference) { process.stderr.write(`Usage: kor ${command} ISSUE-ID [--json]\n`); return 2; }
+  const issue = await canonicalIssue(issueReference);
   const paths = runtimePaths();
   const store = new LinearStore(paths.databaseFile);
   try {
-    const accepted = command === "cancel" ? store.requestCancel(issueId) : store.retry(issueId);
-    print({ issueId, command, accepted }, jsonFlag(args));
+    const accepted = command === "cancel" ? store.requestCancel(issue.id) : store.retry(issue.id);
+    print({ issueId: issue.identifier, canonicalIssueId: issue.id, command, accepted }, jsonFlag(args));
     return accepted ? 0 : 1;
   } finally { store.close(); }
 }
@@ -99,6 +110,11 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
       process.stdout.write(`${formatDoctor(report, Boolean(process.stdout.isTTY) && process.env.NO_COLOR === undefined)}\n`);
       return report.ok ? 0 : 1;
     }
+    if (command === "plan" && args.length === 2) {
+      const result = await runPlan(args[1]!);
+      process.stdout.write(`${result.output}\n${result.commentWritten ? "linear: clarification comment written" : "linear: no clarification needed"}\n`);
+      return result.plan.fallback || result.plan.decisions.some(decision => decision.escalated || decision.kind === "readiness" && decision.choice === "blocked") ? 1 : 0;
+    }
     if (command === "status") return status(args.slice(1));
     if (command === "run") return runIssue(args.slice(1));
     if (command === "cancel" || command === "retry") return updateQueue(command, args.slice(1));
@@ -108,7 +124,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     process.stderr.write(`FAIL ${command}: ${error instanceof Error ? error.message : "unable to run"}\n`);
     return 1;
   }
-  process.stdout.write("Usage: kor serve | kor status [--json] | kor run ISSUE-ID [--dry-run] | kor cancel ISSUE-ID | kor retry ISSUE-ID | kor logs EXECUTION-ID | kor doctor | kor models list | kor models probe [--family family] [--model model]\n");
+  process.stdout.write("Usage: kor serve | kor status [--json] | kor plan ISSUE-ID | kor run ISSUE-ID [--dry-run] | kor cancel ISSUE-ID | kor retry ISSUE-ID | kor logs EXECUTION-ID | kor doctor | kor models list | kor models probe [--family family] [--model model]\n");
   return ["help", "--help", "-h"].includes(command) ? 0 : 2;
 }
 

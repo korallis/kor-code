@@ -47,6 +47,8 @@ function runStatus(assignment: AssignmentRecord, observedAt: string): RunStatus 
   const manifest = assignment.manifest;
   return {
     executionId: assignment.executionId, issueId: assignment.issueId, status: assignment.status, attempts: assignment.attempts, observedAt,
+    ...(assignment.issueKey ? { issueKey: assignment.issueKey } : {}),
+    ...(assignment.issueTitle ? { issueTitle: assignment.issueTitle } : {}),
     ...(manifest?.route ? { route: manifest.route } : {}),
     ...(manifest?.status ? { phase: manifest.status } : {}),
     ...(assignment.cancelRequested ? { cancelRequested: true } : {}),
@@ -155,7 +157,8 @@ export class KorDaemon {
       if (assignment.status !== "running" && assignment.status !== "queued") continue;
       if (assignment.processIdentity) {
         const existed = processMatches(assignment.processIdentity);
-        await stopSession(assignment.processIdentity);
+        try { await stopSession(assignment.processIdentity); }
+        catch (error) { await this.reportError(new Error(`recovery could not stop ${assignment.executionId}: ${safeMessage(error)}`)); continue; }
         if (existed) result.killedPids.push(assignment.processIdentity.pid);
       } else if (assignment.sessionPid && processExists(assignment.sessionPid)) {
         throw new Error(`Cannot recover ${assignment.executionId}: legacy session PID has no identity; waiting for it to exit`);
@@ -256,6 +259,7 @@ export class KorDaemon {
       await this.log(id, "execution started");
       if (!this.options.linear) throw new Error("Linear client unavailable");
       const issue = await this.options.linear.getIssue(claim.assignment.issueId);
+      this.store.setIssueMetadata(claim, issue.identifier ?? issue.id, issue.title);
       this.store.markRunning(claim, { id, issueId: issue.id, repository: issue.repository ?? issue.teamKey, worktree: "", branch: `kor/${issue.id}`, status: "running", route: this.options.config.defaultRoute });
       abort.signal.throwIfAborted();
       if (this.options.runner) result = await this.options.runner({ claim, issue, onSpawn, signal: abort.signal });
@@ -265,8 +269,15 @@ export class KorDaemon {
     } catch (error) { failure = error; }
     finally { clearInterval(heartbeat); }
     // Do not release a claim while any tracked session group might still mutate its worktree.
-    if (identity) await stopSession(identity);
-    if (this.store.isCancelRequested(claim.assignment.issueId)) this.store.cancelClaim(claim);
+    let cleanupFailure: unknown;
+    if (identity) {
+      try { await stopSession(identity); }
+      catch (error) { cleanupFailure = error; }
+    }
+    if (cleanupFailure !== undefined) {
+      this.store.clearCancel(claim.assignment.issueId);
+      this.store.failClaim(claim, `session cleanup failed: ${safeMessage(cleanupFailure)}`);
+    } else if (this.store.isCancelRequested(claim.assignment.issueId)) this.store.cancelClaim(claim);
     else if (this.stopping) this.store.recover(claim.assignment.issueId, "daemon stopped; session stopped; re-queued");
     else if (failure !== undefined) this.store.failClaim(claim, safeMessage(failure), failure instanceof ExecutionVerificationError ? "blocked" : "failed");
     else if (result?.execution.status === "failed" || result?.execution.status === "blocked") this.store.finishClaim(claim, result.execution.status, "execution did not complete", result.execution);

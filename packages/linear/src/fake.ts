@@ -8,18 +8,21 @@ export interface FakeLinearOptions {
 }
 
 export class FakeLinearClient implements LinearClient {
+  readonly capabilities = { agentSessions: true };
   readonly writes: LinearWrite[] = [];
   private readonly issues = new Map<string, LinearIssue>();
   private readonly sessions = new Map<string, AgentSessionRecord>();
   private readonly creations = new Map<string, LinearWrite>();
   private readonly teamIds: ReadonlyMap<string, string>;
   private readonly stateTypes: ReadonlyMap<string, LinearWorkflowState['type']>;
+  private readonly workflowStates: LinearWorkflowState[];
 
   constructor(issues: readonly LinearIssue[] = [], options: FakeLinearOptions = {}) {
     const teams = new Map(Object.entries(options.teams ?? { [linearIssueFixture.teamKey]: linearIssueFixture.teamId }));
     for (const issue of issues) teams.set(issue.teamKey, issue.teamId);
     this.teamIds = teams;
-    const states = new Map((options.workflowStates ?? workflowStatesFixture).map(state => [state.id, state.type]));
+    this.workflowStates = [...(options.workflowStates ?? workflowStatesFixture)].map(state => structuredClone(state));
+    const states = new Map(this.workflowStates.map(state => [state.id, state.type]));
     for (const issue of issues) states.set(issue.stateId, issue.stateType);
     this.stateTypes = states;
     for (const issue of issues) this.issues.set(issue.id, structuredClone(issue));
@@ -45,6 +48,10 @@ export class FakeLinearClient implements LinearClient {
     return [...this.issues.values()].filter(issue => issue.teamId === teamId).slice(0, limit).map(issue => structuredClone(issue));
   }
 
+  async listWorkflowStates(_teamKey: string): Promise<LinearWorkflowState[]> {
+    return structuredClone(this.workflowStates);
+  }
+
   async apply(write: LinearWrite): Promise<void> {
     if (write.kind === 'session') {
       const previous = this.sessions.get(write.session.id);
@@ -62,14 +69,33 @@ export class FakeLinearClient implements LinearClient {
       issue.stateType = type;
     } else if (write.kind === 'summary') {
       this.sessionIssue(write.sessionId);
+    } else if (write.kind === 'attachment') {
+      const issue = this.issue(write.issueId);
+      if (!issue.resources.some(resource => resource.url === write.url)) issue.resources.push({ title: write.title ?? 'GitHub pull request', url: write.url });
     } else {
       const previous = this.creations.get(write.id);
       if (previous) {
         if (write.kind === 'activity' && (previous.kind !== 'activity' || previous.sessionId !== write.sessionId)) throw new Error('Linear activity ownership mismatch');
-        if (write.kind === 'comment' && (previous.kind !== 'comment' || previous.issueId !== write.issueId)) throw new Error('Linear comment ownership mismatch');
+        if (write.kind === 'comment') {
+          if (previous.kind !== 'comment' || previous.issueId !== write.issueId) throw new Error('Linear comment ownership mismatch');
+          const issue = this.issue(write.issueId);
+          const index = issue.comments.findIndex(comment => comment.id === write.id);
+          const existing = index >= 0 ? issue.comments[index] : undefined;
+          if (existing && existing.body !== write.body) issue.comments[index] = { id: existing.id, body: write.body };
+          this.writes.push(structuredClone(write));
+        }
         return;
       }
-      if (write.kind === 'comment') this.issue(write.issueId).comments.push({ id: write.id, body: write.body });
+      if (write.kind === 'comment') {
+        if (!/^\w{8}-\w{4}-4\w{3}-[89ab]\w{3}-\w{12}$/i.test(write.id)) throw new Error('Fake comment IDs must be UUID v4');
+        const issue = this.issue(write.issueId);
+        const existing = issue.comments.findIndex(comment => comment.id === write.id);
+        if (existing >= 0) {
+          const comment = issue.comments[existing];
+          if (comment) issue.comments[existing] = { id: comment.id, body: write.body };
+        }
+        else issue.comments.push({ id: write.id, body: write.body });
+      }
       else this.sessionIssue(write.sessionId);
       this.creations.set(write.id, structuredClone(write));
     }
@@ -89,4 +115,4 @@ export class FakeLinearClient implements LinearClient {
   }
 }
 
-export function fakeIssue(id = linearIssueFixture.id): LinearIssue { return { ...structuredClone(linearIssueFixture), id }; }
+export function fakeIssue(id = linearIssueFixture.id): LinearIssue { return { ...structuredClone(linearIssueFixture), id, identifier: id }; }

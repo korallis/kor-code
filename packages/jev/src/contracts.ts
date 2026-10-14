@@ -1,4 +1,5 @@
 import { z } from "zod";
+export type JevJsonValue = z.infer<ReturnType<typeof z.json>>;
 
 const probability = z.number().min(0).max(1);
 const instructions = z.json();
@@ -49,7 +50,10 @@ export function parseResponse(raw: unknown, questions: Record<string, JevQuestio
     if (answer.type === "score" && question.type === "score") {
       if (answer.score > question.criteria.length - 1 || JSON.stringify(Object.keys(answer.legend).sort()) !== JSON.stringify(keys)) throw new Error(`Jev score levels mismatch for ${id}`);
       const weighted = Object.entries(answer.probabilities).reduce((total, [level, value]) => total + Number(level) * value, 0);
-      if (Math.abs(answer.score - weighted) > 0.01) throw new Error(`Jev score differs from its distribution for ${id}`);
+      // Jev rounds scores and probabilities independently to two decimals. The
+      // error compounds with the number of ordered levels.
+      const roundingTolerance = 0.005 * (1 + question.criteria.length * (question.criteria.length - 1) / 2) + 1e-9;
+      if (Math.abs(answer.score - weighted) > roundingTolerance) throw new Error(`Jev score differs from its distribution for ${id}`);
     }
   }
   return response;

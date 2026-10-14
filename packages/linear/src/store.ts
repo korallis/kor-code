@@ -23,6 +23,8 @@ export interface AssignmentRecord extends Assignment {
   lastError?: string;
   attempts: number;
   processIdentity?: SessionProcessIdentity;
+  issueKey?: string;
+  issueTitle?: string;
 }
 
 function number(value: unknown): number {
@@ -45,6 +47,7 @@ function parseWrite(value: unknown): LinearWrite {
     case 'state': return { kind: 'state', issueId: string(write.issueId), stateId: string(write.stateId) };
     case 'summary': return { kind: 'summary', sessionId: string(write.sessionId), summary: string(write.summary) };
     case 'comment': return { kind: 'comment', id: string(write.id), issueId: string(write.issueId), body: string(write.body) };
+    case 'attachment': return { kind: 'attachment', issueId: string(write.issueId), url: string(write.url), ...(write.title === undefined ? {} : { title: string(write.title) }) };
     case 'activity': {
       const activity = string(write.activity);
       if (activity !== 'thought' && activity !== 'response' && activity !== 'error') throw new Error('Invalid activity type');
@@ -68,15 +71,16 @@ export class LinearStore {
         issue_id TEXT PRIMARY KEY, execution_id TEXT NOT NULL UNIQUE, session_id TEXT NOT NULL UNIQUE,
         status TEXT NOT NULL CHECK(status IN ('queued','running','complete','failed','canceled','blocked')), manifest TEXT,
         token TEXT, owner TEXT, expires_at INTEGER, available_at INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
-        session_pid INTEGER, session_boot_id TEXT, session_start_ticks TEXT, heartbeat_at INTEGER, cancel_requested INTEGER NOT NULL DEFAULT 0, last_error TEXT
+        session_pid INTEGER, session_boot_id TEXT, session_start_ticks TEXT, heartbeat_at INTEGER, cancel_requested INTEGER NOT NULL DEFAULT 0, last_error TEXT, issue_key TEXT, issue_title TEXT
       );
       CREATE TABLE IF NOT EXISTS outbox (sequence INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS writer (id INTEGER PRIMARY KEY CHECK(id=1), token TEXT, expires_at INTEGER);
+      CREATE TABLE IF NOT EXISTS decision_audit (decision_id TEXT PRIMARY KEY, recorded_at TEXT NOT NULL, payload TEXT NOT NULL);
       INSERT OR IGNORE INTO writer(id) VALUES (1);`);
     this.transaction(() => {
       const version = number(this.db.prepare('PRAGMA user_version').get()?.user_version);
-      if (version > 2) throw new Error('Kor database schema is newer than this binary');
-      if (version === 2) return;
+      if (version > 3) throw new Error('Kor database schema is newer than this binary');
+      if (version >= 2) return;
       const columns = new Set(this.db.prepare('PRAGMA table_info(assignments)').all().map(row => string(row.name)));
       for (const [name, definition] of [
         ['session_pid', 'INTEGER'], ['session_boot_id', 'TEXT'], ['session_start_ticks', 'TEXT'],
@@ -88,12 +92,21 @@ export class LinearStore {
         issue_id TEXT PRIMARY KEY, execution_id TEXT NOT NULL UNIQUE, session_id TEXT NOT NULL UNIQUE,
         status TEXT NOT NULL CHECK(status IN ('queued','running','complete','failed','canceled','blocked')), manifest TEXT,
         token TEXT, owner TEXT, expires_at INTEGER, available_at INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
-        session_pid INTEGER, session_boot_id TEXT, session_start_ticks TEXT, heartbeat_at INTEGER, cancel_requested INTEGER NOT NULL DEFAULT 0, last_error TEXT
+        session_pid INTEGER, session_boot_id TEXT, session_start_ticks TEXT, heartbeat_at INTEGER, cancel_requested INTEGER NOT NULL DEFAULT 0, last_error TEXT, issue_key TEXT, issue_title TEXT
       );
-      INSERT INTO assignments_v2 SELECT issue_id,execution_id,session_id,status,manifest,token,owner,expires_at,available_at,attempts,session_pid,session_boot_id,session_start_ticks,heartbeat_at,cancel_requested,last_error FROM assignments;
+      INSERT INTO assignments_v2 SELECT issue_id,execution_id,session_id,status,manifest,token,owner,expires_at,available_at,attempts,session_pid,session_boot_id,session_start_ticks,heartbeat_at,cancel_requested,last_error,NULL,NULL FROM assignments;
       DROP TABLE assignments;
       ALTER TABLE assignments_v2 RENAME TO assignments;
       PRAGMA user_version=2;`);
+    });
+    this.transaction(() => {
+      const version = number(this.db.prepare('PRAGMA user_version').get()?.user_version);
+      if (version < 3) {
+        const columns = new Set(this.db.prepare('PRAGMA table_info(assignments)').all().map(row => string(row.name)));
+        if (!columns.has('issue_key')) this.db.exec('ALTER TABLE assignments ADD COLUMN issue_key TEXT');
+        if (!columns.has('issue_title')) this.db.exec('ALTER TABLE assignments ADD COLUMN issue_title TEXT');
+        this.db.exec('PRAGMA user_version=3');
+      }
     });
     this.db.exec('CREATE TABLE IF NOT EXISTS daemon_owner (id INTEGER PRIMARY KEY CHECK(id=1), owner TEXT NOT NULL, pid INTEGER NOT NULL, boot_id TEXT NOT NULL, start_ticks TEXT NOT NULL)');
   }
@@ -104,6 +117,25 @@ export class LinearStore {
     catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
   close(): void { this.db.close(); }
+
+  readDecisionAudit(decisionId: string): string | undefined {
+    const row = this.db.prepare('SELECT payload FROM decision_audit WHERE decision_id=?').get(decisionId) as { payload?: unknown } | undefined;
+    return typeof row?.payload === 'string' ? row.payload : undefined;
+  }
+  writeDecisionAudit(decisionId: string, recordedAt: string, payload: string): void {
+    if (!decisionId || !recordedAt || !payload) throw new Error('Decision audit fields are required');
+    this.transaction(() => {
+      const result = this.db.prepare('INSERT INTO decision_audit(decision_id,recorded_at,payload) VALUES(?,?,?) ON CONFLICT(decision_id) DO NOTHING').run(decisionId, recordedAt, payload);
+      if (result.changes !== 1) throw new Error(`Decision audit record already exists: ${decisionId}`);
+    });
+  }
+  updateDecisionAudit(decisionId: string, recordedAt: string, payload: string): void {
+    if (!decisionId || !recordedAt || !payload) throw new Error('Decision audit fields are required');
+    this.transaction(() => {
+      const result = this.db.prepare('UPDATE decision_audit SET recorded_at=?,payload=? WHERE decision_id=?').run(recordedAt, payload, decisionId);
+      if (result.changes !== 1) throw new Error(`Decision audit record not found: ${decisionId}`);
+    });
+  }
 
   acceptEvent(event: { id: string; digest: string; issueId?: string }): 'accepted' | 'duplicate' {
     return this.transaction(() => {
@@ -140,7 +172,9 @@ export class LinearStore {
       const bootId = typeof value.session_boot_id === 'string' ? value.session_boot_id : undefined;
       const startTicks = typeof value.session_start_ticks === 'string' ? value.session_start_ticks : undefined;
       const processIdentity = sessionPid && bootId && startTicks ? { pid: sessionPid, bootId, startTicks } : undefined;
-      return { ...parsed, ...(manifest ? { manifest } : {}), ...(owner ? { owner } : {}), ...(expiresAt ? { expiresAt } : {}), ...(sessionPid ? { sessionPid } : {}), ...(heartbeatAt ? { heartbeatAt } : {}), ...(value.cancel_requested === 1 ? { cancelRequested: true } : {}), ...(lastError ? { lastError } : {}), ...(processIdentity ? { processIdentity } : {}), attempts };
+      const issueKey = typeof value.issue_key === 'string' ? value.issue_key : undefined;
+      const issueTitle = typeof value.issue_title === 'string' ? value.issue_title : undefined;
+      return { ...parsed, ...(manifest ? { manifest } : {}), ...(owner ? { owner } : {}), ...(expiresAt ? { expiresAt } : {}), ...(sessionPid ? { sessionPid } : {}), ...(heartbeatAt ? { heartbeatAt } : {}), ...(value.cancel_requested === 1 ? { cancelRequested: true } : {}), ...(lastError ? { lastError } : {}), ...(processIdentity ? { processIdentity } : {}), ...(issueKey ? { issueKey } : {}), ...(issueTitle ? { issueTitle } : {}), attempts };
     });
   }
   counts(): { events: number; executions: number; pendingWrites: number } {
@@ -181,6 +215,10 @@ export class LinearStore {
   setSessionPid(claim: ExecutionClaim, pid: number, identity?: { bootId: string; startTicks: string }): void {
     if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('Session PID must be positive');
     this.transaction(() => { this.assertLease(claim); this.db.prepare('UPDATE assignments SET session_pid=?,session_boot_id=?,session_start_ticks=?,heartbeat_at=? WHERE issue_id=?').run(pid, identity?.bootId ?? null, identity?.startTicks ?? null, this.now(), claim.assignment.issueId); });
+  }
+  setIssueMetadata(claim: ExecutionClaim, issueKey: string, issueTitle: string): void {
+    if (!issueKey || !issueTitle) throw new Error('Issue metadata is required');
+    this.transaction(() => { this.assertLease(claim); this.db.prepare('UPDATE assignments SET issue_key=?,issue_title=? WHERE issue_id=?').run(issueKey, issueTitle, claim.assignment.issueId); });
   }
   requestCancel(issueId: string): boolean {
     return this.transaction(() => {

@@ -33,15 +33,21 @@ function livingGroup(pid: number): boolean {
     return info?.group === pid && info.state !== "Z";
   });
 }
+export function sessionGroupAlive(identity: SessionProcessIdentity): boolean {
+  if (readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim() !== identity.bootId) return false;
+  return livingGroup(identity.pid);
+}
 /** Kill only an identity-verified session group; never signal a recycled PID. */
 export async function stopSession(identity: SessionProcessIdentity): Promise<void> {
   const info = processInfo(identity.pid);
-  if (!processMatches(identity)) {
-    if (!info && livingGroup(identity.pid)) throw new Error("Orphan session group needs reconciliation; leader identity is unavailable");
-    return;
+  const bootMatches = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim() === identity.bootId;
+  const identityMatches = Boolean(info && info.startTicks === identity.startTicks);
+  const groupAlive = bootMatches && livingGroup(identity.pid);
+  if (!identityMatches && !groupAlive) return;
+  if (info && info.group !== identity.pid) throw new Error("Session is not an isolated process group");
+  try { process.kill(-identity.pid, "SIGKILL"); } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error;
   }
-  if (info?.group !== identity.pid) throw new Error("Session is not an isolated process group");
-  process.kill(-identity.pid, "SIGKILL");
   const deadline = Date.now() + 3_000;
   while (livingGroup(identity.pid)) {
     if (Date.now() >= deadline) throw new Error("Session process group did not stop");
