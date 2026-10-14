@@ -137,3 +137,7 @@ flow **Validated**.
 Jev (`jev-1.13.0`) selected daemon-owned delivery with confidence 0.96, preserving
 approval gates with confidence 1.00, and cleanup only after merge with confidence
 1.00.
+
+When attaching a no-mistakes run, Kor checks the recorded submitted head together with its run ID and branch. The pipeline owns rebase and repairs, so its current head may differ before the first attachment. A startup response without submission identity is refreshed by run ID when needed. Older responses without that metadata must still match the original head exactly; branch alone never establishes ownership. Once attached, the durable run ID fences later polls and restart recovery.
+
+The no-mistakes step status `completed` produces passing pipeline evidence. Kor also recognizes `passed` for compatibility; failed steps produce failing evidence, and other step states remain unresolved.
