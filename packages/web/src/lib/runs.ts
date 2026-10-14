@@ -50,18 +50,24 @@ export function prNumber(url: string | undefined): string | null {
 /** The repository key a run belongs to: its configured repository, if the daemon reported it. */
 export const repoOf = (run: MissionRun) => run.repository;
 
-type Timed = MissionRun & { createdAt?: string; updatedAt?: string; startedAt?: string; completedAt?: string };
-
-/** When a run last moved, as the daemon recorded it. Undefined means undated: time-based figures leave the run out rather than guess. */
-export function runUpdatedAt(run: MissionRun, _decisions?: readonly DecisionRecord[]): string | undefined {
-  const own = run as Timed;
-  return own.updatedAt ?? own.completedAt ?? own.startedAt ?? own.createdAt;
+/** When a run last moved, as the daemon recorded it; undefined means undated. */
+export function runUpdatedAt(run: MissionRun): string | undefined {
+  return run.updatedAt ?? run.completedAt ?? run.startedAt ?? run.createdAt ?? undefined;
 }
 
-/** When a run started, as the daemon recorded it. */
-export function runStartedAt(run: MissionRun, _decisions?: readonly DecisionRecord[]): string | undefined {
-  const own = run as Timed;
-  return own.startedAt ?? own.createdAt;
+/** Start of the run's latest execution attempt, as the daemon recorded it. */
+export function runStartedAt(run: MissionRun): string | undefined {
+  return run.startedAt ?? undefined;
+}
+
+/** A run's persisted spend records (every attempt), when the daemon reports them. */
+export function spendOf(run: MissionRun) {
+  return run.spend?.value ?? [];
+}
+
+/** Spend recorded on the given day, from each record's own time, never a run's cumulative cost. */
+export function spendOn(runs: readonly MissionRun[], isDay: (iso: string) => boolean) {
+  return runs.flatMap(run => spendOf(run).filter(record => record.costUsd !== null && isDay(record.recordedAt)).map(record => ({ run, record, costUsd: record.costUsd ?? 0 })));
 }
 
 /** A candidate's probability, when the decision reports per-candidate probabilities. */

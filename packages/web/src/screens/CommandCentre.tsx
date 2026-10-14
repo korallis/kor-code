@@ -29,7 +29,7 @@ import { CountUp } from '../ui/count';
 import { MotionMedia } from '../motion/MotionMedia';
 import { buildActivity } from '../lib/activity';
 import { plural, shortModel, usd } from '../lib/format';
-import { isActive, keyOf, needsYou, readyToShip, runUpdatedAt } from '../lib/runs';
+import { isActive, keyOf, needsYou, readyToShip, runUpdatedAt, spendOn } from '../lib/runs';
 import { parseQuota, sessionWindow, weeklyWindow, providerTitle } from '../lib/quota';
 import { ago, clock, greeting, isToday, longDate, shortDate, useNow } from '../lib/time';
 import { page, QueryError, RunRow } from './shared';
@@ -148,7 +148,7 @@ function NeedsYou({ run, now, linearUrl, decisions }: { run: MissionRun | undefi
         <a href={href('linear', run.executionId)} {...stylex.props(text.key)}>{keyOf(run)}</a>
         <span {...stylex.props(text.muted, text.mono, text.xs, text.ellipsis)}>{run.status}{run.errorCode ? ` · ${run.errorCode}` : ''}</span>
         <span {...stylex.props(layout.grow)} />
-        {runUpdatedAt(run, decisions) && <span {...stylex.props(text.muted, text.mono, text.xs)}>{ago(runUpdatedAt(run, decisions), now)} ago</span>}
+        <span {...stylex.props(text.muted, text.mono, text.xs)}>{runUpdatedAt(run) ? `${ago(runUpdatedAt(run), now)} ago` : 'undated'}</span>
       </div>
       <h3 {...stylex.props(styles.needsTitle)}>{run.issueTitle ?? run.issueId}</h3>
       <div {...stylex.props(layout.row, text.muted, text.sm, layout.mt1)}>
@@ -260,11 +260,11 @@ export function CommandCentre() {
   const attention = runs.filter(needsYou);
   const ready = runs.filter(readyToShip);
   const prsOpen = runs.filter(run => run.status === 'review' && run.pullRequestUrl);
-  const today = runs.filter(run => isToday(runUpdatedAt(run, decisions), now));
-  const verifiedToday = today.filter(run => run.verification?.passed);
-  const timeOf = (run: MissionRun) => Date.parse(runUpdatedAt(run, decisions) ?? '') || 0;
+  const today = runs.filter(run => isToday(runUpdatedAt(run), now));
+  const verifiedToday = runs.filter(run => run.verifiedAt !== null && isToday(run.verifiedAt, now));
+  const spentToday = spendOn(runs, iso => isToday(iso, now));
   const firstPass = verifiedToday.length ? verifiedToday.filter(run => (run.verification?.attempts.length ?? 0) <= 1).length / verifiedToday.length : null;
-  const spendToday = today.reduce((sum, run) => sum + (run.costUsd ?? 0), 0);
+  const spendToday = spentToday.reduce((sum, entry) => sum + entry.costUsd, 0);
   const quota = parseQuota(pool.quota?.value ?? null);
   const claude = quota.find(provider => provider.provider === 'claude');
   const five = sessionWindow(claude);
@@ -272,7 +272,7 @@ export function CommandCentre() {
   const rest = [...ready, ...active, ...queued].slice(3);
 
   const spendByModel = new Map<string, number>();
-  for (const run of today) if (run.costUsd) spendByModel.set(run.route?.model ?? 'unrouted', (spendByModel.get(run.route?.model ?? 'unrouted') ?? 0) + run.costUsd);
+  for (const { record, costUsd } of spentToday) if (costUsd) spendByModel.set(record.model, (spendByModel.get(record.model) ?? 0) + costUsd);
   const modelParts = [...spendByModel].sort((a, b) => b[1] - a[1]).slice(0, 5);
   const windows = quota.flatMap(provider => [sessionWindow(provider), weeklyWindow(provider)].filter(Boolean).map(window => ({ provider, window: window! }))).filter(entry => !entry.provider.notSetUp).slice(0, 3);
 
@@ -311,10 +311,10 @@ export function CommandCentre() {
           <Kpi index={2} icon={Bot} tone="cyan" label="Active runs" value={<CountUp value={active.length} format={String} />} small={<><b {...stylex.props(text.secondary)}>+{queued.length}</b> queued</>}
             art={activeSeries && <Spark width={84} values={activeSeries} tone="cyan" label="active runs since this page opened" />} />
           <Kpi index={3} icon={ShieldCheck} tone="green" label="Verified today" value={<CountUp value={verifiedToday.length} format={String} />} small={firstPass === null ? 'none yet' : <><b {...stylex.props(text.secondary)}>{Math.round(firstPass * 100)}%</b> first pass</>}
-            art={verifiedToday.length > 0 && <Spark width={84} values={cumulative(verifiedToday.map(run => ({ at: timeOf(run), value: 1 })))} tone="green" label="verified runs today" />} />
+            art={verifiedToday.length > 0 && <Spark width={84} values={cumulative(verifiedToday.map(run => ({ at: Date.parse(run.verifiedAt ?? ''), value: 1 })))} tone="green" label="verified runs today" />} />
           <Kpi index={4} icon={GitPullRequest} tone="violet" label="Pull requests" value={<CountUp value={prsOpen.length} format={String} />} small={<>open for <b {...stylex.props(text.secondary)}>review</b></>} />
-          <Kpi index={5} icon={Coins} tone="amber" label="Spend today · costUsd" value={<CountUp value={spendToday} format={value => usd(value)} />} small={<><b {...stylex.props(text.secondary)}>{today.length}</b> runs</>}
-            art={today.some(run => run.costUsd) && <Spark width={84} values={cumulative(today.map(run => ({ at: timeOf(run), value: run.costUsd ?? 0 })))} tone="amber" label="spend today" />} />
+          <Kpi index={5} icon={Coins} tone="amber" label="Spend today · costUsd" value={<CountUp value={spendToday} format={value => usd(value)} />} small={<><b {...stylex.props(text.secondary)}>{new Set(spentToday.map(entry => entry.run.executionId)).size}</b> runs</>}
+            art={spentToday.length > 0 && <Spark width={84} values={cumulative(spentToday.map(entry => ({ at: Date.parse(entry.record.recordedAt), value: entry.costUsd })))} tone="amber" label="spend today" />} />
           <Kpi index={6} icon={Gauge} tone="violet" label={`${claude ? 'Claude' : 'Pool'} 5-hour pool`} value={five?.percentRemaining != null ? <CountUp value={five.percentRemaining} format={value => `${Math.round(value)}%`} /> : '—'}
             small={five?.resetsAt ? <>resets <b {...stylex.props(text.secondary)}>{clock(five.resetsAt)}</b></> : <ProvenanceChip provenance={pool.quota?.provenance ?? 'unavailable'} reason={pool.quota?.reason}>{pool.quota ? pool.quota.provenance : 'unavailable'}</ProvenanceChip>}
             art={five?.percentRemaining != null && <Ring pct={five.percentRemaining} size={38} stroke={5} label="5-hour window remaining" />} />

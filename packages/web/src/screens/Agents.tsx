@@ -31,7 +31,7 @@ import { AgentAvatar, profileOf } from '../ui/avatar';
 import { compact, prob, shortModel, usd } from '../lib/format';
 import { parseDiff } from '../lib/diff';
 import { parseTerminal, sessionUsage } from '../lib/terminal';
-import { byAttention, decisionsFor, isActive, keyOf, latestVerification, prNumber, runStartedAt, runUpdatedAt, slotOf, FINISHED } from '../lib/runs';
+import { byAttention, decisionsFor, isActive, keyOf, latestVerification, prNumber, runStartedAt, runUpdatedAt, slotOf, spendOf, FINISHED } from '../lib/runs';
 import { ago, duration, isToday, useNow } from '../lib/time';
 import { page } from './shared';
 import { nextStep } from './runText';
@@ -87,7 +87,7 @@ const styles = stylex.create({
 function AgentCard({ run, selected, now, index, decisions }: { run: MissionRun; selected: boolean; now: number; index: number; decisions: DecisionRecord[] }) {
   const action = useRunAction();
   const step = nextStep(run);
-  const started = runStartedAt(run, decisions);
+  const started = runStartedAt(run);
   const elapsed = started ? duration(now - Date.parse(started)) : null;
   return (
     <Card index={index} variant={selected ? 'neon' : run.status === 'blocked' ? 'attention' : 'plain'} style={[styles.agent, selected && styles.agentSel]} as="article" label={keyOf(run)}>
@@ -144,7 +144,8 @@ function RunTerminal({ run, decisions, now }: { run: MissionRun; decisions: Deci
   const message = useRunMessage();
   const [copied, setCopied] = useState(false);
   const lines = parseTerminal(terminal.text);
-  const usage = sessionUsage(terminal.text);
+  const records = spendOf(run);
+  const usage = records.length ? { inputTokens: records.reduce((n, r) => n + (r.inputTokens ?? 0), 0), outputTokens: records.reduce((n, r) => n + (r.outputTokens ?? 0), 0), cacheReadTokens: records.reduce((n, r) => n + (r.cacheReadTokens ?? 0), 0), cacheCreationTokens: records.reduce((n, r) => n + (r.cacheCreationTokens ?? 0), 0), costUsd: null } : sessionUsage(terminal.text);
   const attempt = latestVerification(run);
   const diffs = attempt ? parseDiff(attempt.diff) : [];
   const findings = attempt?.findings ?? [];
@@ -274,7 +275,7 @@ export function Agents({ executionId, terminal = false }: { executionId?: string
   const sorted = [...runs].sort(byAttention);
   const liveRuns = sorted.filter(run => !FINISHED.has(run.status) && run.status !== 'queued');
   const queued = sorted.filter(run => run.status === 'queued');
-  const finishedToday = sorted.filter(run => FINISHED.has(run.status) && isToday(runUpdatedAt(run, decisions), now));
+  const finishedToday = sorted.filter(run => FINISHED.has(run.status) && isToday(runUpdatedAt(run), now));
   const shown = filter === 'live' ? [...liveRuns, ...queued] : filter === 'queued' ? queued : finishedToday;
   const selected = runs.find(run => run.executionId === executionId) ?? liveRuns[0] ?? queued[0] ?? sorted[0];
   const limits = config.data?.config.limits;

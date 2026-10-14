@@ -13,7 +13,7 @@ export function buildActivity(runs: readonly MissionRun[], overrides: readonly O
   const out: Activity[] = [];
   for (const run of runs) {
     const key = keyOf(run);
-    const base = { at: runUpdatedAt(run, decisions), key, executionId: run.executionId };
+    const base = { at: runUpdatedAt(run), key, executionId: run.executionId };
     const checks = checksSummary(run), acceptance = acceptanceSummary(run);
     const detail = [checks && `${checks.passed}/${checks.total} checks`, acceptance && `${acceptance.passed}/${acceptance.total} acceptance conditions`].filter(Boolean).join(', ');
     switch (run.status) {
