@@ -60,10 +60,13 @@ export function metricFromSession(input: SessionMetricInput): RunMetric {
     cacheCreationTokens,
     wallClockMs: elapsed(input.startedAt, input.finishedAt),
     sessionDurationMs: telemetry?.durationMs ?? null,
-    failovers: input.failovers ?? null,
+    // Claude's result event exposes the upstream API status when a provider
+    // failover was observed. A missing status remains unavailable rather than
+    // pretending that no failover occurred.
+    failovers: input.failovers ?? (telemetry?.apiErrorStatus === undefined ? null : 1),
     apiErrorStatus: telemetry?.apiErrorStatus ?? null,
-    policyBlocks: input.policyBlocks ?? telemetry?.permissionDenials ?? 0,
-    clarifications: input.clarifications ?? 0,
+    policyBlocks: input.policyBlocks ?? telemetry?.permissionDenials ?? null,
+    clarifications: input.clarifications ?? null,
     verificationFailures: input.verificationFailures ?? 0,
     verified: input.verified,
     findings: input.findings ?? [],
@@ -162,7 +165,7 @@ export function formatReport(report: CalibrationReport): string {
   const columns = report.arms.filter(arm => arm.arm !== "fallback" || arm.sampleSize > 0);
   return ["Kor calibration report", `Completed Jev/baseline pairs: ${report.pairedSampleSize}`, `Since: ${report.since ?? "all time"}`,
     "Success = identical verification gate in both arms. Terminal merge outcomes are separate.",
-    `Metric\t${columns.map(arm => arm.arm === "jev" ? "Jev-route" : arm.arm).join("\t")}\tPaired delta (Jev - baseline)`,
+    `Metric\t${columns.map(arm => arm.arm === "jev" ? "Jev-route (all)" : arm.arm === "baseline" ? "baseline (sampled)" : arm.arm).join("\t")}\tPaired delta (Jev - baseline)`,
     `Runs (finished/total)\t${columns.map(arm => `${arm.finished}/${arm.sampleSize}`).join("\t")}\t${report.pairedSampleSize} pairs`,
     `Merged/terminal outcomes\t${columns.map(arm => `${arm.merged}/${arm.outcomes}`).join("\t")}\tn/a (baseline never ships)`,
     ...metricNames.map(name => `${name}\t${columns.map(arm => cell(arm.metrics[name])).join("\t")}\t${cell(report.pairedDeltas[name])}`),

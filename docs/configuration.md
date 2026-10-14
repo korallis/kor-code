@@ -9,7 +9,7 @@ Kor keeps its machine-specific configuration outside a repository. The default p
 
 The daemon persists its queue and leases in `~/.local/state/kor/kor.db`. It writes
 an atomic `snapshots/index.json` and one `<execution-id>.json` file per assignment.
-`kor serve` exposes the same status envelope at `http://127.0.0.1:8327/status`.
+`kor serve` exposes the same status envelope at `http://127.0.0.1:8327/status`. Pass `--jev` to load the verified gateway catalogue and route through Jev; `--no-calibration`, `--calibration-rate`, and `--baseline-model` override calibration for that process.
 Install the user unit from `systemd/kor.service` after the CLI is available:
 
 ```sh
@@ -86,4 +86,4 @@ kor calibrate report
 kor calibrate report --since 2026-10-01T00:00:00.000Z --json
 ```
 
-The text report shows Jev and baseline arms side by side and a confidence reliability table with sample sizes and Brier scores. Fewer than 20 outcomes in either arm are labelled directional.
+The text report shows Jev and baseline arms side by side and a confidence reliability table with sample sizes and Brier scores. Fewer than 20 completed pairs are labelled directional. Clarifications remain unavailable until the clarification path supplies them; failovers use the provider API error signal when present.

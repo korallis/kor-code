@@ -3,11 +3,13 @@ import { fileURLToPath } from "node:url";
 import { basename, join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { formatDoctor, runDoctor } from "./doctor.js";
-import { ensureRuntimeDirectories, loadKorConfig, runtimePaths } from "@kor-code/config";
+import { ensureRuntimeDirectories, loadKorConfig, loadGatewayEnvironment, runtimePaths } from "@kor-code/config";
 import { HttpLinearClient, LinearStore } from "@kor-code/linear";
 import { KorDaemon, readStatus } from "@kor-code/daemon";
 import { CalibrationStore, buildReport, formatReport } from "@kor-code/calibration";
 import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController } from "@kor-code/controller";
+import { GatewayAdapter } from "@kor-code/gateway-adapter";
+import { JevClient, JevDecisionCore } from "@kor-code/jev";
 
 function jsonFlag(args: readonly string[]): boolean { return args.includes("--json"); }
 function valueAfter(args: readonly string[], name: string): string | undefined {
@@ -88,15 +90,34 @@ async function serve(args: readonly string[]): Promise<number> {
   const portValue = valueAfter(args, "--port");
   const port = portValue ? Number(portValue) : 8327;
   if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) throw new Error("--port must be a valid TCP port");
+  const jevEnabled = args.includes("--jev");
+  const calibrationEnabled = !args.includes("--no-calibration");
+  const sampleRateValue = valueAfter(args, "--calibration-rate");
+  const sampleRate = sampleRateValue === undefined ? loaded.config.calibration.sampleRate : Number(sampleRateValue);
+  if (!Number.isFinite(sampleRate) || sampleRate < 0 || sampleRate > 1) throw new Error("--calibration-rate must be between 0 and 1");
+  const baselineModel = valueAfter(args, "--baseline-model");
+  const calibrationConfig = { ...loaded.config.calibration, sampleRate, baselineRoute: { ...loaded.config.calibration.baselineRoute, ...(baselineModel ? { model: baselineModel } : {}) } };
   const repositories = new RepositoryRegistry(Object.entries(loaded.config.repos).map(([key, repository]) => ({ key, path: repository.path, defaultBranch: repository.defaultBranch, allowedTools: repository.toolAllowlist })));
-  const calibration = new CalibrationStore(paths.databaseFile);
+  const calibration = calibrationEnabled ? new CalibrationStore(paths.databaseFile) : undefined;
+  let catalogue;
+  let jev;
+  if (jevEnabled) {
+    const gateway = await loadGatewayEnvironment(paths.gatewayEnvFile);
+    const adapter = new GatewayAdapter({ baseUrl: gateway.baseUrl, ...(gateway.key ? { apiKey: gateway.key } : {}) });
+    const models = await adapter.catalogue({ capabilities: ["streaming", "tool_calls"] });
+    if (models.length === 0) throw new Error("--jev requires at least one verified gateway model");
+    catalogue = models.map(model => ({ provider: model.provider ?? "unknown", model: model.id, capabilities: Object.entries(model.capabilities).map(([name, supported]) => ({ name, supported })) }));
+    jev = new JevDecisionCore(new JevClient(), calibration);
+  }
   const controller = createController({
     repositories,
     worktrees: new GitWorktreeManager(paths.worktreesDir),
     launcher: new SessionLauncher({ repoRoot: process.cwd() }),
     limits: new ConcurrencyLimiter({ total: loaded.config.limits.total, perRepository: loaded.config.limits.perRepository, ...(loaded.config.limits.perProvider ? { perProvider: loaded.config.limits.perProvider } : {}) }),
     defaultRoute: loaded.config.defaultRoute,
-    calibration: { store: calibration, sampleRate: loaded.config.calibration.sampleRate, baselineRoute: loaded.config.calibration.baselineRoute },
+    ...(jev ? { jev } : {}),
+    ...(catalogue ? { catalogue } : {}),
+    ...(calibration ? { calibration: { store: calibration, sampleRate: calibrationConfig.sampleRate, baselineRoute: calibrationConfig.baselineRoute } } : {}),
   });
   const daemon = new KorDaemon({ paths, config: loaded.config, linear: new HttpLinearClient(), controller, port });
   const handle = await daemon.start();
@@ -105,6 +126,7 @@ async function serve(args: readonly string[]): Promise<number> {
     const stop = () => { void handle.stop().then(resolve); };
     process.once("SIGINT", stop); process.once("SIGTERM", stop);
   });
+  calibration?.close();
   return 0;
 }
 
@@ -126,7 +148,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     process.stderr.write(`FAIL ${command}: ${error instanceof Error ? error.message : "unable to run"}\n`);
     return 1;
   }
-  process.stdout.write("Usage: kor serve | kor status [--json] | kor run ISSUE-ID [--dry-run] | kor cancel ISSUE-ID | kor retry ISSUE-ID | kor logs EXECUTION-ID | kor calibrate report [--since ISO-8601] [--json] | kor doctor | kor models list | kor models probe [--family family] [--model model]\n");
+  process.stdout.write("Usage: kor serve [--jev] [--no-calibration] [--calibration-rate 0.25] [--baseline-model MODEL] | kor status [--json] | kor run ISSUE-ID [--dry-run] | kor cancel ISSUE-ID | kor retry ISSUE-ID | kor logs EXECUTION-ID | kor calibrate report [--since ISO-8601] [--json] | kor doctor | kor models list | kor models probe [--family family] [--model model]\n");
   return ["help", "--help", "-h"].includes(command) ? 0 : 2;
 }
 

@@ -19,6 +19,8 @@
       "path": "../daemon"
     },
     { "path": "../calibration" },
-    { "path": "../controller" }
+    { "path": "../controller" },
+    { "path": "../gateway-adapter" },
+    { "path": "../jev" }
   ]
 }

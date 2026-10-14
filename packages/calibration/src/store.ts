@@ -12,7 +12,7 @@ const route = z.object({ provider: z.string(), model: z.string(), accountPolicy:
 export const runSchema = z.object({
   executionId: z.string(), pairId: z.string(), issueId: z.string(), arm: z.enum(["jev", "baseline", "fallback"]),
   baseRevision: z.string(), route, sampled: z.boolean(), startedAt: z.string().datetime(),
-  status: z.enum(["running", "verified", "failed", "interrupted"]), finishedAt: z.string().datetime().optional(),
+  status: z.enum(["running", "verified", "failed", "interrupted", "escalated"]), finishedAt: z.string().datetime().optional(),
 });
 export type CalibrationRun = z.infer<typeof runSchema>;
 export const metricSchema = z.object({
@@ -20,7 +20,7 @@ export const metricSchema = z.object({
   decisionId: z.string().optional(), model: z.string(), costUsd: measurement,
   inputTokens: measurement, outputTokens: measurement, cacheReadTokens: measurement, cacheCreationTokens: measurement,
   wallClockMs: z.number().nonnegative(), sessionDurationMs: measurement,
-  failovers: measurement, apiErrorStatus: z.number().nullable(), policyBlocks: count, clarifications: count,
+  failovers: measurement, apiErrorStatus: z.number().nullable(), policyBlocks: measurement, clarifications: measurement,
   verificationFailures: count, verified: z.boolean(),
   findings: z.array(z.object({ conditionId: z.string(), status: z.enum(["pending", "pass", "fail", "unresolved"]), evidenceIds: z.array(z.string()), note: z.string().optional() })),
 });
@@ -82,12 +82,12 @@ export class CalibrationStore implements DecisionAuditLog {
   runs(): CalibrationRun[] { return this.db.prepare("SELECT payload FROM calibration_runs ORDER BY started_at, execution_id").all().map(row => runSchema.parse(JSON.parse(payloadRow.parse(row).payload))); }
   metrics(): RunMetric[] { return this.db.prepare("SELECT payload FROM run_metrics ORDER BY execution_id, attempt").all().map(row => metricSchema.parse(JSON.parse(payloadRow.parse(row).payload))); }
   outcomes(): z.infer<typeof storedOutcome>[] { return this.db.prepare("SELECT execution_id, payload FROM run_outcomes").all().map(row => storedOutcome.parse({ ...JSON.parse(payloadRow.parse(row).payload), executionId: row.execution_id })); }
-  recordExecutionOutcome(executionId: string, input: RunOutcome, jev: Pick<JevDecisionCore, "recordOutcome">): void {
+  recordExecutionOutcome(executionId: string, input: RunOutcome, jev?: Pick<JevDecisionCore, "recordOutcome">): void {
     const outcome = outcomeSchema.parse(input);
     if (!this.run(executionId)) throw new Error("Outcome requires a recorded execution");
     this.transaction(() => {
       this.db.prepare("INSERT INTO run_outcomes VALUES(?,?) ON CONFLICT(execution_id) DO UPDATE SET payload=excluded.payload").run(executionId, JSON.stringify(outcome));
-      for (const record of this.decisions().filter(item => item.response.executionId === executionId)) {
+      if (jev) for (const record of this.decisions().filter(item => item.response.executionId === executionId)) {
         jev.recordOutcome(record.response.decisionId, { ...outcome, success: outcome.status === "merged" });
       }
     });

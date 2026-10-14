@@ -1,27 +1,63 @@
-import { rm } from "node:fs/promises";
-import { join } from "node:path";
-import { CalibrationStore, buildReport, formatReport, metricSchema, sampledPair, type CalibrationRun, type RunOutcome } from "../packages/calibration/src/index.js";
-import type { Route } from "../packages/core/src/index.js";
-import { JevDecisionCore } from "../packages/jev/src/index.js";
+import { mkdir, rm } from "node:fs/promises";
+import { execFile as execFileCallback } from "node:child_process";
+import { join, resolve } from "node:path";
+import { promisify } from "node:util";
+import type { CatalogueModel, Route } from "../packages/core/src/index.js";
+import { CalibrationStore, buildReport, formatReport, sampledPair } from "../packages/calibration/src/index.js";
+import { JevDecisionCore, type JevQuestion, type JevResponse } from "../packages/jev/src/index.js";
+import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, createController, type SessionLaunch, type SessionResult, type SessionLauncherLike } from "../packages/controller/src/index.js";
+import { fakeIssue } from "../packages/linear/src/index.js";
 
-const root = process.env.KOR_CALIBRATION_PROOF_DIR ?? "/tmp/kor-t12-calibration-proof";
+const execFile = promisify(execFileCallback);
+const root = resolve(process.env.KOR_CALIBRATION_PROOF_DIR ?? "/tmp/kor-t12-calibration-proof");
+const repositoryPath = join(root, "repository");
 await rm(root, { recursive: true, force: true });
-const store = new CalibrationStore(join(root, "state", "kor", "kor.db"));
-const route: Route = { provider: "anthropic", model: "claude-sonnet-5-5", accountPolicy: "fill-first", sessionAffinity: true, reasoningLevel: "medium" };
-const jev = new JevDecisionCore({ evaluate: async () => ({ model: "proof", answers: {} }) }, store);
-function run(executionId: string, pairId: string, arm: CalibrationRun["arm"], costUsd: number, verified: boolean): void {
-  const startedAt = new Date("2026-10-14T10:00:00.000Z").toISOString();
-  store.beginRun({ executionId, pairId, issueId: `LEE-${pairId}`, arm, baseRevision: "abc123", route, sampled: true, startedAt, status: "running" });
-  store.recordAttempt(metricSchema.parse({ executionId, attempt: 1, recordedAt: "2026-10-14T10:00:02.000Z", model: route.model, costUsd, inputTokens: 100, outputTokens: 50, cacheReadTokens: 50, cacheCreationTokens: 10, wallClockMs: 2_000, sessionDurationMs: 1_900, failovers: 0, apiErrorStatus: null, policyBlocks: 0, clarifications: 0, verificationFailures: verified ? 0 : 1, verified, findings: [] }));
-  store.finishRun(executionId, verified ? "verified" : "failed");
-  jev.apply({ decisionId: `route-${executionId}`, executionId, kind: "route", question: "Select the route.", state: { issueId: pairId }, inputs: [], candidates: [route.model, "claude-haiku-5-5"] }, { type: "choice", choice: route.model, confidence: arm === "jev" ? 0.8 : 0.6, probabilities: { [route.model]: arm === "jev" ? 0.9 : 0.7, "claude-haiku-5-5": arm === "jev" ? 0.1 : 0.3 } });
-  const outcome: RunOutcome = { status: verified ? "merged" : "rejected", recordedAt: "2026-10-14T10:01:00.000Z", source: "calibration-proof" };
-  store.recordExecutionOutcome(executionId, outcome, jev);
+await mkdir(repositoryPath, { recursive: true });
+await execFile("git", ["-C", repositoryPath, "init", "-q", "-b", "main"]);
+await execFile("git", ["-C", repositoryPath, "config", "user.email", "calibration-proof@example.invalid"]);
+await execFile("git", ["-C", repositoryPath, "config", "user.name", "Calibration Proof"]);
+await execFile("git", ["-C", repositoryPath, "commit", "--allow-empty", "-qm", "proof-base"]);
+
+class ProofLauncher implements SessionLauncherLike {
+  async launch(_input: SessionLaunch): Promise<SessionResult> {
+    return { exitCode: 0, events: [], stdout: "proof", stderr: "", telemetry: { result: "proof", isError: false, permissionDenials: 0, totalCostUsd: 0.04, durationMs: 12, model: "claude-sonnet-5-5", usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 50, cache_creation_input_tokens: 10 } } };
+  }
 }
-run("proof-jev", "pair-1", "jev", 0.04, true);
-run("proof-baseline", "pair-1", "baseline", 0.06, false);
-if (!sampledPair("proof-jev", 1) || store.beginRun({ executionId: "proof-baseline", pairId: "pair-1", issueId: "LEE-pair-1", arm: "baseline", baseRevision: "abc123", route, sampled: true, startedAt: "2026-10-14T10:00:00.000Z", status: "running" })) throw new Error("Calibration idempotence or sampling proof failed");
-process.stdout.write("calibration:proof passed; sampled=true; replay=paired; duplicate_baseline=ignored\n\n");
-process.stdout.write(`${formatReport(buildReport(store))}\n`);
-store.close();
+
+const route: Route = { provider: "anthropic", model: "claude-sonnet-5-5", accountPolicy: "fill-first", sessionAffinity: true, reasoningLevel: "medium" };
+const catalogue: CatalogueModel[] = [{ provider: route.provider, model: route.model, capabilities: [{ name: "streaming", supported: true }, { name: "tool_calls", supported: true }] }];
+const audit = new CalibrationStore(join(root, "state", "kor", "kor.db"));
+const jevClient = {
+  async evaluate(_state: unknown, questions: Record<string, JevQuestion>): Promise<JevResponse> {
+    const answers = Object.fromEntries(Object.entries(questions).map(([id, question]) => {
+      if (question.type === "choice") {
+        const candidates = Object.keys(question.criteria);
+        const probabilities = Object.fromEntries(candidates.map((candidate, index) => [candidate, index === 0 ? 1 : 0]));
+        return [id, { type: "choice" as const, choice: candidates[0]!, confidence: 1, probabilities }];
+      }
+      if (question.type === "noul") return [id, { type: "noul" as const, noul: 1 }];
+      return [id, { type: "score" as const, score: 0, confidence: 1, probabilities: { "0": 1, "1": 0 }, legend: { "0": "low", "1": "high" } }];
+    }));
+    return { model: "proof", answers };
+  },
+};
+const jev = new JevDecisionCore(jevClient, audit);
+const issue = { ...fakeIssue("00000000-0000-4000-8000-000000000021"), repository: "proof" };
+const controller = createController({
+  repositories: new RepositoryRegistry([{ key: "proof", path: repositoryPath, defaultBranch: "main" }]),
+  worktrees: new GitWorktreeManager(join(root, "worktrees")),
+  launcher: new ProofLauncher(),
+  jev,
+  catalogue,
+  defaultRoute: route,
+  limits: new ConcurrencyLimiter({ total: 1 }),
+  calibration: { store: audit, sampleRate: 1, baselineRoute: route },
+});
+await controller.dispatch({ id: "proof-jev", issueId: issue.id, repository: "proof", worktree: "", branch: "kor/proof", status: "queued", issue });
+controller.recordTerminalOutcome("proof-jev", { status: "merged", recordedAt: new Date().toISOString(), source: "calibration-proof.merge-observation" });
+const outcomes = audit.outcomes();
+if (!sampledPair("proof-jev", 1) || outcomes.length !== 1 || outcomes[0]?.status !== "merged") throw new Error("Calibration caller did not record the terminal Jev outcome");
+process.stdout.write("calibration:proof passed; sampled=true; replay=paired; terminal_outcome=recorded\n\n");
+process.stdout.write(`${formatReport(buildReport(audit))}\n`);
+audit.close();
 process.stdout.write(`proof_state=${root}\n`);

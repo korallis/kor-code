@@ -9,7 +9,7 @@ import { ConcurrencyLimiter } from "./limiter.js";
 import { type SessionResult, type SessionLauncherLike } from "./launcher.js";
 import { RestartReconciler, type ReconciliationReport } from "./reconcile.js";
 import { VerificationError, VerificationTracker } from "@kor-code/verification";
-import { CalibrationStore, sampledPair } from "@kor-code/calibration";
+import { CalibrationStore, sampledPair, type CalibrationRun, type RunOutcome } from "@kor-code/calibration";
 import { ExecutionVerificationError, verificationBase, verificationSettings, type VerificationOptions } from "./verification.js";
 
 import { runVerifiedSessions } from "./attempts.js";
@@ -53,6 +53,7 @@ export interface Controller {
   runIssue(issueId: string, evidence?: Evidence[]): Promise<ControllerRunResult>;
   runNext(): Promise<ControllerRunResult | undefined>;
   reconcile(): Promise<ReconciliationReport>;
+  recordTerminalOutcome(executionId: string, outcome: RunOutcome): void;
 }
 
 function acceptance(issue: LinearIssue) { return issue.acceptanceCriteria.map((description, index) => ({ id: `acceptance-${index + 1}`, description, required: true })); }
@@ -60,15 +61,16 @@ function promptFor(issue: LinearIssue, prefix = ""): string {
   const criteria = issue.acceptanceCriteria.length > 0 ? issue.acceptanceCriteria.map(item => `- ${item}`).join("\n") : "- No explicit acceptance criteria were supplied.";
   return `${prefix}Linear issue ${issue.id}: ${issue.title}\n\n${issue.description ?? ""}\n\nAcceptance criteria:\n${criteria}`.trim();
 }
-async function chooseRoute(options: ControllerOptions, executionId: string, issue: LinearIssue, existing?: Route): Promise<Route | undefined> {
-  if (existing) return existing;
+interface ChosenRoute { route?: Route; decisionId?: string }
+async function chooseRoute(options: ControllerOptions, executionId: string, issue: LinearIssue, existing?: Route): Promise<ChosenRoute> {
+  if (existing) return { route: existing };
   const catalogue = options.catalogue ?? [];
-  if (!options.jev || catalogue.length === 0) return options.defaultRoute;
+  if (!options.jev || catalogue.length === 0) return { ...(options.defaultRoute ? { route: options.defaultRoute } : {}) };
   const candidates = catalogue.filter(item => item.available !== false).map(item => item.model);
   if (candidates.length === 0) throw new Error("No available model routes in catalogue");
   const decision = await options.jev.selectRoute({ decisionId: `route-${executionId}`, executionId, kind: "route", question: "Select the available model route that best fits this Linear issue and its acceptance conditions.", state: { issueId: issue.id, title: issue.title, description: issue.description ?? "", acceptance: issue.acceptanceCriteria, dependencies: issue.dependencies }, inputs: [{ name: "issue", value: issue.title, source: "linear" }], candidates, policyChecks: [{ name: "catalogue-nonempty", result: "pass" }] });
   if (decision.escalated) throw new Error(`Jev escalated route selection for ${executionId}`);
-  return routeFromDecision(decision, catalogue, { accountPolicy: "fill-first", sessionAffinity: true });
+  return { route: routeFromDecision(decision, catalogue, { accountPolicy: "fill-first", sessionAffinity: true }), decisionId: decision.decisionId };
 }
 
 class ExecutionController implements Controller {
@@ -97,7 +99,9 @@ class ExecutionController implements Controller {
     const issue = input.issue ?? (this.snapshots ? (await this.snapshots.read(input.issueId)).issue : undefined);
     if (!issue) throw new Error("Controller dispatch requires an issue or a Linear runtime");
     const repository = await this.options.repositories.resolve(input.repository);
-    const route = await chooseRoute(this.options, input.id, issue, input.route);
+    const chosen = await chooseRoute(this.options, input.id, issue, input.route);
+    const route = chosen.route;
+    const decisionId = chosen.decisionId;
     const permit = await this.limiter.acquire({ repository: repository.key, ...(route?.provider ? { provider: route.provider } : {}) });
     let worktree: Worktree | undefined;
     let claim: ExecutionClaim | undefined;
@@ -119,7 +123,8 @@ class ExecutionController implements Controller {
       const baseRevision = this.options.calibration?.store.run(input.id)?.baseRevision ?? await verificationBase(worktree.path);
       const calibrationStartedAt = new Date().toISOString();
       if (this.options.calibration && calibrationRoute) {
-        this.options.calibration.store.beginRun({ executionId: input.id, pairId: input.id, issueId: input.issueId, arm: !input.route && this.options.jev && (this.options.catalogue?.length ?? 0) > 0 ? "jev" : "fallback", baseRevision, route: calibrationRoute, sampled: sampledPair(input.id, this.options.calibration.sampleRate ?? 0.25), startedAt: calibrationStartedAt, status: "running" });
+        const arm = !input.route && this.options.jev && (this.options.catalogue?.length ?? 0) > 0 ? "jev" : "fallback";
+        this.options.calibration.store.beginRun({ executionId: input.id, pairId: input.id, issueId: input.issueId, arm, baseRevision, route: calibrationRoute, sampled: arm === "jev" && sampledPair(input.id, this.options.calibration.sampleRate ?? 0.25), startedAt: calibrationStartedAt, status: "running" });
       }
       const initialPrompt = input.prompt ?? promptFor(issue, this.options.promptPrefix);
       const settings = verificationSettings(this.options.verificationOptions);
@@ -127,11 +132,8 @@ class ExecutionController implements Controller {
       const { session, latest, verificationReport } = await runVerifiedSessions({ execution, repository, initialPrompt, baseRevision,
         launcher: this.options.launcher, settings, ...(this.options.jev ? { jev: this.options.jev } : {}),
         ...(this.options.calibration && calibrationRoute ? { calibration: this.options.calibration.store } : {}),
+        ...(decisionId ? { decisionId } : {}),
         ...(heartbeat ? { leaseFailure: heartbeat.failed } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}) });
-      if (this.options.calibration && calibrationRoute) {
-        this.options.calibration.store.finishRun(input.id, verificationReport.passed ? "verified" : "failed");
-        if (this.options.calibration.store.run(input.id)?.arm === "jev" && this.options.calibration.store.run(input.id)?.sampled) await this.runBaseline({ execution, issue, repository, baseRevision, initialPrompt, settings, calibration: this.options.calibration, ...(heartbeat ? { leaseFailure: heartbeat.failed } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}) });
-      }
       const completedExecution = { ...execution, status: "complete" as const, verification: verificationReport };
       if (this.writer && claim) {
         try {
@@ -145,17 +147,26 @@ class ExecutionController implements Controller {
             : new VerificationError(error instanceof Error ? error.message : String(error), verification?.findings() ?? latest.findings);
           await this.writer.recordVerificationBlock(claim, { ...execution, status: "blocked", verification: verificationReport }, failure.findings, latest.blockers);
           await this.writer.flush();
+          this.finishCalibration(input.id, "failed", "controller.verification-block");
           throw failure;
         }
         await this.writer.complete(claim, { summary: `Execution ${input.id} completed`, evidence: verification?.evidence() ?? [] });
         await this.writer.flush();
       }
-      if (latest.blockers.length > 0) throw new ExecutionVerificationError(verificationReport);
+      if (latest.blockers.length > 0) {
+        this.finishCalibration(input.id, "failed", "controller.verification-block");
+        throw new ExecutionVerificationError(verificationReport);
+      }
+      this.finishCalibration(input.id, "verified", "controller.completed");
+      if (this.options.calibration && calibrationRoute && this.options.calibration.store.run(input.id)?.arm === "jev" && this.options.calibration.store.run(input.id)?.sampled) {
+        // The primary outcome is durable before a baseline replay begins. The
+        // replay is a comparison arm and cannot hold up the real Linear write.
+        await this.runBaseline({ execution, issue, repository, baseRevision, initialPrompt, settings, calibration: this.options.calibration, ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}) });
+      }
       return { execution: completedExecution, issue, repository, worktree, session, ...(claim ? { claim } : {}) };
     } catch (error) {
-      if (this.options.calibration && this.options.calibration.store.run(input.id)?.status === "running") {
-        this.options.calibration.store.finishRun(input.id, "interrupted");
-      }
+      const run = this.options.calibration?.store.run(input.id);
+      if (run?.status === "running") this.finishCalibration(input.id, error instanceof ExecutionVerificationError || error instanceof VerificationError ? "failed" : error instanceof Error && /Jev escalated route selection/.test(error.message) ? "escalated" : "interrupted", error instanceof ExecutionVerificationError || error instanceof VerificationError ? "controller.verification-block" : error instanceof Error && /Jev escalated route selection/.test(error.message) ? "controller.escalated" : "controller.abandoned");
       if (claim && this.options.linear) {
         try { this.options.linear.store.release(claim, 1_000); } catch { /* expired claims are reclaimed on restart */ }
       }
@@ -164,6 +175,20 @@ class ExecutionController implements Controller {
       heartbeat?.stop();
       permit.release();
     }
+  }
+  private finishCalibration(executionId: string, status: Exclude<CalibrationRun["status"], "running">, source: string): void {
+    const calibration = this.options.calibration;
+    const run = calibration?.store.run(executionId);
+    if (!calibration || !run || run.status !== "running") return;
+    calibration.store.finishRun(executionId, status);
+    if (status !== "verified") this.recordTerminalOutcome(executionId, { status: status === "failed" ? "rejected" : status === "escalated" ? "escalated" : "abandoned", recordedAt: new Date().toISOString(), source });
+  }
+  recordTerminalOutcome(executionId: string, outcome: RunOutcome): void {
+    const calibration = this.options.calibration;
+    const run = calibration?.store.run(executionId);
+    if (!calibration || !run || calibration.store.outcomes().some(item => item.executionId === executionId)) return;
+    if (run.status === "running") calibration.store.finishRun(executionId, outcome.status === "merged" ? "verified" : outcome.status === "rejected" ? "failed" : outcome.status === "escalated" ? "escalated" : "interrupted");
+    calibration.store.recordExecutionOutcome(executionId, outcome, this.options.jev);
   }
   private async runBaseline(input: { execution: Execution; issue: LinearIssue; repository: Repository; baseRevision: string; initialPrompt: string; settings: ReturnType<typeof verificationSettings>; calibration: NonNullable<ControllerOptions["calibration"]>; leaseFailure?: Promise<never>; onSpawn?: (pid: number) => void }): Promise<void> {
     const { execution, issue, repository, baseRevision, initialPrompt, settings, calibration } = input;

@@ -4,7 +4,7 @@ Kor Code is the documentation project for a Linear-first engineering environment
 
 The design gives one control plane to read project intent from Linear, choose models and agents, run isolated Claude Code sessions, use an account-aware subscription gateway, and write evidence back to Linear.
 
-This repository contains the foundation monorepo and documentation. The foundation exposes typed integration boundaries and runnable probes. Model compatibility is recorded by `pnpm kor models probe --family claude` and listed by `pnpm kor models list`.
+This repository contains the foundation monorepo and documentation. The foundation exposes typed integration boundaries and runnable probes. Model compatibility is recorded by `pnpm kor models probe --family claude` and listed by `pnpm kor models list`. `kor plan LEE-57` runs one Jev preflight for readiness, complexity, risk, route, skill, and agent choices, then records the decisions in SQLite.
 
 ## Read first
 
@@ -53,6 +53,7 @@ pnpm kor status --json
 pnpm kor logs <execution-id>
 pnpm kor cancel LEE-57
 pnpm kor retry LEE-57
+pnpm kor serve --jev --calibration-rate 0.25 --baseline-model claude-sonnet-5-5
 ```
 
 `kor serve` keeps the queue under `~/.local/state/kor/kor.db`, polls configured
@@ -63,9 +64,22 @@ status response on port 8327. A local run with no daemon snapshot reports:
 {"schemaVersion":1,"provenance":"unavailable","snapshot":null,"reason":"daemon has not published a snapshot"}
 ```
 
+Verification runs each configured repository check and treats its exit code as authoritative. It collects the worktree diff, asks Jev one Noul per acceptance criterion at the controller's verification threshold option (default `0.7`), and retries a blocked attempt at most twice with the failing evidence in the next prompt. Run the offline proof:
+
+```sh
+pnpm verification:proof
+```
+
+```text
+verification-proof: repair: complete; launches=2; state=completed; findings=recorded; repair-evidence=recorded; blocker=none
+verification-proof: broken: blocked (acceptance-1=pass); launches=3; state=started; findings=recorded; repair-evidence=recorded; blocker=recorded
+```
+
+Configure checks on a repository entry with `checks: ["pnpm typecheck", "pnpm test"]`. A failed check or unmet acceptance criterion leaves the execution blocked and records each criterion finding in the Linear comment.
+
 ### Calibrate Jev routing against a baseline
 
-Calibration is **Validated locally** with a persistent SQLite store and paired replay proof; live paired runs are **Blocked** until a configured daemon runner and repository are available. The sample rate defaults to `0.25` and is stable per execution id. Configure it under `calibration.sampleRate` and set the fixed route with `calibration.baselineRoute` in `~/.config/kor/config.yaml`. Baseline work is evaluated in a throwaway worktree and never shipped.
+Calibration is **Validated locally** with a persistent SQLite store and paired replay proof; live paired runs are **Blocked** until a configured daemon runner and repository are available. The sample rate defaults to `0.25` and is stable per execution id. Configure it under `calibration.sampleRate` and set the fixed route with `calibration.baselineRoute` in `~/.config/kor/config.yaml`. Baseline work is evaluated in a throwaway worktree and never shipped. Start the daemon with `kor serve --jev` to enable verified gateway catalogue routing; use `--no-calibration` to disable recording, `--calibration-rate` to override sampling for one process, and `--baseline-model` to override the fixed comparison model.
 
 Seed and inspect the local proof:
 
@@ -74,31 +88,31 @@ pnpm calibration:proof
 XDG_STATE_HOME=/tmp/kor-t12-calibration-proof/state pnpm kor calibrate report
 ```
 
-The command prints both arms, all requested operational metrics, and the confidence table:
+The command prints both arms, all requested operational metrics, and the confidence table. This representative run uses the real controller proof; wall-clock values vary:
 
 ```text
 Kor calibration report
 Completed Jev/baseline pairs: 1
 Since: all time
 Success = identical verification gate in both arms. Terminal merge outcomes are separate.
-Metric	Jev-route	baseline	Paired delta (Jev - baseline)
+Metric	Jev-route (all)	baseline (sampled)	Paired delta (Jev - baseline)
 Runs (finished/total)	1/1	1/1	1 pairs
-Merged/terminal outcomes	1/1	0/1	n/a (baseline never ships)
-successRate	1.0000 (n=1)	0.0000 (n=1)	1.0000 (n=1)
+Merged/terminal outcomes	1/1	0/0	n/a (baseline never ships)
+successRate	1.0000 (n=1)	1.0000 (n=1)	0.0000 (n=1)
 repairs	0.0000 (n=1)	0.0000 (n=1)	0.0000 (n=1)
-costUsd	0.0400 (n=1)	0.0600 (n=1)	-0.0200 (n=1)
+costUsd	0.0400 (n=1)	0.0400 (n=1)	0.0000 (n=1)
 cacheHitRate	0.3125 (n=1)	0.3125 (n=1)	0.0000 (n=1)
-wallClockMs	2000.0000 (n=1)	2000.0000 (n=1)	0.0000 (n=1)
-failovers	0.0000 (n=1)	0.0000 (n=1)	0.0000 (n=1)
-verificationFailures	0.0000 (n=1)	1.0000 (n=1)	-1.0000 (n=1)
+wallClockMs	10.0000 (n=1)	9.0000 (n=1)	1.0000 (n=1)
+failovers	unavailable (n=0)	unavailable (n=0)	unavailable (n=0)
+verificationFailures	0.0000 (n=1)	0.0000 (n=1)	0.0000 (n=1)
 policyBlocks	0.0000 (n=1)	0.0000 (n=1)	0.0000 (n=1)
-clarifications	0.0000 (n=1)	0.0000 (n=1)	0.0000 (n=1)
+clarifications	unavailable (n=0)	unavailable (n=0)	unavailable (n=0)
 
 Confidence calibration against terminal merge success (outcome proxy, not decision-correctness probability)
 Kind	Bin	N	Mean signal	Observed success	Brier (proxy)
-route	0.8–1.0	1	0.8000	1.0000	0.0400
+route	0.8–1.0	1	1.0000	1.0000	0.0000
 readiness	all	0	unavailable	unavailable	unavailable
-acceptance	all	0	unavailable	unavailable	unavailable
+acceptance	0.8–1.0	1	1.0000	1.0000	0.0000
 ```
 
 For the live scratch run, the script's repository allowlist contains `Read,Write,Edit` and the three `git` commands needed to commit the hello file. To prove a policy failure, remove `Write` from `KOR_E2E_ALLOWED_TOOLS` and set `KOR_E2E_EXPECT_FAILURE=1`; the command reports the provider's permission denial and failed attempt. A launcher with no repository allowlist defaults to `Read`, so mutation is opt-in. Credentials are runtime-only and are never written to the repository or printed.
@@ -210,6 +224,30 @@ With the key removed, the gateway line is red and the command exits one:
 
 ```text
 FAIL CLIProxyAPI with Kor key: missing; CLIProxyAPI addition: - kor-<generated-value>
+```
+
+## Plan a Linear issue
+
+Run a preflight for an issue identifier that you can read with the configured personal Linear key:
+
+```sh
+pnpm kor plan LEE-1101
+```
+
+The command prints the route, each decision, and its confidence. It writes redacted decision records to `~/.local/state/kor/kor.db`. A missing or invalid TypeSafe response keeps readiness `blocked` and marks the configured route `fallback`. A healthy but uncertain or non-applicable response keeps the route `escalated`, which is distinct from an outage. When a decision needs captain input, Kor writes one stable-ID clarification comment to the Linear issue. The command exits one while readiness is blocked, a decision is escalated, or a fallback route is in use.
+
+```text
+PLAN plan-<uuid>
+route: anthropic/claude-sonnet-5-5 [fallback]
+fallback: true
+jev: unavailable (TypeSafe API key not found ...)
+readiness: blocked (0.00); confidence=0.00; status=blocked
+complexity: escalate (0.00); confidence=0.00; status=blocked
+risk: escalate (0.00); confidence=0.00; status=blocked
+route: claude-sonnet-5-5; confidence=0.00; status=blocked
+skill: escalate; confidence=0.00; status=blocked
+agent: escalate; confidence=0.00; status=blocked
+linear: clarification comment written
 ```
 
 ### Run an issue and write Linear progress

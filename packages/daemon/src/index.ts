@@ -258,6 +258,7 @@ export class KorDaemon {
         try { this.store.completeClaim(claim); } catch { /* a restart already reclaimed this lease */ }
       }).catch(error => {
         const message = safeMessage(error);
+        this.options.controller?.recordTerminalOutcome(claim.assignment.executionId, { status: "abandoned", recordedAt: new Date(this.now()).toISOString(), source: "daemon.execution-failed" });
         try { this.store.requeue(claim.assignment.issueId, 1_000, message); } catch { /* reconcile handles an expired lease */ }
         void this.log(claim.assignment.issueId, `execution failed: ${message}`);
       }).finally(() => {

@@ -20,6 +20,8 @@
     "@kor-code/daemon": "workspace:*",
     "@kor-code/linear": "workspace:*",
     "@kor-code/calibration": "workspace:*",
-    "@kor-code/controller": "workspace:*"
+    "@kor-code/controller": "workspace:*",
+    "@kor-code/gateway-adapter": "workspace:*",
+    "@kor-code/jev": "workspace:*"
   }
 }
