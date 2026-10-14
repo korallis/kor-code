@@ -16,16 +16,17 @@ jobs:
   build-test:
     runs-on: ubuntu-latest
     env:
-      HOME: ${{ runner.temp }}/kor-home
-      CLAUDE_CONFIG_DIR: ${{ runner.temp }}/kor-claude
-      XDG_CONFIG_HOME: ${{ runner.temp }}/kor-home/.config
-      XDG_STATE_HOME: ${{ runner.temp }}/kor-home/.local/state
-      XDG_DATA_HOME: ${{ runner.temp }}/kor-home/.local/share
-      KOR_PROOF_DIR: ${{ runner.temp }}/kor-proof
       DISABLE_AUTOUPDATER: "1"
     steps:
       - name: Prepare isolated home
-        run: mkdir -p "$HOME" "$CLAUDE_CONFIG_DIR" "$KOR_PROOF_DIR"
+        run: |
+          echo "HOME=$RUNNER_TEMP/kor-home" >> "$GITHUB_ENV"
+          echo "CLAUDE_CONFIG_DIR=$RUNNER_TEMP/kor-claude" >> "$GITHUB_ENV"
+          echo "XDG_CONFIG_HOME=$RUNNER_TEMP/kor-home/.config" >> "$GITHUB_ENV"
+          echo "XDG_STATE_HOME=$RUNNER_TEMP/kor-home/.local/state" >> "$GITHUB_ENV"
+          echo "XDG_DATA_HOME=$RUNNER_TEMP/kor-home/.local/share" >> "$GITHUB_ENV"
+          echo "KOR_PROOF_DIR=$RUNNER_TEMP/kor-proof" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/kor-home" "$RUNNER_TEMP/kor-claude" "$RUNNER_TEMP/kor-proof"
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
