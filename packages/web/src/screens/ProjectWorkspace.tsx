@@ -18,7 +18,7 @@ import { color, font, glow, gradient, space, tint } from '../theme/tokens.stylex
 import { Button } from '../ui/button';
 import { Card, CardBody, CardHeader } from '../ui/card';
 import { Ring, Spark } from '../ui/charts';
-import { Checkbox, FieldLabel, TextArea, TextInput } from '../ui/form';
+import { Checkbox, FieldLabel, Segmented, TextArea, TextInput } from '../ui/form';
 import { BrandMark, Icon } from '../ui/icon';
 import { LinearState, linearStateKind, Priority } from '../ui/glyphs';
 import { Empty, Feed, FeedItem, Notice } from '../ui/misc';
@@ -158,6 +158,8 @@ function RepositorySettings({ project }: { project: Project }) {
       <FieldLabel>Default branch</FieldLabel><TextInput label="Default branch" value={draft.defaultBranch} onChange={set('defaultBranch')} mono />
       <FieldLabel>Linear team</FieldLabel><TextInput label="Linear team" value={draft.linearTeam ?? ''} onChange={set('linearTeam')} mono placeholder="e.g. MAT" />
       <FieldLabel>Linear project</FieldLabel><TextInput label="Linear project" value={draft.linearProject ?? ''} onChange={set('linearProject')} mono placeholder="project ID (optional)" />
+      <FieldLabel>Shipping<br /><span {...stylex.props(text.faint, text.xs)}>approve: verified runs wait for your go-ahead</span></FieldLabel>
+      <Segmented label="Shipping" value={draft.ship} onChange={value => setDraft(current => ({ ...current, ship: value }))} options={[{ value: 'approve', label: 'Wait for my approval' }, { value: 'auto', label: 'Ship automatically' }]} />
       <FieldLabel>Repository checks<br /><span {...stylex.props(text.faint, text.xs)}>one command per line; every run must pass them</span></FieldLabel><TextArea label="Repository checks" value={checks} onChange={setChecks} mono rows={4} />
       <FieldLabel>Tool allowlist<br /><span {...stylex.props(text.faint, text.xs)}>the only tools a session may use</span></FieldLabel><TextArea label="Tool allowlist" value={tools} onChange={setTools} mono rows={5} />
       <span />

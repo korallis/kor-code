@@ -44,7 +44,7 @@ function Connect() {
       <div {...stylex.props(styles.panel)}>
         <KorMark />
         <h1 {...stylex.props(styles.title)}>Connect to <span {...stylex.props(text.grad)}>Kor Code</span></h1>
-        <p {...stylex.props(styles.body)}>Mission Control talks only to the Kor daemon on this machine. Run <span {...stylex.props(styles.code)}>kor ui</span> in a terminal; it opens this page already signed in. If the browser opened elsewhere, paste the session token from <span {...stylex.props(styles.code)}>kor ui</span>'s state file below.</p>
+        <p {...stylex.props(styles.body)}>Mission Control talks only to the Kor daemon on this machine. Run <span {...stylex.props(styles.code)}>kor ui</span> in a terminal; it opens this page already signed in. If the browser opened elsewhere, paste the token from <span {...stylex.props(styles.code)}>~/.local/state/kor/ui-token</span> below.</p>
         <TextInput label="Session token" icon={KeyRound} type="password" value={value} onChange={setValue} onEnter={submit} placeholder="Session token" mono style={styles.full} />
         <Button variant="primary" onClick={submit} disabled={!value.trim()}>Connect</Button>
       </div>
