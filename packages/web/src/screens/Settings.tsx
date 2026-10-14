@@ -9,7 +9,7 @@ import { ApiFailure } from '../api/client';
 import { useConfig, useConnect, useConnections, useSaveConfig } from '../api/queries';
 import { href } from '../router';
 import { AppFrame } from '../shell/AppFrame';
-import { color, font, fontSize, space, tint } from '../theme/tokens.stylex';
+import { color, font, fontSize, radius, space, tint } from '../theme/tokens.stylex';
 import { Button } from '../ui/button';
 import { Card, CardBody, CardHeader } from '../ui/card';
 import { FieldLabel, TextInput } from '../ui/form';
@@ -26,10 +26,10 @@ const styles = stylex.create({
   connCard: { overflow: 'hidden' },
   splash: { position: 'absolute', inset: 0, opacity: 0.16, pointerEvents: 'none' },
   conn: { display: 'grid', gridTemplateColumns: '36px minmax(0, 1fr) auto', gap: space.s3, alignItems: 'start', paddingBlock: space.s3h, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine, position: 'relative' },
-  badge: { width: '36px', height: '36px', borderRadius: '10px', display: 'grid', placeItems: 'center', backgroundColor: tint.ghost, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairlineStrong, color: color.textSecondary },
+  badge: { width: '36px', height: '36px', borderRadius: radius.md, display: 'grid', placeItems: 'center', backgroundColor: tint.ghost, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairlineStrong, color: color.textSecondary },
   connName: { fontFamily: font.display, fontSize: fontSize.title, fontWeight: 600 },
   fields: { gridColumn: '2 / -1', display: 'grid', gap: space.s2, marginTop: space.s2 },
-  form: { display: 'grid', gridTemplateColumns: '160px minmax(0, 1fr)', gap: '12px 16px', alignItems: 'center' },
+  form: { display: 'grid', gridTemplateColumns: '160px minmax(0, 1fr)', gap: `${space.s3} ${space.s4}`, alignItems: 'center' },
   repo: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: space.s2h, alignItems: 'center', paddingBlock: space.s2h, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine },
 });
 

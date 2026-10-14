@@ -19,15 +19,15 @@ import { layout } from '../ui/layout';
 import { text } from '../ui/text';
 
 const styles = stylex.create({
-  composer: { position: 'relative', borderRadius: '14px', backgroundColor: color.surfaceSunken, boxShadow: glow.focus, paddingBlock: '12px 10px', paddingInline: '14px 12px' },
+  composer: { position: 'relative', borderRadius: radius.lg, backgroundColor: color.surfaceSunken, boxShadow: glow.focus, paddingBlock: `${space.s3} ${space.s2h}`, paddingInline: `${space.s3h} ${space.s3}` },
   typed: { display: 'flex', alignItems: 'center', gap: space.s2h, fontSize: fontSize.title, color: color.text },
   input: { flex: '1', minWidth: 0, backgroundColor: 'transparent', borderWidth: 0, outline: 'none', color: color.text, fontSize: fontSize.title, '::placeholder': { color: color.textMuted } },
   tools: { display: 'flex', alignItems: 'center', gap: space.s1h, marginTop: space.s2h, flexWrap: 'wrap' },
   chip: { display: 'inline-flex', alignItems: 'center', gap: '5px', height: '25px', paddingInline: '9px', borderRadius: '7px', fontSize: fontSize.sm, color: { default: color.textSecondary, ':hover': color.text }, backgroundColor: tint.ghost, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline, cursor: 'pointer' },
   tryLabel: { fontSize: fontSize.sm, color: color.textFaint },
-  suggestion: { fontSize: fontSize.sm, color: color.violetBright, paddingBlock: '3px', paddingInline: space.s2h, borderRadius: '99px', borderWidth: '1px', borderStyle: 'solid', borderColor: tint.violetSoftEdge, backgroundColor: { default: tint.violetSoftFill, ':hover': tint.violetFill }, cursor: 'pointer', whiteSpace: 'nowrap' },
+  suggestion: { fontSize: fontSize.sm, color: color.violetBright, paddingBlock: '3px', paddingInline: space.s2h, borderRadius: radius.pill, borderWidth: '1px', borderStyle: 'solid', borderColor: tint.violetSoftEdge, backgroundColor: { default: tint.violetSoftFill, ':hover': tint.violetFill }, cursor: 'pointer', whiteSpace: 'nowrap' },
   send: { width: '32px', height: '32px', borderRadius: '9px', display: 'grid', placeItems: 'center', backgroundImage: gradient.primaryButton, boxShadow: glow.button, color: tint.white, cursor: 'pointer', flex: 'none' },
-  answer: { marginTop: space.s3, paddingBlock: space.s3h, paddingInline: space.s4, borderRadius: '14px', backgroundImage: tint.jevAnswer, borderWidth: '1px', borderStyle: 'solid', borderColor: tint.violetSoftEdge, position: 'relative' },
+  answer: { marginTop: space.s3, paddingBlock: space.s3h, paddingInline: space.s4, borderRadius: radius.lg, backgroundImage: tint.jevAnswer, borderWidth: '1px', borderStyle: 'solid', borderColor: tint.violetSoftEdge, position: 'relative' },
   who: { display: 'flex', alignItems: 'center', gap: '9px', fontSize: fontSize.base },
   name: { fontFamily: font.display, fontWeight: 600, fontSize: fontSize.md },
   txt: { marginTop: space.s2, color: color.textSecondary, fontSize: fontSize.basePlus, lineHeight: 1.6, whiteSpace: 'pre-wrap' },

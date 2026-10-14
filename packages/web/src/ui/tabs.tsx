@@ -1,7 +1,7 @@
 import * as stylex from '@stylexjs/stylex';
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { color, font, fontSize, gradient, motion, space, tint } from '../theme/tokens.stylex';
+import { color, font, fontSize, gradient, motion, radius, space, tint } from '../theme/tokens.stylex';
 import { Icon } from './icon';
 
 const styles = stylex.create({
@@ -9,7 +9,7 @@ const styles = stylex.create({
   tab: { position: 'relative', display: 'inline-flex', alignItems: 'center', gap: '7px', paddingBlock: space.s2h, paddingInline: space.s3, fontSize: fontSize.md, color: { default: color.textMuted, ':hover': color.textSecondary }, fontWeight: 500, whiteSpace: 'nowrap', cursor: 'pointer', transitionProperty: 'color', transitionDuration: motion.fast },
   on: { color: color.text },
   bar: { position: 'absolute', left: '8px', right: '8px', bottom: '-1px', height: '2px', borderRadius: '2px', backgroundImage: gradient.brand, boxShadow: tint.tabGlow },
-  count: { fontFamily: font.mono, fontSize: fontSize.xs, paddingBlock: '1px', paddingInline: '7px', borderRadius: '6px', backgroundColor: tint.ghostStrong, color: color.textSecondary },
+  count: { fontFamily: font.mono, fontSize: fontSize.xs, paddingBlock: '1px', paddingInline: '7px', borderRadius: radius.sm, backgroundColor: tint.ghostStrong, color: color.textSecondary },
   ptabs: { display: 'inline-flex', gap: space.s1, flex: 'none' },
   ptab: { paddingBlock: space.s1h, paddingInline: space.s3, borderRadius: '8px', fontSize: fontSize.sm, color: { default: color.textMuted, ':hover': color.textSecondary }, fontWeight: 500, borderWidth: '1px', borderStyle: 'solid', borderColor: 'transparent', display: 'inline-flex', gap: space.s1h, alignItems: 'center', whiteSpace: 'nowrap', cursor: 'pointer' },
   ptabOn: { color: color.text, borderColor: tint.violetEdgeStrong, backgroundColor: tint.ptabOn, boxShadow: tint.ptabGlow },

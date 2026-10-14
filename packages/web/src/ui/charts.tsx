@@ -2,15 +2,15 @@
 // donut and trend. Colours come from tone styles, never literals.
 import * as stylex from '@stylexjs/stylex';
 import { useId, type ReactNode } from 'react';
-import { color, gradient, motion, tint } from '../theme/tokens.stylex';
+import { color, gradient, motion, radius, tint } from '../theme/tokens.stylex';
 import type { Tone } from './text';
 import { toneStop, toneStroke } from './tone';
 
 const styles = stylex.create({
-  bar: { position: 'relative', height: '6px', borderRadius: '99px', backgroundColor: tint.track, overflow: 'hidden', minWidth: '24px' },
+  bar: { position: 'relative', height: '6px', borderRadius: radius.pill, backgroundColor: tint.track, overflow: 'hidden', minWidth: '24px' },
   thin: { height: '4px' },
   thick: { height: '8px' },
-  fill: { position: 'absolute', insetBlock: 0, left: 0, borderRadius: '99px', backgroundImage: gradient.progress, boxShadow: tint.barGlowCyan, transitionProperty: 'width', transitionDuration: motion.slow, transitionTimingFunction: motion.easeOut },
+  fill: { position: 'absolute', insetBlock: 0, left: 0, borderRadius: radius.pill, backgroundImage: gradient.progress, boxShadow: tint.barGlowCyan, transitionProperty: 'width', transitionDuration: motion.slow, transitionTimingFunction: motion.easeOut },
   green: { backgroundImage: gradient.progressGreen, boxShadow: tint.barGlowGreen },
   amber: { backgroundImage: tint.barAmber, boxShadow: tint.barGlowAmber },
   rose: { backgroundImage: tint.barRose, boxShadow: tint.barGlowRose },

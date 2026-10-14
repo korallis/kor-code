@@ -40,7 +40,7 @@ const styles = stylex.create({
   splash: { position: 'absolute', inset: 0, zIndex: -1, opacity: 0.6, borderRadius: radius.xl, overflow: 'hidden' },
   push: { marginLeft: 'auto' },
   contents: { display: 'contents' },
-  kv: { display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', gap: '6px 14px', fontSize: fontSize.base },
+  kv: { display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', gap: `${space.s1h} ${space.s3h}`, fontSize: fontSize.base },
   dt: { color: color.textMuted },
   dd: { color: color.text, textAlign: 'right', fontFamily: font.mono, fontSize: fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
 });

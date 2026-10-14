@@ -10,7 +10,7 @@ import { useDecisions, useMissionRuns, usePoolLive, useStatusResponse } from '..
 import { useLive, reconnect } from '../api/live';
 import { isOpen, useAllIssues } from '../api/issues';
 import { href, type Screen } from '../router';
-import { color, font, fontSize, glow, gradient, layout as dims, space, tint, tracking } from '../theme/tokens.stylex';
+import { color, font, fontSize, glow, gradient, layout as dims, radius, space, tint, tracking } from '../theme/tokens.stylex';
 import { animate } from '../theme/animate';
 import { BrandMark, Icon } from '../ui/icon';
 import type { Brand } from '../ui/brands';
@@ -54,25 +54,25 @@ const styles = stylex.create({
   crumbLast: { color: color.text, fontWeight: 600 },
   sep: { color: color.textFaint },
   askbar: {
-    flex: '1', maxWidth: '620px', marginLeft: 'auto', height: '40px', display: 'flex', alignItems: 'center', gap: space.s2h, paddingInline: '12px 8px', borderRadius: '12px',
+    flex: '1', maxWidth: '620px', marginLeft: 'auto', height: '40px', display: 'flex', alignItems: 'center', gap: space.s2h, paddingInline: `${space.s3} ${space.s2}`, borderRadius: '12px',
     backgroundColor: color.surfaceSunken, borderWidth: '1px', borderStyle: 'solid', borderColor: { default: color.hairlineStrong, ':hover': tint.violetEdgeStrong }, color: color.textMuted, fontSize: fontSize.md, cursor: 'text', minWidth: 0, textAlign: 'left',
   },
   askIcon: { color: color.violetBright },
   askText: { flex: '1', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   right: { display: 'flex', alignItems: 'center', gap: space.s4, paddingRight: space.s6, whiteSpace: 'nowrap' },
-  live: { display: 'inline-flex', alignItems: 'center', gap: space.s2, height: '30px', paddingInline: space.s3, borderRadius: '999px', borderWidth: '1px', borderStyle: 'solid', fontFamily: font.mono, fontSize: fontSize.xs, letterSpacing: tracking.mono, cursor: 'default' },
+  live: { display: 'inline-flex', alignItems: 'center', gap: space.s2, height: '30px', paddingInline: space.s3, borderRadius: radius.pill, borderWidth: '1px', borderStyle: 'solid', fontFamily: font.mono, fontSize: fontSize.xs, letterSpacing: tracking.mono, cursor: 'default' },
   liveOk: { backgroundColor: color.greenDim, borderColor: tint.livePillEdge, color: color.green },
   liveWarn: { backgroundColor: color.amberDim, borderColor: tint.amberEdge, color: color.amber, cursor: 'pointer' },
   liveDot: { width: '7px', height: '7px', borderRadius: '50%', backgroundColor: 'currentColor', boxShadow: '0 0 8px currentColor' },
-  liveSub: { color: color.textSecondary, letterSpacing: 0, display: { default: 'inline', [NARROW]: 'none' } },
-  iconBtn: { position: 'relative', width: '34px', height: '34px', borderRadius: '10px', display: 'grid', placeItems: 'center', color: color.textSecondary, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline, backgroundColor: { default: tint.ghost, ':hover': tint.ghostStrong } },
+  liveSub: { color: color.textSecondary, letterSpacing: tracking.normal, display: { default: 'inline', [NARROW]: 'none' } },
+  iconBtn: { position: 'relative', width: '34px', height: '34px', borderRadius: radius.md, display: 'grid', placeItems: 'center', color: color.textSecondary, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline, backgroundColor: { default: tint.ghost, ':hover': tint.ghostStrong } },
   badge: { position: 'absolute', top: '6px', right: '7px', width: '7px', height: '7px', borderRadius: '50%', backgroundColor: color.amber, boxShadow: glow.amber },
   clock: { textAlign: 'right', lineHeight: 1.2 },
   time: { fontFamily: font.display, fontSize: fontSize.heading, fontWeight: 600, letterSpacing: tracking.open },
   date: { fontFamily: font.mono, fontSize: fontSize.micro, color: color.textMuted, letterSpacing: tracking.caps, textTransform: 'uppercase' },
   side: { gridArea: 'side', display: 'flex', flexDirection: 'column', gap: space.s1, paddingBlock: space.s5, paddingInline: space.s3, borderRightWidth: '1px', borderRightStyle: 'solid', borderRightColor: color.hairline, backgroundImage: tint.sideBar, backdropFilter: `blur(${dims.glassBlur})`, minHeight: 0, overflowY: 'auto', scrollbarWidth: 'none' },
   navLabel: { fontFamily: font.mono, fontSize: fontSize.micro, letterSpacing: tracking.label, color: color.textFaint, textTransform: 'uppercase', paddingBlock: `${space.s3} ${space.s2}`, paddingInline: space.s3, marginTop: space.s2 },
-  nav: { position: 'relative', display: 'flex', alignItems: 'center', gap: space.s3, height: '40px', flex: 'none', paddingInline: space.s3, borderRadius: '10px', color: { default: color.textSecondary, ':hover': color.text }, fontSize: fontSize.md, fontWeight: 500, backgroundColor: { default: 'transparent', ':hover': tint.ghost }, transitionProperty: 'background-color, color', transitionDuration: '120ms' },
+  nav: { position: 'relative', display: 'flex', alignItems: 'center', gap: space.s3, height: '40px', flex: 'none', paddingInline: space.s3, borderRadius: radius.md, color: { default: color.textSecondary, ':hover': color.text }, fontSize: fontSize.md, fontWeight: 500, backgroundColor: { default: 'transparent', ':hover': tint.ghost }, transitionProperty: 'background-color, color', transitionDuration: '120ms' },
   navIcon: { color: color.textMuted },
   navActive: { color: color.text, backgroundImage: tint.navActive, boxShadow: tint.navActiveShadow },
   navActiveIcon: { color: color.violetNeon, filter: tint.iconGlow },
@@ -89,7 +89,7 @@ const styles = stylex.create({
   connIcon: { color: color.textMuted },
   connOk: { marginLeft: 'auto', fontFamily: font.mono, fontSize: fontSize.microPlus, color: color.green },
   connBad: { color: color.amber },
-  jev: { display: 'flex', gap: space.s3, alignItems: 'center', padding: space.s3, borderRadius: '14px', backgroundImage: tint.jevCard, borderWidth: '1px', borderStyle: 'solid', borderColor: tint.jevCardEdge, flex: 'none' },
+  jev: { display: 'flex', gap: space.s3, alignItems: 'center', padding: space.s3, borderRadius: radius.lg, backgroundImage: tint.jevCard, borderWidth: '1px', borderStyle: 'solid', borderColor: tint.jevCardEdge, flex: 'none' },
   jevName: { fontFamily: font.display, fontWeight: 600, fontSize: fontSize.md },
   jevSub: { fontSize: fontSize.xs, color: color.textMuted },
   jevDot: { color: color.green },

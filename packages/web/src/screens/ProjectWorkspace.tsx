@@ -51,7 +51,7 @@ const styles = stylex.create({
   mdl: { fontFamily: font.mono, fontSize: fontSize.xsPlus, color: color.textSecondary, lineHeight: 1.35 },
   mdlSub: { color: color.textMuted, fontSize: fontSize.microPlus },
   selbar: { display: 'flex', alignItems: 'center', gap: space.s2h, marginBlock: space.s2h, marginInline: space.s4h, paddingBlock: space.s2, paddingInline: space.s3, borderRadius: '12px', borderWidth: '1px', borderStyle: 'solid', borderColor: tint.violetEdgeStrong, backgroundColor: tint.violetSoftFill, flexWrap: 'wrap' },
-  foot: { display: 'flex', alignItems: 'center', paddingBlock: '10px 14px', paddingInline: space.s4h, fontFamily: font.mono, fontSize: fontSize.xs, color: color.textMuted },
+  foot: { display: 'flex', alignItems: 'center', paddingBlock: `${space.s2h} ${space.s3h}`, paddingInline: space.s4h, fontFamily: font.mono, fontSize: fontSize.xs, color: color.textMuted },
   side: { display: 'flex', flexDirection: 'column', gap: space.s4, minWidth: 0 },
   bigPct: { fontFamily: font.display, fontSize: fontSize.heroNarrow, fontWeight: 600, lineHeight: 1, letterSpacing: tracking.tight },
   stats4: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: space.s2, marginTop: space.s3 },
@@ -67,7 +67,7 @@ const styles = stylex.create({
   prTitle: { fontSize: fontSize.base, fontWeight: 500 },
   prSub: { fontFamily: font.mono, fontSize: fontSize.microPlus, color: color.textMuted, marginTop: space.s0 },
   edgeViolet: { borderLeftColor: color.violetBright }, edgeGreen: { borderLeftColor: color.green }, edgeAmber: { borderLeftColor: color.amber }, edgeSlate: { borderLeftColor: color.slate },
-  form: { display: 'grid', gridTemplateColumns: '180px minmax(0, 1fr)', gap: '14px 18px', alignItems: 'start', padding: space.s5, maxWidth: '920px' },
+  form: { display: 'grid', gridTemplateColumns: '180px minmax(0, 1fr)', gap: `${space.s3h} ${space.s4h}`, alignItems: 'start', padding: space.s5, maxWidth: '920px' },
   doc: { display: 'grid', gridTemplateColumns: '22px minmax(0, 1fr) auto', gap: space.s2h, paddingBlock: space.s2h, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine, alignItems: 'start' },
   docBody: { fontSize: fontSize.smPlus, color: color.textMuted, whiteSpace: 'pre-wrap', maxHeight: '64px', overflow: 'hidden', marginTop: space.s1 },
 });

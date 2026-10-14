@@ -14,7 +14,7 @@ import { href, navigate } from '../router';
 import { AppFrame } from '../shell/AppFrame';
 import { AskJev } from '../shell/AskJev';
 import { initials, projectTone } from '../shell/projectTone';
-import { color, font, fontSize, space, tint, tracking } from '../theme/tokens.stylex';
+import { color, font, fontSize, radius, space, tint, tracking } from '../theme/tokens.stylex';
 import { Button } from '../ui/button';
 import { Card, CardBody, CardHeader, CountChip } from '../ui/card';
 import { Bar, Donut, Ring, Spark } from '../ui/charts';
@@ -43,19 +43,19 @@ const styles = stylex.create({
   orbit: { position: 'absolute', right: '22px', top: '14px', width: '250px', height: '150px', opacity: 0.95, pointerEvents: 'none' },
   heroMedia: { position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.8, zIndex: 0, borderRadius: 'inherit', overflow: 'hidden' },
   heroContent: { position: 'relative', zIndex: 1 },
-  h1: { fontFamily: font.display, fontSize: { default: '46px', [NARROW]: '40px' }, fontWeight: 600, letterSpacing: tracking.tight, lineHeight: 1.05, marginTop: space.s2h, position: 'relative' },
+  h1: { fontFamily: font.display, fontSize: { default: fontSize.display, [NARROW]: fontSize.heroNarrow }, fontWeight: 600, letterSpacing: tracking.tight, lineHeight: 1.05, marginTop: space.s2h, position: 'relative' },
   pills: { display: 'flex', gap: space.s2, marginTop: space.s3, flexWrap: 'wrap', position: 'relative' },
   ask: { marginTop: space.s4h, position: 'relative' },
-  needs: { paddingBlock: '18px 16px', paddingInline: space.s4h, display: 'flex', flexDirection: 'column' },
+  needs: { paddingBlock: `${space.s4h} ${space.s4}`, paddingInline: space.s4h, display: 'flex', flexDirection: 'column' },
   needsTitle: { fontFamily: font.display, fontSize: fontSize.heading, fontWeight: 600, marginTop: space.s2h, letterSpacing: tracking.hair },
   askQ: { marginTop: space.s3, paddingBlock: '11px', paddingInline: space.s3, borderRadius: '11px', backgroundColor: tint.wellSoft, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline, fontSize: fontSize.base, color: color.textSecondary, lineHeight: 1.5, display: 'flex', gap: space.s2h },
   answerBox: { marginTop: space.s2h, minHeight: '98px', fontFamily: font.mono, fontSize: fontSize.sm, lineHeight: 1.7 },
   caption: { marginTop: space.s2h, fontSize: fontSize.sm, color: color.textMuted },
   kpis: { display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: space.s4 },
-  kpi: { paddingBlock: '13px 12px', paddingInline: space.s4, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gridTemplateRows: 'auto 1fr', gap: '6px 10px', height: '88px' },
+  kpi: { paddingBlock: '13px 12px', paddingInline: space.s4, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gridTemplateRows: 'auto 1fr', gap: `${space.s1h} ${space.s2h}`, height: '88px' },
   kpiLabel: { gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '7px', fontFamily: font.mono, fontSize: fontSize.micro, letterSpacing: tracking.chip, textTransform: 'uppercase', color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden' },
-  kpiValue: { fontFamily: font.display, fontSize: { default: '28px', [NARROW]: '24px' }, fontWeight: 600, lineHeight: 1, letterSpacing: tracking.slight, display: 'flex', alignItems: 'baseline', gap: space.s2, whiteSpace: 'nowrap', alignSelf: 'end' },
-  kpiSmall: { fontFamily: font.sans, fontSize: fontSize.sm, fontWeight: 400, color: color.textMuted, letterSpacing: 0, overflow: 'hidden', textOverflow: 'ellipsis' },
+  kpiValue: { fontFamily: font.display, fontSize: { default: fontSize.page, [NARROW]: fontSize.xxl }, fontWeight: 600, lineHeight: 1, letterSpacing: tracking.slight, display: 'flex', alignItems: 'baseline', gap: space.s2, whiteSpace: 'nowrap', alignSelf: 'end' },
+  kpiSmall: { fontFamily: font.sans, fontSize: fontSize.sm, fontWeight: 400, color: color.textMuted, letterSpacing: tracking.normal, overflow: 'hidden', textOverflow: 'ellipsis' },
   kpiArt: { alignSelf: 'end', marginBottom: '-2px', display: { default: null, [NARROW]: 'none' } },
   row3: { display: 'grid', gridTemplateColumns: { default: 'minmax(0, 1fr) minmax(0, 1.18fr) minmax(0, 0.92fr)', [NARROW]: 'minmax(0, 1fr) minmax(0, 1fr)' }, gap: space.s4, minHeight: '312px' },
   row4: { display: 'grid', gridTemplateColumns: { default: 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.8fr)', [NARROW]: 'minmax(0, 1fr) minmax(0, 1fr)' }, gap: space.s4, minHeight: '200px' },
@@ -78,7 +78,7 @@ const styles = stylex.create({
   donutTotal: { fontFamily: font.display, fontSize: fontSize.xxl, fontWeight: 600 },
   donutLabel: { fontFamily: font.mono, fontSize: fontSize.micro, letterSpacing: tracking.caps, color: color.textMuted },
   ember: { position: 'absolute', inset: 0, opacity: 0.22, pointerEvents: 'none', borderRadius: 'inherit', overflow: 'hidden' },
-  now: { marginTop: space.s3, paddingBlock: space.s3h, paddingInline: space.s4, borderRadius: '14px', backgroundImage: tint.jevAnswer, borderWidth: '1px', borderStyle: 'solid', borderColor: tint.violetSoftEdge, position: 'relative' },
+  now: { marginTop: space.s3, paddingBlock: space.s3h, paddingInline: space.s4, borderRadius: radius.lg, backgroundImage: tint.jevAnswer, borderWidth: '1px', borderStyle: 'solid', borderColor: tint.violetSoftEdge, position: 'relative' },
   nowText: { marginTop: space.s2, color: color.textSecondary, fontSize: fontSize.basePlus, lineHeight: 1.6 },
   more: { fontSize: fontSize.sm, color: color.violetBright, display: 'inline-flex', alignItems: 'center', gap: space.s1 },
 });
