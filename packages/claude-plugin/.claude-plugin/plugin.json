@@ -1,7 +1,7 @@
 {
   "name": "kor-code-cockpit",
   "version": "0.2.0",
-  "description": "Session-local Kor Code cockpit: status line, /kor views and drill-downs over fixture data.",
+  "description": "Kor Code cockpit: status line, /kor views and drill-downs over the Kor daemon's live status, with the fixture behind /kor demo.",
   "author": { "name": "Kor Code", "url": "https://github.com/korallis/kor-code" },
   "types": "./types/index.d.ts"
 }

@@ -45,7 +45,7 @@ export interface ControllerRunResult {
   claim?: ExecutionClaim;
 }
 export interface Controller {
-  dispatch(execution: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[] }): Promise<ControllerRunResult>;
+  dispatch(execution: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }): Promise<ControllerRunResult>;
   runIssue(issueId: string, evidence?: Evidence[]): Promise<ControllerRunResult>;
   runNext(): Promise<ControllerRunResult | undefined>;
   reconcile(): Promise<ReconciliationReport>;
@@ -89,7 +89,7 @@ class ExecutionController implements Controller {
       this.reconciler = new RestartReconciler(options.linear.store, options.worktrees);
     }
   }
-  async dispatch(input: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[] }): Promise<ControllerRunResult> {
+  async dispatch(input: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }): Promise<ControllerRunResult> {
     const issue = input.issue ?? (this.snapshots ? (await this.snapshots.read(input.issueId)).issue : undefined);
     if (!issue) throw new Error("Controller dispatch requires an issue or a Linear runtime");
     const repository = await this.options.repositories.resolve(input.repository);
@@ -121,7 +121,7 @@ class ExecutionController implements Controller {
       let repair = 0;
       for (;;) {
         const previous = attempts.at(-1);
-        const launch: SessionLaunch = { execution, repositoryPath: repository.path, worktreePath: worktree.path, prompt: previous ? repairPrompt(initialPrompt, previous) : initialPrompt, ...(route ? { route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}) };
+        const launch: SessionLaunch = { execution, repositoryPath: repository.path, worktreePath: worktree.path, prompt: previous ? repairPrompt(initialPrompt, previous) : initialPrompt, ...(route ? { route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}), ...(input.signal ? { signal: input.signal } : {}) };
         session = await Promise.race([this.options.launcher.launch(launch), ...(heartbeat ? [heartbeat.failed] : [])]);
         const verificationPromise = verifyAttempt({ execution, acceptance: execution.manifest?.acceptance ?? [], session, attempt: attempts.length + 1, checks: repository.checks ?? [], baseRevision, ...(this.options.jev ? { jev: this.options.jev } : {}), enforceSemantic, settings });
         const attempt = heartbeat ? await Promise.race([verificationPromise, heartbeat.failed]) : await verificationPromise;
@@ -153,7 +153,9 @@ class ExecutionController implements Controller {
       if (latest.blockers.length > 0) throw new ExecutionVerificationError(verificationReport);
       return { execution: completedExecution, issue, repository, worktree, session, ...(claim ? { claim } : {}) };
     } catch (error) {
-      if (claim && this.options.linear) {
+      // A daemon-owned claim is settled by the daemon, which records failed,
+      // blocked, or canceled as the authoritative terminal state.
+      if (claim && this.options.linear && !input.signal) {
         try { this.options.linear.store.release(claim, 1_000); } catch { /* expired claims are reclaimed on restart */ }
       }
       throw error;

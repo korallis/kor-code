@@ -17,9 +17,11 @@
   },
   "dependencies": {
     "@kor-code/config": "workspace:*",
-    "@kor-code/linear": "workspace:*",
+    "@kor-code/controller": "workspace:*",
     "@kor-code/core": "workspace:*",
+    "@kor-code/daemon": "workspace:*",
     "@kor-code/gateway-adapter": "workspace:*",
-    "@kor-code/jev": "workspace:*"
+    "@kor-code/jev": "workspace:*",
+    "@kor-code/linear": "workspace:*"
   }
 }

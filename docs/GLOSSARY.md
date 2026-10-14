@@ -60,7 +60,7 @@ The selected model family, reasoning level, provider path, and account policy fo
 
 ## Provenance label
 
-The tag every cockpit value carries: live, stale, fixture, or unavailable. Fixture values are the README's illustrative values.
+The tag every cockpit value carries: live (the daemon answered just now), stale (the last published value, with its age), unavailable (not reported, or no daemon), or fixture (`/kor demo` only). Fixture values are the README's illustrative values.
 
 ## Provider
 

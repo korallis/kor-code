@@ -183,9 +183,15 @@ importers:
       '@kor-code/config':
         specifier: workspace:*
         version: link:../config
+      '@kor-code/controller':
+        specifier: workspace:*
+        version: link:../controller
       '@kor-code/core':
         specifier: workspace:*
         version: link:../core
+      '@kor-code/daemon':
+        specifier: workspace:*
+        version: link:../daemon
       '@kor-code/gateway-adapter':
         specifier: workspace:*
         version: link:../gateway-adapter
@@ -230,6 +236,24 @@ importers:
         version: link:../verification
 
   packages/core: {}
+
+  packages/daemon:
+    dependencies:
+      '@kor-code/config':
+        specifier: workspace:*
+        version: link:../config
+      '@kor-code/controller':
+        specifier: workspace:*
+        version: link:../controller
+      '@kor-code/core':
+        specifier: workspace:*
+        version: link:../core
+      '@kor-code/linear':
+        specifier: workspace:*
+        version: link:../linear
+      zod:
+        specifier: ^4.6.6
+        version: 4.6.6
 
   packages/gateway-adapter:
     dependencies:

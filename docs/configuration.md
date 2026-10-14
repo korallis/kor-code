@@ -7,6 +7,45 @@ Kor keeps its machine-specific configuration outside a repository. The default p
 - `~/.local/state/kor` — durable state, audit records, and snapshots.
 - `~/.local/share/kor` — execution session homes and worktrees.
 
+The daemon persists its queue and leases in `~/.local/state/kor/kor.db`. It writes
+an atomic `snapshots/index.json` and one `<execution-id>.json` file per assignment.
+`kor serve` exposes the same status envelope at `http://127.0.0.1:8327/status`.
+Install the user unit from `systemd/kor.service` after the CLI is available:
+
+```sh
+mkdir -p ~/.config/systemd/user
+cp systemd/kor.service ~/.config/systemd/user/kor.service
+systemctl --user daemon-reload
+systemctl --user enable --now kor
+```
+
+The response has `provenance: live`, `stale`, or `unavailable`. A missing snapshot
+is unavailable; an old snapshot is stale and includes its age reason. The daemon
+never treats unavailable data as an empty queue.
+
+Each run in the status carries, when the daemon knows them, the Linear issue
+(`issueKey`, `issueTitle`, `issueUrl`, `issueState`), the route in force with its
+`routeSource` (`config`, `jev`, `fallback` when Jev escalated or was unavailable,
+or `override`), and the IDs of its Jev decisions. The snapshot carries those
+decisions (`decisions`), the gateway's account slots (`accounts`: opaque hashes,
+refreshed on every poll; a failed read keeps the last pool as `stale`, or is
+`unavailable`, with a `reason`), and the override audit (`overrides`). On an
+execution's first attempt the daemon runs `kor plan`'s Jev preflight over the
+verified models and records its decisions; an escalation or a Jev outage leaves
+the configured default route, labelled `fallback`, and never fails the run.
+Execution sessions receive `KOR_STATUS_URL` and `KOR_STATE_DIR`, so the cockpit
+inside them reads this daemon.
+
+The cockpit posts overrides to `POST /overrides` (`{ executionId, target, choice }`,
+`target` being `route` or a decision ID) and reverts them with
+`POST /overrides/<id>/revert`; both accept local JSON requests only. Overrides are
+recorded in the `override_audit` table of `kor.db`. The cockpit reads
+`KOR_STATUS_URL` (default `http://127.0.0.1:8327/status`; `off` reads only the
+snapshot), `KOR_STATE_DIR` (default `~/.local/state/kor`) and `KOR_COCKPIT=off`
+(hides the status line).
+Readers accept schema version 1 and ignore additive fields, while an unknown schema version or invalid required field is unavailable.
+The CLI freshness threshold is the configured poll interval multiplied by two unless an explicit reader threshold is supplied.
+
 `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, and `XDG_DATA_HOME` override those roots. `KOR_GATEWAY_KEY`, `KOR_GATEWAY_URL`, and the other supported environment variables override values in `gateway.env` for one process. Kor never edits CLIProxyAPI configuration and never prints credential values.
 
 The YAML schema is:

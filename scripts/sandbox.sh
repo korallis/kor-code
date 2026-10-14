@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs Claude Code with the cockpit plugin in a disposable configuration.
 #   scripts/sandbox.sh                 headless /kor-status proof
-#   scripts/sandbox.sh "/kor replay"   any headless prompt, same guards
+#   scripts/sandbox.sh "/kor demo replay"   any headless prompt, same guards
 #   scripts/sandbox.sh --interactive   the TUI, for driving the cockpit by hand
 #   scripts/sandbox.sh --live-model …  opt in to model calls through CLIProxyAPI
 #   scripts/sandbox.sh --run cmd …     the controller's session launch (live)
@@ -50,7 +50,8 @@ if [ "${1:-}" = "--run" ]; then
     CODEX_HOME="$run_home/.codex" XDG_CONFIG_HOME="$run_home/.config" XDG_DATA_HOME="$run_home/.local/share" \
     PATH="$safe_path" CLAUDE_CODE_DISABLE_CLAUDE_MDS=1 \
     ANTHROPIC_BASE_URL="${KOR_GATEWAY_URL:-http://127.0.0.1:8317}" ANTHROPIC_AUTH_TOKEN="$gateway_key" \
-    KOR_EXECUTION_ID="${KOR_EXECUTION_ID:-}" KOR_WORKTREE="${KOR_WORKTREE:-}" KOR_ROUTE_MODEL="${KOR_ROUTE_MODEL:-}" "$@"
+    KOR_EXECUTION_ID="${KOR_EXECUTION_ID:-}" KOR_WORKTREE="${KOR_WORKTREE:-}" KOR_ROUTE_MODEL="${KOR_ROUTE_MODEL:-}" \
+    KOR_STATUS_URL="${KOR_STATUS_URL:-}" KOR_STATE_DIR="${KOR_STATE_DIR:-}" KOR_COCKPIT="${KOR_COCKPIT:-}" "$@"
   exit $?
 fi
 
@@ -166,6 +167,14 @@ child_env=(
   ANTHROPIC_BASE_URL="$gateway_url" ANTHROPIC_AUTH_TOKEN="$gateway_key"
 )
 for name in TERM COLORTERM LANG LC_ALL LC_CTYPE TZ USER LOGNAME; do
+  [ -z "${!name:-}" ] || child_env+=("$name=${!name}")
+done
+# The cockpit reads the Kor daemon's status (loopback HTTP, then snapshot
+# files); these name where, and never the gateway's port.
+case "${KOR_STATUS_URL:-}" in *:8317 | *:8317/*) echo "sandbox: KOR_STATUS_URL must not name the gateway port 8317" >&2; exit 1 ;; esac
+# The child's HOME is the sandbox's, so name the invoking user's Kor state.
+export KOR_STATE_DIR="${KOR_STATE_DIR:-${XDG_STATE_HOME:-$real_home/.local/state}/kor}"
+for name in KOR_STATUS_URL KOR_STATE_DIR KOR_COCKPIT; do
   [ -z "${!name:-}" ] || child_env+=("$name=${!name}")
 done
 run_claude() {

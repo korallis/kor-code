@@ -1,0 +1,50 @@
+import { readFileSync, readdirSync } from "node:fs";
+import type { SessionProcessIdentity } from "@kor-code/core";
+
+function processInfo(pid: number): { state: string; group: number; startTicks: string } | undefined {
+  let text: string;
+  try { text = readFileSync(`/proc/${pid}/stat`, "utf8"); }
+  catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
+    throw new Error("Cannot inspect session process identity");
+  }
+  const fields = text.slice(text.lastIndexOf(")") + 2).trim().split(/\s+/);
+  const state = fields[0]; const group = Number(fields[2]); const startTicks = fields[19];
+  if (!state || !Number.isSafeInteger(group) || !startTicks || !/^\d+$/.test(startTicks)) throw new Error("Invalid Linux process identity");
+  return { state, group, startTicks };
+}
+export function captureProcess(pid: number): SessionProcessIdentity {
+  const info = processInfo(pid);
+  if (!info) throw new Error("Session exited before its identity was recorded");
+  return { pid, bootId: readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim(), startTicks: info.startTicks };
+}
+export function processMatches(identity: SessionProcessIdentity): boolean {
+  if (readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim() !== identity.bootId) return false;
+  const info = processInfo(identity.pid);
+  return Boolean(info && info.state !== "Z" && info.startTicks === identity.startTicks);
+}
+export function processExists(pid: number): boolean {
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error instanceof Error && "code" in error && error.code === "EPERM"; }
+}
+function livingGroup(pid: number): boolean {
+  return readdirSync("/proc").filter(name => /^\d+$/.test(name)).some(name => {
+    const info = processInfo(Number(name));
+    return info?.group === pid && info.state !== "Z";
+  });
+}
+/** Kill only an identity-verified session group; never signal a recycled PID. */
+export async function stopSession(identity: SessionProcessIdentity): Promise<void> {
+  const info = processInfo(identity.pid);
+  if (!processMatches(identity)) {
+    if (!info && livingGroup(identity.pid)) throw new Error("Orphan session group needs reconciliation; leader identity is unavailable");
+    return;
+  }
+  if (info?.group !== identity.pid) throw new Error("Session is not an isolated process group");
+  process.kill(-identity.pid, "SIGKILL");
+  const deadline = Date.now() + 3_000;
+  while (livingGroup(identity.pid)) {
+    if (Date.now() >= deadline) throw new Error("Session process group did not stop");
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+}
