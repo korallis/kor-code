@@ -126,17 +126,12 @@ export class HttpLinearClient implements LinearClient {
         break;
       }
       case 'comment': {
-        // Linear returns a GraphQL error for a missing comment instead of null.
-        // A stable client UUID still makes a replay visible to the API as a duplicate.
-        try {
-          const existing = await this.query('query KorComment($id: String!) { comment(id: $id) { id issue { id } } }', { id: write.id });
-          if (existing.comment !== null) {
-            if (string(object(object(existing.comment).issue).id) !== write.issueId) throw new Error('Linear comment ownership mismatch');
-            return;
-          }
-        } catch (error) {
-          if (error instanceof Error && error.message === 'Linear comment ownership mismatch') throw error;
-        }
+        // Query the issue's bounded comment connection. Linear reports a
+        // missing Comment entity as a GraphQL error, which cannot distinguish
+        // a normal first write from an authentication failure.
+        const existing = object(await this.query('query KorIssueComments($id: String!) { issue(id: $id) { comments(first: 100) { nodes { id } } } }', { id: write.issueId }));
+        const comments = array(object(object(existing.issue).comments).nodes);
+        if (comments.some(value => string(object(value).id) === write.id)) return;
         data = await this.query('mutation KorComment($input: CommentCreateInput!) { commentCreate(input: $input) { success } }', { input: { id: write.id, issueId: write.issueId, body: write.body } });
         break;
       }

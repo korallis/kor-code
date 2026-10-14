@@ -4,23 +4,23 @@ export * from "./redact.js";
 export * from "./preflight.js";
 import type { CatalogueModel, DecisionBundle, DecisionInput, JsonValue, Route } from "@kor-code/core";
 import { z } from "zod";
-import { answerSchema, type JevAnswer, type JevQuestion, type JevResponse } from "./contracts.js";
+import { answerSchema, type JevAnswer, type JevJsonValue, type JevQuestion, type JevResponse } from "./contracts.js";
 import type { JevClient } from "./client.js";
 import { redact } from "./redact.js";
 
 export type DecisionKind = "route" | "skill" | "agent" | "context" | "readiness" | "complexity" | "risk";
 export type DecisionAnswerType = "choice" | "noul" | "score";
-export interface DecisionRequest { decisionId: string; executionId: string; kind: DecisionKind; question: string; state: JsonValue; inputs: DecisionInput[]; candidates: string[]; answerType?: DecisionAnswerType; evidenceRefs?: string[]; policyChecks?: DecisionBundle["policyChecks"]; threshold?: number; overrides?: JsonValue }
+export interface DecisionRequest { decisionId: string; executionId: string; kind: DecisionKind; question: string; state: JsonValue; inputs: DecisionInput[]; candidates: string[]; criteria?: Record<string, JevJsonValue>; nonApplyingCandidates?: string[]; answerType?: DecisionAnswerType; evidenceRefs?: string[]; policyChecks?: DecisionBundle["policyChecks"]; threshold?: number; overrides?: JsonValue }
 export interface AppliedDecision extends DecisionBundle { kind: DecisionKind; applied: boolean; escalated: boolean; answerType?: DecisionAnswerType; model?: string; probabilities?: Record<string, number>; noul?: number; score?: number; overrides?: JsonValue; observedOutcome?: JsonValue }
 export interface DecisionAuditRecord { request: DecisionRequest; response: AppliedDecision; recordedAt: string; rawAnswer?: JevAnswer; overrides?: JsonValue; observedOutcome?: JsonValue }
 export interface DecisionAuditLog { append(record: DecisionAuditRecord): void; get(decisionId: string): DecisionAuditRecord | undefined; explain(decisionId: string): DecisionAuditRecord; replay(decisionId: string): AppliedDecision; recordOutcome(decisionId: string, outcome: JsonValue): void }
-export interface DecisionAuditPersistence { read(decisionId: string): string | undefined; write(decisionId: string, recordedAt: string, payload: string): void }
+export interface DecisionAuditPersistence { read(decisionId: string): string | undefined; write(decisionId: string, recordedAt: string, payload: string): void; update(decisionId: string, recordedAt: string, payload: string): void }
 
 const jsonValue = z.json();
 const policyCheckSchema = z.object({ name: z.string(), result: z.enum(["pass", "fail", "unresolved"]) });
 const decisionRequestSchema = z.object({
   decisionId: z.string(), executionId: z.string(), kind: z.enum(["route", "skill", "agent", "context", "readiness", "complexity", "risk"]), question: z.string(), state: jsonValue,
-  inputs: z.array(z.object({ name: z.string(), value: jsonValue, source: z.string().optional() })), candidates: z.array(z.string()), answerType: z.enum(["choice", "noul", "score"]).optional(), evidenceRefs: z.array(z.string()).optional(),
+  inputs: z.array(z.object({ name: z.string(), value: jsonValue, source: z.string().optional() })), candidates: z.array(z.string()), criteria: z.record(z.string(), jsonValue).optional(), nonApplyingCandidates: z.array(z.string()).optional(), answerType: z.enum(["choice", "noul", "score"]).optional(), evidenceRefs: z.array(z.string()).optional(),
   policyChecks: z.array(policyCheckSchema).optional(), threshold: z.number().optional(), overrides: jsonValue.optional(),
 });
 const appliedDecisionSchema = z.object({
@@ -32,16 +32,18 @@ function applyDecision(request: DecisionRequest, answer: JevAnswer | undefined, 
   const choiceAnswer = answerType === "choice" && answer?.type === "choice" ? answer : undefined;
   const noulAnswer = answerType === "noul" && answer?.type === "noul" ? answer : undefined;
   const scoreAnswer = answerType === "score" && answer?.type === "score" ? answer : undefined;
-  const confidence = choiceAnswer?.confidence ?? scoreAnswer?.confidence ?? (noulAnswer ? Math.max(noulAnswer.noul, 1 - noulAnswer.noul) : 0);
+  // Noul supplies probability of yes, not a separate confidence.
+  const confidence = choiceAnswer?.confidence ?? scoreAnswer?.confidence ?? noulAnswer?.noul ?? 0;
   const threshold = request.threshold ?? 0.7;
   const validChoice = choiceAnswer !== undefined && request.candidates.includes(choiceAnswer.choice)
     || noulAnswer !== undefined && request.candidates.length === 2
     || scoreAnswer !== undefined && request.candidates.length >= 2 && scoreAnswer.score <= request.candidates.length - 1;
   const policyChecks = request.policyChecks ?? [];
   const policyBlocked = policyChecks.some(check => check.result === "fail");
-  const escalated = policyBlocked || !validChoice || confidence < threshold;
-  const choice = policyBlocked && request.kind === "readiness" ? "blocked" : validChoice ? choiceAnswer?.choice ?? (noulAnswer ? (noulAnswer.noul >= 0.5 ? request.candidates[0]! : request.candidates[1]!) : request.candidates[Math.max(0, Math.min(request.candidates.length - 1, Math.round(scoreAnswer?.score ?? 0)))]!) : "escalate";
-  return { decisionId: request.decisionId, executionId: request.executionId, question: request.question, inputs: request.inputs, choice, candidates: request.candidates, confidence, reasons: escalated ? [policyBlocked ? "A policy check failed." : "Confidence or answer validity is below the configured threshold."] : ["Jev selected the highest-confidence candidate."], evidenceRefs: request.evidenceRefs ?? [], policyChecks, kind: request.kind, applied: !escalated, escalated, answerType, ...(choiceAnswer || scoreAnswer ? { probabilities: (choiceAnswer ?? scoreAnswer)!.probabilities } : {}), ...(noulAnswer ? { noul: noulAnswer.noul } : {}), ...(scoreAnswer ? { score: scoreAnswer.score } : {}), ...(request.overrides !== undefined ? { overrides: request.overrides } : {}), ...(model ? { model } : {}) };
+  const nonApplyingChoice = choiceAnswer !== undefined && (request.nonApplyingCandidates ?? []).includes(choiceAnswer.choice);
+  const escalated = policyBlocked || !validChoice || nonApplyingChoice || confidence < threshold;
+  const choice = escalated && request.kind === "readiness" ? "blocked" : validChoice ? choiceAnswer?.choice ?? (noulAnswer ? (noulAnswer.noul >= 0.5 ? request.candidates[0]! : request.candidates[1]!) : request.candidates[Math.max(0, Math.min(request.candidates.length - 1, Math.round(scoreAnswer?.score ?? 0)))]!) : "escalate";
+  return { decisionId: request.decisionId, executionId: request.executionId, question: request.question, inputs: request.inputs, choice, candidates: request.candidates, confidence, reasons: escalated ? [policyBlocked ? "A policy check failed." : nonApplyingChoice ? "Jev selected a clarification instead of an executable candidate." : "Confidence or answer validity is below the configured threshold."] : ["Jev selected the highest-confidence candidate."], evidenceRefs: request.evidenceRefs ?? [], policyChecks, kind: request.kind, applied: !escalated, escalated, answerType, ...(choiceAnswer || scoreAnswer ? { probabilities: (choiceAnswer ?? scoreAnswer)!.probabilities } : {}), ...(noulAnswer ? { noul: noulAnswer.noul } : {}), ...(scoreAnswer ? { score: scoreAnswer.score } : {}), ...(request.overrides !== undefined ? { overrides: request.overrides } : {}), ...(model ? { model } : {}) };
 }
 export class MemoryDecisionAuditLog implements DecisionAuditLog {
   private readonly records = new Map<string, DecisionAuditRecord>();
@@ -53,7 +55,7 @@ export class MemoryDecisionAuditLog implements DecisionAuditLog {
   explain(decisionId: string): DecisionAuditRecord { const record = this.get(decisionId); if (!record) throw new Error(`Decision not found: ${decisionId}`); return record; }
   replay(decisionId: string): AppliedDecision {
     const record = this.explain(decisionId);
-    const replayed = applyDecision(record.request, record.rawAnswer, record.response.model);
+    const replayed = record.rawAnswer ? applyDecision(record.request, record.rawAnswer, record.response.model) : record.response;
     return record.response.observedOutcome === undefined ? replayed : { ...replayed, observedOutcome: record.response.observedOutcome };
   }
   recordOutcome(decisionId: string, outcome: JsonValue): void {
@@ -92,13 +94,13 @@ export class PersistentDecisionAuditLog implements DecisionAuditLog {
     return record;
   }
   explain(decisionId: string): DecisionAuditRecord { const record = this.get(decisionId); if (!record) throw new Error(`Decision not found: ${decisionId}`); return record; }
-  replay(decisionId: string): AppliedDecision { const record = this.explain(decisionId); const replayed = applyDecision(record.request, record.rawAnswer, record.response.model); return record.response.observedOutcome === undefined ? replayed : { ...replayed, observedOutcome: record.response.observedOutcome }; }
+  replay(decisionId: string): AppliedDecision { const record = this.explain(decisionId); const replayed = record.rawAnswer ? applyDecision(record.request, record.rawAnswer, record.response.model) : record.response; return record.response.observedOutcome === undefined ? replayed : { ...replayed, observedOutcome: record.response.observedOutcome }; }
   recordOutcome(decisionId: string, outcome: JsonValue): void {
     const record = this.explain(decisionId);
     const safeOutcome = redact(outcome) as JsonValue;
     const updated = { ...record, observedOutcome: safeOutcome, response: { ...record.response, observedOutcome: safeOutcome } };
+    this.persistence.update(decisionId, record.recordedAt, JSON.stringify(updated));
     this.memory.recordOutcome(decisionId, safeOutcome);
-    this.persistence.write(decisionId, record.recordedAt, JSON.stringify(updated));
   }
 }
 
@@ -115,9 +117,9 @@ export class JevDecisionCore {
     for (const request of requests) {
       const answerType = request.answerType ?? "choice";
       questions[request.decisionId] = answerType === "choice"
-        ? { type: "choice", instructions: request.question, criteria: Object.fromEntries(request.candidates.map(candidate => [candidate, null])) }
+        ? { type: "choice", instructions: request.question, criteria: Object.fromEntries(request.candidates.map(candidate => [candidate, request.criteria?.[candidate] ?? null])) }
         : answerType === "noul"
-          ? { type: "noul", instructions: request.question, criteria: { true: request.candidates[0] ?? "true", false: request.candidates[1] ?? "false" } }
+          ? { type: "noul", instructions: request.question, criteria: { true: request.criteria?.true ?? request.candidates[0] ?? "true", false: request.criteria?.false ?? request.candidates[1] ?? "false" } }
           : { type: "score", instructions: request.question, criteria: request.candidates };
     }
     const response = await this.client.evaluate(state, questions);

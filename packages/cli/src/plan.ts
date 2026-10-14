@@ -27,9 +27,9 @@ export async function runPlan(issueId: string, environment: NodeJS.ProcessEnv = 
   const client = new HttpLinearClient({ apiKey, writes: {} });
   const issue = await client.getIssue(issueId);
   const registry = await readModelRegistry(paths.modelsFile);
-  const verifiedModels = registry.models.filter(result => result.verified).map(result => ({ provider: result.model.split("/")[0] ?? "unknown", model: result.model, capabilities: Object.entries(result.capabilities).map(([name, supported]) => ({ name, supported })) }));
+  const verifiedModels = registry.models.filter(result => result.verified).map(result => ({ provider: result.model.startsWith("claude-") ? "anthropic" : result.model.split("/")[0] ?? "unknown", model: result.model, capabilities: Object.entries(result.capabilities).map(([name, supported]) => ({ name, supported })), ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) }));
   const store = new LinearStore(paths.databaseFile);
-  const audit = new PersistentDecisionAuditLog({ read: decisionId => store.readDecisionAudit(decisionId), write: (decisionId, recordedAt, payload) => store.writeDecisionAudit(decisionId, recordedAt, payload) });
+  const audit = new PersistentDecisionAuditLog({ read: decisionId => store.readDecisionAudit(decisionId), write: (decisionId, recordedAt, payload) => store.writeDecisionAudit(decisionId, recordedAt, payload), update: (decisionId, recordedAt, payload) => store.updateDecisionAudit(decisionId, recordedAt, payload) });
   const jevKey = environment.TYPESAFE_API_KEY ?? environment.TYPESAFE_KEY ?? environment.JEV_API_KEY;
   const core = new JevDecisionCore(new JevClient(jevKey ? { apiKey: jevKey } : {}), audit);
   const executionId = `plan-${randomUUID()}`;

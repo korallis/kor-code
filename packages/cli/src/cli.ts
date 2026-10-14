@@ -19,7 +19,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     try {
       const result = await runPlan(args[1]!);
       process.stdout.write(`${result.output}\n${result.commentWritten ? "linear: clarification comment written" : "linear: no clarification needed"}\n`);
-      return result.plan.fallback || result.plan.decisions.some(decision => decision.kind === "readiness" && decision.choice === "blocked") ? 1 : 0;
+      return result.plan.fallback || result.plan.decisions.some(decision => decision.escalated || decision.kind === "readiness" && decision.choice === "blocked") ? 1 : 0;
     } catch (error) {
       process.stdout.write(`FAIL plan: ${error instanceof Error ? error.message : "unable to plan"}\n`);
       return 1;

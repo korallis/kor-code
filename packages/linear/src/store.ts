@@ -83,6 +83,13 @@ export class LinearStore {
       if (result.changes !== 1) throw new Error(`Decision audit record already exists: ${decisionId}`);
     });
   }
+  updateDecisionAudit(decisionId: string, recordedAt: string, payload: string): void {
+    if (!decisionId || !recordedAt || !payload) throw new Error('Decision audit fields are required');
+    this.transaction(() => {
+      const result = this.db.prepare('UPDATE decision_audit SET recorded_at=?,payload=? WHERE decision_id=?').run(recordedAt, payload, decisionId);
+      if (result.changes !== 1) throw new Error(`Decision audit record not found: ${decisionId}`);
+    });
+  }
 
   acceptEvent(event: { id: string; digest: string; issueId?: string }): 'accepted' | 'duplicate' {
     return this.transaction(() => {

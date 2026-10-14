@@ -1,5 +1,6 @@
 import type { CatalogueModel, DecisionInput, JsonValue, Route } from "@kor-code/core";
-import type { JevAnswer } from "./contracts.js";
+import { JevUnavailableError } from "./client.js";
+import type { JevJsonValue } from "./contracts.js";
 import { JevDecisionCore, type AppliedDecision, type DecisionAuditLog, type DecisionRequest, type PreflightResult } from "./index.js";
 
 export interface PreflightIssue {
@@ -32,30 +33,38 @@ const defaultAgents = ["generalist", "specialist"] as const;
 const complexityLevels = ["small bounded change", "multi-file change", "cross-system change"] as const;
 const riskLevels = ["low operational risk", "review required", "high risk or external change"] as const;
 
-function issueState(input: PreflightInput): JsonValue {
+function issueState(input: PreflightInput, readinessChecks: readonly { name: string; result: "pass" | "fail" }[] = []): JsonValue {
   return {
     issue: { id: input.issue.id, title: input.issue.title, description: input.issue.description ?? "", acceptance: input.issue.acceptanceCriteria, dependencies: input.issue.dependencies },
-    verifiedModels: input.verifiedModels.map(model => ({ model: model.model, provider: model.provider, capabilities: Object.fromEntries(model.capabilities.map(capability => [capability.name, capability.supported])) })),
+    verifiedModels: input.verifiedModels.map(model => ({ model: model.model, provider: model.provider, capabilities: Object.fromEntries(model.capabilities.map(capability => [capability.name, capability.supported])), ...(model.costUsd !== undefined ? { costUsd: model.costUsd } : {}), ...(model.durationMs !== undefined ? { durationMs: model.durationMs } : {}) })),
+    readinessChecks: readinessChecks.map(check => ({ name: check.name, result: check.result })),
   };
 }
 function input(name: string, value: JsonValue, source = "linear"): DecisionInput { return { name, value, source }; }
 function makeRequests(inputData: PreflightInput): DecisionRequest[] {
-  const state = issueState(inputData);
   const models = inputData.verifiedModels.map(model => model.model);
   const routeCandidates = models.length >= 2 ? models : [...models, "no-verified-route", "clarification"].slice(0, 2);
+  const readinessChecks = [
+    { name: "acceptance-criteria", result: inputData.issue.acceptanceCriteria.length > 0 ? "pass" as const : "fail" as const },
+    { name: "dependencies-complete", result: inputData.issue.dependencies.every(dependency => dependency.state === "completed") ? "pass" as const : "fail" as const },
+    { name: "verified-route", result: models.length > 0 ? "pass" as const : "fail" as const },
+  ];
+  const routeCriteria: Record<string, JevJsonValue> = Object.fromEntries(inputData.verifiedModels.map(model => [model.model, {
+    provider: model.provider,
+    capabilities: Object.fromEntries(model.capabilities.map(capability => [capability.name, capability.supported])),
+    ...(model.costUsd !== undefined ? { costUsd: model.costUsd } : {}),
+    ...(model.durationMs !== undefined ? { durationMs: model.durationMs } : {}),
+  }]));
+  for (const candidate of routeCandidates) if (!Object.hasOwn(routeCriteria, candidate)) routeCriteria[candidate] = { reason: candidate === "no-verified-route" ? "No verified model is available." : "Ask the captain for a route." };
   const threshold = inputData.threshold ?? 0.7;
-  const common = { executionId: inputData.executionId, state, inputs: [input("issue", inputData.issue.title)], threshold };
+  const common = { executionId: inputData.executionId, state: issueState(inputData, readinessChecks), inputs: [input("issue", inputData.issue.title)], threshold };
   return [
-    { ...common, decisionId: `readiness-${inputData.executionId}`, kind: "readiness", answerType: "noul", question: "Is this issue ready for Kor to execute without captain clarification? Readiness requires explicit acceptance criteria, completed dependencies, and at least one verified route.", candidates: ["ready", "blocked"], policyChecks: [
-      { name: "acceptance-criteria", result: inputData.issue.acceptanceCriteria.length > 0 ? "pass" : "fail" },
-      { name: "dependencies-complete", result: inputData.issue.dependencies.every(dependency => dependency.state === "completed") ? "pass" : "fail" },
-      { name: "verified-route", result: models.length > 0 ? "pass" : "fail" },
-    ] },
-    { ...common, decisionId: `complexity-${inputData.executionId}`, kind: "complexity", answerType: "score", question: "How complex is this issue for an isolated coding session?", candidates: [...complexityLevels] },
-    { ...common, decisionId: `risk-${inputData.executionId}`, kind: "risk", answerType: "score", question: "How much delivery or operational risk does this issue carry?", candidates: [...riskLevels] },
-    { ...common, decisionId: `route-${inputData.executionId}`, kind: "route", question: "Which verified model is the best route for this issue and its acceptance conditions?", candidates: routeCandidates, policyChecks: [{ name: "verified-model", result: models.length > 0 ? "pass" : "fail" }] },
-    { ...common, decisionId: `skill-${inputData.executionId}`, kind: "skill", question: "Which available skill best supports this issue?", candidates: [...(inputData.skills ?? defaultSkills)] },
-    { ...common, decisionId: `agent-${inputData.executionId}`, kind: "agent", question: "Which available agent profile best supports this issue?", candidates: [...(inputData.agents ?? defaultAgents)] },
+    { ...common, decisionId: `readiness-${inputData.executionId}`, kind: "readiness", answerType: "noul", question: "Is this issue ready for Kor to execute? Answer ready only when the issue has explicit acceptance criteria, every dependency is completed, and the verified route list is non-empty. The state includes each deterministic check.", candidates: ["ready", "blocked"], policyChecks: readinessChecks, criteria: { true: "All supplied readinessChecks pass and the acceptance conditions specify a bounded, actionable change without unresolved scope questions.", false: "At least one readiness check fails, or the issue leaves essential implementation scope or acceptance unclear." } },
+    { ...common, decisionId: `complexity-${inputData.executionId}`, kind: "complexity", answerType: "score", question: "How complex is this issue for an isolated coding session?", candidates: [...complexityLevels], threshold: 0 },
+    { ...common, decisionId: `risk-${inputData.executionId}`, kind: "risk", answerType: "score", question: "How much delivery or operational risk does this issue carry?", candidates: [...riskLevels], threshold: 0 },
+    { ...common, decisionId: `route-${inputData.executionId}`, kind: "route", question: "Which verified model best fits this issue? Compare the supplied provider, capabilities, cost, and duration. Choose no-verified-route when no supplied model is suitable.", candidates: routeCandidates, policyChecks: [{ name: "verified-model", result: models.length > 0 ? "pass" : "fail" }], criteria: routeCriteria, nonApplyingCandidates: ["no-verified-route", "clarification"] },
+    { ...common, decisionId: `skill-${inputData.executionId}`, kind: "skill", question: "Which available skill best supports this issue? Select testing when the primary requested deliverable is test development or test diagnosis. Select generalist for implementation, documentation, or configuration work with routine verification.", candidates: [...(inputData.skills ?? defaultSkills)], criteria: { generalist: "Implement or document a bounded change, including routine checks.", testing: "Specialized test development or diagnosis is the main deliverable." } },
+    { ...common, decisionId: `agent-${inputData.executionId}`, kind: "agent", question: "Which available agent profile best supports this issue? Select generalist for bounded implementation or documentation. Select specialist only when the issue explicitly requires deep domain expertise or a broad investigation.", candidates: [...(inputData.agents ?? defaultAgents)], criteria: { generalist: "A coding worker can complete the bounded change with ordinary repository context.", specialist: "Requires deep domain expertise, architecture research, or specialized investigation." } },
   ];
 }
 
@@ -78,11 +87,13 @@ export async function planPreflight(inputData: PreflightInput, core: JevDecision
   try {
     const result = await core.preflight(requests);
     const routeDecision = result.decisions.find(decision => decision.kind === "route")!;
-    const routeModel = routeDecision.applied && inputData.verifiedModels.some(model => model.model === routeDecision.choice) ? routeDecision.choice : inputData.defaultRoute.model;
-    const route = { ...inputData.defaultRoute, model: routeModel, label: routeDecision.applied ? "jev" as const : "fallback" as const };
-    return { executionId: inputData.executionId, route, decisions: result.decisions, response: result.response, fallback: !routeDecision.applied };
+    const selectedVerifiedModel = routeDecision.applied && inputData.verifiedModels.some(model => model.model === routeDecision.choice);
+    const routeModel = selectedVerifiedModel ? routeDecision.choice : inputData.defaultRoute.model;
+    const route = { ...inputData.defaultRoute, model: routeModel, label: selectedVerifiedModel ? "jev" as const : "escalated" as const };
+    return { executionId: inputData.executionId, route, decisions: result.decisions, response: result.response, fallback: false };
   } catch (error) {
-    const reason = error instanceof Error ? error.message : "Jev service unavailable";
+    if (!(error instanceof JevUnavailableError)) throw error;
+    const reason = error.message;
     const route = { ...inputData.defaultRoute, label: "fallback" as const };
     return { executionId: inputData.executionId, route, decisions: appendFallback(audit, requests, route, `Jev unavailable. Default route is labelled fallback. ${reason}`), fallback: true, outage: reason };
   }
