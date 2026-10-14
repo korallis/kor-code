@@ -83,7 +83,7 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
 
 export function Checkbox({ checked, onChange, label }: { checked: boolean; onChange: (checked: boolean) => void; label: string }) {
   return (
-    <button type="button" role="checkbox" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)} {...stylex.props(styles.check, checked && styles.checkOn)}>
+    <button type="button" role="checkbox" aria-checked={checked} aria-label={label} onClick={event => { event.stopPropagation(); onChange(!checked); }} {...stylex.props(styles.check, checked && styles.checkOn)}>
       {checked && <Icon icon={Check} size={11} />}
     </button>
   );
