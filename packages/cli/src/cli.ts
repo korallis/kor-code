@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 import { fileURLToPath } from "node:url";
+import { realpathSync } from "node:fs";
 import { basename, join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { formatDoctor, runDoctor } from "./doctor.js";
 import { runPlan } from "./plan.js";
+import { installKor, uninstallKor, type InstallScope } from "./install.js";
+import { runModels } from "./models.js";
 import { createServeRouting } from "./serve-routing.js";
 import { ensureRuntimeDirectories, loadGatewayEnvironment, loadKorConfig, repositoryKeyForIssue, runtimePaths } from "@kor-code/config";
 import { HttpLinearClient, LinearStore } from "@kor-code/linear";
@@ -43,6 +46,23 @@ function jsonFlag(args: readonly string[]): boolean { return args.includes("--js
 function valueAfter(args: readonly string[], name: string): string | undefined {
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : undefined;
+}
+function installScope(args: readonly string[]): InstallScope {
+  const value = valueAfter(args, "--scope");
+  if (value === undefined || value === "local" || value === "user") return value ?? "local";
+  throw new Error("--scope must be local or user");
+}
+function validateInstallArgs(args: readonly string[]): void {
+  const seen = new Set<string>();
+  for (let index = 0; index < args.length; index++) {
+    const flag = args[index];
+    if (!flag || seen.has(flag)) throw new Error("Duplicate install option");
+    seen.add(flag);
+    if (flag === "--no-systemd") continue;
+    if (flag !== "--pilot" && flag !== "--scope") throw new Error(`Unknown install option: ${flag}`);
+    const value = args[++index];
+    if (!value || value.startsWith("--")) throw new Error(`${flag} needs a value`);
+  }
 }
 function print(value: unknown, json: boolean): void {
   process.stdout.write(`${json ? JSON.stringify(value, null, 2) : typeof value === "string" ? value : JSON.stringify(value, null, 2)}\n`);
@@ -221,6 +241,25 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     if (command === "logs") return await logs(cleanArgs.slice(1));
     if (command === "calibrate") return await calibrationReport(cleanArgs.slice(1));
     if (command === "serve") return await serve(cleanArgs.slice(1));
+    if (command === "models") return await runModels(cleanArgs.slice(1));
+    if (command === "install") {
+      validateInstallArgs(cleanArgs.slice(1));
+      const pilot = valueAfter(cleanArgs.slice(1), "--pilot");
+      const scope = installScope(cleanArgs.slice(1));
+      if (scope === "local" && !pilot) {
+        process.stderr.write("Usage: kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd]\n");
+        return 2;
+      }
+      const result = await installKor({ scope, ...(pilot ? { pilot } : {}), systemd: !cleanArgs.includes("--no-systemd") });
+      process.stdout.write(`${result.output}\n`);
+      return 0;
+    }
+    if (command === "uninstall") {
+      if (cleanArgs.length > 2 || args[1] !== undefined && args[1] !== "--purge") throw new Error("Usage: kor uninstall [--purge]");
+      const result = await uninstallKor({ purge: cleanArgs.slice(1).includes("--purge") });
+      process.stdout.write(`${result.output}\n`);
+      return 0;
+    }
     if (!["help", "--help", "-h"].includes(command)) throw new CliFailure("unknown_command", `unknown command \"${command}\"`, "run `kor --help` to list available commands", 2);
   } catch (error) {
     const structured = cliError(command, error);
@@ -229,9 +268,9 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     if (debug && error instanceof Error && error.stack) process.stderr.write(`${error.stack}\n`);
     return error instanceof CliFailure ? error.exitCode : 1;
   }
-  process.stdout.write("Usage: kor serve [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor plan ISSUE-ID | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor | kor models list | kor models probe [--family family] [--model model]\n");
+  process.stdout.write("Usage: kor serve [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor plan ISSUE-ID | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list | kor models probe [--family family] [--model model]\n");
   return 0;
 }
 
-const entrypoint = process.argv[1] ? fileURLToPath(import.meta.url) === process.argv[1] || process.argv[1].endsWith("/.bin/kor") : false;
+const entrypoint = process.argv[1] ? realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]) : false;
 if (entrypoint) process.exitCode = await main();

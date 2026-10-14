@@ -1,6 +1,6 @@
 # Isolation harness
 
-Kor Code is not installed into Claude Code globally. The harness creates a disposable `CLAUDE_CONFIG_DIR` under the gitignored `.sandbox/` directory and loads the plugin only for that invocation with `--plugin-dir`.
+The harness does not install Kor into Claude Code. The separate `kor install` command supports local pilot and user scopes with a reversible manifest (see [configuration](docs/configuration.md#install-and-uninstall)). The harness creates a disposable `CLAUDE_CONFIG_DIR` under the gitignored `.sandbox/` directory and loads the plugin only for that invocation with `--plugin-dir`.
 
 Run it from the repository:
 
@@ -20,7 +20,7 @@ A sandbox run makes no model calls unless asked to. Its `ANTHROPIC_BASE_URL` is 
 
 `--live-model` is the explicit opt-in for a session that needs model calls. It points the child at CLIProxyAPI (`KOR_GATEWAY_URL`, default `http://127.0.0.1:8317`) as a client only, the same way the Phase 4 gateway adapter uses it: nothing starts, stops or reconfigures the proxy. The key comes from `KOR_GATEWAY_KEY` or a runtime-only file named by `KOR_GATEWAY_KEY_FILE`; it is passed only through the child's environment, never on a command line, and the path is never inferred from a machine-specific location. The isolation proof below covers offline runs only and refuses `--live-model` and `--run`.
 
-The harness never opens the real `~/.claude`, `~/.claude.json`, `~/.codex` or `~/.agents`: it compares those paths as strings only, to fail closed if anything would resolve into them. The plugin is not copied to a marketplace or installed globally. Kor Code services, when added, must use a port other than CLIProxyAPI's `8317`.
+The harness never opens the real `~/.claude`, `~/.claude.json`, `~/.codex` or `~/.agents`: it compares those paths as strings only, to fail closed if anything would resolve into them. The harness does not copy the plugin to a marketplace or install it globally. Kor Code services use a port other than CLIProxyAPI's `8317`.
 
 ## Isolation proof
 

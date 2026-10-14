@@ -50,6 +50,8 @@ The cockpit labels every row it draws:
 
 The TypeScript pnpm workspace contains `core`, `jev`, `gateway-adapter`, `linear`, `controller`, `context`, `verification`, `config`, `cli`, and `claude-plugin` packages. Run `pnpm probe` for the external contract checks and read the [Phase 0 probe record](docs/phase-0-probe.md). Use `scripts/sandbox.sh` to load the Claude Code plugin in a disposable `CLAUDE_CONFIG_DIR`; it never installs the plugin globally or changes the existing Claude Code configuration, runs offline unless `--live-model` opts in to CLIProxyAPI, and `pnpm isolation:proof` traces the sandboxed session to show it never touches the real Claude, Codex or agents homes or port 8317.
 
+The reversible installer is Validated in a disposable HOME and XDG tree for both local pilot and user scope. It uses Claude Code's local-path marketplace commands, records backups before the commands run, restores the exact settings bytes on uninstall, and leaves `claude plugin list --json` without Kor. The proof used the offline endpoint and no live gateway key. It validated the generated unit with `systemd-analyze --user verify`; systemctl sequencing used a command shim, so service lifecycle on the real user manager remains unvalidated.
+
 The Phase 6 cockpit (`packages/claude-plugin`) is Validated on a live daemon run: `/kor` draws the daemon's status with LIVE, STALE and UNAVAILABLE labels, `/kor override` sends overrides to the daemon, and `/kor demo` keeps the fixture execution, which `pnpm cockpit:proof` replays (see [Open the live cockpit](#open-the-live-cockpit)). Execution sessions are Validated locally with parsed stream-json telemetry and policy checks; `pnpm e2e:live` runs the scratch-repository hello-file check when supplied a runtime `KOR_GATEWAY_KEY` or `KOR_GATEWAY_KEY_FILE` (without a key it reports the external validation as Blocked and makes no provider call). Sessions use `dontAsk` with an explicit repository tool allowlist, so removing `Write` produces a permission denial and a failed attempt. See the [cockpit specification](docs/specs/cockpit-mockups.md).
 
 Verification runs each configured repository check and treats its exit code as authoritative. It collects the worktree diff, asks Jev one Noul per acceptance criterion at the controller's verification threshold option (default `0.7`), and retries a blocked attempt at most twice with the failing evidence in the next prompt. Run the offline proof:
@@ -141,7 +143,7 @@ Kor reads `~/.config/kor/config.yaml` (or `XDG_CONFIG_HOME/kor/config.yaml`) and
 ```yaml
 repos:
   kor-code:
-    path: /home/lee/Projects/kor-code
+    path: /home/lee/Projects/firstmate/projects/kor-code
     remote: https://github.com/korallis/kor-code.git
     linearTeam: LEE
     defaultBranch: main
@@ -175,6 +177,68 @@ With the key removed, the gateway line is red and the command exits one:
 ```text
 FAIL CLIProxyAPI with Kor key: missing; CLIProxyAPI addition: - kor-<generated-value>
 ```
+
+## Install and undo Kor
+
+Use Node 24+, pnpm, Git, Claude Code 2.1.299 or newer, and a Linux systemd user manager. Build the workspace, then install from a stable checkout that you will keep on disk:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build
+node packages/cli/dist/cli.js install --pilot ~/Projects/firstmate/projects/kor-code
+export PATH="$HOME/.local/bin:$PATH"
+kor --help
+kor models list
+```
+
+The installed `kor` symlink runs the compiled CLI without rebuilding. Install writes a systemd user unit with the checkout's working directory and absolute Node path, a config scaffold, and a private `gateway.env`. It registers `kor-cockpit@kor` through a local-path marketplace under Kor's data directory. In stage one, both the marketplace declaration and cockpit are local to `--pilot`; user settings stay unchanged. **A local install refuses linked Git worktrees** because Claude 2.1.299 writes their local settings into the primary checkout. Use a normal clone for the pilot.
+
+The service is installed and reloaded but not started. Add a Linear mapping (`linearTeam` or `linearProject`), checks and tool allowlist to the scaffold before running work. When no gateway credential exists, install generates one, stores it in `gateway.env` with mode `0600`, and prints the exact line to add to CLIProxyAPI's `api-keys`. Existing credentials are retained and never printed. Kor never edits CLIProxyAPI configuration.
+
+Use `--no-systemd` on a host without a user manager or for a disposable HOME proof. It writes the unit but skips systemctl during both install and uninstall. A sandbox run produced this output (the generated key is redacted):
+
+```text
+Kor installed (scope: local)
+CLI: <sandbox-home>/.local/bin/kor
+Config: <sandbox-home>/.config/kor/config.yaml
+Service: <sandbox-home>/.config/systemd/user/kor.service (not started; systemd control skipped)
+Cockpit: kor-cockpit@kor in <sandbox-home>/pilot
+Manifest: <sandbox-home>/.local/state/kor-install/manifest.json
+CLIProxyAPI addition: - kor-<generated-value>
+Stored the same new key in <sandbox-home>/.config/kor/gateway.env (0600). Add the printed line to CLIProxyAPI manually.
+Configure repository mapping, checks and toolAllowlist; run kor doctor before starting the service.
+```
+
+After configuring credentials and policy, run `kor doctor`, then `systemctl --user enable --now kor`. Open Claude in the pilot and type `/kor`. The real sandbox proof loaded the cockpit there, while `/kor-status` outside the pilot reached the offline endpoint without loading Kor:
+
+```text
+kor-code-cockpit: Kor Code cockpit plugin loaded (session-local; no configuration changes).
+[UNAVAILABLE] Kor · daemon down: /kor for why · [LIVE] CC 2.1.299
+```
+
+After the pilot is accepted, change scope by uninstalling and reinstalling. The normal uninstall retains config and runtime data, so the user-scope install reuses them:
+
+```sh
+kor uninstall
+node packages/cli/dist/cli.js install --scope user
+```
+
+`kor uninstall` stops/disables a managed Kor service and replays the manifest: restores prior settings, registry files, Git ignore rules, CLI link and unit, and removes the cockpit and marketplace. Every changed path has a backup outside the directories that purge removes. Changed settings or registries cause uninstall to stop before restoring files, with the conflict and backup paths printed; preserve your edits before resolving the conflict. Later Claude session metadata is kept. See [the recovery details](docs/configuration.md#install-and-uninstall).
+
+```sh
+kor uninstall
+claude plugin list --json
+```
+
+The sandbox run had no other installed plugins:
+
+```text
+Kor uninstalled; config and state retained
+Backups: <sandbox-home>/.local/state/kor-install/backups/<install-id>
+[]
+```
+
+`diff` of user settings against the recorded backup was empty both during the local install and after uninstall. `kor uninstall --purge` also removes new Kor config, state and execution data; anything that predates this installation is restored from its backup. To purge after an ordinary uninstall removed the CLI link, run `node packages/cli/dist/cli.js uninstall --purge`. Do not remove a CLIProxyAPI key line until you are finished using it; proxy keys are managed manually. Kor never changes `~/.codex` or `~/.agents`.
 
 ## Plan a Linear issue
 
@@ -216,21 +280,6 @@ run isolated session when kor serve is active
 ```
 
 Run it without `--dry-run` to enqueue the canonical assignment and return its `executionId`. This daemon path owns the durable queue and execution status; its CLI does not perform the direct Linear progress writes from the standalone preflight command. `kor status --json EXECUTION-ID|ISSUE-ID`, `kor cancel EXECUTION-ID|ISSUE-ID`, and `kor retry EXECUTION-ID|ISSUE-ID` find the durable assignment locally, without a Linear request. Missing acceptance criteria produce `blocked` with a needs-input reason before a model session starts.
-
-### Operate the daemon
-
-Install the user service with `cp systemd/kor.service ~/.config/systemd/user/kor.service`, then run `systemctl --user daemon-reload` and `systemctl --user enable --now kor`.
-The daemon polls Todo issues carrying the configured `kor` label, stores leases in `~/.local/state/kor/kor.db`, and publishes snapshots under `~/.local/state/kor/snapshots/`.
-Use `kor status --json`, `kor run ISSUE-ID`, `kor cancel ISSUE-ID`, `kor retry ISSUE-ID`, and `kor logs EXECUTION-ID`.
-The read-only HTTP equivalent is `http://127.0.0.1:8327/status`.
-Status values are `queued`, `running`, `shipping`, `review`, `complete`, `failed`, `blocked`, and `canceled`; response provenance is `live`, `stale`, or `unavailable`. With shipping enabled by `kor serve`, `complete` means GitHub reports a merged PR.
-
-The local daemon proof covers lease renewal, restart recovery, queued and running cancellation, terminal failure and retry, orphan worktree cleanup, and PID identity protection:
-
-```text
-$ pnpm daemon:proof
-daemon proof passed; picked=LEE-57; status=live; restart=queued; attempts=1; orphan=removed; lease=exclusive; cancel=terminal; failure=retryable; pid-guard=pass
-```
 
 ### Calibrate Jev routing against a baseline
 
@@ -291,7 +340,7 @@ Rejected, escalated, and abandoned outcomes are recorded by the controller. The 
 
 ## Run the Kor daemon
 
-After `pnpm install` and a `~/.config/kor/config.yaml`, install the user service with `cp systemd/kor.service ~/.config/systemd/user/kor.service`, then run `systemctl --user daemon-reload` and `systemctl --user enable --now kor`.
+After `kor install`, configure `~/.config/kor/config.yaml` and credentials, check `kor doctor`, then run `systemctl --user enable --now kor`. The installer generates the unit with the correct checkout and executable paths.
 The daemon polls Todo issues carrying the configured `kor` label, stores leases in `~/.local/state/kor/kor.db`, and publishes snapshots under `~/.local/state/kor/snapshots/`.
 It polls each repository's `linearTeam` (else the team part of its map key) and runs a claimed issue in the checkout `repositoryKeyForIssue` maps it to (`linearProject`, then `linearTeam`).
 Use `kor status --json`, `kor run LEE-n` (a durable queue entry; the daemon writes Linear progress), `kor cancel EXECUTION-ID|ISSUE-ID`, `kor retry EXECUTION-ID|ISSUE-ID`, and `kor logs EXECUTION-ID`.
@@ -412,7 +461,7 @@ Firstmate reserves a kor-code slot for each distinct execution while `holdsCapac
 
 ## Open the live cockpit
 
-The cockpit is the Claude Code mod in `packages/claude-plugin`. Until `kor install` lands, load it in the sandboxed Claude Code with the daemon running:
+The cockpit is the Claude Code mod in `packages/claude-plugin`. Before installing it, or when testing without changing a user configuration, load it in the sandboxed Claude Code with the daemon running:
 
 ```sh
 pnpm kor serve &                 # or the systemd unit

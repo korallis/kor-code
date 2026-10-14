@@ -10,12 +10,11 @@ Kor keeps its machine-specific configuration outside a repository. The default p
 The daemon persists its queue and leases in `~/.local/state/kor/kor.db`. It writes
 an atomic `snapshots/index.json` and one `<execution-id>.json` file per assignment.
 `kor serve` exposes the same status envelope at `http://127.0.0.1:8327/status`.
-Install the user unit from `systemd/kor.service` after the CLI is available:
+Install the user unit with `kor install --pilot CHECKOUT`. Once the repository
+mapping, credentials, checks and tool allowlist are configured, run:
 
 ```sh
-mkdir -p ~/.config/systemd/user
-cp systemd/kor.service ~/.config/systemd/user/kor.service
-systemctl --user daemon-reload
+kor doctor
 systemctl --user enable --now kor
 ```
 
@@ -52,7 +51,70 @@ snapshot), `KOR_STATE_DIR` (default `~/.local/state/kor`) and `KOR_COCKPIT=off`
 Readers accept schema version 1 and ignore additive fields, while an unknown schema version or invalid required field is unavailable.
 The CLI freshness threshold is the configured poll interval multiplied by two unless an explicit reader threshold is supplied.
 
-`XDG_CONFIG_HOME`, `XDG_STATE_HOME`, and `XDG_DATA_HOME` override those roots. `KOR_GATEWAY_KEY`, `KOR_GATEWAY_URL`, and the other supported environment variables override values in `gateway.env` for one process. Kor never edits CLIProxyAPI configuration and never prints credential values.
+`XDG_CONFIG_HOME`, `XDG_STATE_HOME`, and `XDG_DATA_HOME` override those roots. `KOR_GATEWAY_KEY`, `KOR_GATEWAY_URL`, and the other supported environment variables override values in `gateway.env` for one process. Kor never edits CLIProxyAPI configuration. Install prints only a newly generated key for manual provisioning; it never prints existing credential values.
+
+## Install and uninstall
+
+Build with `pnpm install --frozen-lockfile && pnpm build`, then run
+`node packages/cli/dist/cli.js install --pilot CHECKOUT`. The installed symlink at
+`~/.local/bin/kor` points at the compiled CLI. Keep its source checkout available
+and rebuild after updating it. The unit uses absolute paths to Node and the CLI,
+the source checkout as its working directory, and the install's HOME, XDG roots
+and PATH. Install reloads the user manager but leaves startup explicit.
+`--no-systemd` writes the unit without contacting a user manager and records that
+choice so uninstall also skips systemctl.
+
+The default `--scope local` requires a standalone Git checkout root in `--pilot`.
+Both the local-path marketplace and `kor-cockpit@kor` are declared in that
+checkout's `.claude/settings.local.json`. Claude's edit to Git's global ignore
+file (including a configured `core.excludesFile`) is backed up and restored too. The cache
+and registries live under `CLAUDE_CONFIG_DIR` (default `~/.claude`). A linked Git
+worktree is refused before mutation because Claude Code 2.1.299 resolves its
+local settings through the primary checkout. Use a normal clone instead.
+
+After pilot acceptance, run `kor uninstall` and then
+`node packages/cli/dist/cli.js install --scope user`. Existing config and keys
+are reused; `--pilot` is optional at user scope and defaults to the source
+checkout for a new config scaffold. Configure `linearTeam` or `linearProject`,
+checks, and `toolAllowlist` before enabling the service. Empty scaffold checks
+and allowlists are deliberate placeholders for repository policy.
+
+When no file or runtime credential is present, install writes a new
+`KOR_GATEWAY_KEY=kor-...` to `gateway.env` (0600) and prints the matching
+`CLIProxyAPI addition: - kor-...`. Add that line to CLIProxyAPI manually.
+Pre-existing credentials are never printed, and runtime credentials are never
+copied to disk. Kor does not modify the proxy, `~/.codex`, or `~/.agents`.
+
+The recovery journal lives at `XDG_STATE_HOME/kor-install/manifest.json`
+(default `~/.local/state/kor-install/manifest.json`), with private backups under
+`kor-install/backups/<install-id>/`. Keeping it beside `kor` makes purge
+recoverable. Entries contain paths, backup locations, before/after hashes
+(including bytes, modes and symlink targets), and retention policy. Config,
+state and share directories are backed up before initialization; account for
+that disk space when reinstalling an existing runtime.
+
+Normal uninstall stops and disables a systemd-managed unit, restores settings,
+registries, the old CLI link and unit, and removes the marketplace/cache. It
+retains Kor config, data and backups. Purge additionally restores pre-install
+config/state/share contents, removing newly created data. It can also run after
+normal uninstall, via the source CLI. An installation failure rolls back; an
+interruption leaves a journal that `kor uninstall --purge` can replay.
+
+Uninstall verifies backups and refuses changes to shared settings or registries
+made since install before restoring anything. Compare the reported paths,
+save later edits elsewhere, and resolve the conflict before retrying. It never
+automatically overwrites those edits. Claude's transient `.claude.json` and
+metadata backups are restored if unchanged since install; newer session
+metadata is preserved. Empty parent directories created by install are removed
+only when still empty. After normal uninstall, a later purge touches retained
+Kor data only, preserving any new Claude settings changes.
+
+Validated with real Claude plugin commands and cockpit loading in a standalone
+sandbox clone: local settings stayed local, user settings compared equal to
+the backup, uninstall left `claude plugin list --json` empty, user-scope install
+worked, and purge restored pre-existing bytes, modes and symlinks. The generated
+unit passed `systemd-analyze --user verify`; systemctl sequencing was checked
+with a shim, not the shared real user manager. No live gateway key was used.
 
 The YAML schema is:
 
