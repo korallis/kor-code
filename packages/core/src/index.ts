@@ -72,7 +72,7 @@ export interface RunStatus {
   route?: Route;
   /** Where `route` came from: the configured default, Jev, the default after Jev escalated or was unavailable, or a cockpit override. */
   routeSource?: RouteSource;
-  phase?: ExecutionStatus;
+  phase?: RunLifecycle;
   verification?: VerificationReport;
   shipping?: ShippingReport;
   cancelRequested?: boolean;
