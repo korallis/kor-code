@@ -22,6 +22,8 @@ systemctl --user enable --now kor
 The response has `provenance: live`, `stale`, or `unavailable`. A missing snapshot
 is unavailable; an old snapshot is stale and includes its age reason. The daemon
 never treats unavailable data as an empty queue.
+Readers accept schema version 1 and ignore additive fields, while an unknown schema version or invalid required field is unavailable.
+The CLI freshness threshold is the configured poll interval multiplied by two unless an explicit reader threshold is supplied.
 
 `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, and `XDG_DATA_HOME` override those roots. `KOR_GATEWAY_KEY`, `KOR_GATEWAY_URL`, and the other supported environment variables override values in `gateway.env` for one process. Kor never edits CLIProxyAPI configuration and never prints credential values.
 

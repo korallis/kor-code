@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import type { Execution, Route } from "@kor-code/core";
 import { EventCollector, type SessionEvent } from "./events.js";
 
-export interface SessionLaunch { execution: Execution; repositoryPath: string; worktreePath: string; prompt: string; route?: Route; allowedTools?: readonly string[]; onSpawn?: (pid: number) => void }
+export interface SessionLaunch { execution: Execution; repositoryPath: string; worktreePath: string; prompt: string; route?: Route; allowedTools?: readonly string[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }
 export interface SessionTelemetry {
   result: string;
   isError: boolean;
@@ -106,7 +106,7 @@ export class SessionLauncher implements SessionLauncherLike {
     const gatewayUrl = this.options.env?.KOR_GATEWAY_URL ?? process.env.KOR_GATEWAY_URL;
     const env = { ...this.options.env, KOR_EXECUTION_ID: input.execution.id, KOR_WORKTREE: input.worktreePath, KOR_ROUTE_MODEL: input.route?.model ?? "", KOR_CLAUDE_BIN_DIR: toolDir, KOR_GATEWAY_KEY: gatewayKey, ...(gatewayKeyFile ? { KOR_GATEWAY_KEY_FILE: gatewayKeyFile } : {}), ...(gatewayUrl ? { KOR_GATEWAY_URL: gatewayUrl } : {}) };
     return new Promise((resolvePromise, reject) => {
-      const child = spawn(this.options.command ?? "bash", [script, ...args], { cwd: input.worktreePath, env: this.isolatedEnv(env), stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawn(this.options.command ?? "bash", [script, ...args], { cwd: input.worktreePath, env: this.isolatedEnv(env), stdio: ["ignore", "pipe", "pipe"], detached: true, signal: input.signal });
       if (child.pid) input.onSpawn?.(child.pid);
       let stdout = ""; let stderr = "";
       collector.add("started", input.execution.id);

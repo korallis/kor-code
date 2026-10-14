@@ -34,7 +34,7 @@ Completion criterion: a controlled quota test moves one session to the next acco
 
 Build repository-rule discovery, context manifests, compaction, redaction, and per-execution acceptance tracking. The `@kor-code/context` package discovers only rule files inside the resolved execution worktree, bounds the redacted excerpts sent to Jev, records dropped sources, and exercises Jev relevance ranking through a fixture callback. The `@kor-code/verification` tracker associates evidence with the current execution's required acceptance conditions; the Linear controller creates a fresh tracker for every execution, records a verification block, and rejects completion until all required conditions have passing evidence. `pnpm phase5:proof` demonstrates one fake Linear execution blocked without evidence, evidence from a second execution not counting for it, and completion after the first execution receives its own evidence.
 
-Review evidence is currently a typed evidence factory only; GitHub review/check integration and automated test evidence collection remain Proposed.
+Review evidence is currently a typed evidence factory only; GitHub review/check integration remains Proposed. The controller now runs repository-configured checks, collects the worktree diff, asks one Jev Noul per acceptance condition, and retries failed verification at most twice. `pnpm verification:proof` demonstrates both repair and a terminal blocked execution with per-criterion findings.
 
 Completion criterion: an execution cannot reach complete while one acceptance condition lacks evidence.
 

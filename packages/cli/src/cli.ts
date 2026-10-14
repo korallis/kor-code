@@ -32,7 +32,7 @@ async function runIssue(args: readonly string[]): Promise<number> {
   const paths = runtimePaths();
   const loaded = await loadKorConfig(paths.configFile, { home: paths.home });
   if (dryRun) {
-    print({ issueId, dryRun: true, intake: loaded.config.intakeLabel, route: loaded.config.defaultRoute, planned: ["enqueue durable assignment", "move Todo to In Progress", "write progress comment", "run isolated session", "publish evidence"] }, json);
+    print({ issueId, dryRun: true, intake: loaded.config.intakeLabel, route: loaded.config.defaultRoute, planned: ["enqueue durable assignment", "run isolated session when kor serve is active"] }, json);
     return 0;
   }
   const store = new LinearStore(paths.databaseFile);
@@ -49,7 +49,7 @@ async function updateQueue(command: "cancel" | "retry", args: readonly string[])
   const paths = runtimePaths();
   const store = new LinearStore(paths.databaseFile);
   try {
-    const accepted = command === "cancel" ? store.requestCancel(issueId) : store.requeue(issueId);
+    const accepted = command === "cancel" ? store.requestCancel(issueId) : store.retry(issueId);
     print({ issueId, command, accepted }, jsonFlag(args));
     return accepted ? 0 : 1;
   } finally { store.close(); }
@@ -72,7 +72,7 @@ async function serve(args: readonly string[]): Promise<number> {
   await ensureRuntimeDirectories(paths);
   const portValue = valueAfter(args, "--port");
   const port = portValue ? Number(portValue) : 8327;
-  if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) throw new Error("--port must be a valid TCP port");
+  if (!Number.isSafeInteger(port) || port < 0 || port > 65_535 || port === 8317) throw new Error("--port must be a valid non-8317 TCP port");
   const repositories = new RepositoryRegistry(Object.entries(loaded.config.repos).map(([key, repository]) => ({ key, path: repository.path, defaultBranch: repository.defaultBranch, allowedTools: repository.toolAllowlist })));
   const controller = createController({
     repositories,

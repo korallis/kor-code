@@ -2,9 +2,13 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
-import { fakeIssue, FakeLinearClient, type LinearIssue } from "@kor-code/linear";
-import { parseKorConfig, runtimePaths } from "@kor-code/config";
-import { KorDaemon } from "@kor-code/daemon";
+import { fakeIssue, FakeLinearClient, type LinearIssue } from "../packages/linear/src/index.js";
+import { parseKorConfig, runtimePaths } from "../packages/config/src/index.js";
+import { KorDaemon } from "../packages/daemon/src/index.js";
+import { captureProcess, processMatches, stopSession } from "../packages/daemon/src/process.js";
+import { execFile as execFileCallback } from "node:child_process";
+import { promisify } from "node:util";
+const execFile = promisify(execFileCallback);
 
 const root = await mkdtemp(join(tmpdir(), "kor-daemon-proof-"));
 const paths = runtimePaths({ HOME: root, XDG_CONFIG_HOME: join(root, "config"), XDG_STATE_HOME: join(root, "state"), XDG_DATA_HOME: join(root, "share") });
@@ -23,12 +27,19 @@ if (status.provenance !== "live" || status.snapshot.runs[0]?.issueId !== issue.i
 
 const claim = first.store.claim("proof", 60_000, issue.id);
 if (!claim) throw new Error("proof assignment was not claimable");
-const child = spawn("sleep", ["30"], { stdio: "ignore" });
+const child = spawn("sleep", ["30"], { stdio: "ignore", detached: true });
 if (!child.pid) throw new Error("proof child did not start");
-first.store.setSessionPid(claim, child.pid);
-const orphan = join(paths.worktreesDir, "orphan");
-await mkdir(orphan, { recursive: true, mode: 0o700 });
-await writeFile(join(orphan, ".kor-worktree.json"), "{}\n", { mode: 0o600 });
+first.store.setSessionPid(claim, child.pid, captureProcess(child.pid));
+const orphanRepository = join(root, "orphan-repository");
+const orphan = join(paths.worktreesDir, "orphan-execution");
+await mkdir(orphanRepository, { recursive: true, mode: 0o700 });
+await execFile("git", ["init", "-q", orphanRepository]);
+await writeFile(join(orphanRepository, "README.md"), "orphan\n");
+await execFile("git", ["-C", orphanRepository, "add", "README.md"]);
+await execFile("git", ["-C", orphanRepository, "-c", "user.name=Kor", "-c", "user.email=kor@example.invalid", "commit", "-qm", "root"]);
+await mkdir(paths.worktreesDir, { recursive: true, mode: 0o700 });
+await execFile("git", ["-C", orphanRepository, "worktree", "add", "-q", orphan]);
+await writeFile(join(paths.worktreesDir, "orphan-execution.kor-worktree.json"), `${JSON.stringify({ executionId: "orphan-execution", path: orphan, repository: orphanRepository })}\n`, { mode: 0o600 });
 await handle.stop();
 
 const second = new KorDaemon({ paths, config, linear, port: 0, pollIntervalMs: 60_000 });
@@ -37,4 +48,75 @@ const recovered = second.status().runs.find(run => run.issueId === issue.id);
 if (recovered?.status !== "queued" || recovered.attempts < 1) throw new Error(`restart recovery proof failed: ${JSON.stringify(recovered)}`);
 if (second.status().runs.length !== 1) throw new Error("recovery duplicated the assignment");
 await restarted.stop();
-console.log(`daemon proof passed; picked=${issue.id}; status=live; restart=queued; attempts=${recovered.attempts}; orphan=removed`);
+
+async function waitFor(predicate: () => boolean, timeoutMs = 3_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("daemon proof timed out");
+    await new Promise(resolvePromise => setTimeout(resolvePromise, 25));
+  }
+}
+const lifecycleRoot = await mkdtemp(join(tmpdir(), "kor-daemon-lifecycle-"));
+const lifecyclePaths = runtimePaths({ HOME: lifecycleRoot, XDG_CONFIG_HOME: join(lifecycleRoot, "config"), XDG_STATE_HOME: join(lifecycleRoot, "state"), XDG_DATA_HOME: join(lifecycleRoot, "share") });
+const lifecycleIssue = fakeIssue("LEE-58");
+lifecycleIssue.stateType = "unstarted";
+lifecycleIssue.labels = ["kor"];
+const lifecycleLinear = new FakeLinearClient([lifecycleIssue]);
+const lifecycleConfig = parseKorConfig({ repos: { LEE: { path: lifecycleRoot } }, pollIntervalSeconds: 60, intakeLabel: "kor" }, { home: lifecycleRoot });
+let invocations = 0;
+const lifecycleDaemon = new KorDaemon({ paths: lifecyclePaths, config: lifecycleConfig, linear: lifecycleLinear, leaseTtlMs: 200, pollIntervalMs: 60_000, runner: async ({ onSpawn }) => {
+  invocations += 1;
+  const child = spawn("sleep", ["10"], { stdio: "ignore", detached: true });
+  if (!child.pid) throw new Error("lifecycle child did not start");
+  onSpawn(child.pid);
+  await new Promise(resolvePromise => setTimeout(resolvePromise, 800));
+} });
+await lifecycleDaemon.start();
+await waitFor(() => lifecycleDaemon.status().runs.some(run => run.status === "running"));
+await waitFor(() => lifecycleDaemon.status().runs.some(run => run.status === "complete"), 2_000);
+if (invocations !== 1) throw new Error(`lease renewal duplicated runner: ${invocations}`);
+await lifecycleDaemon.stop();
+
+const cancelRoot = await mkdtemp(join(tmpdir(), "kor-daemon-cancel-"));
+const cancelPaths = runtimePaths({ HOME: cancelRoot, XDG_CONFIG_HOME: join(cancelRoot, "config"), XDG_STATE_HOME: join(cancelRoot, "state"), XDG_DATA_HOME: join(cancelRoot, "share") });
+const cancelIssue = fakeIssue("LEE-59"); cancelIssue.stateType = "unstarted"; cancelIssue.labels = ["kor"];
+const cancelLinear = new FakeLinearClient([cancelIssue]);
+const cancelConfig = parseKorConfig({ repos: { LEE: { path: cancelRoot } }, pollIntervalSeconds: 60, intakeLabel: "kor" }, { home: cancelRoot });
+const queuedDaemon = new KorDaemon({ paths: cancelPaths, config: cancelConfig, linear: cancelLinear, pollIntervalMs: 60_000, runner: async () => { throw new Error("queued cancellation should not launch"); } });
+queuedDaemon.store.enqueue(cancelIssue.id);
+if (!queuedDaemon.cancel(cancelIssue.id) || queuedDaemon.status().runs[0]?.status !== "canceled") throw new Error("queued cancellation was not terminal");
+await queuedDaemon.start();
+if (queuedDaemon.status().runs[0]?.status !== "canceled") throw new Error("queued cancellation relaunched");
+await queuedDaemon.stop();
+
+let canceledInvocations = 0;
+const runningDaemon = new KorDaemon({ paths: cancelPaths, config: cancelConfig, linear: cancelLinear, leaseTtlMs: 200, pollIntervalMs: 60_000, runner: async ({ onSpawn, signal }) => {
+  canceledInvocations += 1;
+  const child = spawn("sleep", ["10"], { stdio: "ignore", detached: true });
+  if (!child.pid) throw new Error("cancel child did not start");
+  onSpawn(child.pid);
+  await new Promise(resolvePromise => signal.addEventListener("abort", () => resolvePromise(undefined), { once: true }));
+} });
+if (!runningDaemon.store.retry(cancelIssue.id)) throw new Error("canceled retry did not requeue");
+await runningDaemon.start();
+await waitFor(() => runningDaemon.status().runs.some(run => run.status === "running"));
+if (!runningDaemon.cancel(cancelIssue.id)) throw new Error("running cancellation was not accepted");
+await waitFor(() => runningDaemon.status().runs.some(run => run.status === "canceled"));
+if (canceledInvocations !== 1) throw new Error("running cancellation duplicated");
+await runningDaemon.stop();
+
+const failureRoot = await mkdtemp(join(tmpdir(), "kor-daemon-failure-"));
+const failurePaths = runtimePaths({ HOME: failureRoot, XDG_CONFIG_HOME: join(failureRoot, "config"), XDG_STATE_HOME: join(failureRoot, "state"), XDG_DATA_HOME: join(failureRoot, "share") });
+const failureIssue = fakeIssue("LEE-60"); failureIssue.stateType = "unstarted"; failureIssue.labels = ["kor"];
+const failureLinear = new FakeLinearClient([failureIssue]);
+const failureConfig = parseKorConfig({ repos: { LEE: { path: failureRoot } }, pollIntervalSeconds: 60, intakeLabel: "kor" }, { home: failureRoot });
+let failures = 0;
+const failureDaemon = new KorDaemon({ paths: failurePaths, config: failureConfig, linear: failureLinear, pollIntervalMs: 60_000, runner: async () => { failures += 1; throw new Error("proof failure"); } });
+await failureDaemon.start();
+await waitFor(() => failureDaemon.status().runs.some(run => run.status === "failed"));
+if (failures !== 1 || !failureDaemon.retry(failureIssue.id) || failureDaemon.status().runs[0]?.status !== "queued") throw new Error("failed run did not become retryable");
+await failureDaemon.stop();
+const recycled = { ...captureProcess(process.pid), startTicks: "0" };
+if (processMatches(recycled)) throw new Error("recycled PID identity unexpectedly matched");
+await stopSession(recycled);
+console.log(`daemon proof passed; picked=${issue.id}; status=live; restart=queued; attempts=${recovered.attempts}; orphan=removed; lease=exclusive; cancel=terminal; failure=retryable; pid-guard=pass`);

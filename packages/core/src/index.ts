@@ -7,12 +7,22 @@ export interface Issue { id: string; title: string; description?: string; accept
 export interface AcceptanceCondition { id: string; description: string; required: boolean }
 export type AcceptanceStatus = "pending" | "pass" | "fail" | "unresolved";
 export interface AcceptanceFinding { conditionId: string; status: AcceptanceStatus; evidenceIds: string[]; note?: string }
+export interface RepositoryCheckResult { command: string; exitCode: number | null; output: string; status: "pass" | "fail"; note?: string }
+export interface VerificationAttempt {
+  attempt: number;
+  checks: RepositoryCheckResult[];
+  diff: string;
+  evidence: Evidence[];
+  findings: AcceptanceFinding[];
+  blockers: string[];
+}
+export interface VerificationReport { attempts: VerificationAttempt[]; passed: boolean }
 export interface AgentManifest { id: string; name: string; description?: string; skills: string[]; capabilities: string[]; acceptance: AcceptanceCondition[] }
 export interface ExecutionManifest { executionId: string; issueId: string; repository: string; worktree: string; branch: string; agents: AgentManifest[]; acceptance: AcceptanceCondition[] }
 export interface ContextSource { id: string; path: string; purpose: "rule" | "issue" | "document" | "decision" | "evidence"; relevance: number; content: string; truncated?: boolean }
 export interface ContextSourceReference { id: string; path: string; purpose: ContextSource["purpose"] }
 export interface ContextManifest { executionId: string; repository: string; worktree: string; sources: ContextSource[]; droppedSources: ContextSourceReference[]; compacted: boolean; redacted: boolean; relevanceOverride?: { source: "caller"; reason: string } }
-export interface Execution { id: string; issueId: string; repository: string; worktree: string; branch: string; status: ExecutionStatus; route?: Route; manifest?: ExecutionManifest }
+export interface Execution { id: string; issueId: string; repository: string; worktree: string; branch: string; status: ExecutionStatus; route?: Route; manifest?: ExecutionManifest; verification?: VerificationReport }
 export type AccountPolicy = "fill-first" | "manual" | "least-used";
 export type ReasoningLevel = "low" | "medium" | "high";
 export interface Route { provider: string; model: string; accountPolicy: AccountPolicy; sessionAffinity: boolean; reasoningLevel?: ReasoningLevel }
@@ -35,12 +45,23 @@ export type Provenance = "live" | "stale" | "fixture" | "unavailable";
 export interface Labelled<T> { value: T; provenance: Provenance; observedAt?: string }
 
 /** Stable read-only shape consumed by the cockpit and `kor status --json`. */
-export type RunLifecycle = "queued" | "running" | "complete" | "failed" | "canceled" | "blocked";
+export type RunLifecycle = ExecutionStatus | "canceled";
+export interface SessionProcessIdentity { pid: number; bootId: string; startTicks: string }
 export interface RunStatus {
   executionId: string;
   issueId: string;
   status: RunLifecycle;
   attempts: number;
+  issueKey?: string;
+  issueTitle?: string;
+  attemptId?: string;
+  route?: Route;
+  phase?: ExecutionStatus;
+  verification?: VerificationReport;
+  cancelRequested?: boolean;
+  errorCode?: "execution_failed" | "verification_blocked" | "canceled" | "recovered";
+  pullRequestUrl?: string;
+  decisionIds?: string[];
   repository?: string;
   worktree?: string;
   branch?: string;
@@ -54,7 +75,10 @@ export interface KorStatusSnapshot {
   observedAt: string;
   daemon: { pid: number; startedAt: string; pollIntervalSeconds: number; lastPollAt?: string; lastError?: string };
   runs: RunStatus[];
+  accounts?: Labelled<GatewayAccountHealth[]>;
+  decisions?: Labelled<DecisionBundle[]>;
 }
+export interface KorRunSnapshot { schemaVersion: 1; observedAt: string; run: RunStatus }
 export type StatusProvenance = "live" | "stale" | "unavailable";
 export type KorStatusResponse =
   | { schemaVersion: 1; provenance: "live" | "stale"; observedAt: string; snapshot: KorStatusSnapshot; reason?: string }

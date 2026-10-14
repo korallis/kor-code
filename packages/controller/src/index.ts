@@ -1,4 +1,4 @@
-import type { CatalogueModel, Evidence, Execution, Route } from "@kor-code/core";
+import type { CatalogueModel, Evidence, Execution, Route, VerificationAttempt } from "@kor-code/core";
 import { JevDecisionCore, routeFromDecision } from "@kor-code/jev";
 import type { LinearClient, LinearIssue, WorkflowMapping, ExecutionClaim } from "@kor-code/linear";
 import { AgentSessionWriter, DurableQueue, ExecutionLease, LinearStore, SnapshotReader } from "@kor-code/linear";
@@ -9,6 +9,7 @@ import { ConcurrencyLimiter } from "./limiter.js";
 import { type SessionLaunch, type SessionResult, type SessionLauncherLike } from "./launcher.js";
 import { RestartReconciler, type ReconciliationReport } from "./reconcile.js";
 import { VerificationError, VerificationTracker } from "@kor-code/verification";
+import { ExecutionVerificationError, repairPrompt, verifyAttempt, verificationBase, verificationSettings, type VerificationOptions } from "./verification.js";
 
 export * from "./repository.js";
 export * from "./worktree.js";
@@ -16,6 +17,7 @@ export * from "./limiter.js";
 export * from "./events.js";
 export * from "./launcher.js";
 export * from "./reconcile.js";
+export * from "./verification.js";
 
 export interface ControllerLinearRuntime { store: LinearStore; client: LinearClient; workflow: WorkflowMapping }
 export type VerificationFactory = (execution: Execution) => VerificationTracker;
@@ -32,6 +34,7 @@ export interface ControllerOptions {
   promptPrefix?: string;
   leaseTtlMs?: number;
   verification?: VerificationFactory;
+  verificationOptions?: VerificationOptions;
 }
 export interface ControllerRunResult {
   execution: Execution;
@@ -42,7 +45,7 @@ export interface ControllerRunResult {
   claim?: ExecutionClaim;
 }
 export interface Controller {
-  dispatch(execution: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[]; onSpawn?: (pid: number) => void }): Promise<ControllerRunResult>;
+  dispatch(execution: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }): Promise<ControllerRunResult>;
   runIssue(issueId: string, evidence?: Evidence[]): Promise<ControllerRunResult>;
   runNext(): Promise<ControllerRunResult | undefined>;
   reconcile(): Promise<ReconciliationReport>;
@@ -86,7 +89,7 @@ class ExecutionController implements Controller {
       this.reconciler = new RestartReconciler(options.linear.store, options.worktrees);
     }
   }
-  async dispatch(input: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[]; onSpawn?: (pid: number) => void }): Promise<ControllerRunResult> {
+  async dispatch(input: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }): Promise<ControllerRunResult> {
     const issue = input.issue ?? (this.snapshots ? (await this.snapshots.read(input.issueId)).issue : undefined);
     if (!issue) throw new Error("Controller dispatch requires an issue or a Linear runtime");
     const repository = await this.options.repositories.resolve(input.repository);
@@ -108,37 +111,51 @@ class ExecutionController implements Controller {
         this.writer.start(claim, execution);
         await this.writer.flush();
       }
-      const launch: SessionLaunch = { execution, repositoryPath: repository.path, worktreePath: worktree.path, prompt: input.prompt ?? promptFor(issue, this.options.promptPrefix), ...(route ? { route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}) };
+      const baseRevision = await verificationBase(worktree.path);
+      const initialPrompt = input.prompt ?? promptFor(issue, this.options.promptPrefix);
+      const settings = verificationSettings(this.options.verificationOptions);
+      const enforceSemantic = repository.checks !== undefined || this.options.jev !== undefined;
       heartbeat = claim && this.lease ? this.startHeartbeat(claim) : undefined;
-      const sessionPromise = this.options.launcher.launch(launch);
-      const session = await Promise.race([sessionPromise, ...(heartbeat ? [heartbeat.failed] : [])]);
-      heartbeat?.stop();
-      const failed = session.failed ?? session.exitCode !== 0;
-      const completedExecution = { ...execution, status: failed ? "failed" as const : "complete" as const };
+      let session: SessionResult | undefined;
+      const attempts: VerificationAttempt[] = [];
+      let repair = 0;
+      for (;;) {
+        const previous = attempts.at(-1);
+        const launch: SessionLaunch = { execution, repositoryPath: repository.path, worktreePath: worktree.path, prompt: previous ? repairPrompt(initialPrompt, previous) : initialPrompt, ...(route ? { route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}), ...(input.signal ? { signal: input.signal } : {}) };
+        session = await Promise.race([this.options.launcher.launch(launch), ...(heartbeat ? [heartbeat.failed] : [])]);
+        const verificationPromise = verifyAttempt({ execution, acceptance: execution.manifest?.acceptance ?? [], session, attempt: attempts.length + 1, checks: repository.checks ?? [], baseRevision, ...(this.options.jev ? { jev: this.options.jev } : {}), enforceSemantic, settings });
+        const attempt = heartbeat ? await Promise.race([verificationPromise, heartbeat.failed]) : await verificationPromise;
+        attempts.push(attempt);
+        if (attempt.blockers.length === 0 || repair >= settings.maxRepairs) break;
+        repair += 1;
+      }
+      if (!session) throw new Error("Execution did not produce a session result");
+      const latest = attempts.at(-1)!;
+      const verificationReport = { attempts, passed: latest.blockers.length === 0 };
+      const completedExecution = { ...execution, status: "complete" as const, verification: verificationReport };
       if (this.writer && claim) {
-        if (!failed) {
-          try {
-            verification?.addMany(input.evidence ?? []);
-            verification?.assertComplete();
-          } catch (error) {
-            if (verification && this.writer && claim) {
-              const failure = error instanceof VerificationError
-                ? error
-                : new VerificationError(error instanceof Error ? error.message : String(error), verification.findings());
-              await this.writer.recordVerificationBlock(claim, { ...execution, status: "blocked" }, failure.findings);
-              await this.writer.flush();
-              throw failure;
-            }
-            throw error;
-          }
-          await this.writer.complete(claim, { summary: `Execution ${input.id} completed`, evidence: verification?.evidence() ?? [] });
+        try {
+          verification?.addMany(input.evidence ?? []);
+          verification?.addMany(latest.evidence);
+          if (latest.blockers.length > 0) throw new VerificationError(latest.blockers.join("; "), latest.findings);
+          verification?.assertComplete();
+        } catch (error) {
+          const failure = error instanceof VerificationError
+            ? error
+            : new VerificationError(error instanceof Error ? error.message : String(error), verification?.findings() ?? latest.findings);
+          await this.writer.recordVerificationBlock(claim, { ...execution, status: "blocked", verification: verificationReport }, failure.findings, latest.blockers);
+          await this.writer.flush();
+          throw failure;
         }
-        else this.options.linear?.store.release(claim, 1_000);
+        await this.writer.complete(claim, { summary: `Execution ${input.id} completed`, evidence: verification?.evidence() ?? [] });
         await this.writer.flush();
       }
+      if (latest.blockers.length > 0) throw new ExecutionVerificationError(verificationReport);
       return { execution: completedExecution, issue, repository, worktree, session, ...(claim ? { claim } : {}) };
     } catch (error) {
-      if (claim && this.options.linear) {
+      // A daemon-owned claim is settled by the daemon, which records failed,
+      // blocked, or canceled as the authoritative terminal state.
+      if (claim && this.options.linear && !input.signal) {
         try { this.options.linear.store.release(claim, 1_000); } catch { /* expired claims are reclaimed on restart */ }
       }
       throw error;

@@ -1,21 +1,27 @@
-import { appendFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { basename, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { KorStatusResponse, KorStatusSnapshot, RunStatus } from "@kor-code/core";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { z } from "zod";
+import type { Execution, KorRunSnapshot, KorStatusResponse, KorStatusSnapshot, RunStatus, SessionProcessIdentity } from "@kor-code/core";
 import type { KorConfig, KorPaths } from "@kor-code/config";
-import type { Controller, ControllerRunResult } from "@kor-code/controller";
+import { ExecutionVerificationError, type Controller } from "@kor-code/controller";
 import type { LinearClient, LinearIssue } from "@kor-code/linear";
 import { LinearStore, type AssignmentRecord, type ExecutionClaim } from "@kor-code/linear";
+import { captureProcess, processExists, processMatches, stopSession } from "./process.js";
 
+export { readSnapshot, readStatus } from "./status.js";
+const exec = promisify(execFile);
 export interface DaemonRunInput {
   claim: ExecutionClaim;
   issue: LinearIssue;
+  /** The runner must settle only after its work has stopped. */
+  signal: AbortSignal;
   onSpawn: (pid: number) => void;
 }
-
-export type DaemonRunner = (input: DaemonRunInput) => Promise<unknown>;
-
+export type DaemonRunner = (input: DaemonRunInput) => Promise<void | { execution: Execution }>;
 export interface DaemonOptions {
   paths: KorPaths;
   config: KorConfig;
@@ -27,82 +33,36 @@ export interface DaemonOptions {
   port?: number;
   leaseTtlMs?: number;
   now?: () => number;
-  /** Polling is intentionally injectable so a live run can be proven quickly. */
   pollIntervalMs?: number;
   owner?: string;
 }
+export interface ReconciliationResult { requeued: string[]; killedPids: number[]; orphanedWorktrees: string[] }
+export interface DaemonHandle { readonly daemon: KorDaemon; readonly server: Server; stop(): Promise<void> }
+interface ActiveRun { claim: ExecutionClaim; abort: AbortController; done: Promise<void> }
+const markerSchema = z.object({ executionId: z.string().regex(/^[\w-]+$/), path: z.string(), repository: z.string() });
 
-export interface ReconciliationResult {
-  requeued: string[];
-  killedPids: number[];
-  orphanedWorktrees: string[];
-}
-
-export interface DaemonHandle {
-  readonly daemon: KorDaemon;
-  readonly server: Server;
-  stop(): Promise<void>;
-}
-
-function safeMessage(error: unknown): string {
-  return error instanceof Error ? error.message.slice(0, 500) : "unknown daemon error";
-}
-
-function runningPid(pid: number): boolean {
-  try { process.kill(pid, 0); return true; }
-  catch (error) {
-    return error instanceof Error && "code" in error && error.code === "EPERM";
-  }
-}
-
-async function stopPid(pid: number): Promise<boolean> {
-  if (!runningPid(pid)) return false;
-  try { process.kill(pid, "SIGTERM"); } catch { return false; }
-  const deadline = Date.now() + 2_000;
-  while (Date.now() < deadline) {
-    if (!runningPid(pid)) return true;
-    await new Promise(resolvePromise => setTimeout(resolvePromise, 50));
-  }
-  try { process.kill(pid, "SIGKILL"); } catch { /* the process exited during the grace period */ }
-  return true;
-}
-
-function teamKeys(config: KorConfig): string[] {
-  const keys = Object.keys(config.repos).map(key => key.split("/", 1)[0] ?? key);
-  return [...new Set(keys)].filter(Boolean);
-}
-
-function hasIntakeLabel(issue: LinearIssue, label: string): boolean {
-  return issue.labels.some(candidate => candidate.toLocaleLowerCase() === label.toLocaleLowerCase());
-}
-
+function safeMessage(error: unknown): string { return error instanceof Error ? error.message.slice(0, 500) : "unknown daemon error"; }
+function teamKeys(config: KorConfig): string[] { return [...new Set(Object.keys(config.repos).map(key => key.split("/", 1)[0] ?? key))].filter(Boolean); }
 function runStatus(assignment: AssignmentRecord, observedAt: string): RunStatus {
   const manifest = assignment.manifest;
-  const manifestStatus = manifest?.status;
-  const status: RunStatus["status"] = assignment.cancelRequested ? "canceled"
-    : manifestStatus === "blocked" ? "blocked"
-      : manifestStatus === "failed" ? "failed"
-        : assignment.status === "complete" ? "complete"
-          : assignment.status === "running" ? "running" : "queued";
   return {
-    executionId: assignment.executionId,
-    issueId: assignment.issueId,
-    status,
-    attempts: assignment.attempts,
+    executionId: assignment.executionId, issueId: assignment.issueId, status: assignment.status, attempts: assignment.attempts, observedAt,
+    ...(manifest?.route ? { route: manifest.route } : {}),
+    ...(manifest?.status ? { phase: manifest.status } : {}),
+    ...(assignment.cancelRequested ? { cancelRequested: true } : {}),
+    ...(assignment.status === "failed" ? { errorCode: "execution_failed" } : {}),
+    ...(assignment.status === "blocked" ? { errorCode: "verification_blocked" } : {}),
+    ...(assignment.status === "canceled" ? { errorCode: "canceled" } : {}),
     ...(manifest?.repository ? { repository: manifest.repository } : {}),
     ...(manifest?.worktree ? { worktree: manifest.worktree } : {}),
     ...(manifest?.branch ? { branch: manifest.branch } : {}),
     ...(assignment.sessionPid ? { sessionPid: assignment.sessionPid } : {}),
     ...(assignment.heartbeatAt ? { heartbeatAt: new Date(assignment.heartbeatAt).toISOString() } : {}),
     ...(assignment.lastError ? { error: assignment.lastError } : {}),
-    observedAt,
   };
 }
 
-/**
- * The durable coordinator. It owns intake, leases, recovery and the read-only
- * status transport; the controller remains responsible for executing a claim.
- */
+/** One process owns recovery and scheduling for a database. Claims stay fenced until work stops. */
 export class KorDaemon {
   readonly store: LinearStore;
   private readonly now: () => number;
@@ -111,238 +71,262 @@ export class KorDaemon {
   private readonly pollIntervalMs: number;
   private readonly host: string;
   private readonly port: number;
-  private readonly running = new Set<string>();
+  private readonly active = new Map<string, ActiveRun>();
   private readonly startedAt: string;
+  private readonly runFiles = new Map<string, string>();
   private lastPollAt: string | undefined;
   private lastError: string | undefined;
-  private pollTimer: ReturnType<typeof setInterval> | undefined;
-  private pumpTimer: ReturnType<typeof setInterval> | undefined;
+  private timer: ReturnType<typeof setInterval> | undefined;
+  private cycle: Promise<void> = Promise.resolve();
+  private snapshotWrite: Promise<void> = Promise.resolve();
   private server: Server | undefined;
+  private ownsStore = false;
   private stopping = false;
+  private stopPromise: Promise<void> | undefined;
+  private poll: Promise<number> | undefined;
 
   constructor(private readonly options: DaemonOptions) {
-    this.store = options.store ?? new LinearStore(options.paths.databaseFile);
     this.now = options.now ?? Date.now;
     this.owner = options.owner ?? `kor-daemon-${process.pid}-${randomUUID()}`;
     this.leaseTtlMs = options.leaseTtlMs ?? 60_000;
     this.pollIntervalMs = options.pollIntervalMs ?? options.config.pollIntervalSeconds * 1_000;
     this.host = options.host ?? "127.0.0.1";
     this.port = options.port ?? 8327;
-    if (!Number.isSafeInteger(this.leaseTtlMs) || this.leaseTtlMs <= 0) throw new Error("Lease TTL must be positive");
+    if (!Number.isSafeInteger(this.leaseTtlMs) || this.leaseTtlMs < 100) throw new Error("Lease TTL must be at least 100ms");
     if (!Number.isSafeInteger(this.pollIntervalMs) || this.pollIntervalMs < 100) throw new Error("Poll interval must be at least 100ms");
+    if (this.host !== "127.0.0.1") throw new Error("Status must bind to 127.0.0.1");
     if (!Number.isSafeInteger(this.port) || this.port < 0 || this.port > 65_535 || this.port === 8317) throw new Error("Status port must be a valid non-8317 port");
+    this.store = options.store ?? new LinearStore(options.paths.databaseFile);
     this.startedAt = new Date(this.now()).toISOString();
   }
 
   async start(): Promise<DaemonHandle> {
-    await mkdir(this.options.paths.snapshotsDir, { recursive: true, mode: 0o700 });
-    await mkdir(this.options.paths.logsDir, { recursive: true, mode: 0o700 });
-    await this.reconcile();
-    this.server = createServer((request, response) => this.handleHttp(request, response));
-    await new Promise<void>((resolvePromise, reject) => {
-      const onError = (error: Error) => { this.server?.off("listening", resolvePromise); reject(error); };
-      this.server?.once("error", onError);
-      this.server?.listen(this.port, this.host, () => { this.server?.off("error", onError); resolvePromise(); });
-    });
-    await this.pollOnce();
-    await this.pump();
-    this.pollTimer = setInterval(() => { void this.pollOnce(); }, this.pollIntervalMs);
-    this.pumpTimer = setInterval(() => { void this.pump(); }, Math.min(1_000, this.pollIntervalMs));
-    this.pollTimer.unref?.(); this.pumpTimer.unref?.();
-    return { daemon: this, server: this.server, stop: () => this.stop() };
+    try {
+      const previous = this.store.daemonOwner();
+      if (previous && processMatches(previous.process)) throw new Error("A Kor daemon already owns this database");
+      if (!this.store.acquireDaemon(this.owner, captureProcess(process.pid), previous?.owner)) throw new Error("Another Kor daemon acquired this database");
+      this.ownsStore = true;
+      await mkdir(this.options.paths.snapshotsDir, { recursive: true, mode: 0o700 });
+      await mkdir(this.options.paths.logsDir, { recursive: true, mode: 0o700 });
+      await this.reconcile();
+      const server = createServer((request, response) => {
+        const address = server.address();
+        const port = address && typeof address !== "string" ? address.port : this.port;
+        if (request.headers.host !== `127.0.0.1:${port}` && request.headers.host !== `localhost:${port}`) { response.writeHead(403).end(); return; }
+        if (request.method !== "GET" || !["/status", "/status/"].includes(request.url ?? "")) { response.writeHead(404).end(); return; }
+        response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        response.end(`${JSON.stringify(this.response())}\n`);
+      });
+      this.server = server;
+      await new Promise<void>((resolvePromise, reject) => {
+        server.once("error", reject);
+        server.listen(this.port, this.host, () => { server.off("error", reject); resolvePromise(); });
+      });
+      await this.tick();
+      this.timer = setInterval(() => { void this.tick(); }, 100);
+      return { daemon: this, server, stop: () => this.stop() };
+    } catch (error) {
+      if (this.ownsStore) this.store.releaseDaemon(this.owner);
+      this.ownsStore = false;
+      this.store.close();
+      throw error;
+    }
   }
 
-  async stop(): Promise<void> {
-    if (this.stopping) return;
+  stop(): Promise<void> { return this.stopPromise ??= this.shutdown(); }
+  private async shutdown(): Promise<void> {
     this.stopping = true;
-    if (this.pollTimer) clearInterval(this.pollTimer);
-    if (this.pumpTimer) clearInterval(this.pumpTimer);
+    if (this.timer) clearInterval(this.timer);
+    for (const run of this.active.values()) run.abort.abort(new Error("daemon stopping"));
+    await this.cycle;
+    await this.poll;
+    await Promise.all([...this.active.values()].map(run => run.done));
+    await this.writeSnapshot();
     if (this.server) await new Promise<void>(resolvePromise => this.server?.close(() => resolvePromise()));
+    if (this.ownsStore) this.store.releaseDaemon(this.owner);
+    this.ownsStore = false;
     this.store.close();
   }
 
   async reconcile(): Promise<ReconciliationResult> {
-    const requeued: string[] = [];
-    const killedPids: number[] = [];
+    if (!this.ownsStore) throw new Error("Recovery requires exclusive daemon ownership");
+    const result: ReconciliationResult = { requeued: [], killedPids: [], orphanedWorktrees: [] };
     for (const assignment of this.store.listAssignments()) {
-      if (assignment.status === "complete") continue;
-      if (assignment.sessionPid && await stopPid(assignment.sessionPid)) killedPids.push(assignment.sessionPid);
-      const expired = assignment.expiresAt !== undefined && assignment.expiresAt <= this.now();
-      if (assignment.sessionPid || expired || assignment.status === "running") {
-        if (this.store.requeue(assignment.issueId, 0, assignment.sessionPid ? "daemon restarted; session re-queued" : undefined)) requeued.push(assignment.issueId);
+      if (assignment.status !== "running" && assignment.status !== "queued") continue;
+      if (assignment.processIdentity) {
+        const existed = processMatches(assignment.processIdentity);
+        await stopSession(assignment.processIdentity);
+        if (existed) result.killedPids.push(assignment.processIdentity.pid);
+      } else if (assignment.sessionPid && processExists(assignment.sessionPid)) {
+        throw new Error(`Cannot recover ${assignment.executionId}: legacy session PID has no identity; waiting for it to exit`);
+      }
+      if (assignment.status === "running" || assignment.expiresAt !== undefined) {
+        this.store.recover(assignment.issueId, "daemon restarted; previous session stopped; re-queued");
+        result.requeued.push(assignment.issueId);
+        await this.log(assignment.executionId, "daemon restarted; previous session stopped; re-queued");
       }
     }
-    const orphanedWorktrees = await this.removeOrphanWorktrees();
+    result.orphanedWorktrees = await this.removeOrphanWorktrees();
     await this.writeSnapshot();
-    return { requeued, killedPids, orphanedWorktrees };
+    return result;
   }
 
-  async pollOnce(): Promise<number> {
-    if (!this.options.linear) {
-      this.lastPollAt = new Date(this.now()).toISOString();
-      return 0;
-    }
+  pollOnce(): Promise<number> {
+    if (this.poll) return this.poll;
+    this.poll = this.pollIssues().finally(() => { this.poll = undefined; });
+    return this.poll;
+  }
+  private async pollIssues(): Promise<number> {
     try {
       let found = 0;
-      for (const teamKey of teamKeys(this.options.config)) {
-        const issues = await this.options.linear.listIssues(teamKey, 100);
+      if (this.options.linear) for (const key of teamKeys(this.options.config)) {
+        const issues = await this.options.linear.listIssues(key, 100);
         for (const issue of issues) {
-          if (issue.stateType !== "unstarted" || !hasIntakeLabel(issue, this.options.config.intakeLabel)) continue;
+          if (this.stopping) break;
+          if (issue.stateType !== "unstarted" || !issue.labels.some(label => label.toLowerCase() === this.options.config.intakeLabel.toLowerCase())) continue;
           this.store.enqueue(issue.id);
           found++;
         }
       }
       this.lastPollAt = new Date(this.now()).toISOString();
       this.lastError = undefined;
-      await this.writeSnapshot();
       return found;
     } catch (error) {
       this.lastPollAt = new Date(this.now()).toISOString();
-      this.lastError = safeMessage(error);
-      await this.log("daemon", `poll failed: ${this.lastError}`);
-      await this.writeSnapshot();
+      await this.reportError(error);
       return 0;
     }
   }
-
   async enqueue(issueId: string): Promise<AssignmentRecord> {
-    this.store.enqueue(issueId);
+    const assignment = this.store.enqueue(issueId);
     await this.writeSnapshot();
-    return this.store.listAssignments().find(item => item.issueId === issueId) ?? this.store.listAssignments()[0]!;
+    return this.store.listAssignments().find(item => item.issueId === issueId) ?? { ...assignment, attempts: 0 };
   }
-
-  cancel(issueId: string): boolean {
-    const accepted = this.store.requestCancel(issueId);
-    if (accepted) void this.writeSnapshot();
-    return accepted;
-  }
-
-  retry(issueId: string): boolean {
-    const retried = this.store.requeue(issueId, 0);
-    if (retried) void this.writeSnapshot();
-    return retried;
-  }
-
+  cancel(issueId: string): boolean { return this.store.requestCancel(issueId); }
+  retry(issueId: string): boolean { return this.store.retry(issueId); }
   status(): KorStatusSnapshot {
     const observedAt = new Date(this.now()).toISOString();
-    return {
-      schemaVersion: 1,
-      observedAt,
-      daemon: { pid: process.pid, startedAt: this.startedAt, pollIntervalSeconds: this.options.config.pollIntervalSeconds, ...(this.lastPollAt ? { lastPollAt: this.lastPollAt } : {}), ...(this.lastError ? { lastError: this.lastError } : {}) },
+    return { schemaVersion: 1, observedAt,
+      daemon: { pid: process.pid, startedAt: this.startedAt, pollIntervalSeconds: this.pollIntervalMs / 1_000, ...(this.lastPollAt ? { lastPollAt: this.lastPollAt } : {}), ...(this.lastError ? { lastError: this.lastError } : {}) },
       runs: this.store.listAssignments().map(assignment => runStatus(assignment, observedAt)),
     };
   }
+  response(): KorStatusResponse { const snapshot = this.status(); return { schemaVersion: 1, provenance: "live", observedAt: snapshot.observedAt, snapshot }; }
 
-  response(): KorStatusResponse {
-    return { schemaVersion: 1, provenance: "live", observedAt: new Date(this.now()).toISOString(), snapshot: this.status() };
-  }
-
-  private async pump(): Promise<void> {
-    if (this.stopping) return;
-    if (!this.options.linear || (!this.options.runner && !this.options.controller)) return;
-    const max = this.options.config.limits.total;
-    while (this.running.size < max) {
-      const claim = this.store.claim(this.owner, this.leaseTtlMs);
-      if (!claim) break;
-      if (this.store.isCancelRequested(claim.assignment.issueId)) {
-        this.store.requeue(claim.assignment.issueId, 0, "canceled before execution");
-        continue;
+  private busy = false;
+  private tick(): Promise<void> {
+    if (this.busy || this.stopping) return this.cycle;
+    this.busy = true;
+    this.cycle = (async () => {
+      if (!this.lastPollAt || this.now() - Date.parse(this.lastPollAt) >= this.pollIntervalMs) void this.pollOnce();
+      if (this.options.linear && (this.options.runner || this.options.controller)) {
+        while (!this.stopping && this.active.size < this.options.config.limits.total) {
+          const claim = this.store.claim(this.owner, this.leaseTtlMs, undefined, [...this.active.keys()]);
+          if (!claim) break;
+          const abort = new AbortController();
+          const run: ActiveRun = { claim, abort, done: Promise.resolve() };
+          this.active.set(claim.assignment.issueId, run);
+          run.done = this.execute(run).catch(error => this.reportError(error)).finally(() => { this.active.delete(claim.assignment.issueId); });
+        }
       }
+      await this.writeSnapshot();
+    })().catch(error => this.reportError(error)).finally(() => { this.busy = false; });
+    return this.cycle;
+  }
+
+  private async execute(run: ActiveRun): Promise<void> {
+    const { claim, abort } = run;
+    const id = claim.assignment.executionId;
+    let identity: SessionProcessIdentity | undefined;
+    let result: void | { execution: Execution } = undefined;
+    let failure: unknown;
+    const heartbeat = setInterval(() => {
+      try {
+        if (this.store.isCancelRequested(claim.assignment.issueId)) abort.abort(new Error("canceled by operator"));
+        this.store.heartbeat(claim, this.leaseTtlMs);
+      } catch (error) { abort.abort(error); }
+    }, Math.max(25, Math.floor(this.leaseTtlMs / 3)));
+    const onSpawn = (pid: number) => {
+      const captured = captureProcess(pid);
+      identity = captured;
+      this.store.setSessionPid(claim, pid, captured);
+      abort.signal.throwIfAborted();
+    };
+    try {
+      await this.log(id, "execution started");
+      if (!this.options.linear) throw new Error("Linear client unavailable");
       const issue = await this.options.linear.getIssue(claim.assignment.issueId);
-      this.store.markRunning(claim);
-      this.running.add(claim.assignment.issueId);
-      const run = this.options.runner
-        ? this.options.runner({ claim, issue, onSpawn: pid => this.store.setSessionPid(claim, pid) })
-        : this.runController(claim, issue);
-      void run.then(() => {
-        try { this.store.completeClaim(claim); } catch { /* a restart already reclaimed this lease */ }
-      }).catch(error => {
-        const message = safeMessage(error);
-        try { this.store.requeue(claim.assignment.issueId, 1_000, message); } catch { /* reconcile handles an expired lease */ }
-        void this.log(claim.assignment.issueId, `execution failed: ${message}`);
-      }).finally(() => {
-        this.running.delete(claim.assignment.issueId);
-        void this.writeSnapshot();
-      });
-    }
-    await this.writeSnapshot();
+      this.store.markRunning(claim, { id, issueId: issue.id, repository: issue.repository ?? issue.teamKey, worktree: "", branch: `kor/${issue.id}`, status: "running", route: this.options.config.defaultRoute });
+      abort.signal.throwIfAborted();
+      if (this.options.runner) result = await this.options.runner({ claim, issue, onSpawn, signal: abort.signal });
+      else if (this.options.controller) result = await this.options.controller.dispatch({ id, issueId: issue.id, repository: issue.repository ?? issue.teamKey, worktree: "", branch: `kor/${issue.id}`, status: "queued", issue, claim, onSpawn, signal: abort.signal });
+      else throw new Error("Daemon controller unavailable");
+      abort.signal.throwIfAborted();
+    } catch (error) { failure = error; }
+    finally { clearInterval(heartbeat); }
+    // Do not release a claim while any tracked session group might still mutate its worktree.
+    if (identity) await stopSession(identity);
+    if (this.store.isCancelRequested(claim.assignment.issueId)) this.store.cancelClaim(claim);
+    else if (this.stopping) this.store.recover(claim.assignment.issueId, "daemon stopped; session stopped; re-queued");
+    else if (failure !== undefined) this.store.failClaim(claim, safeMessage(failure), failure instanceof ExecutionVerificationError ? "blocked" : "failed");
+    else if (result?.execution.status === "failed" || result?.execution.status === "blocked") this.store.finishClaim(claim, result.execution.status, "execution did not complete", result.execution);
+    else if (result && result.execution.status !== "complete") this.store.failClaim(claim, `Unexpected execution outcome: ${result.execution.status}`);
+    else this.store.completeClaim(claim, result?.execution);
+    await this.log(id, `execution ${this.store.getAssignment(claim.assignment.issueId).status}${failure ? `: ${safeMessage(failure)}` : ""}`);
   }
 
-  private async runController(claim: ExecutionClaim, issue: LinearIssue): Promise<ControllerRunResult> {
-    if (!this.options.controller) throw new Error("Daemon controller is unavailable");
-    const result = await this.options.controller.dispatch({ id: claim.assignment.executionId, issueId: issue.id, repository: issue.repository ?? issue.teamKey, worktree: "", branch: `kor/${issue.id}`, status: "queued", issue, claim, onSpawn: pid => this.store.setSessionPid(claim, pid) });
-    return result;
+  private writeSnapshot(): Promise<void> {
+    const write = async () => {
+      const snapshot = this.status();
+      await mkdir(this.options.paths.snapshotsDir, { recursive: true, mode: 0o700 });
+      for (const run of snapshot.runs) {
+        const signature = JSON.stringify({ ...run, observedAt: undefined });
+        if (this.runFiles.get(run.executionId) === signature) continue;
+        const file: KorRunSnapshot = { schemaVersion: 1, observedAt: snapshot.observedAt, run };
+        await this.atomicWrite(join(this.options.paths.snapshotsDir, `${run.executionId}.json`), file);
+        this.runFiles.set(run.executionId, signature);
+      }
+      await this.atomicWrite(join(this.options.paths.snapshotsDir, "index.json"), snapshot);
+    };
+    this.snapshotWrite = this.snapshotWrite.catch(() => undefined).then(write);
+    return this.snapshotWrite;
   }
-
-  private async writeSnapshot(): Promise<void> {
-    const snapshot = this.status();
-    const index = join(this.options.paths.snapshotsDir, "index.json");
-    const temporary = `${index}.${process.pid}.${randomUUID()}.tmp`;
-    await writeFile(temporary, `${JSON.stringify(snapshot, null, 2)}\n`, { mode: 0o600 });
-    await rename(temporary, index);
-    for (const run of snapshot.runs) {
-      const path = join(this.options.paths.snapshotsDir, `${run.executionId}.json`);
-      const temp = `${path}.${process.pid}.${randomUUID()}.tmp`;
-      await writeFile(temp, `${JSON.stringify({ schemaVersion: 1, observedAt: snapshot.observedAt, run }, null, 2)}\n`, { mode: 0o600 });
-      await rename(temp, path);
-    }
+  private async atomicWrite(path: string, value: unknown): Promise<void> {
+    const temporary = `${path}.${randomUUID()}.tmp`;
+    try { await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 }); await rename(temporary, path); }
+    finally { await unlink(temporary).catch(() => undefined); }
   }
-
   private async removeOrphanWorktrees(): Promise<string[]> {
-    const root = this.options.paths.worktreesDir;
-    let entries;
-    try { entries = await readdir(root, { withFileTypes: true }); } catch { return []; }
-    const known = new Set(this.store.listAssignments().map(item => item.manifest?.worktree).filter((value): value is string => Boolean(value)).map(value => resolve(value)));
+    const root = resolve(this.options.paths.worktreesDir);
+    const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+    const known = new Set(this.store.listAssignments().map(item => item.executionId));
+    const repositories = new Set(Object.values(this.options.config.repos).map(repository => resolve(repository.path)));
     const removed: string[] = [];
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const path = join(root, entry.name);
-      const marker = join(path, ".kor-worktree.json");
-      try { await stat(marker); } catch { continue; }
-      if (known.has(resolve(path))) continue;
-      await rm(path, { recursive: true, force: true });
-      removed.push(path);
+      if (!entry.isFile() || !entry.name.endsWith(".kor-worktree.json")) continue;
+      const marker = join(root, entry.name);
+      const parsed = markerSchema.safeParse(JSON.parse(await readFile(marker, "utf8").catch(() => "null")));
+      if (!parsed.success) continue;
+      const value = parsed.data;
+      if (known.has(value.executionId) || !repositories.has(resolve(value.repository)) || resolve(value.path) !== join(root, value.executionId)) continue;
+      try { await exec("git", ["-C", value.repository, "worktree", "remove", "--force", value.path]); }
+      catch { continue; }
+      await unlink(marker);
+      removed.push(value.path);
     }
     return removed;
   }
-
+  private async reportError(error: unknown): Promise<void> {
+    this.lastError = safeMessage(error);
+    await this.log("daemon", this.lastError).catch(() => undefined);
+  }
   private async log(id: string, message: string): Promise<void> {
     await mkdir(this.options.paths.logsDir, { recursive: true, mode: 0o700 });
     await appendFile(join(this.options.paths.logsDir, `${basename(id)}.log`), `${new Date(this.now()).toISOString()} ${message}\n`, { mode: 0o600 });
   }
-
   async readLog(id: string): Promise<string> {
     try { return await readFile(join(this.options.paths.logsDir, `${basename(id)}.log`), "utf8"); }
     catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") return ""; throw error; }
   }
-
-  private handleHttp(request: import("node:http").IncomingMessage, response: import("node:http").ServerResponse): void {
-    if (request.method !== "GET" || (request.url !== "/status" && request.url !== "/status/")) { response.writeHead(404).end(); return; }
-    response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-    response.end(`${JSON.stringify(this.response())}\n`);
-  }
 }
-
-export async function startDaemon(options: DaemonOptions): Promise<DaemonHandle> {
-  const daemon = new KorDaemon(options);
-  return daemon.start();
-}
-
-export async function readSnapshot(paths: KorPaths): Promise<KorStatusSnapshot | undefined> {
-  try { return JSON.parse(await readFile(join(paths.snapshotsDir, "index.json"), "utf8")) as KorStatusSnapshot; }
-  catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined; throw error; }
-}
-
-export async function readStatus(paths: KorPaths, maxAgeMs = 120_000, now = Date.now): Promise<KorStatusResponse> {
-  const observedAt = new Date(now()).toISOString();
-  try {
-    const snapshot = JSON.parse(await readFile(join(paths.snapshotsDir, "index.json"), "utf8")) as KorStatusSnapshot;
-    const timestamp = Date.parse(snapshot.observedAt);
-    if (!Number.isFinite(timestamp)) return { schemaVersion: 1, provenance: "unavailable", observedAt, snapshot: null, reason: "snapshot timestamp is invalid" };
-    const age = Math.max(0, now() - timestamp);
-    return { schemaVersion: 1, provenance: age <= maxAgeMs ? "live" : "stale", observedAt, snapshot, ...(age > maxAgeMs ? { reason: `snapshot is ${Math.floor(age / 1_000)}s old` } : {}) };
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return { schemaVersion: 1, provenance: "unavailable", observedAt, snapshot: null, reason: "daemon has not published a snapshot" };
-    return { schemaVersion: 1, provenance: "unavailable", observedAt, snapshot: null, reason: "daemon snapshot is unreadable" };
-  }
-}
+export async function startDaemon(options: DaemonOptions): Promise<DaemonHandle> { return new KorDaemon(options).start(); }
