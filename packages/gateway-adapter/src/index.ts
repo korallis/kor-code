@@ -182,9 +182,9 @@ export class GatewayAdapter {
     return value;
   }
   private async fetchManagement(): Promise<JsonValue | null> {
-    const { baseUrl, managementKey } = await this.config();
+    const { baseUrl, managementKey, managementUrl } = await this.config();
     if (!managementKey) return null;
-    const customUrl = this.options.managementUrl ?? process.env.CPA_MANAGEMENT_URL;
+    const customUrl = this.options.managementUrl ?? process.env.CPA_MANAGEMENT_URL ?? managementUrl;
     const paths = customUrl ? [customUrl] : MANAGEMENT_PATHS.map((path) => `${baseUrl}${path}`);
     const entries: Record<string, JsonValue> = {};
     for (const url of paths) {
