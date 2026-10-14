@@ -94,6 +94,14 @@ Request changes during an active publication operation is refused; it cannot
 silently discard a running pipeline. Configuration changes are refused while
 work or polling is active and apply without a daemon restart when accepted.
 
+Run actions return HTTP 200 with `accepted: true` once the durable change is
+applied, even if Linear synchronization fails. `linearSync.status` is `synced`
+when the outbox is empty, or `pending` with the daemon-wide `pendingWrites`
+count. Pending writes remain durable and the daemon retries them on its next
+Linear poll. Show the action as applied with synchronization pending; do not
+repeat the action to retry synchronization. Sync failures remain in daemon
+diagnostics. A 409 still means the action was refused.
+
 An answer cannot bypass incomplete dependencies or readiness policy. If an
 issue has no acceptance criteria, the explicitly supplied answer becomes the
 criterion for that attempt. Guidance is durable across daemon restarts. Notes

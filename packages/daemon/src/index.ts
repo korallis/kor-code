@@ -13,7 +13,7 @@ import { AgentSessionWriter, LinearStore, flushLinearWrites, stableId, workflowM
 import { captureProcess, processExists, processMatches, stopSession } from "./process.js";
 import { OverrideStore } from "./overrides.js";
 import type { ShippingDriver } from "./shipping.js";
-import type { IssuesResponse, MissionRun, Stage } from "@kor-code/mission-control";
+import type { IssuesResponse, LinearSync, MissionRun, Stage } from "@kor-code/mission-control";
 import type { JsonValue } from "@kor-code/core";
 import { redact, runtimeSecrets } from "@kor-code/jev";
 import { ApiFailure, MissionApi } from "./api.js";
@@ -422,7 +422,7 @@ export class KorDaemon {
     await this.writeSnapshot();
     return issues.map(issue => this.missionRun(issue.id));
   }
-  async runAction(executionId: string, action: "cancel" | "retry" | "answer" | "approve" | "request-changes" | "note", message?: string): Promise<void> {
+  async runAction(executionId: string, action: "cancel" | "retry" | "answer" | "approve" | "request-changes" | "note", message?: string): Promise<LinearSync> {
     const assignment = this.store.findAssignment(executionId);
     if (!assignment) throw new ApiFailure(404, "not_found", "Execution not found");
     if (this.shippingActive.has(executionId)) throw new ApiFailure(409, "conflict", "Publication is advancing; wait for it to settle");
@@ -448,9 +448,13 @@ export class KorDaemon {
       default: { const exhaustive: never = action; throw new Error(String(exhaustive)); }
     }
     if (!accepted) throw new ApiFailure(409, "conflict", "This action is not available in the execution's current state");
-    await this.log(executionId, `${action} accepted from Mission Control`);
-    if (this.options.linear) await flushLinearWrites(this.store, this.options.linear);
-    await this.writeSnapshot();
+    // The durable action has already applied. Ancillary failures must not ask
+    // clients to repeat it; unacknowledged Linear writes retry on the next poll.
+    await this.log(executionId, `${action} accepted from Mission Control`).catch(error => this.reportError(error));
+    if (this.options.linear) await flushLinearWrites(this.store, this.options.linear).catch(error => this.reportError(error));
+    await this.writeSnapshot().catch(error => this.reportError(error));
+    const { pendingWrites } = this.store.counts();
+    return pendingWrites ? { status: "pending", pendingWrites } : { status: "synced" };
   }
   async configure(config: KorConfig): Promise<void> {
     if (this.active.size || this.poll || this.shippingActive.size) throw new ApiFailure(409, "conflict", "Wait for running work and polling to settle before changing configuration");
