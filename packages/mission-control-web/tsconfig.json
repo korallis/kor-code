@@ -1,0 +1,29 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "exactOptionalPropertyTypes": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "types": ["vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@kor-code/mission-control": ["../mission-control/src/index.ts"],
+      "@kor-code/core": ["../core/src/index.ts"],
+      "@kor-code/config": ["../config/src/index.ts"],
+      "@kor-code/linear": ["../linear/src/index.ts"],
+      "@kor-code/calibration": ["../calibration/src/index.ts"],
+      "@kor-code/jev": ["../jev/src/index.ts"],
+      "@kor-code/controller": ["../controller/src/index.ts"],
+      "@kor-code/verification": ["../verification/src/index.ts"],
+      "@kor-code/gateway-adapter": ["../gateway-adapter/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
+}
