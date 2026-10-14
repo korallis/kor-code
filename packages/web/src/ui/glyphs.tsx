@@ -2,7 +2,7 @@ import * as stylex from '@stylexjs/stylex';
 import type { LucideIcon } from 'lucide-react';
 import { Aperture, CircleSlash2, Cpu } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { color, font, tint } from '../theme/tokens.stylex';
+import { color, font, fontSize, space, tint } from '../theme/tokens.stylex';
 import { BrandMark, Icon } from './icon';
 import type { Tone } from './text';
 import { toneSolid, toneStroke, toneStyles } from './tone';
@@ -12,13 +12,13 @@ const styles = stylex.create({
   prioBar: { width: '3px', borderRadius: '1px', backgroundColor: color.textFaint },
   h1: { height: '5px' }, h2: { height: '8px' }, h3: { height: '11px' },
   lit: { backgroundColor: color.textSecondary },
-  urgent: { width: '13px', height: '13px', borderRadius: '3px', backgroundColor: color.orange, color: tint.urgentInk, fontWeight: 700, fontSize: '10px', lineHeight: '13px', textAlign: 'center', display: 'inline-block', boxShadow: tint.urgentGlow, flex: 'none' },
-  none: { color: color.textFaint, fontFamily: font.mono, fontSize: '11px' },
+  urgent: { width: '13px', height: '13px', borderRadius: '3px', backgroundColor: color.orange, color: tint.urgentInk, fontWeight: 700, fontSize: fontSize.micro, lineHeight: '13px', textAlign: 'center', display: 'inline-block', boxShadow: tint.urgentGlow, flex: 'none' },
+  none: { color: color.textFaint, fontFamily: font.mono, fontSize: fontSize.xs },
   state: { position: 'relative', width: '14px', height: '14px', borderRadius: '50%', borderWidth: '1.6px', borderStyle: 'solid', borderColor: color.textMuted, display: 'inline-block', flex: 'none' },
   backlog: { borderStyle: 'dashed', borderColor: color.textFaint },
   todo: { borderColor: color.textSecondary },
-  progress: { borderColor: color.amber, backgroundImage: `conic-gradient(${color.amber} 0 50%, transparent 50% 100%)`, backgroundClip: 'content-box', padding: '2px' },
-  review: { borderColor: color.green, backgroundImage: `conic-gradient(${color.green} 0 75%, transparent 75% 100%)`, backgroundClip: 'content-box', padding: '2px' },
+  progress: { borderColor: color.amber, backgroundImage: `conic-gradient(${color.amber} 0 50%, transparent 50% 100%)`, backgroundClip: 'content-box', padding: space.s0 },
+  review: { borderColor: color.green, backgroundImage: `conic-gradient(${color.green} 0 75%, transparent 75% 100%)`, backgroundClip: 'content-box', padding: space.s0 },
   done: { borderColor: color.violet, backgroundColor: color.violet },
   tick: { position: 'absolute', left: '3.5px', top: '1.5px', width: '3px', height: '6px', borderStyle: 'solid', borderColor: tint.checkInk, borderWidth: '0 1.6px 1.6px 0', transform: 'rotate(45deg)' },
   cancel: { borderColor: color.textFaint, backgroundColor: color.textFaint },
@@ -29,7 +29,7 @@ const styles = stylex.create({
   grok: { color: tint.providerGrok, backgroundColor: tint.providerGrokFill },
   copilot: { color: tint.providerCopilot, backgroundColor: tint.providerCopilotFill, borderColor: tint.providerCopilotEdge },
   swatch: { display: 'inline-block', width: '8px', height: '8px', borderRadius: '3px', flex: 'none', boxShadow: '0 0 8px currentColor' },
-  tile: { width: '30px', height: '30px', borderRadius: '9px', display: 'grid', placeItems: 'center', fontFamily: font.display, fontWeight: 700, fontSize: '12px', flex: 'none', borderWidth: '1px', borderStyle: 'solid' },
+  tile: { width: '30px', height: '30px', borderRadius: '9px', display: 'grid', placeItems: 'center', fontFamily: font.display, fontWeight: 700, fontSize: fontSize.sm, flex: 'none', borderWidth: '1px', borderStyle: 'solid' },
   feedDot: { width: '22px', height: '22px', borderRadius: '7px', display: 'grid', placeItems: 'center', flex: 'none', borderWidth: '1px', borderStyle: 'solid' },
 });
 

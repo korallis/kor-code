@@ -8,7 +8,7 @@ import { useRoute } from './router';
 import { closeAsk, useAskState } from './shell/askStore';
 import { AskJev } from './shell/AskJev';
 import { KorMark } from './shell/Mark';
-import { color, font, gradient, space } from './theme/tokens.stylex';
+import { color, font, fontSize, gradient, space, tracking } from './theme/tokens.stylex';
 import { Button } from './ui/button';
 import { Dialog } from './ui/misc';
 import { TextInput } from './ui/form';
@@ -28,8 +28,8 @@ const styles = stylex.create({
   gate: { position: 'relative', minHeight: '100vh', display: 'grid', placeItems: 'center', backgroundImage: gradient.canvas, backgroundColor: color.canvas, color: color.text, fontFamily: font.sans, isolation: 'isolate', padding: space.s6 },
   splash: { position: 'absolute', inset: 0, zIndex: -1 },
   panel: { width: 'min(520px, 100%)', display: 'flex', flexDirection: 'column', gap: space.s4, alignItems: 'flex-start' },
-  title: { fontFamily: font.display, fontSize: '32px', fontWeight: 600, letterSpacing: '-0.015em' },
-  body: { color: color.textSecondary, fontSize: '14px', lineHeight: 1.6 },
+  title: { fontFamily: font.display, fontSize: fontSize.xxxl, fontWeight: 600, letterSpacing: tracking.snug },
+  body: { color: color.textSecondary, fontSize: fontSize.md, lineHeight: 1.6 },
   code: { fontFamily: font.mono, color: color.cyan },
   full: { width: '100%' },
 });

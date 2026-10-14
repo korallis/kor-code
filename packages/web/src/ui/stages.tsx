@@ -1,7 +1,7 @@
 import * as stylex from '@stylexjs/stylex';
 import type { RunLifecycle } from '@kor-code/core';
 import type { Stage } from '@kor-code/mission-control';
-import { color, font, motion, tint } from '../theme/tokens.stylex';
+import { color, font, fontSize, motion, space, tint, tracking } from '../theme/tokens.stylex';
 import { animate } from '../theme/animate';
 
 /** The seven stages, in order (packages/claude-plugin/hooks/model.ts). */
@@ -17,7 +17,7 @@ const styles = stylex.create({
   repair: { backgroundColor: color.orange, boxShadow: tint.stageRepairGlow },
   wait: { backgroundColor: color.magenta, boxShadow: tint.stageWaitGlow },
   fail: { backgroundColor: color.rose, boxShadow: tint.barGlowRose },
-  labels: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '3px', fontFamily: font.mono, fontSize: '9.5px', letterSpacing: '.06em', textTransform: 'uppercase', color: color.textFaint, marginTop: '6px' },
+  labels: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '3px', fontFamily: font.mono, fontSize: fontSize.nano, letterSpacing: tracking.mono, textTransform: 'uppercase', color: color.textFaint, marginTop: space.s1h },
   labelDone: { color: color.textMuted },
   labelNow: { color: color.cyan },
 });

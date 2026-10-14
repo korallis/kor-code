@@ -1,7 +1,7 @@
 import * as stylex from '@stylexjs/stylex';
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { color, font, glow, gradient, layout as dims, radius, space, tint } from '../theme/tokens.stylex';
+import { color, font, fontSize, glow, gradient, layout as dims, radius, space, tint, tracking } from '../theme/tokens.stylex';
 import { animate, stagger } from '../theme/animate';
 import { Icon } from './icon';
 
@@ -28,12 +28,12 @@ const styles = stylex.create({
     boxShadow: `${tint.attentionGlow}, ${glow.card}`,
   },
   insight: { backgroundImage: `${tint.insight}` },
-  head: { display: 'flex', alignItems: 'center', gap: '10px', paddingBlock: `${space.s4} ${space.s3}`, paddingInline: space.s5 },
-  title: { fontFamily: font.display, fontSize: '15px', fontWeight: 600, letterSpacing: '.005em', display: 'flex', alignItems: 'center', gap: '9px', whiteSpace: 'nowrap' },
+  head: { display: 'flex', alignItems: 'center', gap: space.s2h, paddingBlock: `${space.s4} ${space.s3}`, paddingInline: space.s5 },
+  title: { fontFamily: font.display, fontSize: fontSize.title, fontWeight: 600, letterSpacing: tracking.hairOpen, display: 'flex', alignItems: 'center', gap: '9px', whiteSpace: 'nowrap' },
   titleIcon: { color: color.violetBright },
   aside: { marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: space.s2, minWidth: 0 },
   body: { paddingInline: space.s5, paddingBottom: space.s5 },
-  countChip: { fontFamily: font.mono, fontSize: '11px', paddingBlock: '1px', paddingInline: '7px', borderRadius: radius.sm, backgroundColor: tint.violetChip, color: color.violetBright, fontWeight: 500 },
+  countChip: { fontFamily: font.mono, fontSize: fontSize.xs, paddingBlock: '1px', paddingInline: '7px', borderRadius: radius.sm, backgroundColor: tint.violetChip, color: color.violetBright, fontWeight: 500 },
 });
 
 export type CardVariant = 'plain' | 'neon' | 'attention' | 'insight';

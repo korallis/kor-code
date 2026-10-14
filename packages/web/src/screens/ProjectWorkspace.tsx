@@ -14,7 +14,7 @@ import { href, navigate } from '../router';
 import { AppFrame } from '../shell/AppFrame';
 import { openAsk } from '../shell/askStore';
 import { initials, projectTone } from '../shell/projectTone';
-import { color, font, glow, gradient, space, tint } from '../theme/tokens.stylex';
+import { color, font, fontSize, glow, gradient, space, tint, tracking } from '../theme/tokens.stylex';
 import { Button } from '../ui/button';
 import { Card, CardBody, CardHeader } from '../ui/card';
 import { Ring, Spark } from '../ui/charts';
@@ -37,39 +37,39 @@ import { page, QueryError } from './shared';
 const NARROW = '@media (max-width: 1499px)';
 
 const styles = stylex.create({
-  head: { display: 'flex', alignItems: 'center', gap: '18px', paddingBlock: '18px', paddingInline: '20px', overflow: 'hidden', flexWrap: 'wrap' },
+  head: { display: 'flex', alignItems: 'center', gap: space.s4h, paddingBlock: space.s4h, paddingInline: space.s5, overflow: 'hidden', flexWrap: 'wrap' },
   halo: { position: 'absolute', right: '80px', top: '-120px', width: '420px', height: '300px', backgroundImage: tint.cyanHalo, pointerEvents: 'none' },
-  logo: { width: '60px', height: '60px', borderRadius: '17px', display: 'grid', placeItems: 'center', fontFamily: font.display, fontWeight: 700, fontSize: '22px', color: tint.white, backgroundImage: gradient.brandDiagonal, boxShadow: `0 0 0 1px ${tint.cyanEdge}, ${glow.cyan}`, flex: 'none' },
-  h1: { fontFamily: font.display, fontSize: '28px', fontWeight: 600, letterSpacing: '-0.015em', lineHeight: 1.1, display: 'flex', alignItems: 'center', gap: '12px' },
-  meta: { display: 'flex', alignItems: 'center', gap: '14px', marginTop: '7px', fontFamily: font.mono, fontSize: '11.5px', color: color.textMuted, flexWrap: 'wrap' },
-  metaItem: { display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' },
+  logo: { width: '60px', height: '60px', borderRadius: '17px', display: 'grid', placeItems: 'center', fontFamily: font.display, fontWeight: 700, fontSize: fontSize.figure, color: tint.white, backgroundImage: gradient.brandDiagonal, boxShadow: `0 0 0 1px ${tint.cyanEdge}, ${glow.cyan}`, flex: 'none' },
+  h1: { fontFamily: font.display, fontSize: fontSize.page, fontWeight: 600, letterSpacing: tracking.snug, lineHeight: 1.1, display: 'flex', alignItems: 'center', gap: space.s3 },
+  meta: { display: 'flex', alignItems: 'center', gap: space.s3h, marginTop: '7px', fontFamily: font.mono, fontSize: fontSize.xsPlus, color: color.textMuted, flexWrap: 'wrap' },
+  metaItem: { display: 'inline-flex', alignItems: 'center', gap: space.s1h, whiteSpace: 'nowrap' },
   body: { display: 'grid', gridTemplateColumns: { default: 'minmax(0, 1fr) 404px', [NARROW]: 'minmax(0, 1fr) 340px' }, gap: space.s4, alignItems: 'start' },
-  toolbar: { display: 'flex', alignItems: 'center', gap: '10px', paddingBlock: '14px', paddingInline: '18px', borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: color.hairline, flexWrap: 'wrap' },
-  tableWrap: { paddingInline: '8px', overflowX: 'auto' },
+  toolbar: { display: 'flex', alignItems: 'center', gap: space.s2h, paddingBlock: space.s3h, paddingInline: space.s4h, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: color.hairline, flexWrap: 'wrap' },
+  tableWrap: { paddingInline: space.s2, overflowX: 'auto' },
   title: { maxWidth: '236px' },
   korCell: { display: 'grid', gap: '5px', width: '150px' },
-  mdl: { fontFamily: font.mono, fontSize: '11.5px', color: color.textSecondary, lineHeight: 1.35 },
-  mdlSub: { color: color.textMuted, fontSize: '10.5px' },
-  selbar: { display: 'flex', alignItems: 'center', gap: '10px', marginBlock: '10px', marginInline: '18px', paddingBlock: '8px', paddingInline: '12px', borderRadius: '12px', borderWidth: '1px', borderStyle: 'solid', borderColor: tint.violetEdgeStrong, backgroundColor: tint.violetSoftFill, flexWrap: 'wrap' },
-  foot: { display: 'flex', alignItems: 'center', paddingBlock: '10px 14px', paddingInline: '18px', fontFamily: font.mono, fontSize: '11px', color: color.textMuted },
+  mdl: { fontFamily: font.mono, fontSize: fontSize.xsPlus, color: color.textSecondary, lineHeight: 1.35 },
+  mdlSub: { color: color.textMuted, fontSize: fontSize.microPlus },
+  selbar: { display: 'flex', alignItems: 'center', gap: space.s2h, marginBlock: space.s2h, marginInline: space.s4h, paddingBlock: space.s2, paddingInline: space.s3, borderRadius: '12px', borderWidth: '1px', borderStyle: 'solid', borderColor: tint.violetEdgeStrong, backgroundColor: tint.violetSoftFill, flexWrap: 'wrap' },
+  foot: { display: 'flex', alignItems: 'center', paddingBlock: '10px 14px', paddingInline: space.s4h, fontFamily: font.mono, fontSize: fontSize.xs, color: color.textMuted },
   side: { display: 'flex', flexDirection: 'column', gap: space.s4, minWidth: 0 },
-  bigPct: { fontFamily: font.display, fontSize: '40px', fontWeight: 600, lineHeight: 1, letterSpacing: '-0.02em' },
-  stats4: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginTop: '12px' },
-  stat: { paddingLeft: '10px', borderLeftWidth: '2px', borderLeftStyle: 'solid' },
-  statValue: { display: 'block', fontFamily: font.display, fontSize: '19px', fontWeight: 600 },
-  statLabel: { fontSize: '11px', color: color.textMuted },
-  health: { display: 'grid', gridTemplateColumns: '80px minmax(0, 1fr)', gap: '16px', alignItems: 'center' },
-  grade: { fontFamily: font.display, fontSize: '30px', fontWeight: 700 },
-  hl: { display: 'grid', gap: '6px', fontSize: '12.5px', color: color.textSecondary },
-  hlRow: { display: 'flex', gap: '8px', alignItems: 'center' },
-  hlVal: { marginLeft: 'auto', fontFamily: font.mono, fontSize: '11.5px', color: color.text, fontWeight: 500 },
-  pr: { display: 'grid', gridTemplateColumns: '24px minmax(0, 1fr) auto', gap: '10px', alignItems: 'center', paddingBlock: '8px', borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine },
-  prTitle: { fontSize: '13px', fontWeight: 500 },
-  prSub: { fontFamily: font.mono, fontSize: '10.5px', color: color.textMuted, marginTop: '2px' },
+  bigPct: { fontFamily: font.display, fontSize: fontSize.heroNarrow, fontWeight: 600, lineHeight: 1, letterSpacing: tracking.tight },
+  stats4: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: space.s2, marginTop: space.s3 },
+  stat: { paddingLeft: space.s2h, borderLeftWidth: '2px', borderLeftStyle: 'solid' },
+  statValue: { display: 'block', fontFamily: font.display, fontSize: fontSize.xl, fontWeight: 600 },
+  statLabel: { fontSize: fontSize.xs, color: color.textMuted },
+  health: { display: 'grid', gridTemplateColumns: '80px minmax(0, 1fr)', gap: space.s4, alignItems: 'center' },
+  grade: { fontFamily: font.display, fontSize: fontSize.figureLg, fontWeight: 700 },
+  hl: { display: 'grid', gap: space.s1h, fontSize: fontSize.smPlus, color: color.textSecondary },
+  hlRow: { display: 'flex', gap: space.s2, alignItems: 'center' },
+  hlVal: { marginLeft: 'auto', fontFamily: font.mono, fontSize: fontSize.xsPlus, color: color.text, fontWeight: 500 },
+  pr: { display: 'grid', gridTemplateColumns: '24px minmax(0, 1fr) auto', gap: space.s2h, alignItems: 'center', paddingBlock: space.s2, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine },
+  prTitle: { fontSize: fontSize.base, fontWeight: 500 },
+  prSub: { fontFamily: font.mono, fontSize: fontSize.microPlus, color: color.textMuted, marginTop: space.s0 },
   edgeViolet: { borderLeftColor: color.violetBright }, edgeGreen: { borderLeftColor: color.green }, edgeAmber: { borderLeftColor: color.amber }, edgeSlate: { borderLeftColor: color.slate },
   form: { display: 'grid', gridTemplateColumns: '180px minmax(0, 1fr)', gap: '14px 18px', alignItems: 'start', padding: space.s5, maxWidth: '920px' },
-  doc: { display: 'grid', gridTemplateColumns: '22px minmax(0, 1fr) auto', gap: '10px', paddingBlock: '10px', borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine, alignItems: 'start' },
-  docBody: { fontSize: '12.5px', color: color.textMuted, whiteSpace: 'pre-wrap', maxHeight: '64px', overflow: 'hidden', marginTop: '4px' },
+  doc: { display: 'grid', gridTemplateColumns: '22px minmax(0, 1fr) auto', gap: space.s2h, paddingBlock: space.s2h, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine, alignItems: 'start' },
+  docBody: { fontSize: fontSize.smPlus, color: color.textMuted, whiteSpace: 'pre-wrap', maxHeight: '64px', overflow: 'hidden', marginTop: space.s1 },
 });
 
 type Tab = 'overview' | 'issues' | 'runs' | 'pulls' | 'documents' | 'settings';
@@ -357,8 +357,8 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
                 <thead><tr><Th>Issue</Th><Th>Status</Th><Th>Stage</Th><Th>Model</Th><Th>Attempts</Th><Th align="right">Cost</Th><Th>PR</Th><Th>Updated</Th></tr></thead>
                 <tbody>
                   {projectRuns.map(run => (
-                    <Tr key={run.executionId} onClick={() => navigate('agents', run.executionId)}>
-                      <Td><span {...stylex.props(layout.row)}><span {...stylex.props(text.key)}>{keyOf(run)}</span><span {...stylex.props(text.ellipsis)}>{run.issueTitle}</span></span></Td>
+                    <Tr key={run.executionId} label={`Open ${keyOf(run)} in Agents`} onClick={() => navigate('agents', run.executionId)}>
+                      <Td><span {...stylex.props(layout.row)}><a href={href('agents', run.executionId)} tabIndex={-1} {...stylex.props(text.key)}>{keyOf(run)}</a><span {...stylex.props(text.ellipsis)}>{run.issueTitle}</span></span></Td>
                       <Td><StatusPill status={run.status} small /></Td>
                       <Td><StageTrack stage={run.stage} status={run.status} /></Td>
                       <Td><span {...stylex.props(text.mono, text.sm)}>{shortModel(run.route?.model)}</span></Td>

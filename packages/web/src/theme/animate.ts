@@ -3,7 +3,7 @@
 // compose the exported styles. Durations come from the `motion` tokens, which
 // collapse to zero under prefers-reduced-motion.
 import * as stylex from '@stylexjs/stylex';
-import { motion } from './tokens.stylex';
+import { motion, tint } from './tokens.stylex';
 /** Card entrance: fade, a 6 px rise and blur to sharp. */
 const rise = stylex.keyframes({
   from: { opacity: 0, transform: 'translateY(6px)', filter: 'blur(4px)' },
@@ -34,16 +34,16 @@ const stageGlow = stylex.keyframes({
 
 /** The needs-you card's amber edge breathes between 0.12 and 0.35. */
 const amberBreathe = stylex.keyframes({
-  '0%': { boxShadow: '0 0 0 1px rgba(251, 191, 36, 0.12), 0 0 32px -8px rgba(251, 191, 36, 0.12)' },
-  '50%': { boxShadow: '0 0 0 1px rgba(251, 191, 36, 0.3), 0 0 36px -6px rgba(251, 191, 36, 0.35)' },
-  '100%': { boxShadow: '0 0 0 1px rgba(251, 191, 36, 0.12), 0 0 32px -8px rgba(251, 191, 36, 0.12)' },
+  '0%': { boxShadow: tint.amberBreatheLow },
+  '50%': { boxShadow: tint.amberBreatheHigh },
+  '100%': { boxShadow: tint.amberBreatheLow },
 });
 
 /** The nav badge ripples once every six seconds. */
 const ripple = stylex.keyframes({
-  '0%': { boxShadow: '0 0 0 0 rgba(251, 191, 36, 0.55)' },
-  '12%': { boxShadow: '0 0 0 6px rgba(251, 191, 36, 0)' },
-  '100%': { boxShadow: '0 0 0 0 rgba(251, 191, 36, 0)' },
+  '0%': { boxShadow: tint.rippleStart },
+  '12%': { boxShadow: tint.rippleEnd },
+  '100%': { boxShadow: tint.rippleRest },
 });
 
 /** The block cursor blinks in steps. */

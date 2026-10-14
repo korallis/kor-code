@@ -1,16 +1,16 @@
 import * as stylex from '@stylexjs/stylex';
 import { FileCode } from 'lucide-react';
-import { color, font, radius, tint } from '../theme/tokens.stylex';
+import { color, font, fontSize, radius, space, tint } from '../theme/tokens.stylex';
 import type { DiffFile } from '../lib/diff';
 import { Icon } from './icon';
 
 const styles = stylex.create({
-  code: { fontFamily: font.mono, fontSize: '12px', lineHeight: 1.7, backgroundColor: color.codeBg, borderRadius: radius.md, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline, overflow: 'hidden' },
-  head: { display: 'flex', alignItems: 'center', gap: '8px', paddingBlock: '8px', paddingInline: '12px', borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: color.hairline, color: color.textSecondary, fontSize: '11.5px', backgroundColor: tint.codeHead },
-  lang: { marginLeft: 'auto', color: color.textFaint, fontSize: '10.5px' },
-  body: { overflowX: 'auto', paddingBlock: '6px' },
+  code: { fontFamily: font.mono, fontSize: fontSize.sm, lineHeight: 1.7, backgroundColor: color.codeBg, borderRadius: radius.md, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline, overflow: 'hidden' },
+  head: { display: 'flex', alignItems: 'center', gap: space.s2, paddingBlock: space.s2, paddingInline: space.s3, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: color.hairline, color: color.textSecondary, fontSize: fontSize.xsPlus, backgroundColor: tint.codeHead },
+  lang: { marginLeft: 'auto', color: color.textFaint, fontSize: fontSize.microPlus },
+  body: { overflowX: 'auto', paddingBlock: space.s1h },
   line: { display: 'grid', gridTemplateColumns: '34px 34px 16px 1fr', whiteSpace: 'pre', color: color.textSecondary, minWidth: 'max-content' },
-  n: { color: color.textFaint, textAlign: 'right', paddingRight: '8px' },
+  n: { color: color.textFaint, textAlign: 'right', paddingRight: space.s2 },
   s: { color: color.textFaint },
   add: { backgroundColor: color.diffAddBg, boxShadow: `inset 2px 0 0 ${color.green}`, color: color.diffAddText },
   del: { backgroundColor: color.diffDelBg, boxShadow: `inset 2px 0 0 ${color.rose}`, color: color.diffDelText },

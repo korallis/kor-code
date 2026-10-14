@@ -14,7 +14,7 @@ import { href, navigate } from '../router';
 import { AppFrame } from '../shell/AppFrame';
 import { AskJev } from '../shell/AskJev';
 import { initials, projectTone } from '../shell/projectTone';
-import { color, font, space, tint } from '../theme/tokens.stylex';
+import { color, font, fontSize, space, tint, tracking } from '../theme/tokens.stylex';
 import { Button } from '../ui/button';
 import { Card, CardBody, CardHeader, CountChip } from '../ui/card';
 import { Bar, Donut, Ring, Spark } from '../ui/charts';
@@ -43,44 +43,44 @@ const styles = stylex.create({
   orbit: { position: 'absolute', right: '22px', top: '14px', width: '250px', height: '150px', opacity: 0.95, pointerEvents: 'none' },
   heroMedia: { position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.8, zIndex: 0, borderRadius: 'inherit', overflow: 'hidden' },
   heroContent: { position: 'relative', zIndex: 1 },
-  h1: { fontFamily: font.display, fontSize: { default: '46px', [NARROW]: '40px' }, fontWeight: 600, letterSpacing: '-0.02em', lineHeight: 1.05, marginTop: '10px', position: 'relative' },
-  pills: { display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap', position: 'relative' },
-  ask: { marginTop: '18px', position: 'relative' },
-  needs: { paddingBlock: '18px 16px', paddingInline: '18px', display: 'flex', flexDirection: 'column' },
-  needsTitle: { fontFamily: font.display, fontSize: '17px', fontWeight: 600, marginTop: '10px', letterSpacing: '-0.005em' },
-  askQ: { marginTop: '12px', paddingBlock: '11px', paddingInline: '12px', borderRadius: '11px', backgroundColor: tint.wellSoft, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline, fontSize: '13px', color: color.textSecondary, lineHeight: 1.5, display: 'flex', gap: '10px' },
-  answerBox: { marginTop: '10px', minHeight: '98px', fontFamily: font.mono, fontSize: '12px', lineHeight: 1.7 },
-  caption: { marginTop: '10px', fontSize: '12px', color: color.textMuted },
+  h1: { fontFamily: font.display, fontSize: { default: '46px', [NARROW]: '40px' }, fontWeight: 600, letterSpacing: tracking.tight, lineHeight: 1.05, marginTop: space.s2h, position: 'relative' },
+  pills: { display: 'flex', gap: space.s2, marginTop: space.s3, flexWrap: 'wrap', position: 'relative' },
+  ask: { marginTop: space.s4h, position: 'relative' },
+  needs: { paddingBlock: '18px 16px', paddingInline: space.s4h, display: 'flex', flexDirection: 'column' },
+  needsTitle: { fontFamily: font.display, fontSize: fontSize.heading, fontWeight: 600, marginTop: space.s2h, letterSpacing: tracking.hair },
+  askQ: { marginTop: space.s3, paddingBlock: '11px', paddingInline: space.s3, borderRadius: '11px', backgroundColor: tint.wellSoft, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline, fontSize: fontSize.base, color: color.textSecondary, lineHeight: 1.5, display: 'flex', gap: space.s2h },
+  answerBox: { marginTop: space.s2h, minHeight: '98px', fontFamily: font.mono, fontSize: fontSize.sm, lineHeight: 1.7 },
+  caption: { marginTop: space.s2h, fontSize: fontSize.sm, color: color.textMuted },
   kpis: { display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: space.s4 },
-  kpi: { paddingBlock: '13px 12px', paddingInline: '16px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gridTemplateRows: 'auto 1fr', gap: '6px 10px', height: '88px' },
-  kpiLabel: { gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '7px', fontFamily: font.mono, fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden' },
-  kpiValue: { fontFamily: font.display, fontSize: { default: '28px', [NARROW]: '24px' }, fontWeight: 600, lineHeight: 1, letterSpacing: '-0.01em', display: 'flex', alignItems: 'baseline', gap: '8px', whiteSpace: 'nowrap', alignSelf: 'end' },
-  kpiSmall: { fontFamily: font.sans, fontSize: '12px', fontWeight: 400, color: color.textMuted, letterSpacing: 0, overflow: 'hidden', textOverflow: 'ellipsis' },
+  kpi: { paddingBlock: '13px 12px', paddingInline: space.s4, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gridTemplateRows: 'auto 1fr', gap: '6px 10px', height: '88px' },
+  kpiLabel: { gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '7px', fontFamily: font.mono, fontSize: fontSize.micro, letterSpacing: tracking.chip, textTransform: 'uppercase', color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden' },
+  kpiValue: { fontFamily: font.display, fontSize: { default: '28px', [NARROW]: '24px' }, fontWeight: 600, lineHeight: 1, letterSpacing: tracking.slight, display: 'flex', alignItems: 'baseline', gap: space.s2, whiteSpace: 'nowrap', alignSelf: 'end' },
+  kpiSmall: { fontFamily: font.sans, fontSize: fontSize.sm, fontWeight: 400, color: color.textMuted, letterSpacing: 0, overflow: 'hidden', textOverflow: 'ellipsis' },
   kpiArt: { alignSelf: 'end', marginBottom: '-2px', display: { default: null, [NARROW]: 'none' } },
   row3: { display: 'grid', gridTemplateColumns: { default: 'minmax(0, 1fr) minmax(0, 1.18fr) minmax(0, 0.92fr)', [NARROW]: 'minmax(0, 1fr) minmax(0, 1fr)' }, gap: space.s4, minHeight: '312px' },
   row4: { display: 'grid', gridTemplateColumns: { default: 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.8fr)', [NARROW]: 'minmax(0, 1fr) minmax(0, 1fr)' }, gap: space.s4, minHeight: '200px' },
   spanNarrow: { gridColumn: { default: null, [NARROW]: '1 / -1' } },
-  proj: { display: 'grid', gridTemplateColumns: '30px minmax(0, 1fr) 120px 40px', alignItems: 'center', gap: '12px', paddingBlock: '6px', borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine, color: color.text },
-  projName: { fontWeight: 500, fontSize: '13.5px' },
-  projSub: { fontSize: '11.5px', color: color.textMuted, marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  pc: { fontFamily: font.mono, fontSize: '12px', textAlign: 'right', color: color.textSecondary },
-  usage: { display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr)', gap: '18px', alignItems: 'center' },
-  legend: { display: 'grid', gap: '7px', fontSize: '12.5px' },
+  proj: { display: 'grid', gridTemplateColumns: '30px minmax(0, 1fr) 120px 40px', alignItems: 'center', gap: space.s3, paddingBlock: space.s1h, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine, color: color.text },
+  projName: { fontWeight: 500, fontSize: fontSize.basePlus },
+  projSub: { fontSize: fontSize.xsPlus, color: color.textMuted, marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  pc: { fontFamily: font.mono, fontSize: fontSize.sm, textAlign: 'right', color: color.textSecondary },
+  usage: { display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr)', gap: space.s4h, alignItems: 'center' },
+  legend: { display: 'grid', gap: '7px', fontSize: fontSize.smPlus },
   li: { display: 'grid', gridTemplateColumns: '9px minmax(0, 1fr) auto auto', gap: '9px', alignItems: 'center' },
-  liPct: { fontFamily: font.mono, fontSize: '11.5px', color: color.text },
-  liCost: { fontFamily: font.mono, fontSize: '11px', color: color.textMuted, width: '44px', textAlign: 'right' },
-  window: { display: 'grid', gridTemplateColumns: '70px minmax(0, 1fr) 92px', whiteSpace: 'nowrap', gap: '10px', alignItems: 'center', fontSize: '12px', marginTop: '10px' },
-  windowName: { fontFamily: font.mono, fontSize: '10.5px', color: color.textMuted, letterSpacing: '.06em', textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis' },
-  windowVal: { fontFamily: font.mono, fontSize: '11px', color: color.textSecondary, textAlign: 'right' },
-  next: { display: 'grid', gridTemplateColumns: '16px 74px minmax(0, 1fr) auto', gap: '10px', alignItems: 'center', paddingBlock: '8px', borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine, fontSize: '13px' },
-  quote: { display: 'block', fontFamily: font.display, fontSize: '15px', lineHeight: 1.45, color: color.text, marginTop: '12px' },
-  insight: { padding: '18px' },
-  donutTotal: { fontFamily: font.display, fontSize: '24px', fontWeight: 600 },
-  donutLabel: { fontFamily: font.mono, fontSize: '10px', letterSpacing: '.08em', color: color.textMuted },
+  liPct: { fontFamily: font.mono, fontSize: fontSize.xsPlus, color: color.text },
+  liCost: { fontFamily: font.mono, fontSize: fontSize.xs, color: color.textMuted, width: '44px', textAlign: 'right' },
+  window: { display: 'grid', gridTemplateColumns: '70px minmax(0, 1fr) 92px', whiteSpace: 'nowrap', gap: space.s2h, alignItems: 'center', fontSize: fontSize.sm, marginTop: space.s2h },
+  windowName: { fontFamily: font.mono, fontSize: fontSize.microPlus, color: color.textMuted, letterSpacing: tracking.mono, textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis' },
+  windowVal: { fontFamily: font.mono, fontSize: fontSize.xs, color: color.textSecondary, textAlign: 'right' },
+  next: { display: 'grid', gridTemplateColumns: '16px 74px minmax(0, 1fr) auto', gap: space.s2h, alignItems: 'center', paddingBlock: space.s2, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine, fontSize: fontSize.base },
+  quote: { display: 'block', fontFamily: font.display, fontSize: fontSize.title, lineHeight: 1.45, color: color.text, marginTop: space.s3 },
+  insight: { padding: space.s4h },
+  donutTotal: { fontFamily: font.display, fontSize: fontSize.xxl, fontWeight: 600 },
+  donutLabel: { fontFamily: font.mono, fontSize: fontSize.micro, letterSpacing: tracking.caps, color: color.textMuted },
   ember: { position: 'absolute', inset: 0, opacity: 0.22, pointerEvents: 'none', borderRadius: 'inherit', overflow: 'hidden' },
-  now: { marginTop: '12px', paddingBlock: '14px', paddingInline: '16px', borderRadius: '14px', backgroundImage: tint.jevAnswer, borderWidth: '1px', borderStyle: 'solid', borderColor: tint.violetSoftEdge, position: 'relative' },
-  nowText: { marginTop: '8px', color: color.textSecondary, fontSize: '13.5px', lineHeight: 1.6 },
-  more: { fontSize: '12px', color: color.violetBright, display: 'inline-flex', alignItems: 'center', gap: '4px' },
+  now: { marginTop: space.s3, paddingBlock: space.s3h, paddingInline: space.s4, borderRadius: '14px', backgroundImage: tint.jevAnswer, borderWidth: '1px', borderStyle: 'solid', borderColor: tint.violetSoftEdge, position: 'relative' },
+  nowText: { marginTop: space.s2, color: color.textSecondary, fontSize: fontSize.basePlus, lineHeight: 1.6 },
+  more: { fontSize: fontSize.sm, color: color.violetBright, display: 'inline-flex', alignItems: 'center', gap: space.s1 },
 });
 
 const MODEL_TONES: readonly Tone[] = ['violet', 'cyan', 'green', 'amber', 'magenta', 'sky', 'orange'];
@@ -255,11 +255,12 @@ function cumulative(points: readonly { at: number; value: number }[]): number[] 
   return [0, ...sorted.map(point => (sum += point.value))];
 }
 
-function NextUp({ issues, runs, intakeLabel }: { issues: readonly LinearIssue[]; runs: readonly MissionRun[]; intakeLabel: string }) {
+function NextUp({ issues, runs, intakeLabel, unavailable }: { issues: readonly LinearIssue[]; runs: readonly MissionRun[]; intakeLabel: string; unavailable: string | null }) {
   const queue = useQueue();
   const started = new Set(runs.map(run => run.issueId));
   const next = issues.filter(issue => isOpen(issue) && issue.stateType !== 'started' && issue.labels.includes(intakeLabel) && !started.has(issue.id))
     .sort((a, b) => (a.priority || 5) - (b.priority || 5)).slice(0, 4);
+  if (next.length === 0 && unavailable) return <Empty slot="empty-no-issues" title="Linear issues unavailable.">{unavailable}</Empty>;
   if (next.length === 0) return <Empty slot="empty-no-issues" title={`No Todo issues labelled ${intakeLabel}.`}>Label an issue <b {...stylex.props(text.violet)}>{intakeLabel}</b> in Linear and it appears here.</Empty>;
   return (
     <>
@@ -452,7 +453,7 @@ export function CommandCentre() {
           </Card>
           <Card index={11} clip>
             <CardHeader icon={ListTodo} title="Next up" aside={<span {...stylex.props(text.muted, text.mono, text.xs)}>label <span {...stylex.props(text.violet)}>{intakeLabel}</span> · Todo</span>} />
-            <CardBody><NextUp issues={allIssues} runs={runs} intakeLabel={intakeLabel} /></CardBody>
+            <CardBody><NextUp issues={allIssues} runs={runs} intakeLabel={intakeLabel} unavailable={issuesByProject.find(entry => entry.provenance === 'unavailable')?.reason ?? (issuesByProject.some(entry => entry.provenance === 'unavailable') ? 'Linear did not answer for every project.' : null)} /></CardBody>
           </Card>
           <Card index={12} variant="insight" style={[styles.insight, styles.spanNarrow]}>
             <div {...stylex.props(layout.row)}><JevOrb size={26} /><span {...stylex.props(text.eyebrow, text.violet)}>Jev learned</span><span {...stylex.props(layout.grow)} />{brain.data && <ProvenanceChip provenance={brain.data.learnings.provenance} reason={brain.data.learnings.reason} />}</div>

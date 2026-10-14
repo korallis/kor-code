@@ -3,7 +3,7 @@ import * as stylex from '@stylexjs/stylex';
 import type { ReactNode } from 'react';
 import type { MissionRun } from '@kor-code/mission-control';
 import { ApiFailure } from '../api/client';
-import { color, font, space, tint } from '../theme/tokens.stylex';
+import { color, font, fontSize, space, tint, tracking } from '../theme/tokens.stylex';
 import { href } from '../router';
 import { ProvenanceChip, StatusPill } from '../ui/pill';
 import { StageTrack } from '../ui/stages';
@@ -19,15 +19,15 @@ export const page = stylex.create({
   page: { padding: { default: space.s6, [NARROW]: space.s5 }, display: 'flex', flexDirection: 'column', gap: space.s4, minWidth: 0 },
   fill: { height: '100%', minHeight: '720px' },
   head: { display: 'flex', alignItems: 'flex-end', gap: space.s4, flexWrap: 'wrap' },
-  title: { fontFamily: font.display, fontSize: '28px', fontWeight: 600, letterSpacing: '-0.015em', lineHeight: 1.1 },
-  lede: { color: color.textSecondary, fontSize: '14px', marginTop: '6px' },
+  title: { fontFamily: font.display, fontSize: fontSize.page, fontWeight: 600, letterSpacing: tracking.snug, lineHeight: 1.1 },
+  lede: { color: color.textSecondary, fontSize: fontSize.md, marginTop: space.s1h },
 });
 
 const styles = stylex.create({
-  run: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '7px 12px', paddingBlock: '10px', paddingInline: '12px', borderRadius: '11px', borderWidth: '1px', borderStyle: 'solid', borderColor: tint.rowLine, backgroundColor: { default: tint.ghost, ':hover': tint.ghostStrong }, marginBottom: '8px', color: color.text },
+  run: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '7px 12px', paddingBlock: space.s2h, paddingInline: space.s3, borderRadius: '11px', borderWidth: '1px', borderStyle: 'solid', borderColor: tint.rowLine, backgroundColor: { default: tint.ghost, ':hover': tint.ghostStrong }, marginBottom: space.s2, color: color.text },
   waiting: { borderColor: tint.magentaEdge, backgroundColor: color.magentaDim },
-  t: { fontSize: '13px', fontWeight: 500, display: 'flex', gap: '8px', alignItems: 'center', minWidth: 0 },
-  m: { gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: 'auto minmax(60px, 1fr) auto', gap: '12px', alignItems: 'center', fontFamily: font.mono, fontSize: '11px', color: color.textMuted },
+  t: { fontSize: fontSize.base, fontWeight: 500, display: 'flex', gap: space.s2, alignItems: 'center', minWidth: 0 },
+  m: { gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: 'auto minmax(60px, 1fr) auto', gap: space.s3, alignItems: 'center', fontFamily: font.mono, fontSize: fontSize.xs, color: color.textMuted },
 });
 
 export function RunRow({ run, now }: { run: MissionRun; now: number }) {

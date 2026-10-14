@@ -6,7 +6,6 @@ import { useBrain, usePool, useRuns, useStatus } from './queries';
 
 const EMPTY_RUNS: MissionRun[] = [];
 const EMPTY_DECISIONS: DecisionRecord[] = [];
-const EMPTY_OVERRIDES: OverrideRecord[] = [];
 
 export function useMissionRuns(): { runs: MissionRun[]; loading: boolean; error: Error | null } {
   const liveStatus = useLive(live => live.status);
@@ -16,10 +15,13 @@ export function useMissionRuns(): { runs: MissionRun[]; loading: boolean; error:
   return { runs: query.data?.runs ?? EMPTY_RUNS, loading: query.isPending, error: query.error };
 }
 
+/** The fresher of the stream's snapshot and the polled REST status. */
 export function useStatusResponse(): KorStatusResponse | undefined {
   const live = useLive(state => state.status);
   const query = useStatus();
-  return live ?? query.data;
+  if (!live) return query.data;
+  if (!query.data) return live;
+  return Date.parse(query.data.observedAt) > Date.parse(live.observedAt) ? query.data : live;
 }
 
 export function useDecisions(): DecisionRecord[] {
@@ -31,7 +33,8 @@ export function useDecisions(): DecisionRecord[] {
 }
 
 export function useOverrides(): OverrideRecord[] {
-  return useStatusResponse()?.snapshot?.overrides ?? EMPTY_OVERRIDES;
+  useStatus();
+  return useLive(state => state.overrides);
 }
 
 export function usePoolLive() {

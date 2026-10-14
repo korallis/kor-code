@@ -6,8 +6,13 @@ import type { ConnectRequest, MessageRequest, OverrideRequest, QueueRequest, Sug
 import type { KorConfig } from '@kor-code/config';
 import { get, path, post, put } from './client';
 import { queryClient } from './query';
+import { replaceOverrides, upsertOverride } from './live';
 
-export const useStatus = () => useQuery({ queryKey: ['status'], queryFn: () => get('GET /api/status', path('GET /api/status', '/api/status')), refetchInterval: 30_000 });
+export const useStatus = () => useQuery({ queryKey: ['status'], refetchInterval: 30_000, queryFn: async () => {
+  const status = await get('GET /api/status', path('GET /api/status', '/api/status'));
+  if (status.snapshot?.overrides) replaceOverrides(status.snapshot.overrides);
+  return status;
+} });
 export const useProjects = () => useQuery({ queryKey: ['projects'], queryFn: () => get('GET /api/projects', path('GET /api/projects', '/api/projects')) });
 export const useRuns = () => useQuery({ queryKey: ['runs'], queryFn: () => get('GET /api/runs', path('GET /api/runs', '/api/runs')) });
 export const useRun = (id: string | undefined) => useQuery({ queryKey: ['run', id], enabled: id !== undefined, queryFn: () => get('GET /api/runs/:id', path('GET /api/runs/:id', '/api/runs/:id', { id: id ?? '' })) });
@@ -51,10 +56,10 @@ export function useRunMessage() {
 }
 
 export function useOverride() {
-  return useMutation({ mutationFn: (body: OverrideRequest) => post('POST /api/overrides', '/api/overrides', body), onSuccess: () => refresh(['runs'], ['status'], ['brain']) });
+  return useMutation({ mutationFn: (body: OverrideRequest) => post('POST /api/overrides', '/api/overrides', body), onSuccess: data => { upsertOverride(data.record); return refresh(['runs'], ['status'], ['brain']); } });
 }
 export function useRevertOverride() {
-  return useMutation({ mutationFn: (id: string) => post('POST /api/overrides/:id/revert', path('POST /api/overrides/:id/revert', '/api/overrides/:id/revert', { id }), {}), onSuccess: () => refresh(['runs'], ['status'], ['brain']) });
+  return useMutation({ mutationFn: (id: string) => post('POST /api/overrides/:id/revert', path('POST /api/overrides/:id/revert', '/api/overrides/:id/revert', { id }), {}), onSuccess: data => { upsertOverride(data.record); return refresh(['runs'], ['status'], ['brain']); } });
 }
 
 export function useAsk() {

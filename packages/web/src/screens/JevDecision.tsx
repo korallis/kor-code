@@ -17,7 +17,7 @@ import { useConfig, useModels, useOverride, useProjects, useQueue, useRunAction,
 import { href } from '../router';
 import { AppFrame } from '../shell/AppFrame';
 import { initials, projectTone } from '../shell/projectTone';
-import { color, font, glow, gradient, space, tint } from '../theme/tokens.stylex';
+import { color, font, fontSize, glow, gradient, space, tint, tracking } from '../theme/tokens.stylex';
 import { animate, delayBy } from '../theme/animate';
 import { Button, Kbd } from '../ui/button';
 import { Card } from '../ui/card';
@@ -42,64 +42,64 @@ import { OverrideDialog } from './OverrideDialog';
 const NARROW = '@media (max-width: 1499px)';
 
 const styles = stylex.create({
-  grid: { display: 'grid', gridTemplateColumns: { default: '272px minmax(0, 1fr) 348px', [NARROW]: '236px minmax(0, 1fr) 312px' }, gap: { default: space.s4, [NARROW]: '12px' }, paddingBlock: '18px', paddingInline: { default: '20px', [NARROW]: '16px' }, height: '100%', minHeight: '760px' },
+  grid: { display: 'grid', gridTemplateColumns: { default: '272px minmax(0, 1fr) 348px', [NARROW]: '236px minmax(0, 1fr) 312px' }, gap: { default: space.s4, [NARROW]: '12px' }, paddingBlock: space.s4h, paddingInline: { default: '20px', [NARROW]: '16px' }, height: '100%', minHeight: '760px' },
   col: { minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
-  lh: { paddingBlock: '14px 10px', paddingInline: '14px', display: 'grid', gap: '10px' },
-  projSel: { display: 'flex', alignItems: 'center', gap: '10px', paddingBlock: '6px', paddingInline: '8px', borderRadius: '10px', backgroundColor: color.cyanDim, borderWidth: '1px', borderStyle: 'solid', borderColor: tint.cyanEdge },
-  ftabs: { display: 'flex', gap: '4px' },
-  ftab: { flex: '1', textAlign: 'center', paddingBlock: '5px', borderRadius: '7px', fontSize: '11.5px', color: { default: color.textMuted, ':hover': color.textSecondary }, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline, cursor: 'pointer', whiteSpace: 'nowrap' },
+  lh: { paddingBlock: '14px 10px', paddingInline: space.s3h, display: 'grid', gap: space.s2h },
+  projSel: { display: 'flex', alignItems: 'center', gap: space.s2h, paddingBlock: space.s1h, paddingInline: space.s2, borderRadius: '10px', backgroundColor: color.cyanDim, borderWidth: '1px', borderStyle: 'solid', borderColor: tint.cyanEdge },
+  ftabs: { display: 'flex', gap: space.s1 },
+  ftab: { flex: '1', textAlign: 'center', paddingBlock: '5px', borderRadius: '7px', fontSize: fontSize.xsPlus, color: { default: color.textMuted, ':hover': color.textSecondary }, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline, cursor: 'pointer', whiteSpace: 'nowrap' },
   ftabOn: { color: color.text, borderColor: tint.violetEdgeStrong, backgroundColor: tint.ptabOn },
-  ftabCount: { fontFamily: font.mono, fontWeight: 500, fontSize: '10.5px', color: color.textMuted, marginLeft: '3px' },
-  il: { paddingBlock: '4px 10px', paddingInline: '8px', display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto', flex: '1', minHeight: 0, scrollbarWidth: 'thin', scrollbarColor: `${color.hairlineStrong} transparent` },
-  group: { fontFamily: font.mono, fontSize: '10px', letterSpacing: '.12em', textTransform: 'uppercase', color: color.textFaint, paddingBlock: '12px 6px', paddingInline: '8px' },
-  ii: { display: 'grid', gridTemplateColumns: '8px 62px minmax(0, 1fr)', gap: '9px', alignItems: 'center', paddingBlock: '8px', paddingInline: '8px', borderRadius: '9px', fontSize: '12.5px', color: { default: color.textSecondary, ':hover': color.text }, cursor: 'pointer', textAlign: 'left', width: '100%' },
+  ftabCount: { fontFamily: font.mono, fontWeight: 500, fontSize: fontSize.microPlus, color: color.textMuted, marginLeft: '3px' },
+  il: { paddingBlock: '4px 10px', paddingInline: space.s2, display: 'flex', flexDirection: 'column', gap: space.s0, overflowY: 'auto', flex: '1', minHeight: 0, scrollbarWidth: 'thin', scrollbarColor: `${color.hairlineStrong} transparent` },
+  group: { fontFamily: font.mono, fontSize: fontSize.micro, letterSpacing: tracking.label, textTransform: 'uppercase', color: color.textFaint, paddingBlock: '12px 6px', paddingInline: space.s2 },
+  ii: { display: 'grid', gridTemplateColumns: '8px 62px minmax(0, 1fr)', gap: '9px', alignItems: 'center', paddingBlock: space.s2, paddingInline: space.s2, borderRadius: '9px', fontSize: fontSize.smPlus, color: { default: color.textSecondary, ':hover': color.text }, cursor: 'pointer', textAlign: 'left', width: '100%' },
   iiSel: { backgroundColor: tint.ptabOn, boxShadow: `inset 0 0 0 1px ${tint.violetEdgeStrong}`, color: color.text },
   dot: { width: '7px', height: '7px', borderRadius: '50%', boxShadow: '0 0 6px currentColor' },
-  history: { borderTopWidth: '1px', borderTopStyle: 'solid', borderTopColor: color.hairline, paddingBlock: '12px', paddingInline: '14px', display: 'grid', gap: '8px', flex: 'none' },
-  ih: { paddingBlock: '16px 14px', paddingInline: '20px', borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: color.hairline },
-  h1: { fontFamily: font.display, fontSize: '21px', fontWeight: 600, letterSpacing: '-0.01em', marginTop: '6px' },
-  tagRow: { display: 'flex', gap: '6px', marginTop: '10px', alignItems: 'center', flexWrap: 'wrap' },
-  tag: { fontFamily: font.mono, fontSize: '10.5px', paddingBlock: '2px', paddingInline: '8px', borderRadius: '6px', borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairlineStrong, color: color.textSecondary, whiteSpace: 'nowrap' },
-  thread: { flex: '1', minHeight: 0, overflowY: 'auto', paddingBlock: '14px 8px', paddingInline: '20px', display: 'flex', flexDirection: 'column', gap: '14px', scrollbarWidth: 'thin', scrollbarColor: `${color.hairlineStrong} transparent` },
-  msg: { display: 'grid', gridTemplateColumns: '30px minmax(0, 1fr)', gap: '12px' },
-  av: { width: '30px', height: '30px', borderRadius: '50%', display: 'grid', placeItems: 'center', fontFamily: font.display, fontWeight: 600, fontSize: '12px', backgroundImage: tint.avatar, color: color.violetBright, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairlineStrong },
-  who: { fontSize: '13px', fontWeight: 600, display: 'flex', gap: '8px', alignItems: 'baseline' },
-  when: { fontFamily: font.mono, fontSize: '10.5px', color: color.textFaint, fontWeight: 400 },
-  txt: { marginTop: '4px', fontSize: '13.5px', color: color.textSecondary, lineHeight: 1.55, whiteSpace: 'pre-wrap' },
-  meta: { marginTop: '6px', fontFamily: font.mono, fontSize: '11px', color: color.textMuted },
-  steps: { marginTop: '8px', display: 'grid', gap: '1px', fontFamily: font.mono, fontSize: '11.5px' },
-  step: { display: 'grid', gridTemplateColumns: '14px 52px minmax(0, 1fr) auto', gap: '8px', alignItems: 'center', color: color.textSecondary, paddingBlock: '2px' },
-  verify: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' },
-  vbox: { paddingBlock: '10px', paddingInline: '12px', borderRadius: '10px', borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline, backgroundColor: tint.ghost, minWidth: 0 },
-  vrow: { display: 'grid', gridTemplateColumns: '14px minmax(0, 1fr) auto', gap: '8px', alignItems: 'center', fontSize: '12px', color: color.textSecondary, paddingBlock: '3px' },
-  composer: { marginBlock: '12px 16px', marginInline: '20px', borderRadius: '13px', backgroundColor: color.surfaceSunken, boxShadow: glow.focus, paddingBlock: '11px 9px', paddingInline: '14px 12px', flex: 'none' },
-  composerInput: { flex: '1', minWidth: 0, backgroundColor: 'transparent', borderWidth: 0, outline: 'none', color: color.text, fontSize: '14px', '::placeholder': { color: color.textMuted } },
-  chip: { display: 'inline-flex', alignItems: 'center', gap: '5px', height: '24px', paddingInline: '8px', borderRadius: '7px', fontSize: '11.5px', color: color.textSecondary, backgroundColor: tint.ghost, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline },
+  history: { borderTopWidth: '1px', borderTopStyle: 'solid', borderTopColor: color.hairline, paddingBlock: space.s3, paddingInline: space.s3h, display: 'grid', gap: space.s2, flex: 'none' },
+  ih: { paddingBlock: '16px 14px', paddingInline: space.s5, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: color.hairline },
+  h1: { fontFamily: font.display, fontSize: fontSize.headingLg, fontWeight: 600, letterSpacing: tracking.slight, marginTop: space.s1h },
+  tagRow: { display: 'flex', gap: space.s1h, marginTop: space.s2h, alignItems: 'center', flexWrap: 'wrap' },
+  tag: { fontFamily: font.mono, fontSize: fontSize.microPlus, paddingBlock: space.s0, paddingInline: space.s2, borderRadius: '6px', borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairlineStrong, color: color.textSecondary, whiteSpace: 'nowrap' },
+  thread: { flex: '1', minHeight: 0, overflowY: 'auto', paddingBlock: '14px 8px', paddingInline: space.s5, display: 'flex', flexDirection: 'column', gap: space.s3h, scrollbarWidth: 'thin', scrollbarColor: `${color.hairlineStrong} transparent` },
+  msg: { display: 'grid', gridTemplateColumns: '30px minmax(0, 1fr)', gap: space.s3 },
+  av: { width: '30px', height: '30px', borderRadius: '50%', display: 'grid', placeItems: 'center', fontFamily: font.display, fontWeight: 600, fontSize: fontSize.sm, backgroundImage: tint.avatar, color: color.violetBright, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairlineStrong },
+  who: { fontSize: fontSize.base, fontWeight: 600, display: 'flex', gap: space.s2, alignItems: 'baseline' },
+  when: { fontFamily: font.mono, fontSize: fontSize.microPlus, color: color.textFaint, fontWeight: 400 },
+  txt: { marginTop: space.s1, fontSize: fontSize.basePlus, color: color.textSecondary, lineHeight: 1.55, whiteSpace: 'pre-wrap' },
+  meta: { marginTop: space.s1h, fontFamily: font.mono, fontSize: fontSize.xs, color: color.textMuted },
+  steps: { marginTop: space.s2, display: 'grid', gap: '1px', fontFamily: font.mono, fontSize: fontSize.xsPlus },
+  step: { display: 'grid', gridTemplateColumns: '14px 52px minmax(0, 1fr) auto', gap: space.s2, alignItems: 'center', color: color.textSecondary, paddingBlock: space.s0 },
+  verify: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: space.s2h, marginTop: space.s2h },
+  vbox: { paddingBlock: space.s2h, paddingInline: space.s3, borderRadius: '10px', borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline, backgroundColor: tint.ghost, minWidth: 0 },
+  vrow: { display: 'grid', gridTemplateColumns: '14px minmax(0, 1fr) auto', gap: space.s2, alignItems: 'center', fontSize: fontSize.sm, color: color.textSecondary, paddingBlock: '3px' },
+  composer: { marginBlock: '12px 16px', marginInline: space.s5, borderRadius: '13px', backgroundColor: color.surfaceSunken, boxShadow: glow.focus, paddingBlock: '11px 9px', paddingInline: '14px 12px', flex: 'none' },
+  composerInput: { flex: '1', minWidth: 0, backgroundColor: 'transparent', borderWidth: 0, outline: 'none', color: color.text, fontSize: fontSize.md, '::placeholder': { color: color.textMuted } },
+  chip: { display: 'inline-flex', alignItems: 'center', gap: '5px', height: '24px', paddingInline: space.s2, borderRadius: '7px', fontSize: fontSize.xsPlus, color: color.textSecondary, backgroundColor: tint.ghost, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline },
   modelSelect: { height: '28px', width: '170px' },
-  dh: { display: 'flex', alignItems: 'center', gap: '10px', paddingBlock: '14px 12px', paddingInline: '16px', borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: color.hairline },
+  dh: { display: 'flex', alignItems: 'center', gap: space.s2h, paddingBlock: '14px 12px', paddingInline: space.s4, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: color.hairline },
   panelScroll: { flex: '1', minHeight: 0, overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: `${color.hairlineStrong} transparent` },
-  dsec: { paddingBlock: '11px', paddingInline: '16px', borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine },
-  dEyebrow: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '7px', color: color.violetBright, fontFamily: font.mono, fontSize: '10.5px', letterSpacing: '.12em', textTransform: 'uppercase' },
-  dRight: { marginLeft: 'auto', color: color.textFaint, letterSpacing: '.04em', textTransform: 'none' },
-  dP: { fontSize: '12.5px', color: color.textSecondary, lineHeight: 1.5 },
-  cand: { display: 'grid', gridTemplateColumns: '82px minmax(0, 1fr) 34px', gap: '8px', alignItems: 'center', fontFamily: font.mono, fontSize: '10.5px', color: color.textMuted, marginTop: '5px' },
+  dsec: { paddingBlock: '11px', paddingInline: space.s4, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine },
+  dEyebrow: { display: 'flex', alignItems: 'center', gap: space.s2, marginBottom: '7px', color: color.violetBright, fontFamily: font.mono, fontSize: fontSize.microPlus, letterSpacing: tracking.label, textTransform: 'uppercase' },
+  dRight: { marginLeft: 'auto', color: color.textFaint, letterSpacing: tracking.brand, textTransform: 'none' },
+  dP: { fontSize: fontSize.smPlus, color: color.textSecondary, lineHeight: 1.5 },
+  cand: { display: 'grid', gridTemplateColumns: '82px minmax(0, 1fr) 34px', gap: space.s2, alignItems: 'center', fontFamily: font.mono, fontSize: fontSize.microPlus, color: color.textMuted, marginTop: '5px' },
   candWin: { color: color.text },
   candBar: { height: '4px', borderRadius: '99px', backgroundColor: tint.track, overflow: 'hidden' },
   candFill: { height: '100%', backgroundImage: gradient.progress, boxShadow: tint.barGlowCyan },
   candLose: { backgroundImage: 'none', backgroundColor: color.textMuted, boxShadow: 'none' },
-  big: { fontFamily: font.display, fontSize: '22px', fontWeight: 600 },
+  big: { fontFamily: font.display, fontSize: fontSize.figure, fontWeight: 600 },
   risk: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3px' },
   riskSeg: { height: '6px', borderRadius: '3px', backgroundColor: tint.stageTrack },
-  riskLabels: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', fontFamily: font.mono, fontSize: '9.5px', color: color.textFaint, marginTop: '5px' },
-  mem: { display: 'grid', gridTemplateColumns: '62px minmax(0, 1fr) 34px', gap: '8px', fontSize: '11.5px', color: color.textSecondary, paddingBlock: '2px', alignItems: 'center' },
-  memKind: { fontFamily: font.mono, fontSize: '9.5px', color: color.textFaint, textTransform: 'uppercase', letterSpacing: '.08em' },
+  riskLabels: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', fontFamily: font.mono, fontSize: fontSize.nano, color: color.textFaint, marginTop: '5px' },
+  mem: { display: 'grid', gridTemplateColumns: '62px minmax(0, 1fr) 34px', gap: space.s2, fontSize: fontSize.xsPlus, color: color.textSecondary, paddingBlock: space.s0, alignItems: 'center' },
+  memKind: { fontFamily: font.mono, fontSize: fontSize.nano, color: color.textFaint, textTransform: 'uppercase', letterSpacing: tracking.caps },
   approve: { display: 'flex', alignItems: 'stretch', borderRadius: '11px', overflow: 'hidden', backgroundImage: gradient.primaryButton, boxShadow: glow.button, position: 'relative' },
-  approveMain: { flex: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', height: '42px', fontWeight: 600, fontSize: '14px', color: tint.white, cursor: 'pointer' },
+  approveMain: { flex: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: space.s2, height: '42px', fontWeight: 600, fontSize: fontSize.md, color: tint.white, cursor: 'pointer' },
   approveDrop: { width: '40px', display: 'grid', placeItems: 'center', borderLeftWidth: '1px', borderLeftStyle: 'solid', borderLeftColor: tint.violetEdgeStrong, color: tint.white, cursor: 'pointer' },
   disabled: { opacity: 0.45, cursor: 'not-allowed' },
-  menu: { display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px', padding: '6px', borderRadius: '10px', backgroundColor: color.surfaceRaised, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairlineStrong },
-  alt: { display: 'flex', alignItems: 'center', gap: '9px', fontSize: '13px', color: { default: color.textSecondary, ':hover': color.text }, paddingBlock: '7px', paddingInline: '4px', width: '100%', cursor: 'pointer' },
-  actions: { paddingBlock: '14px', paddingInline: '16px', display: 'grid', gap: '4px', flex: 'none', borderTopWidth: '1px', borderTopStyle: 'solid', borderTopColor: color.hairline },
+  menu: { display: 'flex', flexDirection: 'column', gap: space.s1, marginTop: space.s1h, padding: space.s1h, borderRadius: '10px', backgroundColor: color.surfaceRaised, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairlineStrong },
+  alt: { display: 'flex', alignItems: 'center', gap: '9px', fontSize: fontSize.base, color: { default: color.textSecondary, ':hover': color.text }, paddingBlock: '7px', paddingInline: space.s1, width: '100%', cursor: 'pointer' },
+  actions: { paddingBlock: space.s3h, paddingInline: space.s4, display: 'grid', gap: space.s1, flex: 'none', borderTopWidth: '1px', borderTopStyle: 'solid', borderTopColor: color.hairline },
   reveal: { opacity: 0 },
 });
 const fill = stylex.create({ w: (pct: number) => ({ width: `${Math.round(Math.max(0, Math.min(1, pct)) * 100)}%` }) });
@@ -127,6 +127,8 @@ function DecisionPanel({ run, decisions, issue, onRequestChanges }: { run: Missi
   const kind = (name: string) => [...decisions].reverse().find(decision => decision.kind === name);
   const route = kind('route'), risk = kind('risk'), skill = kind('skill'), agent = kind('agent'), context = kind('context');
   const escalated = decisions.filter(decision => decision.escalated).length;
+  // Confidence belongs only to the choice it was recorded for: Jev's own route, in force as Jev chose it.
+  const jevChoseRoute = route !== undefined && run.routeSource === 'jev' && run.route?.model === route.choice;
   const policy = route?.policyChecks ?? [];
   const canApprove = run.status === 'waiting';
   const riskIndex = risk ? RISK_LEVELS.findIndex(pattern => pattern.test(risk.choice)) : -1;
@@ -162,11 +164,19 @@ function DecisionPanel({ run, decisions, issue, onRequestChanges }: { run: Missi
         <Section index={1} label="Chosen model" right={`route · ${run.routeSource ?? '—'}`}>
           <div {...stylex.props(layout.row)}>
             <div {...stylex.props(layout.grow)}>
-              <div {...stylex.props(text.strong, text.md)}>{run.route?.model ?? route?.choice ?? 'not routed yet'}</div>
+              <div {...stylex.props(text.strong, text.md)}>{run.route?.model ?? 'not routed yet'}</div>
               <div {...stylex.props(text.mono, text.muted, text.micro)}>{run.accountSlot.value ?? 'slot unreported'}{run.route?.reasoningLevel ? ` · ${run.route.reasoningLevel} reasoning` : ''}</div>
             </div>
-            {route && <span {...stylex.props(styles.big)}>{prob(route.confidence)}</span>}
+            {jevChoseRoute && route && <span {...stylex.props(styles.big)}>{prob(route.confidence)}</span>}
+            {run.routeSource === 'override' && <Pill tone="magenta" small dot>your override</Pill>}
+            {run.routeSource === 'config' || run.routeSource === 'fallback' ? <Pill tone="slate" small>{run.routeSource === 'config' ? 'configured default' : 'fallback'}</Pill> : null}
           </div>
+          {route && !jevChoseRoute && (
+            <p {...stylex.props(styles.dP, layout.mt2)}>
+              {run.routeSource === 'override' ? 'You chose this route; it carries no Jev confidence. ' : 'This route did not come from the Jev decision below. '}
+              Jev's recorded route decision was <b {...stylex.props(text.strong)}>{route.choice}</b> at {prob(route.confidence)}:
+            </p>
+          )}
           {route?.candidates.map(candidate => {
             const win = candidate === route.choice;
             const p = probabilityOf(route, candidate);
@@ -179,7 +189,7 @@ function DecisionPanel({ run, decisions, issue, onRequestChanges }: { run: Missi
             );
           })}
         </Section>
-        {route && <Section index={2} label="Why"><p {...stylex.props(styles.dP)}>{route.reasons.join(' ')}</p></Section>}
+        {route && <Section index={2} label={jevChoseRoute ? 'Why' : 'Why Jev recommended its route'}><p {...stylex.props(styles.dP)}>{route.reasons.join(' ')}</p></Section>}
         {risk && (
           <Section index={3} label="Risk" right={`${risk.choice} · ${prob(risk.confidence)}`}>
             <div {...stylex.props(styles.risk)}>{[0, 1, 2].map(level => <i key={level} {...stylex.props(styles.riskSeg, level <= riskIndex && toneSolid[level === 0 ? 'green' : level === 1 ? 'amber' : 'rose'])} />)}</div>

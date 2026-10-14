@@ -11,7 +11,7 @@ import { useBrain, useConfig, useSaveConfig } from '../api/queries';
 import { href } from '../router';
 import { AppFrame } from '../shell/AppFrame';
 import { openAsk } from '../shell/askStore';
-import { color, font, space, tint } from '../theme/tokens.stylex';
+import { color, font, fontSize, space, tint, tracking } from '../theme/tokens.stylex';
 import { animate, delayBy } from '../theme/animate';
 import { Button } from '../ui/button';
 import { Card, CardBody, CardHeader } from '../ui/card';
@@ -32,41 +32,41 @@ import { page, QueryError } from './shared';
 const NARROW = '@media (max-width: 1499px)';
 
 const styles = stylex.create({
-  head: { display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' },
+  head: { display: 'flex', alignItems: 'center', gap: space.s4, flexWrap: 'wrap' },
   kpis: { display: 'grid', gridTemplateColumns: { default: 'repeat(5, minmax(0, 1fr))', [NARROW]: 'repeat(3, minmax(0, 1fr))' }, gap: space.s4 },
-  kpi: { paddingBlock: '14px', paddingInline: '16px', display: 'flex', flexDirection: 'column', gap: '8px', minHeight: '108px' },
-  kpiLabel: { display: 'flex', alignItems: 'center', gap: '7px', fontFamily: font.mono, fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: color.textMuted },
-  kpiValue: { fontFamily: font.display, fontSize: '30px', fontWeight: 600, lineHeight: 1, display: 'flex', alignItems: 'baseline', gap: '8px' },
-  kpiSmall: { fontFamily: font.sans, fontSize: '12px', fontWeight: 400, color: color.textMuted },
-  kpiFoot: { fontSize: '11.5px', color: color.textMuted },
+  kpi: { paddingBlock: space.s3h, paddingInline: space.s4, display: 'flex', flexDirection: 'column', gap: space.s2, minHeight: '108px' },
+  kpiLabel: { display: 'flex', alignItems: 'center', gap: '7px', fontFamily: font.mono, fontSize: fontSize.micro, letterSpacing: tracking.chip, textTransform: 'uppercase', color: color.textMuted },
+  kpiValue: { fontFamily: font.display, fontSize: fontSize.figureLg, fontWeight: 600, lineHeight: 1, display: 'flex', alignItems: 'baseline', gap: space.s2 },
+  kpiSmall: { fontFamily: font.sans, fontSize: fontSize.sm, fontWeight: 400, color: color.textMuted },
+  kpiFoot: { fontSize: fontSize.xsPlus, color: color.textMuted },
   row2: { display: 'grid', gridTemplateColumns: { default: 'minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr)', [NARROW]: 'minmax(0, 1fr) minmax(0, 1fr)' }, gap: space.s4 },
   row3: { display: 'grid', gridTemplateColumns: { default: 'minmax(0, 1.45fr) minmax(0, 1.05fr) minmax(0, 0.95fr)', [NARROW]: 'minmax(0, 1fr) minmax(0, 1fr)' }, gap: space.s4 },
   span2: { gridColumn: { default: null, [NARROW]: '1 / -1' } },
   chart: { width: '100%', height: '190px', display: 'block' },
-  axis: { fill: color.textFaint, fontFamily: font.mono, fontSize: '9px' },
+  axis: { fill: color.textFaint, fontFamily: font.mono, fontSize: fontSize.nano },
   grid: { stroke: color.hairline, strokeWidth: 1 },
   diag: { stroke: color.textMuted, strokeDasharray: '3 3', strokeWidth: 1, fill: 'none' },
   barFill: { fill: 'url(#kor-cal)' },
   stopA: { stopColor: color.cyan }, stopB: { stopColor: color.violetDeep },
-  barLabel: { fill: color.textMuted, fontFamily: font.mono, fontSize: '9px' },
-  legend: { display: 'flex', gap: '16px', fontSize: '11.5px', color: color.textSecondary, marginTop: '8px', flexWrap: 'wrap' },
+  barLabel: { fill: color.textMuted, fontFamily: font.mono, fontSize: fontSize.nano },
+  legend: { display: 'flex', gap: space.s4, fontSize: fontSize.xsPlus, color: color.textSecondary, marginTop: space.s2, flexWrap: 'wrap' },
   legendCyan: { backgroundColor: color.cyan },
-  legendSwatch: { width: '14px', height: '3px', borderRadius: '2px', display: 'inline-block', marginRight: '6px', verticalAlign: 'middle' },
-  arm: { display: 'grid', gridTemplateColumns: '120px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)', gap: '10px', alignItems: 'center', paddingBlock: '8px', borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine, fontSize: '12.5px' },
-  armHead: { fontFamily: font.mono, fontSize: '9.5px', letterSpacing: '.12em', textTransform: 'uppercase', color: color.textFaint },
-  armVal: { fontFamily: font.mono, fontSize: '12px' },
-  agree: { display: 'grid', gridTemplateColumns: '92px minmax(0, 1fr) 34px 38px', gap: '10px', alignItems: 'center', paddingBlock: '5px', fontFamily: font.mono, fontSize: '11.5px', color: color.textSecondary },
-  learning: { display: 'grid', gridTemplateColumns: '26px minmax(0, 1fr)', gap: '12px', paddingBlock: '12px', borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine },
+  legendSwatch: { width: '14px', height: '3px', borderRadius: '2px', display: 'inline-block', marginRight: space.s1h, verticalAlign: 'middle' },
+  arm: { display: 'grid', gridTemplateColumns: '120px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)', gap: space.s2h, alignItems: 'center', paddingBlock: space.s2, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine, fontSize: fontSize.smPlus },
+  armHead: { fontFamily: font.mono, fontSize: fontSize.nano, letterSpacing: tracking.label, textTransform: 'uppercase', color: color.textFaint },
+  armVal: { fontFamily: font.mono, fontSize: fontSize.sm },
+  agree: { display: 'grid', gridTemplateColumns: '92px minmax(0, 1fr) 34px 38px', gap: space.s2h, alignItems: 'center', paddingBlock: '5px', fontFamily: font.mono, fontSize: fontSize.xsPlus, color: color.textSecondary },
+  learning: { display: 'grid', gridTemplateColumns: '26px minmax(0, 1fr)', gap: space.s3, paddingBlock: space.s3, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine },
   learnIcon: { width: '26px', height: '26px', borderRadius: '8px', display: 'grid', placeItems: 'center', backgroundColor: color.greenDim, color: color.green, borderWidth: '1px', borderStyle: 'solid', borderColor: tint.greenEdge },
-  learnText: { fontSize: '13px', color: color.text, lineHeight: 1.45, fontWeight: 500 },
-  experiment: { paddingBlock: '18px', paddingInline: '18px', display: 'flex', flexDirection: 'column', gap: '12px' },
-  expTitle: { fontFamily: font.display, fontSize: '19px', fontWeight: 600, lineHeight: 1.25 },
-  expTiles: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' },
-  expTile: { paddingBlock: '12px', paddingInline: '14px', borderRadius: '11px', borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline, backgroundColor: tint.ghost },
-  expValue: { fontFamily: font.display, fontSize: '22px', fontWeight: 600 },
-  next: { paddingBlock: '12px', paddingInline: '14px', borderRadius: '12px', borderWidth: '1px', borderStyle: 'dashed', borderColor: tint.violetEdgeStrong, fontSize: '12.5px', color: color.textSecondary, lineHeight: 1.5 },
+  learnText: { fontSize: fontSize.base, color: color.text, lineHeight: 1.45, fontWeight: 500 },
+  experiment: { paddingBlock: space.s4h, paddingInline: space.s4h, display: 'flex', flexDirection: 'column', gap: space.s3 },
+  expTitle: { fontFamily: font.display, fontSize: fontSize.xl, fontWeight: 600, lineHeight: 1.25 },
+  expTiles: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: space.s2h },
+  expTile: { paddingBlock: space.s3, paddingInline: space.s3h, borderRadius: '11px', borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline, backgroundColor: tint.ghost },
+  expValue: { fontFamily: font.display, fontSize: fontSize.figure, fontWeight: 600 },
+  next: { paddingBlock: space.s3, paddingInline: space.s3h, borderRadius: '12px', borderWidth: '1px', borderStyle: 'dashed', borderColor: tint.violetEdgeStrong, fontSize: fontSize.smPlus, color: color.textSecondary, lineHeight: 1.5 },
   rateInput: { width: '120px' },
-  tableWrap: { paddingInline: '8px', overflowX: 'auto' },
+  tableWrap: { paddingInline: space.s2, overflowX: 'auto' },
 });
 
 const RANGES = { '7': 7, '30': 30, '90': 90 } as const;

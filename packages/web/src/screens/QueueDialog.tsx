@@ -7,7 +7,7 @@ import { ApiFailure } from '../api/client';
 import { isOpen, issueKey, useAllIssues } from '../api/issues';
 import { useMissionRuns } from '../api/data';
 import { useProjects, useQueue } from '../api/queries';
-import { color, tint } from '../theme/tokens.stylex';
+import { color, fontSize, space, tint } from '../theme/tokens.stylex';
 import { Button } from '../ui/button';
 import { Checkbox, TextInput } from '../ui/form';
 import { LinearState, linearStateKind, Priority } from '../ui/glyphs';
@@ -18,7 +18,7 @@ import { text } from '../ui/text';
 
 const styles = stylex.create({
   list: { maxHeight: '420px', overflowY: 'auto', display: 'flex', flexDirection: 'column', borderRadius: '10px', borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline },
-  row: { display: 'grid', gridTemplateColumns: '18px 16px 16px 74px minmax(0, 1fr) auto', gap: '10px', alignItems: 'center', paddingBlock: '9px', paddingInline: '12px', borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine, fontSize: '13px', cursor: 'pointer', backgroundColor: { default: 'transparent', ':hover': tint.ghost } },
+  row: { display: 'grid', gridTemplateColumns: '18px 16px 16px 74px minmax(0, 1fr) auto', gap: space.s2h, alignItems: 'center', paddingBlock: '9px', paddingInline: space.s3, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine, fontSize: fontSize.base, cursor: 'pointer', backgroundColor: { default: 'transparent', ':hover': tint.ghost } },
 });
 
 export function QueueDialog({ onClose, projectId }: { onClose: () => void; projectId?: string }) {

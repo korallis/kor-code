@@ -2,7 +2,7 @@ import * as stylex from '@stylexjs/stylex';
 import type { LucideIcon } from 'lucide-react';
 import { Loader } from 'lucide-react';
 import type { MouseEvent, ReactNode } from 'react';
-import { color, font, glow, gradient, motion, radius, tint } from '../theme/tokens.stylex';
+import { color, font, fontSize, glow, gradient, motion, radius, space, tint } from '../theme/tokens.stylex';
 import { animate } from '../theme/animate';
 import { BrandMark, Icon } from './icon';
 import type { Brand } from './brands';
@@ -10,13 +10,13 @@ import type { Brand } from './brands';
 const styles = stylex.create({
   btn: {
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '7px', height: '32px', paddingInline: '13px', borderRadius: '9px',
-    fontSize: '13px', fontWeight: 500, color: color.text, backgroundColor: { default: tint.ghost, ':hover': tint.ghostStrong },
+    fontSize: fontSize.base, fontWeight: 500, color: color.text, backgroundColor: { default: tint.ghost, ':hover': tint.ghostStrong },
     borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairlineStrong, whiteSpace: 'nowrap', cursor: 'pointer', flex: 'none',
     transitionProperty: 'background-color, box-shadow, filter, opacity', transitionDuration: motion.fast,
     outline: 'none', boxShadow: { default: null, ':focus-visible': glow.focus },
   },
-  sm: { height: '27px', paddingInline: '10px', fontSize: '12px', borderRadius: '8px', gap: '6px' },
-  lg: { height: '40px', paddingInline: '18px', fontSize: '14px', borderRadius: '11px' },
+  sm: { height: '27px', paddingInline: space.s2h, fontSize: fontSize.sm, borderRadius: '8px', gap: space.s1h },
+  lg: { height: '40px', paddingInline: space.s4h, fontSize: fontSize.md, borderRadius: '11px' },
   primary: {
     backgroundImage: gradient.primaryButton, backgroundSize: '115% 100%', backgroundPosition: { default: '0% 0%', ':hover': '100% 0%' },
     borderColor: 'transparent', boxShadow: { default: glow.button, ':focus-visible': glow.focus }, color: tint.white, fontWeight: 600,
@@ -31,7 +31,7 @@ const styles = stylex.create({
   icon: { width: '32px', paddingInline: 0 },
   iconSm: { width: '27px', paddingInline: 0 },
   disabled: { opacity: 0.5, cursor: 'not-allowed' },
-  kbd: { fontFamily: font.mono, fontSize: '10px', lineHeight: 1, paddingBlock: '4px', paddingInline: '6px', borderRadius: '5px', borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairlineStrong, color: color.textMuted, backgroundColor: tint.ghost },
+  kbd: { fontFamily: font.mono, fontSize: fontSize.micro, lineHeight: 1, paddingBlock: space.s1, paddingInline: space.s1h, borderRadius: '5px', borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairlineStrong, color: color.textMuted, backgroundColor: tint.ghost },
   full: { width: '100%' },
   grow: { flex: '1' },
   radius: { borderRadius: radius.md },

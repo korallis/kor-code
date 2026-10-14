@@ -10,7 +10,7 @@ import { useMissionRuns, usePoolLive } from '../api/data';
 import { useAccountPause, useConfig, useModels, useProbe, useSaveConfig } from '../api/queries';
 import { navigate } from '../router';
 import { AppFrame } from '../shell/AppFrame';
-import { color, font, space, tint } from '../theme/tokens.stylex';
+import { color, font, fontSize, space, tint, tracking } from '../theme/tokens.stylex';
 import { Button } from '../ui/button';
 import { Card, CardBody, CardHeader } from '../ui/card';
 import { Bar, Ring } from '../ui/charts';
@@ -32,28 +32,28 @@ import { page, QueryError } from './shared';
 const NARROW = '@media (max-width: 1499px)';
 
 const styles = stylex.create({
-  head: { display: 'flex', alignItems: 'flex-end', gap: '12px', flexWrap: 'wrap' },
+  head: { display: 'flex', alignItems: 'flex-end', gap: space.s3, flexWrap: 'wrap' },
   providers: { display: 'grid', gridTemplateColumns: { default: 'minmax(0, 1.9fr) repeat(3, minmax(0, 1fr))', [NARROW]: 'repeat(2, minmax(0, 1fr))' }, gap: space.s4 },
-  provider: { paddingBlock: '16px', paddingInline: '18px', display: 'flex', flexDirection: 'column', gap: '14px' },
-  provName: { fontFamily: font.display, fontSize: '17px', fontWeight: 600 },
-  dots: { display: 'flex', gap: '4px', marginLeft: 'auto' },
+  provider: { paddingBlock: space.s4, paddingInline: space.s4h, display: 'flex', flexDirection: 'column', gap: space.s3h },
+  provName: { fontFamily: font.display, fontSize: fontSize.heading, fontWeight: 600 },
+  dots: { display: 'flex', gap: space.s1, marginLeft: 'auto' },
   dot: { width: '9px', height: '9px', borderRadius: '3px' },
-  windows: { display: 'flex', gap: '18px', flexWrap: 'wrap' },
-  window: { display: 'flex', alignItems: 'center', gap: '10px' },
-  wPct: { fontFamily: font.display, fontSize: '19px', fontWeight: 600, lineHeight: 1 },
-  wLabel: { fontSize: '11px', color: color.textMuted },
-  wReset: { fontFamily: font.mono, fontSize: '10.5px', color: color.textMuted, marginTop: '2px' },
+  windows: { display: 'flex', gap: space.s4h, flexWrap: 'wrap' },
+  window: { display: 'flex', alignItems: 'center', gap: space.s2h },
+  wPct: { fontFamily: font.display, fontSize: fontSize.xl, fontWeight: 600, lineHeight: 1 },
+  wLabel: { fontSize: fontSize.xs, color: color.textMuted },
+  wReset: { fontFamily: font.mono, fontSize: fontSize.microPlus, color: color.textMuted, marginTop: space.s0 },
   middle: { display: 'grid', gridTemplateColumns: { default: 'minmax(0, 1fr) 392px', [NARROW]: 'minmax(0, 1fr) 340px' }, gap: space.s4, alignItems: 'start' },
-  tableWrap: { paddingInline: '8px', overflowX: 'auto' },
-  barCell: { display: 'grid', gridTemplateColumns: '78px 36px', gap: '8px', alignItems: 'center', fontFamily: font.mono, fontSize: '11px' },
+  tableWrap: { paddingInline: space.s2, overflowX: 'auto' },
+  barCell: { display: 'grid', gridTemplateColumns: '78px 36px', gap: space.s2, alignItems: 'center', fontFamily: font.mono, fontSize: fontSize.xs },
   orbit: { position: 'relative', height: '170px', marginBlock: '4px 12px' },
-  core: { position: 'absolute', left: '50%', top: '50%', width: '62px', height: '62px', marginLeft: '-31px', marginTop: '-31px', borderRadius: '50%', display: 'grid', placeItems: 'center', fontFamily: font.display, fontWeight: 700, fontSize: '13px', letterSpacing: '.08em', backgroundImage: tint.orbFill, boxShadow: tint.orbGlow, color: tint.white },
-  node: { position: 'absolute', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', fontFamily: font.mono, fontSize: '10px', color: color.textMuted, transform: 'translate(-50%, -50%)' },
+  core: { position: 'absolute', left: '50%', top: '50%', width: '62px', height: '62px', marginLeft: '-31px', marginTop: '-31px', borderRadius: '50%', display: 'grid', placeItems: 'center', fontFamily: font.display, fontWeight: 700, fontSize: fontSize.base, letterSpacing: tracking.caps, backgroundImage: tint.orbFill, boxShadow: tint.orbGlow, color: tint.white },
+  node: { position: 'absolute', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: space.s1, fontFamily: font.mono, fontSize: fontSize.micro, color: color.textMuted, transform: 'translate(-50%, -50%)' },
   ring: { fill: 'none', stroke: tint.violetEdge },
   spoke: { stroke: tint.cyanEdge },
   formGrid: { display: 'grid', gridTemplateColumns: '112px minmax(0, 1fr)', gap: '12px 12px', alignItems: 'center' },
-  limits: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px' },
-  failover: { display: 'grid', gridTemplateColumns: '28px minmax(0, 1fr) auto', gap: '10px', alignItems: 'start', paddingBlock: '10px', borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine },
+  limits: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: space.s1h },
+  failover: { display: 'grid', gridTemplateColumns: '28px minmax(0, 1fr) auto', gap: space.s2h, alignItems: 'start', paddingBlock: space.s2h, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine },
 });
 const nodeAt = stylex.create({ at: (x: number, y: number) => ({ left: `${x}%`, top: `${y}%` }) });
 const STATUS_TONE: Record<GatewayAccountHealth['status'], Tone> = { available: 'green', quota: 'amber', authentication: 'rose', unavailable: 'slate', unknown: 'slate' };

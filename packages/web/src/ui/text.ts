@@ -15,7 +15,7 @@ export const text = stylex.create({
   grad: { backgroundImage: gradient.brandText, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' },
   ellipsis: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 },
   nowrap: { whiteSpace: 'nowrap' },
-  eyebrow: { fontFamily: font.mono, fontSize: '10.5px', letterSpacing: tracking.label, textTransform: 'uppercase', color: color.textMuted },
+  eyebrow: { fontFamily: font.mono, fontSize: fontSize.microPlus, letterSpacing: tracking.label, textTransform: 'uppercase', color: color.textMuted },
   label: { fontFamily: font.mono, fontSize: fontSize.micro, letterSpacing: tracking.label, textTransform: 'uppercase', color: color.textFaint },
   micro: { fontSize: fontSize.micro },
   xs: { fontSize: fontSize.xs },

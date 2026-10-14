@@ -10,7 +10,7 @@ import { useDecisions, useMissionRuns, usePoolLive, useStatusResponse } from '..
 import { useLive, reconnect } from '../api/live';
 import { isOpen, useAllIssues } from '../api/issues';
 import { href, type Screen } from '../router';
-import { color, font, glow, gradient, layout as dims, space, tint, tracking } from '../theme/tokens.stylex';
+import { color, font, fontSize, glow, gradient, layout as dims, space, tint, tracking } from '../theme/tokens.stylex';
 import { animate } from '../theme/animate';
 import { BrandMark, Icon } from '../ui/icon';
 import type { Brand } from '../ui/brands';
@@ -38,7 +38,7 @@ const styles = stylex.create({
     gridTemplateColumns: `${dims.sidebarWidth} minmax(0, 1fr)`, gridTemplateRows: `${dims.topBarHeight} minmax(0, 1fr) ${dims.statusBarHeight}`,
     gridTemplateAreas: '"top top" "side main" "status status"',
     backgroundImage: gradient.canvas, backgroundColor: color.canvas,
-    fontFamily: font.sans, fontSize: '13px', lineHeight: 1.5, color: color.text,
+    fontFamily: font.sans, fontSize: fontSize.base, lineHeight: 1.5, color: color.text,
   },
   stars: { position: 'absolute', inset: 0, zIndex: -1, pointerEvents: 'none', backgroundImage: tint.starField, backgroundSize: '380px 220px', opacity: 0.55 },
   grid: { position: 'absolute', inset: 0, zIndex: -1, pointerEvents: 'none', backgroundImage: tint.dotGrid, backgroundSize: '24px 24px', maskImage: tint.dotGridMask },
@@ -46,21 +46,21 @@ const styles = stylex.create({
   topLine: { position: 'absolute', left: 0, right: 0, bottom: '-1px', height: '1px', backgroundImage: gradient.brand, opacity: 0.35 },
   brand: { display: 'flex', alignItems: 'center', gap: '11px', paddingInline: space.s5, height: '100%', borderRightWidth: '1px', borderRightStyle: 'solid', borderRightColor: color.hairline },
   word: { display: 'flex', flexDirection: 'column', lineHeight: 1 },
-  name: { fontFamily: font.display, fontWeight: 700, fontSize: '19px', letterSpacing: '.04em', display: 'flex', gap: '6px', alignItems: 'baseline' },
-  code: { fontWeight: 500, color: color.text, letterSpacing: '.14em', fontSize: '15px' },
-  sub: { fontFamily: font.mono, fontSize: '9.5px', letterSpacing: tracking.wide, color: color.textMuted, textTransform: 'uppercase', marginTop: '6px' },
+  name: { fontFamily: font.display, fontWeight: 700, fontSize: fontSize.xl, letterSpacing: tracking.brand, display: 'flex', gap: space.s1h, alignItems: 'baseline' },
+  code: { fontWeight: 500, color: color.text, letterSpacing: tracking.wordmark, fontSize: fontSize.title },
+  sub: { fontFamily: font.mono, fontSize: fontSize.nano, letterSpacing: tracking.wide, color: color.textMuted, textTransform: 'uppercase', marginTop: space.s1h },
   mid: { display: 'flex', alignItems: 'center', gap: space.s5, paddingInline: space.s6, minWidth: 0 },
-  crumb: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: color.textMuted, whiteSpace: 'nowrap', minWidth: 0 },
+  crumb: { display: 'flex', alignItems: 'center', gap: space.s2, fontSize: fontSize.md, color: color.textMuted, whiteSpace: 'nowrap', minWidth: 0 },
   crumbLast: { color: color.text, fontWeight: 600 },
   sep: { color: color.textFaint },
   askbar: {
-    flex: '1', maxWidth: '620px', marginLeft: 'auto', height: '40px', display: 'flex', alignItems: 'center', gap: '10px', paddingInline: '12px 8px', borderRadius: '12px',
-    backgroundColor: color.surfaceSunken, borderWidth: '1px', borderStyle: 'solid', borderColor: { default: color.hairlineStrong, ':hover': tint.violetEdgeStrong }, color: color.textMuted, fontSize: '14px', cursor: 'text', minWidth: 0, textAlign: 'left',
+    flex: '1', maxWidth: '620px', marginLeft: 'auto', height: '40px', display: 'flex', alignItems: 'center', gap: space.s2h, paddingInline: '12px 8px', borderRadius: '12px',
+    backgroundColor: color.surfaceSunken, borderWidth: '1px', borderStyle: 'solid', borderColor: { default: color.hairlineStrong, ':hover': tint.violetEdgeStrong }, color: color.textMuted, fontSize: fontSize.md, cursor: 'text', minWidth: 0, textAlign: 'left',
   },
   askIcon: { color: color.violetBright },
   askText: { flex: '1', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   right: { display: 'flex', alignItems: 'center', gap: space.s4, paddingRight: space.s6, whiteSpace: 'nowrap' },
-  live: { display: 'inline-flex', alignItems: 'center', gap: '8px', height: '30px', paddingInline: '12px', borderRadius: '999px', borderWidth: '1px', borderStyle: 'solid', fontFamily: font.mono, fontSize: '11px', letterSpacing: '.06em', cursor: 'default' },
+  live: { display: 'inline-flex', alignItems: 'center', gap: space.s2, height: '30px', paddingInline: space.s3, borderRadius: '999px', borderWidth: '1px', borderStyle: 'solid', fontFamily: font.mono, fontSize: fontSize.xs, letterSpacing: tracking.mono, cursor: 'default' },
   liveOk: { backgroundColor: color.greenDim, borderColor: tint.livePillEdge, color: color.green },
   liveWarn: { backgroundColor: color.amberDim, borderColor: tint.amberEdge, color: color.amber, cursor: 'pointer' },
   liveDot: { width: '7px', height: '7px', borderRadius: '50%', backgroundColor: 'currentColor', boxShadow: '0 0 8px currentColor' },
@@ -68,45 +68,45 @@ const styles = stylex.create({
   iconBtn: { position: 'relative', width: '34px', height: '34px', borderRadius: '10px', display: 'grid', placeItems: 'center', color: color.textSecondary, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline, backgroundColor: { default: tint.ghost, ':hover': tint.ghostStrong } },
   badge: { position: 'absolute', top: '6px', right: '7px', width: '7px', height: '7px', borderRadius: '50%', backgroundColor: color.amber, boxShadow: glow.amber },
   clock: { textAlign: 'right', lineHeight: 1.2 },
-  time: { fontFamily: font.display, fontSize: '17px', fontWeight: 600, letterSpacing: '.02em' },
-  date: { fontFamily: font.mono, fontSize: '10px', color: color.textMuted, letterSpacing: '.08em', textTransform: 'uppercase' },
+  time: { fontFamily: font.display, fontSize: fontSize.heading, fontWeight: 600, letterSpacing: tracking.open },
+  date: { fontFamily: font.mono, fontSize: fontSize.micro, color: color.textMuted, letterSpacing: tracking.caps, textTransform: 'uppercase' },
   side: { gridArea: 'side', display: 'flex', flexDirection: 'column', gap: space.s1, paddingBlock: space.s5, paddingInline: space.s3, borderRightWidth: '1px', borderRightStyle: 'solid', borderRightColor: color.hairline, backgroundImage: tint.sideBar, backdropFilter: `blur(${dims.glassBlur})`, minHeight: 0, overflowY: 'auto', scrollbarWidth: 'none' },
-  navLabel: { fontFamily: font.mono, fontSize: '10px', letterSpacing: tracking.label, color: color.textFaint, textTransform: 'uppercase', paddingBlock: `${space.s3} ${space.s2}`, paddingInline: space.s3, marginTop: space.s2 },
-  nav: { position: 'relative', display: 'flex', alignItems: 'center', gap: '12px', height: '40px', flex: 'none', paddingInline: '12px', borderRadius: '10px', color: { default: color.textSecondary, ':hover': color.text }, fontSize: '14px', fontWeight: 500, backgroundColor: { default: 'transparent', ':hover': tint.ghost }, transitionProperty: 'background-color, color', transitionDuration: '120ms' },
+  navLabel: { fontFamily: font.mono, fontSize: fontSize.micro, letterSpacing: tracking.label, color: color.textFaint, textTransform: 'uppercase', paddingBlock: `${space.s3} ${space.s2}`, paddingInline: space.s3, marginTop: space.s2 },
+  nav: { position: 'relative', display: 'flex', alignItems: 'center', gap: space.s3, height: '40px', flex: 'none', paddingInline: space.s3, borderRadius: '10px', color: { default: color.textSecondary, ':hover': color.text }, fontSize: fontSize.md, fontWeight: 500, backgroundColor: { default: 'transparent', ':hover': tint.ghost }, transitionProperty: 'background-color, color', transitionDuration: '120ms' },
   navIcon: { color: color.textMuted },
   navActive: { color: color.text, backgroundImage: tint.navActive, boxShadow: tint.navActiveShadow },
   navActiveIcon: { color: color.violetNeon, filter: tint.iconGlow },
   navEdge: { position: 'absolute', left: '-12px', top: '9px', bottom: '9px', width: '3px', borderRadius: '0 3px 3px 0', backgroundImage: gradient.brand, boxShadow: glow.violet },
-  count: { marginLeft: 'auto', fontFamily: font.mono, fontSize: '11px', color: color.textMuted },
+  count: { marginLeft: 'auto', fontFamily: font.mono, fontSize: fontSize.xs, color: color.textMuted },
   hot: { color: color.cyan },
   warn: { color: color.amber },
   pushRight: { marginLeft: 'auto' },
-  project: { height: '32px', fontSize: '13px' },
+  project: { height: '32px', fontSize: fontSize.base },
   swatch: { marginInline: '5px' },
   spacer: { flex: '1', minHeight: space.s4 },
-  conn: { display: 'grid', gap: '6px', padding: '12px', borderRadius: '12px', borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline, backgroundColor: { default: tint.ghost, ':hover': tint.ghostStrong }, marginBottom: space.s2, flex: 'none' },
-  connRow: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: color.textSecondary },
+  conn: { display: 'grid', gap: space.s1h, padding: space.s3, borderRadius: '12px', borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairline, backgroundColor: { default: tint.ghost, ':hover': tint.ghostStrong }, marginBottom: space.s2, flex: 'none' },
+  connRow: { display: 'flex', alignItems: 'center', gap: space.s2, fontSize: fontSize.sm, color: color.textSecondary },
   connIcon: { color: color.textMuted },
-  connOk: { marginLeft: 'auto', fontFamily: font.mono, fontSize: '10.5px', color: color.green },
+  connOk: { marginLeft: 'auto', fontFamily: font.mono, fontSize: fontSize.microPlus, color: color.green },
   connBad: { color: color.amber },
-  jev: { display: 'flex', gap: '12px', alignItems: 'center', padding: '12px', borderRadius: '14px', backgroundImage: tint.jevCard, borderWidth: '1px', borderStyle: 'solid', borderColor: tint.jevCardEdge, flex: 'none' },
-  jevName: { fontFamily: font.display, fontWeight: 600, fontSize: '14px' },
-  jevSub: { fontSize: '11px', color: color.textMuted },
+  jev: { display: 'flex', gap: space.s3, alignItems: 'center', padding: space.s3, borderRadius: '14px', backgroundImage: tint.jevCard, borderWidth: '1px', borderStyle: 'solid', borderColor: tint.jevCardEdge, flex: 'none' },
+  jevName: { fontFamily: font.display, fontWeight: 600, fontSize: fontSize.md },
+  jevSub: { fontSize: fontSize.xs, color: color.textMuted },
   jevDot: { color: color.green },
   main: { gridArea: 'main', minWidth: 0, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', position: 'relative', scrollbarWidth: 'thin', scrollbarColor: `${color.hairlineStrong} transparent` },
-  status: { gridArea: 'status', display: 'flex', alignItems: 'stretch', borderTopWidth: '1px', borderTopStyle: 'solid', borderTopColor: color.hairline, backgroundColor: tint.statusBar, fontFamily: font.mono, fontSize: '11px', color: color.textMuted, overflow: 'hidden' },
-  seg: { display: 'flex', alignItems: 'center', gap: '12px', paddingInline: '16px', borderRightWidth: '1px', borderRightStyle: 'solid', borderRightColor: color.hairline, whiteSpace: 'nowrap' },
+  status: { gridArea: 'status', display: 'flex', alignItems: 'stretch', borderTopWidth: '1px', borderTopStyle: 'solid', borderTopColor: color.hairline, backgroundColor: tint.statusBar, fontFamily: font.mono, fontSize: fontSize.xs, color: color.textMuted, overflow: 'hidden' },
+  seg: { display: 'flex', alignItems: 'center', gap: space.s3, paddingInline: space.s4, borderRightWidth: '1px', borderRightStyle: 'solid', borderRightColor: color.hairline, whiteSpace: 'nowrap' },
   segRight: { marginLeft: 'auto', borderRightWidth: 0, borderLeftWidth: '1px', borderLeftStyle: 'solid', borderLeftColor: color.hairline },
-  lbl: { fontSize: '9.5px', letterSpacing: tracking.label, color: color.textFaint, textTransform: 'uppercase' },
+  lbl: { fontSize: fontSize.nano, letterSpacing: tracking.label, color: color.textFaint, textTransform: 'uppercase' },
   b: { color: color.textSecondary, fontWeight: 500 },
-  acct: { display: 'inline-flex', alignItems: 'center', gap: '6px', color: color.textSecondary },
+  acct: { display: 'inline-flex', alignItems: 'center', gap: space.s1h, color: color.textSecondary },
   claude: { color: tint.providerClaude },
   codex: { color: tint.providerCodex },
   copilot: { color: color.violetBright },
   offline: { paddingInline: space.s6, paddingTop: space.s6 },
   offlineRow: { display: 'flex', alignItems: 'center', gap: space.s5 },
   offlineArt: { width: '160px', height: '100px', flex: 'none' },
-  offlineTitle: { fontFamily: font.display, fontSize: '17px', fontWeight: 600 },
+  offlineTitle: { fontFamily: font.display, fontSize: fontSize.heading, fontWeight: 600 },
   hideNarrow: { display: { default: 'flex', [NARROW]: 'none' } },
   hideNarrowInline: { display: { default: 'inline', [NARROW]: 'none' } },
 });
@@ -162,7 +162,7 @@ function TopBar({ crumbs, askHint, showAsk }: { crumbs: readonly string[]; askHi
     </header>
   );
 }
-const layout_row = stylex.create({ r: { display: 'inline-flex', alignItems: 'center', gap: '8px' } }).r;
+const layout_row = stylex.create({ r: { display: 'inline-flex', alignItems: 'center', gap: space.s2 } }).r;
 
 function SideBar({ active, project }: { active: Screen; project?: string }) {
   const { runs } = useMissionRuns();

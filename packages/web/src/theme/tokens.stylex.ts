@@ -30,8 +30,9 @@ export const color = stylex.defineVars({
   // Text.
   text: '#eef1ff',
   textSecondary: '#aab3d9',
-  textMuted: '#7079a6',
-  textFaint: '#4a5380',
+  // Muted and faint meet WCAG AA (4.5:1) for small text on the canvas, cards, raised panels and selected rows.
+  textMuted: '#9099c8',
+  textFaint: '#8088b8',
   textOnAccent: '#0b0720',
 
   // Brand accents.
@@ -108,6 +109,20 @@ export const font = stylex.defineVars({
 });
 
 export const fontSize = stylex.defineVars({
+  /** Half steps from the approved component sheet (labels, captions, tags). */
+  nano: '9.5px',
+  microPlus: '10.5px',
+  xsPlus: '11.5px',
+  smPlus: '12.5px',
+  basePlus: '13.5px',
+  /** Card titles, needs-you heading, decision heading, page titles, big figures. */
+  title: '15px',
+  heading: '17px',
+  headingLg: '21px',
+  figure: '22px',
+  page: '28px',
+  figureLg: '30px',
+  heroNarrow: '40px',
   micro: '10px',
   xs: '11px',
   sm: '12px',
@@ -137,8 +152,18 @@ export const lineHeight = stylex.defineVars({
 /** Letter spacing for the mono eyebrow labels ("ACTIVE PROJECTS"). */
 export const tracking = stylex.defineVars({
   tight: '-0.02em',
+  snug: '-0.015em',
+  slight: '-0.01em',
+  hair: '-0.005em',
   normal: '0',
+  hairOpen: '0.005em',
+  open: '0.02em',
+  brand: '0.04em',
+  mono: '0.06em',
+  caps: '0.08em',
+  chip: '0.1em',
   label: '0.12em',
+  wordmark: '0.14em',
   wide: '0.32em',
 });
 
@@ -146,9 +171,14 @@ export const tracking = stylex.defineVars({
 export const space = stylex.defineVars({
   s0: '2px',
   s1: '4px',
+  /** Half steps the approved sheet uses for chips, rows and card insets. */
+  s1h: '6px',
   s2: '8px',
+  s2h: '10px',
   s3: '12px',
+  s3h: '14px',
   s4: '16px',
+  s4h: '18px',
   s5: '20px',
   s6: '24px',
   s7: '28px',
@@ -309,4 +339,10 @@ export const tint = stylex.defineVars({
   markGlow: 'drop-shadow(0 0 10px rgba(139, 92, 246, 0.55))',
   iconGlow: 'drop-shadow(0 0 6px rgba(167, 139, 250, 0.7))',
   livePillEdge: 'rgba(52, 229, 161, 0.3)',
+  /** The needs-you edge breathes between these two glows; the nav badge ripples out from amber to clear. */
+  amberBreatheLow: '0 0 0 1px rgba(251, 191, 36, 0.12), 0 0 32px -8px rgba(251, 191, 36, 0.12)',
+  amberBreatheHigh: '0 0 0 1px rgba(251, 191, 36, 0.3), 0 0 36px -6px rgba(251, 191, 36, 0.35)',
+  rippleStart: '0 0 0 0 rgba(251, 191, 36, 0.55)',
+  rippleEnd: '0 0 0 6px rgba(251, 191, 36, 0)',
+  rippleRest: '0 0 0 0 rgba(251, 191, 36, 0)',
 });

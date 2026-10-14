@@ -3,7 +3,7 @@
 // closes on the last, and reconnects with Last-Event-ID.
 import { useSyncExternalStore } from 'react';
 import { API_PREFIX, type MissionEvent, type MissionRun, type PoolResponse, type Stage } from '@kor-code/mission-control';
-import type { DecisionRecord, KorStatusResponse } from '@kor-code/core';
+import type { DecisionRecord, KorStatusResponse, OverrideRecord } from '@kor-code/core';
 import { authHeaders } from './client';
 import { queryClient } from './query';
 
@@ -14,6 +14,8 @@ export interface LiveState {
   status: KorStatusResponse | null;
   runs: MissionRun[];
   decisions: DecisionRecord[];
+  /** The override audit, newest first: seeded by snapshots, updated by every apply or revert. */
+  overrides: OverrideRecord[];
   accounts: PoolResponse['accounts'] | null;
   quota: PoolResponse['quota'] | null;
   terminals: Readonly<Record<string, readonly TerminalChunk[]>>;
@@ -32,7 +34,7 @@ const ACTIVE = new Set(['evaluating', 'running', 'verifying', 'repairing', 'ship
 const TERMINAL_LIMIT = 4_000;
 
 let state: LiveState = {
-  connection: 'connecting', status: null, runs: [], decisions: [], accounts: null, quota: null,
+  connection: 'connecting', status: null, runs: [], decisions: [], overrides: [], accounts: null, quota: null,
   terminals: {}, decidedAt: {}, shippedAt: {}, activity: [], lastEventAt: null, restartRequired: false, reason: null,
 };
 const listeners = new Set<() => void>();
@@ -71,7 +73,7 @@ function apply(event: MissionEvent): void {
   switch (event.kind) {
     case 'snapshot': {
       const decisions = event.status.snapshot?.decisions?.value ?? state.decisions;
-      set({ status: event.status, runs: event.runs, decisions, activity: sample(event.runs), lastEventAt: at, reason: event.status.provenance === 'live' ? null : event.status.reason ?? null });
+      set({ status: event.status, runs: event.runs, decisions, overrides: event.status.snapshot?.overrides ?? state.overrides, activity: sample(event.runs), lastEventAt: at, reason: event.status.provenance === 'live' ? null : event.status.reason ?? null });
       void queryClient.invalidateQueries({ queryKey: ['runs'] });
       return;
     }
@@ -192,6 +194,16 @@ if (typeof document !== 'undefined') {
       void connect();
     }
   });
+}
+
+/** The daemon's full override audit, from a REST status read. */
+export function replaceOverrides(records: OverrideRecord[]): void {
+  set({ overrides: records });
+}
+
+/** Record an override the daemon just applied, refused or reverted, so every view shows it at once. */
+export function upsertOverride(record: OverrideRecord): void {
+  set({ overrides: [record, ...state.overrides.filter(existing => existing.id !== record.id)] });
 }
 
 /** Reconnect now (the offline banner's button). */

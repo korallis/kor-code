@@ -8,7 +8,7 @@ import type { DecisionRecord } from '@kor-code/core';
 import { ApiFailure } from '../api/client';
 import { useOverrides } from '../api/data';
 import { useModels, useOverride, useRevertOverride } from '../api/queries';
-import { color, font, tint } from '../theme/tokens.stylex';
+import { color, font, fontSize, space, tint, tracking } from '../theme/tokens.stylex';
 import { Button } from '../ui/button';
 import { Dialog, Notice } from '../ui/misc';
 import { Pill } from '../ui/pill';
@@ -17,9 +17,9 @@ import { text } from '../ui/text';
 import { prob } from '../lib/format';
 
 const styles = stylex.create({
-  group: { display: 'flex', flexDirection: 'column', gap: '8px', paddingBlock: '12px', borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine },
-  kind: { fontFamily: font.mono, fontSize: '10.5px', letterSpacing: '.12em', textTransform: 'uppercase', color: color.violetBright },
-  reasons: { fontSize: '12px', color: color.textMuted },
+  group: { display: 'flex', flexDirection: 'column', gap: space.s2, paddingBlock: space.s3, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine },
+  kind: { fontFamily: font.mono, fontSize: fontSize.microPlus, letterSpacing: tracking.label, textTransform: 'uppercase', color: color.violetBright },
+  reasons: { fontSize: fontSize.sm, color: color.textMuted },
 });
 
 export function OverrideDialog({ run, decisions, onClose }: { run: MissionRun; decisions: readonly DecisionRecord[]; onClose: () => void }) {

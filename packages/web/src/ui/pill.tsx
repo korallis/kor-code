@@ -1,17 +1,17 @@
 import * as stylex from '@stylexjs/stylex';
 import type { Provenance, RunLifecycle } from '@kor-code/core';
 import type { ReactNode } from 'react';
-import { color, font, radius, tint } from '../theme/tokens.stylex';
+import { color, font, fontSize, radius, space, tint, tracking } from '../theme/tokens.stylex';
 import { animate } from '../theme/animate';
 import type { Tone } from './text';
 import { ACTIVE_STATUSES, toneOf, toneStyles } from './tone';
 
 const styles = stylex.create({
-  pill: { display: 'inline-flex', alignItems: 'center', gap: '6px', height: '22px', paddingInline: '9px', borderRadius: radius.pill, fontFamily: font.mono, fontSize: '11px', fontWeight: 500, whiteSpace: 'nowrap', borderWidth: '1px', borderStyle: 'solid', borderColor: 'transparent', flex: 'none' },
-  sm: { height: '19px', paddingInline: '7px', fontSize: '10.5px' },
+  pill: { display: 'inline-flex', alignItems: 'center', gap: space.s1h, height: '22px', paddingInline: '9px', borderRadius: radius.pill, fontFamily: font.mono, fontSize: fontSize.xs, fontWeight: 500, whiteSpace: 'nowrap', borderWidth: '1px', borderStyle: 'solid', borderColor: 'transparent', flex: 'none' },
+  sm: { height: '19px', paddingInline: '7px', fontSize: fontSize.microPlus },
   ghost: { color: color.textSecondary, backgroundColor: tint.ghost, borderColor: color.hairlineStrong },
   dot: { width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'currentColor', boxShadow: '0 0 8px currentColor', flex: 'none' },
-  chip: { display: 'inline-flex', alignItems: 'center', gap: '5px', fontFamily: font.mono, fontSize: '9.5px', letterSpacing: '.1em', textTransform: 'uppercase', paddingBlock: '2px', paddingInline: '6px', borderRadius: radius.xs, borderWidth: '1px', borderStyle: 'solid', whiteSpace: 'nowrap', flex: 'none' },
+  chip: { display: 'inline-flex', alignItems: 'center', gap: '5px', fontFamily: font.mono, fontSize: fontSize.nano, letterSpacing: tracking.chip, textTransform: 'uppercase', paddingBlock: space.s0, paddingInline: space.s1h, borderRadius: radius.xs, borderWidth: '1px', borderStyle: 'solid', whiteSpace: 'nowrap', flex: 'none' },
   chipDot: { width: '5px', height: '5px', borderRadius: '50%', backgroundColor: 'currentColor', boxShadow: '0 0 6px currentColor' },
   live: { color: color.green, borderColor: tint.greenEdge, backgroundColor: tint.liveGreenFill },
   stale: { color: color.amber, borderColor: tint.amberEdge, backgroundColor: tint.amberChipFill },

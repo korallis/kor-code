@@ -1,12 +1,12 @@
 import * as stylex from '@stylexjs/stylex';
 import { useRef, type UIEvent } from 'react';
-import { color, font } from '../theme/tokens.stylex';
+import { color, font, fontSize, space } from '../theme/tokens.stylex';
 import { animate } from '../theme/animate';
 import type { LineTone, TermLine } from '../lib/terminal';
 
 const styles = stylex.create({
-  term: { fontFamily: font.mono, fontSize: '12px', lineHeight: 1.72, color: color.textSecondary, backgroundColor: color.codeBg, overflowY: 'auto', overflowX: 'hidden', minHeight: 0, paddingBlock: '14px', paddingInline: '18px', scrollbarWidth: 'thin', scrollbarColor: `${color.hairlineStrong} transparent` },
-  line: { display: 'grid', gridTemplateColumns: '60px 72px minmax(0, 1fr)', columnGap: '12px' },
+  term: { fontFamily: font.mono, fontSize: fontSize.sm, lineHeight: 1.72, color: color.textSecondary, backgroundColor: color.codeBg, overflowY: 'auto', overflowX: 'hidden', minHeight: 0, paddingBlock: space.s3h, paddingInline: space.s4h, scrollbarWidth: 'thin', scrollbarColor: `${color.hairlineStrong} transparent` },
+  line: { display: 'grid', gridTemplateColumns: '60px 72px minmax(0, 1fr)', columnGap: space.s3 },
   body: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' },
   ts: { color: color.textFaint },
   plain: { color: color.textSecondary },
@@ -17,8 +17,8 @@ const styles = stylex.create({
   jev: { color: color.violetBright },
   dim: { color: color.textMuted },
   hi: { color: color.text },
-  cursor: { display: 'inline-block', width: '8px', height: '14px', backgroundColor: color.cyan, boxShadow: `0 0 8px ${color.cyan}`, verticalAlign: '-2px', marginLeft: '4px' },
-  empty: { color: color.textMuted, paddingBlock: '24px' },
+  cursor: { display: 'inline-block', width: '8px', height: '14px', backgroundColor: color.cyan, boxShadow: `0 0 8px ${color.cyan}`, verticalAlign: '-2px', marginLeft: space.s1 },
+  empty: { color: color.textMuted, paddingBlock: space.s6 },
 });
 
 const TONE: Record<LineTone, stylex.StyleXStyles> = { plain: styles.plain, tool: styles.tool, ok: styles.ok, warn: styles.warn, err: styles.err, jev: styles.jev, dim: styles.dim, hi: styles.hi };
