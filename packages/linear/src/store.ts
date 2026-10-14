@@ -80,6 +80,7 @@ export class LinearStore {
       CREATE TABLE IF NOT EXISTS outbox (sequence INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS writer (id INTEGER PRIMARY KEY CHECK(id=1), token TEXT, expires_at INTEGER);
       CREATE TABLE IF NOT EXISTS decision_audit (decision_id TEXT PRIMARY KEY, recorded_at TEXT NOT NULL, payload TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS verification_attempts (attempt_id TEXT PRIMARY KEY, execution_id TEXT NOT NULL, attempt_number INTEGER NOT NULL, started_at INTEGER NOT NULL);
       INSERT OR IGNORE INTO writer(id) VALUES (1);`);
     this.transaction(() => {
       const version = number(this.db.prepare('PRAGMA user_version').get()?.user_version);
@@ -143,6 +144,14 @@ export class LinearStore {
     catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
   close(): void { this.db.close(); }
+
+  /** Append before starting a session, including sessions interrupted before judgment. */
+  reserveVerificationAttempt(executionId: string, attempt: number): string {
+    if (!executionId || !Number.isSafeInteger(attempt) || attempt < 1) throw new Error('Invalid verification attempt reservation');
+    const id = randomUUID();
+    this.db.prepare('INSERT INTO verification_attempts VALUES(?,?,?,?)').run(id, executionId, attempt, this.now());
+    return id;
+  }
 
   readDecisionAudit(decisionId: string): string | undefined {
     const row = this.db.prepare('SELECT payload FROM decision_audit WHERE decision_id=?').get(decisionId) as { payload?: unknown } | undefined;

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { execFile as execFileCallback } from "node:child_process";
 import { readFile, realpath } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
@@ -76,6 +77,7 @@ export async function verifyAttempt(input: {
   acceptance: readonly AcceptanceCondition[];
   session: SessionResult;
   attempt: number;
+  attemptId?: string;
   checks: readonly string[];
   baseRevision: string;
   jev?: Pick<JevDecisionCore, "judgeAcceptance">;
@@ -83,6 +85,7 @@ export async function verifyAttempt(input: {
   settings: ReturnType<typeof verificationSettings>;
 }): Promise<VerificationAttempt> {
   const { execution, acceptance, session, settings } = input;
+  const attemptId = input.attemptId ?? randomUUID();
   const blockers: string[] = [];
   const denials = session.telemetry?.permissionDenialDetails ?? [];
   const unknownDenials = (session.telemetry?.permissionDenials ?? 0) !== denials.length;
@@ -104,25 +107,25 @@ export async function verifyAttempt(input: {
   if (input.enforceSemantic && acceptance.length === 0) blockers.push("Explicit acceptance criteria are required");
   const tracker = new VerificationTracker(acceptance, execution.id);
   const evidence: Evidence[] = [
-    ...checks.map((check, index) => ({ id: `check-${execution.id}-${input.attempt}-${index}`, executionId: execution.id, kind: "test" as const, summary: `${check.command}: exit ${check.exitCode ?? "unavailable"}`, source: check.command, status: check.status })),
-    { id: `diff-${execution.id}-${input.attempt}`, executionId: execution.id, kind: "git" as const, summary: `Collected worktree diff (${diff.length} characters)`, status: "pass" as const },
-    ...denials.map((denial, index): Evidence => ({ id: `denial-${execution.id}-${input.attempt}-${index}`, executionId: execution.id, kind: "policy", summary: safeText(`Denied ${denial.toolName}: ${denial.input}`), status: "unresolved" })),
+    ...checks.map((check, index) => ({ id: `check-${execution.id}-${attemptId}-${index}`, executionId: execution.id, kind: "test" as const, summary: `${check.command}: exit ${check.exitCode ?? "unavailable"}`, source: check.command, status: check.status })),
+    { id: `diff-${execution.id}-${attemptId}`, executionId: execution.id, kind: "git" as const, summary: `Collected worktree diff (${diff.length} characters)`, status: "pass" as const },
+    ...denials.map((denial, index): Evidence => ({ id: `denial-${execution.id}-${attemptId}-${index}`, executionId: execution.id, kind: "policy", summary: safeText(`Denied ${denial.toolName}: ${denial.input}`), status: "unresolved" })),
   ];
   let judgments: Awaited<ReturnType<JevDecisionCore["judgeAcceptance"]>> = [];
   let judgmentError: string | undefined;
   try {
     if (!input.jev) throw new Error("TypeSafe acceptance judge is not configured");
-    judgments = await input.jev.judgeAcceptance({ executionId: execution.id, attempt: input.attempt, state: { diff, checks: checks.map(check => ({ ...check })), session: { exitCode: session.exitCode, failed: blockers.length > 0, deniedTools: denials.map(denial => ({ ...denial })), toolResults: (session.telemetry?.toolResults ?? []).map(result => ({ ...result, denied: denials.some(denial => denial.toolUseId === result.toolUseId) })) }, evidenceErrors: blockers }, criteria: acceptance, threshold: settings.acceptanceThreshold });
+    judgments = await input.jev.judgeAcceptance({ executionId: execution.id, attempt: input.attempt, attemptId, state: { diff, checks: checks.map(check => ({ ...check })), session: { exitCode: session.exitCode, failed: blockers.length > 0, deniedTools: denials.map(denial => ({ ...denial })), toolResults: (session.telemetry?.toolResults ?? []).map(result => ({ ...result, denied: denials.some(denial => denial.toolUseId === result.toolUseId) })) }, evidenceErrors: blockers }, criteria: acceptance, threshold: settings.acceptanceThreshold });
   } catch (error) {
     if (input.enforceSemantic) { judgmentError = `Jev acceptance unavailable: ${failureText(error)}`; blockers.push(judgmentError); }
   }
   for (const judgment of judgments) {
-    evidence.push({ id: `acceptance-${execution.id}-${input.attempt}-${judgment.criterionId}`, executionId: execution.id, kind: "review", acceptanceId: judgment.criterionId, summary: `${judgment.criterionId}: Jev Noul probability ${judgment.probability.toFixed(3)}; threshold ${settings.acceptanceThreshold.toFixed(3)}`, source: "Jev Noul", status: judgment.passed ? "pass" : judgment.probability <= 1 - settings.acceptanceThreshold ? "fail" : "unresolved" });
+    evidence.push({ id: `acceptance-${execution.id}-${attemptId}-${judgment.criterionId}`, executionId: execution.id, kind: "review", acceptanceId: judgment.criterionId, summary: `${judgment.criterionId}: Jev Noul probability ${judgment.probability.toFixed(3)}; threshold ${settings.acceptanceThreshold.toFixed(3)}`, source: "Jev Noul", status: judgment.passed ? "pass" : judgment.probability <= 1 - settings.acceptanceThreshold ? "fail" : "unresolved" });
   }
   tracker.addMany(evidence);
   const findings = tracker.findings().map(finding => ({ ...finding, note: evidence.find(item => item.acceptanceId === finding.conditionId)?.summary ?? judgmentError ?? "No acceptance judgment returned" }));
   if (input.enforceSemantic) blockers.push(...findings.filter(finding => finding.status !== "pass").map(finding => `${finding.conditionId}: ${finding.status} — ${finding.note}`));
-  return { attempt: input.attempt, checks, diff, evidence, findings, blockers, ...(publication ? { publication } : {}) };
+  return { attempt: input.attempt, attemptId, checks, diff, evidence, findings, blockers, ...(publication ? { publication } : {}) };
 }
 export function repairPrompt(initial: string, attempt: VerificationAttempt): string {
   return `${initial}\n\nRepair attempt ${attempt.attempt + 1}. Resolve these verification failures and preserve the acceptance requirements:\n${attempt.blockers.join("\n")}\n\nDenied tools (these did not execute):\n${attempt.evidence.filter(item => item.kind === "policy").map(item => item.summary).join("\n")}\n\nAuthoritative check output:\n${attempt.checks.map(check => `${check.command}: exit ${check.exitCode ?? "unavailable"}\n${check.output}`).join("\n").slice(0, 100_000)}\n\nPer-criterion findings:\n${attempt.findings.map(finding => `${finding.conditionId}: ${finding.status} — ${finding.note ?? ""}`).join("\n")}`;
