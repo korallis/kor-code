@@ -150,8 +150,8 @@ export class JevDecisionCore {
     if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) throw new Error("Acceptance threshold must be between 0 and 1");
     const questions = Object.fromEntries(request.criteria.map(criterion => [criterion.id, {
       type: "noul" as const,
-      instructions: `Does the current implementation satisfy this acceptance criterion: ${criterion.description}? Judge only the supplied diff and check output.`,
-      criteria: { true: "The diff and authoritative checks demonstrate the criterion is satisfied.", false: "The evidence is missing, contradictory, or the checks do not demonstrate the criterion." },
+      instructions: `Does the current implementation satisfy this acceptance criterion: ${criterion.description}? Judge only the supplied diff, authoritative checks and actual tool results. A denied tool did not execute: do not treat its requested operation or the session's claims as evidence. Distinguish a denial that prevented required work from a harmless denied inspection or an operation subsequently demonstrated by permitted tools or authoritative checks.`,
+      criteria: { true: "The diff, authoritative checks and actual non-denied tool outputs demonstrate the criterion is satisfied. A denied optional call alone does not invalidate this evidence.", false: "Required evidence is missing, contradictory or failing, including when a denied call prevented required work with no successful alternative demonstration." },
     }]));
     const response = await this.client.evaluate(request.state, questions);
     return request.criteria.map(criterion => {

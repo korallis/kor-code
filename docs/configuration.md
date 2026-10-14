@@ -97,6 +97,15 @@ checkout for a new config scaffold. Configure `linearTeam` or `linearProject`,
 checks, and `toolAllowlist` before enabling the service. Empty scaffold checks
 and allowlists are deliberate placeholders for repository policy.
 
+Kor adds exact simple commands from `checks` to execution-session permissions. It
+also permits equivalent direct invocations of explicitly allowed `bash`/`sh`
+scripts when they are executable, use the same shebang interpreter, and resolve
+inside the isolated execution worktree. These aliases preserve the configured
+script and argument scope; they do not enable general shell or network commands.
+The session prompt lists its effective permissions. Denied calls and their actual
+tool output are recorded for Jev to distinguish missing required work from an
+optional inspection that was denied.
+
 When no file or runtime credential is present, install writes a new
 `KOR_GATEWAY_KEY=kor-...` to `gateway.env` (0600) and prints the matching
 `CLIProxyAPI addition: - kor-...`. Add that line to CLIProxyAPI manually.

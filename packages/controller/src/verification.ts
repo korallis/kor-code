@@ -84,7 +84,9 @@ export async function verifyAttempt(input: {
 }): Promise<VerificationAttempt> {
   const { execution, acceptance, session, settings } = input;
   const blockers: string[] = [];
-  if (session.exitCode !== 0 || session.failed || session.telemetry?.isError || (session.telemetry?.permissionDenials ?? 0) > 0) blockers.push(`Session failed: ${session.failureReasons?.join(", ") || `exit ${session.exitCode}`}`);
+  const denials = session.telemetry?.permissionDenialDetails ?? [];
+  const unknownDenials = (session.telemetry?.permissionDenials ?? 0) !== denials.length;
+  if (session.exitCode !== 0 || session.failed || session.telemetry?.isError || unknownDenials) blockers.push(`Session failed: ${session.failureReasons?.join(", ") || (unknownDenials ? "unrecognized permission denial records" : `exit ${session.exitCode}`)}`);
   const checks: RepositoryCheckResult[] = [];
   for (const command of input.checks) checks.push(await runCheck(command, execution.worktree, settings.checkTimeoutMs));
   blockers.push(...checks.filter(check => check.status !== "pass").map(check => `Check failed: ${check.command} (exit ${check.exitCode ?? "unavailable"})${check.output ? ` — ${check.output.slice(-2_000)}` : ""}`));
@@ -104,12 +106,13 @@ export async function verifyAttempt(input: {
   const evidence: Evidence[] = [
     ...checks.map((check, index) => ({ id: `check-${execution.id}-${input.attempt}-${index}`, executionId: execution.id, kind: "test" as const, summary: `${check.command}: exit ${check.exitCode ?? "unavailable"}`, source: check.command, status: check.status })),
     { id: `diff-${execution.id}-${input.attempt}`, executionId: execution.id, kind: "git" as const, summary: `Collected worktree diff (${diff.length} characters)`, status: "pass" as const },
+    ...denials.map((denial, index): Evidence => ({ id: `denial-${execution.id}-${input.attempt}-${index}`, executionId: execution.id, kind: "policy", summary: safeText(`Denied ${denial.toolName}: ${denial.input}`), status: "unresolved" })),
   ];
   let judgments: Awaited<ReturnType<JevDecisionCore["judgeAcceptance"]>> = [];
   let judgmentError: string | undefined;
   try {
     if (!input.jev) throw new Error("TypeSafe acceptance judge is not configured");
-    judgments = await input.jev.judgeAcceptance({ executionId: execution.id, attempt: input.attempt, state: { diff, checks: checks.map(check => ({ ...check })), session: { exitCode: session.exitCode, failed: blockers.length > 0 }, evidenceErrors: blockers }, criteria: acceptance, threshold: settings.acceptanceThreshold });
+    judgments = await input.jev.judgeAcceptance({ executionId: execution.id, attempt: input.attempt, state: { diff, checks: checks.map(check => ({ ...check })), session: { exitCode: session.exitCode, failed: blockers.length > 0, deniedTools: denials.map(denial => ({ ...denial })), toolResults: (session.telemetry?.toolResults ?? []).map(result => ({ ...result, denied: denials.some(denial => denial.toolUseId === result.toolUseId) })) }, evidenceErrors: blockers }, criteria: acceptance, threshold: settings.acceptanceThreshold });
   } catch (error) {
     if (input.enforceSemantic) { judgmentError = `Jev acceptance unavailable: ${failureText(error)}`; blockers.push(judgmentError); }
   }
@@ -122,5 +125,5 @@ export async function verifyAttempt(input: {
   return { attempt: input.attempt, checks, diff, evidence, findings, blockers, ...(publication ? { publication } : {}) };
 }
 export function repairPrompt(initial: string, attempt: VerificationAttempt): string {
-  return `${initial}\n\nRepair attempt ${attempt.attempt + 1}. Resolve these verification failures and preserve the acceptance requirements:\n${attempt.blockers.join("\n")}\n\nAuthoritative check output:\n${attempt.checks.map(check => `${check.command}: exit ${check.exitCode ?? "unavailable"}\n${check.output}`).join("\n").slice(0, 100_000)}\n\nPer-criterion findings:\n${attempt.findings.map(finding => `${finding.conditionId}: ${finding.status} — ${finding.note ?? ""}`).join("\n")}`;
+  return `${initial}\n\nRepair attempt ${attempt.attempt + 1}. Resolve these verification failures and preserve the acceptance requirements:\n${attempt.blockers.join("\n")}\n\nDenied tools (these did not execute):\n${attempt.evidence.filter(item => item.kind === "policy").map(item => item.summary).join("\n")}\n\nAuthoritative check output:\n${attempt.checks.map(check => `${check.command}: exit ${check.exitCode ?? "unavailable"}\n${check.output}`).join("\n").slice(0, 100_000)}\n\nPer-criterion findings:\n${attempt.findings.map(finding => `${finding.conditionId}: ${finding.status} — ${finding.note ?? ""}`).join("\n")}`;
 }

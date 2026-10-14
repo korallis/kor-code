@@ -3,12 +3,18 @@ import { dirname, join, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import type { Execution, Route } from "@kor-code/core";
 import { EventCollector, type SessionEvent } from "./events.js";
+import { redact } from "@kor-code/jev";
+import { permissionGuidance, sessionPermissions } from "./session-permissions.js";
 
-export interface SessionLaunch { execution: Execution; repositoryPath: string; worktreePath: string; prompt: string; route?: Route; allowedTools?: readonly string[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }
+export interface SessionLaunch { execution: Execution; repositoryPath: string; worktreePath: string; prompt: string; route?: Route; allowedTools?: readonly string[]; checks?: readonly string[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }
+export interface PermissionDenial { toolName: string; toolUseId: string; input: string }
+export interface ToolResult { toolName: string; toolUseId: string; input: string; output: string; isError: boolean }
 export interface SessionTelemetry {
   result: string;
   isError: boolean;
   permissionDenials: number;
+  permissionDenialDetails?: readonly PermissionDenial[];
+  toolResults?: readonly ToolResult[];
   totalCostUsd?: number;
   durationMs?: number;
   durationApiMs?: number;
@@ -33,7 +39,7 @@ export interface SessionLauncherOptions {
   cockpit?: { statusUrl: string; stateDir: string };
 }
 
-// A repository must opt into mutation tools; an omitted config can only inspect.
+// Repository policy supplies capabilities; absent policy defaults to inspection.
 const DEFAULT_ALLOWED_TOOLS = ["Read"] as const;
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -41,6 +47,53 @@ function record(value: unknown): Record<string, unknown> | undefined {
 }
 function numberField(value: unknown): number | undefined { return typeof value === "number" && Number.isFinite(value) ? value : undefined; }
 function stringField(value: unknown): string | undefined { return typeof value === "string" ? value : undefined; }
+function evidenceText(value: unknown, limit: number): string {
+  const redacted = redact(value);
+  const text = typeof redacted === "string" ? redacted : JSON.stringify(redacted) ?? "";
+  return text.length > limit ? `${text.slice(0, limit)} [truncated]` : text;
+}
+function denialDetails(value: unknown): PermissionDenial[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 32).flatMap(item => {
+    const denied = record(item);
+    const toolName = stringField(denied?.tool_name);
+    const toolUseId = stringField(denied?.tool_use_id);
+    const input = record(denied?.tool_input);
+    return toolName && toolUseId && input ? [{ toolName, toolUseId, input: evidenceText(input, 1_024) }] : [];
+  });
+}
+function toolResults(events: readonly SessionEvent[]): ToolResult[] {
+  const calls = new Map<string, { toolName: string; input: string }>();
+  const results: ToolResult[] = [];
+  for (const event of events) {
+    const value = record(event.value);
+    const content = record(value?.message)?.content;
+    if (!Array.isArray(content)) continue;
+    for (const item of content) {
+      const block = record(item);
+      if (value?.type === "assistant" && block?.type === "tool_use") {
+        const id = stringField(block.id);
+        const name = stringField(block.name);
+        if (id && name) calls.set(id, { toolName: name, input: evidenceText(block.input, 1_024) });
+      } else if (value?.type === "user" && block?.type === "tool_result") {
+        const toolUseId = stringField(block.tool_use_id);
+        const call = toolUseId ? calls.get(toolUseId) : undefined;
+        if (toolUseId && call) results.push({ ...call, toolUseId, output: evidenceText(block.content, 4_096), isError: block.is_error === true });
+      }
+    }
+  }
+  // Keep actual shell output ahead of optional source inspection, with a bounded budget.
+  const ordered = [...results.filter(result => result.toolName === "Bash"), ...results.filter(result => result.toolName !== "Bash")];
+  const bounded: ToolResult[] = [];
+  let remaining = 64_000;
+  for (const result of ordered) {
+    const size = result.input.length + result.output.length;
+    if (bounded.length >= 32 || size > remaining) break;
+    remaining -= size;
+    bounded.push(result);
+  }
+  return bounded;
+}
 function parseUsage(value: unknown): Readonly<Record<string, number>> | undefined {
   const object = record(value);
   if (!object) return undefined;
@@ -70,6 +123,8 @@ function parseResultEvent(events: readonly SessionEvent[]): SessionTelemetry | u
     result: stringField(value.result) ?? "",
     isError: value.is_error === true,
     permissionDenials,
+    permissionDenialDetails: denialDetails(value.permission_denials),
+    toolResults: toolResults(events),
     ...(totalCostUsd !== undefined ? { totalCostUsd } : {}),
     ...(durationMs !== undefined ? { durationMs } : {}),
     ...(durationApiMs !== undefined ? { durationApiMs } : {}),
@@ -84,7 +139,7 @@ function failureReasons(exitCode: number, telemetry: SessionTelemetry | undefine
   if (!telemetry) reasons.push("missing result event");
   else {
     if (telemetry.isError) reasons.push("result is_error");
-    if (telemetry.permissionDenials > 0) reasons.push(`${telemetry.permissionDenials} permission denial${telemetry.permissionDenials === 1 ? "" : "s"}`);
+    if (telemetry.permissionDenials !== (telemetry.permissionDenialDetails?.length ?? 0)) reasons.push("unrecognized permission denial records");
   }
   return reasons;
 }
@@ -92,16 +147,17 @@ function failureReasons(exitCode: number, telemetry: SessionTelemetry | undefine
 export class SessionLauncher implements SessionLauncherLike {
   private readonly repoRoot: string;
   constructor(private readonly options: SessionLauncherOptions = {}) { this.repoRoot = resolve(options.repoRoot ?? process.cwd()); }
-  launch(input: SessionLaunch): Promise<SessionResult> {
+  async launch(input: SessionLaunch): Promise<SessionResult> {
     const collector = new EventCollector();
     const script = this.options.sandboxScript ?? resolve(this.repoRoot, "scripts/sandbox.sh");
-    const allowedTools = input.allowedTools ?? this.options.allowedTools ?? DEFAULT_ALLOWED_TOOLS;
+    const checks = input.checks ?? [];
+    const allowedTools = await sessionPermissions({ worktree: input.worktreePath, allowedTools: input.allowedTools ?? this.options.allowedTools ?? DEFAULT_ALLOWED_TOOLS, checks });
     const toolArgs = allowedTools.length > 0 ? [...allowedTools] : [""];
     const routeArgs = [
       ...(input.route?.model ? ["--model", input.route.model] : []),
       ...(input.route?.reasoningLevel ? ["--effort", input.route.reasoningLevel] : []),
     ];
-    const commandArgs = this.options.args ?? ["claude", "-p", input.prompt, ...routeArgs, "--plugin-dir", resolve(this.repoRoot, "packages/claude-plugin"), "--no-session-persistence", "--permission-mode", "dontAsk", "--allowedTools", ...toolArgs, "--output-format", "stream-json", "--verbose", "--setting-sources", ""];
+    const commandArgs = this.options.args ?? ["claude", "-p", input.prompt + permissionGuidance(allowedTools, checks), ...routeArgs, "--plugin-dir", resolve(this.repoRoot, "packages/claude-plugin"), "--no-session-persistence", "--permission-mode", "dontAsk", "--allowedTools", ...toolArgs, "--output-format", "stream-json", "--verbose", "--setting-sources", ""];
     const args = ["--run", ...commandArgs];
     const tool = commandArgs[0] ?? "claude";
     const toolDir = tool.includes("/") ? dirname(tool) : this.findToolDir(tool);
