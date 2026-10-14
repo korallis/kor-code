@@ -26,6 +26,25 @@ const USAGE = 'Usage: /kor [cockpit|issue|project|decisions|decision <id>|agents
 
 let replay: Timer | undefined
 
+function object(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : undefined
+}
+
+/** Keep execution sessions from mutating remotes or destroying their worktree. */
+function policyDecision(toolName: string, input: unknown): string | undefined {
+  if (toolName !== 'Bash') return undefined
+  const command = object(input)?.command
+  if (typeof command !== 'string') return undefined
+  const blocked = [
+    /(?:^|\s)git\s+push(?:\s|$)/,
+    /(?:^|\s)git\s+reset\s+--hard(?:\s|$)/,
+    /(?:^|\s)git\s+clean\s+-[^\n]*f/,
+    /(?:^|\s)git\s+branch\s+-D(?:\s|$)/,
+    /(?:^|\s)rm\s+-[^\n]*r[^\n]*f/,
+  ].some(pattern => pattern.test(command))
+  return blocked ? 'Kor policy denied a destructive or remote-mutating command.' : undefined
+}
+
 async function liveFacts($: EngineInterface): Promise<LiveFacts> {
   return { claudeCode: (await $.session.version()).version }
 }
@@ -84,6 +103,11 @@ async function replayText($: EngineInterface): Promise<string> {
 }
 
 export const register: Register = on => {
+  on('classic.PreToolUse', ($, e, next) => {
+    const reason = policyDecision(e.tool, e)
+    return reason ? { deny: reason } : next(e)
+  }).catch(() => ({ deny: 'Kor policy hook failed closed.' }))
+
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'kor', description: 'Kor Code cockpit views (fixture data)', argumentHint: '[view] [id]' })
     await $.command.register({ name: 'kor-status', description: 'Show the session-local Kor Code cockpit status' })
