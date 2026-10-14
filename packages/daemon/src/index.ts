@@ -15,8 +15,9 @@ import { OverrideStore } from "./overrides.js";
 
 export { OverrideStore } from "./overrides.js";
 
-export { readSnapshot, readStatus } from "./status.js";
+export { readSnapshot, readStatus, readExecutionStatus } from "./status.js";
 const exec = promisify(execFile);
+class NeedsInputError extends Error {}
 export interface DaemonRunInput {
   claim: ExecutionClaim;
   issue: LinearIssue;
@@ -442,10 +443,11 @@ export class KorDaemon {
       if (!this.options.linear) throw new Error("Linear client unavailable");
       const issue = await this.options.linear.getIssue(claim.assignment.issueId);
       this.remember(claim.assignment.issueId, issue);
+      this.store.setIssueMetadata(claim, issue.identifier ?? issue.id, issue.title);
+      if (issue.acceptanceCriteria.length === 0) throw new NeedsInputError("Add a # Acceptance section with explicit criteria to the Linear issue, then retry this execution.");
       // The configured mapping (linearProject, then linearTeam) names the checkout.
       const repository = repositoryKeyForIssue(issue, this.options.config);
       const route = await this.routeFor(id, issue);
-      this.store.setIssueMetadata(claim, issue.identifier ?? issue.id, issue.title);
       this.store.markRunning(claim, { id, issueId: issue.id, repository, worktree: "", branch: `kor/${issue.id}`, status: "running", route });
       abort.signal.throwIfAborted();
       if (this.options.runner) result = await this.options.runner({ claim, issue, onSpawn, signal: abort.signal });
@@ -465,7 +467,7 @@ export class KorDaemon {
       this.store.failClaim(claim, `session cleanup failed: ${safeMessage(cleanupFailure)}`);
     } else if (this.store.isCancelRequested(claim.assignment.issueId)) this.store.cancelClaim(claim);
     else if (this.stopping) this.store.recover(claim.assignment.issueId, "daemon stopped; session stopped; re-queued");
-    else if (failure !== undefined) this.store.failClaim(claim, safeMessage(failure), failure instanceof ExecutionVerificationError ? "blocked" : "failed");
+    else if (failure !== undefined) this.store.failClaim(claim, safeMessage(failure), failure instanceof ExecutionVerificationError || failure instanceof NeedsInputError ? "blocked" : "failed");
     else if (result?.execution.status === "failed" || result?.execution.status === "blocked") this.store.finishClaim(claim, result.execution.status, "execution did not complete", result.execution);
     else if (result && result.execution.status !== "complete") this.store.failClaim(claim, `Unexpected execution outcome: ${result.execution.status}`);
     else this.store.completeClaim(claim, result?.execution);
