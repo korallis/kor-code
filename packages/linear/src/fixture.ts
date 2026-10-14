@@ -9,7 +9,7 @@ export const workflowMappingFixture: WorkflowMapping = {
 };
 export const workflowStatesFixture: readonly LinearWorkflowState[] = Object.values(workflowMappingFixture);
 export const linearIssueFixture: LinearIssue = {
-  id: '00000000-0000-4000-8000-000000000001', title: 'Fixture issue',
+  id: '00000000-0000-4000-8000-000000000001', identifier: 'LEE-1', title: 'Fixture issue',
   description: '# Acceptance\n- reaches complete', acceptanceCriteria: ['reaches complete'],
   teamId: '00000000-0000-4000-8000-000000000010', teamKey: 'LEE',
   stateId: workflowMappingFixture.queued.id, stateType: workflowMappingFixture.queued.type,
@@ -20,7 +20,7 @@ export const linearIssueFixture: LinearIssue = {
 function page(nodes: unknown[]) { return { nodes, pageInfo: { hasNextPage: false } }; }
 function graphqlIssue(issue: LinearIssue) {
   return {
-    id: issue.id, title: issue.title, description: issue.description, updatedAt: issue.updatedAt, priority: issue.priority,
+    id: issue.id, identifier: issue.identifier, title: issue.title, description: issue.description, updatedAt: issue.updatedAt, priority: issue.priority,
     team: { id: issue.teamId, key: issue.teamKey }, state: { id: issue.stateId, type: issue.stateType }, project: null,
     documents: page(issue.documents), children: page(issue.subIssueIds.map(id => ({ id }))),
     comments: page(issue.comments), agentSessions: page(issue.sessions),

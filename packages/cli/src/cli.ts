@@ -6,7 +6,7 @@ import { formatDoctor, runDoctor } from "./doctor.js";
 import { runPlan } from "./plan.js";
 import { createServeRouting } from "./serve-routing.js";
 import { ensureRuntimeDirectories, loadGatewayEnvironment, loadKorConfig, repositoryKeyForIssue, runtimePaths } from "@kor-code/config";
-import { HttpLinearClient, LinearStore, stableId, startWrites, workflowMapping, type LinearWrite } from "@kor-code/linear";
+import { HttpLinearClient, LinearStore } from "@kor-code/linear";
 import { KorDaemon, readStatus } from "@kor-code/daemon";
 import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController } from "@kor-code/controller";
 import { GatewayAdapter, readModelRegistry } from "@kor-code/gateway-adapter";
@@ -22,13 +22,13 @@ function valueAfter(args: readonly string[], name: string): string | undefined {
 function print(value: unknown, json: boolean): void {
   process.stdout.write(`${json ? JSON.stringify(value, null, 2) : typeof value === "string" ? value : JSON.stringify(value, null, 2)}\n`);
 }
-function writeDescription(write: LinearWrite): string {
-  if (write.kind === "state") return `state ${write.stateId}`;
-  if (write.kind === "comment") return `comment ${write.id} (${write.body})`;
-  if (write.kind === "attachment") return `attachment ${write.url}`;
-  if (write.kind === "session") return `agent-session ${write.session.id}`;
-  if (write.kind === "summary") return `summary ${write.sessionId}`;
-  return `activity ${write.id}`;
+function uuid(value: string): boolean { return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value); }
+async function canonicalIssue(reference: string): Promise<{ id: string; identifier: string; title: string; repository: string }> {
+  if (uuid(reference)) return { id: reference, identifier: reference, title: reference, repository: reference };
+  const client = new HttpLinearClient();
+  const issue = await client.getIssue(reference);
+  const loaded = await loadKorConfig();
+  return { id: issue.id, identifier: issue.identifier ?? reference, title: issue.title, repository: repositoryKeyForIssue(issue, loaded.config) };
 }
 
 async function status(args: readonly string[]): Promise<number> {
@@ -38,66 +38,35 @@ async function status(args: readonly string[]): Promise<number> {
   return 0;
 }
 
-/** Moves the issue to In Progress with a Kor comment, then queues it for `kor serve`. */
 async function runIssue(args: readonly string[]): Promise<number> {
-  const issueId = args.find(arg => !arg.startsWith("-"));
-  if (!issueId || args.some(arg => arg.startsWith("-") && arg !== "--dry-run")) throw new Error("Usage: kor run LEE-<number> [--dry-run]");
+  const issueReference = args.find(arg => !arg.startsWith("-"));
+  if (!issueReference) { process.stderr.write("Usage: kor run ISSUE-ID [--dry-run] [--json]\n"); return 2; }
+  const json = jsonFlag(args);
   const dryRun = args.includes("--dry-run");
   const paths = runtimePaths();
   const loaded = await loadKorConfig(paths.configFile, { home: paths.home });
-  const client = new HttpLinearClient(dryRun ? {} : { writes: {} });
-  const issue = await client.getIssue(issueId);
-  const repositoryKey = repositoryKeyForIssue(issue, loaded.config);
-  const states = workflowMapping(await client.listWorkflowStates(issue.teamKey));
-  if (issue.stateId !== states.queued.id && issue.stateId !== states.running.id) throw new Error(`Linear issue is ${issue.stateType}; kor run accepts Todo or an existing In Progress run only`);
-  const executionId = stableId("kor-execution", issue.id);
-  const assignment = { executionId, issueId: issue.id, sessionId: stableId("kor-session", issue.id), status: "queued" as const };
-  const writes = startWrites(assignment, states, client);
-  process.stdout.write(`Kor run ${issue.id}; repository=${repositoryKey}; state=${issue.stateType}; mode=${dryRun ? "dry-run" : "apply"}\n`);
-  for (const write of writes) process.stdout.write(`${dryRun ? "PLAN" : "WRITE"} ${writeDescription(write)}\n`);
-  if (dryRun) { process.stdout.write("PLAN enqueue for kor serve\n"); return 0; }
-  for (const write of writes) await client.apply(write);
+  const issue = await canonicalIssue(issueReference);
+  if (dryRun) {
+    print({ issueId: issue.identifier, canonicalIssueId: issue.id, title: issue.title, dryRun: true, intake: loaded.config.intakeLabel, route: loaded.config.defaultRoute, planned: ["enqueue durable assignment", "run isolated session when kor serve is active"] }, json);
+    return 0;
+  }
   const store = new LinearStore(paths.databaseFile);
   try {
-    // The poller queues by Linear's stable UUID too, so one issue is queued once.
-    const queued = store.enqueue(issue.id);
-    process.stdout.write(`QUEUED ${issueId}; execution=${queued.executionId}\n`);
+    const assignment = store.enqueue(issue.id);
+    print({ issueId: issue.identifier, canonicalIssueId: issue.id, executionId: assignment.executionId, status: assignment.status, queued: true }, json);
     return 0;
   } finally { store.close(); }
 }
 
-/** Moves the issue back to Todo with a Kor comment and asks the daemon to stop the run. */
-async function cancelIssue(args: readonly string[]): Promise<number> {
-  const issueId = args.find(arg => !arg.startsWith("-"));
-  if (!issueId || args.length > 1) throw new Error("Usage: kor cancel LEE-<number>");
+async function updateQueue(command: "cancel" | "retry", args: readonly string[]): Promise<number> {
+  const issueReference = args.find(arg => !arg.startsWith("-"));
+  if (!issueReference) { process.stderr.write(`Usage: kor ${command} ISSUE-ID [--json]\n`); return 2; }
+  const issue = await canonicalIssue(issueReference);
   const paths = runtimePaths();
-  const loaded = await loadKorConfig(paths.configFile, { home: paths.home });
-  const client = new HttpLinearClient({ writes: {} });
-  const issue = await client.getIssue(issueId);
-  const repositoryKey = repositoryKeyForIssue(issue, loaded.config);
-  const states = workflowMapping(await client.listWorkflowStates(issue.teamKey));
-  const writes: LinearWrite[] = [
-    { kind: "state", issueId: issue.id, stateId: states.queued.id },
-    { kind: "comment", id: stableId("kor-progress", `${issue.id}:cancel`), issueId: issue.id, body: `Kor canceled execution for ${issue.id}; state → ${states.queued.name ?? "Todo"}` },
-  ];
-  process.stdout.write(`Kor cancel ${issue.id}; repository=${repositoryKey}\n`);
-  for (const write of writes) { process.stdout.write(`WRITE ${writeDescription(write)}\n`); await client.apply(write); }
-  const store = new LinearStore(paths.databaseFile);
-  try { process.stdout.write(`QUEUE cancel ${store.requestCancel(issue.id) ? "requested" : "not queued"}\n`); }
-  finally { store.close(); }
-  return 0;
-}
-
-async function retryIssue(args: readonly string[]): Promise<number> {
-  const issueId = args.find(arg => !arg.startsWith("-"));
-  if (!issueId) { process.stderr.write("Usage: kor retry ISSUE-ID [--json]\n"); return 2; }
-  const paths = runtimePaths();
-  // Assignments are keyed by the Linear UUID; resolve a LEE-n key first.
-  const key = /^[A-Za-z][A-Za-z0-9]*-\d+$/.test(issueId) ? (await new HttpLinearClient().getIssue(issueId)).id : issueId;
   const store = new LinearStore(paths.databaseFile);
   try {
-    const accepted = store.retry(key);
-    print({ issueId, command: "retry", accepted }, jsonFlag(args));
+    const accepted = command === "cancel" ? store.requestCancel(issue.id) : store.retry(issue.id);
+    print({ issueId: issue.identifier, canonicalIssueId: issue.id, command, accepted }, jsonFlag(args));
     return accepted ? 0 : 1;
   } finally { store.close(); }
 }
@@ -160,15 +129,12 @@ async function serve(args: readonly string[]): Promise<number> {
   const controller = createController({
     repositories,
     worktrees: new GitWorktreeManager(paths.worktreesDir),
-    // Execution sessions load the cockpit, so they are told where this daemon publishes.
     launcher: new SessionLauncher({ repoRoot: process.cwd(), cockpit: { statusUrl, stateDir: paths.stateDir } }),
     limits: new ConcurrencyLimiter({ total: loaded.config.limits.total, perRepository: loaded.config.limits.perRepository, ...(loaded.config.limits.perProvider ? { perProvider: loaded.config.limits.perProvider } : {}) }),
     defaultRoute: loaded.config.defaultRoute,
     jev: routing.jev,
     ...(calibration ? { calibration: { store: calibration, sampleRate: calibrationConfig.sampleRate, baselineRoute: calibrationConfig.baselineRoute } } : {}),
   });
-  // The cockpit's account view and the override policy read the gateway's
-  // management API and the verified model registry through the daemon.
   const gateway = new GatewayAdapter();
   const verifiedModels = async () => (await readModelRegistry(paths.modelsFile)).models.filter(model => model.verified).map(model => model.model);
   const daemon = new KorDaemon({ paths, config: loaded.config, store, linear: new HttpLinearClient({ writes: {} }), controller, port, gateway, verifiedModels, chooseRoute: routing.chooseRoute });
@@ -197,8 +163,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     }
     if (command === "status") return await status(args.slice(1));
     if (command === "run") return await runIssue(args.slice(1));
-    if (command === "cancel") return await cancelIssue(args.slice(1));
-    if (command === "retry") return await retryIssue(args.slice(1));
+    if (command === "cancel" || command === "retry") return await updateQueue(command, args.slice(1));
     if (command === "logs") return await logs(args.slice(1));
     if (command === "calibrate") return await calibrationReport(args.slice(1));
     if (command === "serve") return await serve(args.slice(1));
@@ -206,7 +171,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     process.stderr.write(`FAIL ${command}: ${error instanceof Error ? error.message : "unable to run"}\n`);
     return 1;
   }
-  process.stdout.write("Usage: kor serve [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--json] | kor status [--json] | kor plan LEE-57 | kor run LEE-<number> [--dry-run] | kor cancel LEE-<number> | kor retry ISSUE-ID | kor logs EXECUTION-ID | kor doctor | kor models list | kor models probe [--family family] [--model model]\n");
+  process.stdout.write("Usage: kor serve [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--json] | kor status [--json] | kor plan ISSUE-ID | kor run ISSUE-ID [--dry-run] [--json] | kor cancel ISSUE-ID [--json] | kor retry ISSUE-ID | kor logs EXECUTION-ID | kor doctor | kor models list | kor models probe [--family family] [--model model]\n");
   return ["help", "--help", "-h"].includes(command) ? 0 : 2;
 }
 

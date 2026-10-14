@@ -31,9 +31,7 @@
       "path": "../linear"
     },
     {
-      "path": "../daemon"
-    },
-    { "path": "../calibration" },
-    { "path": "../controller" }
+      "path": "../calibration"
+    }
   ]
 }
