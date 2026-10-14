@@ -71,7 +71,7 @@ export class LinearStore {
         issue_id TEXT PRIMARY KEY, execution_id TEXT NOT NULL UNIQUE, session_id TEXT NOT NULL UNIQUE,
         status TEXT NOT NULL CHECK(status IN ('queued','running','complete','failed','canceled','blocked')), manifest TEXT,
         token TEXT, owner TEXT, expires_at INTEGER, available_at INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
-        session_pid INTEGER, session_boot_id TEXT, session_start_ticks TEXT, heartbeat_at INTEGER, cancel_requested INTEGER NOT NULL DEFAULT 0, last_error TEXT, issue_key TEXT, issue_title TEXT
+        session_pid INTEGER, session_pgid INTEGER, session_boot_id TEXT, session_start_ticks TEXT, heartbeat_at INTEGER, cancel_requested INTEGER NOT NULL DEFAULT 0, last_error TEXT, issue_key TEXT, issue_title TEXT
       );
       CREATE TABLE IF NOT EXISTS outbox (sequence INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS writer (id INTEGER PRIMARY KEY CHECK(id=1), token TEXT, expires_at INTEGER);
@@ -79,11 +79,11 @@ export class LinearStore {
       INSERT OR IGNORE INTO writer(id) VALUES (1);`);
     this.transaction(() => {
       const version = number(this.db.prepare('PRAGMA user_version').get()?.user_version);
-      if (version > 3) throw new Error('Kor database schema is newer than this binary');
+      if (version > 4) throw new Error('Kor database schema is newer than this binary');
       if (version >= 2) return;
       const columns = new Set(this.db.prepare('PRAGMA table_info(assignments)').all().map(row => string(row.name)));
       for (const [name, definition] of [
-        ['session_pid', 'INTEGER'], ['session_boot_id', 'TEXT'], ['session_start_ticks', 'TEXT'],
+        ['session_pid', 'INTEGER'], ['session_pgid', 'INTEGER'], ['session_boot_id', 'TEXT'], ['session_start_ticks', 'TEXT'],
         ['heartbeat_at', 'INTEGER'], ['cancel_requested', 'INTEGER NOT NULL DEFAULT 0'], ['last_error', 'TEXT'],
       ]) {
         if (name && !columns.has(name)) this.db.exec(`ALTER TABLE assignments ADD COLUMN ${name} ${definition}`);
@@ -92,9 +92,9 @@ export class LinearStore {
         issue_id TEXT PRIMARY KEY, execution_id TEXT NOT NULL UNIQUE, session_id TEXT NOT NULL UNIQUE,
         status TEXT NOT NULL CHECK(status IN ('queued','running','complete','failed','canceled','blocked')), manifest TEXT,
         token TEXT, owner TEXT, expires_at INTEGER, available_at INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
-        session_pid INTEGER, session_boot_id TEXT, session_start_ticks TEXT, heartbeat_at INTEGER, cancel_requested INTEGER NOT NULL DEFAULT 0, last_error TEXT, issue_key TEXT, issue_title TEXT
+        session_pid INTEGER, session_pgid INTEGER, session_boot_id TEXT, session_start_ticks TEXT, heartbeat_at INTEGER, cancel_requested INTEGER NOT NULL DEFAULT 0, last_error TEXT, issue_key TEXT, issue_title TEXT
       );
-      INSERT INTO assignments_v2 SELECT issue_id,execution_id,session_id,status,manifest,token,owner,expires_at,available_at,attempts,session_pid,session_boot_id,session_start_ticks,heartbeat_at,cancel_requested,last_error,NULL,NULL FROM assignments;
+      INSERT INTO assignments_v2 SELECT issue_id,execution_id,session_id,status,manifest,token,owner,expires_at,available_at,attempts,session_pid,session_pgid,session_boot_id,session_start_ticks,heartbeat_at,cancel_requested,last_error,NULL,NULL FROM assignments;
       DROP TABLE assignments;
       ALTER TABLE assignments_v2 RENAME TO assignments;
       PRAGMA user_version=2;`);
@@ -106,6 +106,14 @@ export class LinearStore {
         if (!columns.has('issue_key')) this.db.exec('ALTER TABLE assignments ADD COLUMN issue_key TEXT');
         if (!columns.has('issue_title')) this.db.exec('ALTER TABLE assignments ADD COLUMN issue_title TEXT');
         this.db.exec('PRAGMA user_version=3');
+      }
+    });
+    this.transaction(() => {
+      const version = number(this.db.prepare('PRAGMA user_version').get()?.user_version);
+      if (version < 4) {
+        const columns = new Set(this.db.prepare('PRAGMA table_info(assignments)').all().map(row => string(row.name)));
+        if (!columns.has('session_pgid')) this.db.exec('ALTER TABLE assignments ADD COLUMN session_pgid INTEGER');
+        this.db.exec('PRAGMA user_version=4');
       }
     });
     this.db.exec('CREATE TABLE IF NOT EXISTS daemon_owner (id INTEGER PRIMARY KEY CHECK(id=1), owner TEXT NOT NULL, pid INTEGER NOT NULL, boot_id TEXT NOT NULL, start_ticks TEXT NOT NULL)');
@@ -166,12 +174,13 @@ export class LinearStore {
       const owner = typeof value.owner === 'string' ? value.owner : undefined;
       const expiresAt = typeof value.expires_at === 'number' ? value.expires_at : undefined;
       const sessionPid = typeof value.session_pid === 'number' ? value.session_pid : undefined;
+      const sessionPgid = typeof value.session_pgid === 'number' ? value.session_pgid : undefined;
       const heartbeatAt = typeof value.heartbeat_at === 'number' ? value.heartbeat_at : undefined;
       const lastError = typeof value.last_error === 'string' ? value.last_error : undefined;
       const attempts = typeof value.attempts === 'number' ? value.attempts : 0;
       const bootId = typeof value.session_boot_id === 'string' ? value.session_boot_id : undefined;
       const startTicks = typeof value.session_start_ticks === 'string' ? value.session_start_ticks : undefined;
-      const processIdentity = sessionPid && bootId && startTicks ? { pid: sessionPid, bootId, startTicks } : undefined;
+      const processIdentity = sessionPid && sessionPgid && bootId && startTicks ? { pid: sessionPid, pgid: sessionPgid, bootId, startTicks } : undefined;
       const issueKey = typeof value.issue_key === 'string' ? value.issue_key : undefined;
       const issueTitle = typeof value.issue_title === 'string' ? value.issue_title : undefined;
       return { ...parsed, ...(manifest ? { manifest } : {}), ...(owner ? { owner } : {}), ...(expiresAt ? { expiresAt } : {}), ...(sessionPid ? { sessionPid } : {}), ...(heartbeatAt ? { heartbeatAt } : {}), ...(value.cancel_requested === 1 ? { cancelRequested: true } : {}), ...(lastError ? { lastError } : {}), ...(processIdentity ? { processIdentity } : {}), ...(issueKey ? { issueKey } : {}), ...(issueTitle ? { issueTitle } : {}), attempts };
@@ -212,9 +221,10 @@ export class LinearStore {
     this.transaction(() => { this.assertLease(claim); this.db.prepare('UPDATE assignments SET expires_at=?,heartbeat_at=? WHERE issue_id=?').run(this.now() + ttlMs, this.now(), claim.assignment.issueId); });
   }
   heartbeat(claim: ExecutionClaim, ttlMs = 60_000): void { this.renew(claim, ttlMs); }
-  setSessionPid(claim: ExecutionClaim, pid: number, identity?: { bootId: string; startTicks: string }): void {
+  setSessionPid(claim: ExecutionClaim, pid: number, identity?: { bootId: string; startTicks: string; pgid?: number }): void {
     if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('Session PID must be positive');
-    this.transaction(() => { this.assertLease(claim); this.db.prepare('UPDATE assignments SET session_pid=?,session_boot_id=?,session_start_ticks=?,heartbeat_at=? WHERE issue_id=?').run(pid, identity?.bootId ?? null, identity?.startTicks ?? null, this.now(), claim.assignment.issueId); });
+    if (identity?.pgid !== undefined && (!Number.isSafeInteger(identity.pgid) || identity.pgid <= 1)) throw new Error('Session process group must be greater than one');
+    this.transaction(() => { this.assertLease(claim); this.db.prepare('UPDATE assignments SET session_pid=?,session_pgid=?,session_boot_id=?,session_start_ticks=?,heartbeat_at=? WHERE issue_id=?').run(pid, identity?.pgid ?? null, identity?.bootId ?? null, identity?.startTicks ?? null, this.now(), claim.assignment.issueId); });
   }
   setIssueMetadata(claim: ExecutionClaim, issueKey: string, issueTitle: string): void {
     if (!issueKey || !issueTitle) throw new Error('Issue metadata is required');
@@ -232,13 +242,13 @@ export class LinearStore {
   isCancelRequested(issueId: string): boolean { return (this.db.prepare('SELECT cancel_requested FROM assignments WHERE issue_id=?').get(issueId) as { cancel_requested?: unknown } | undefined)?.cancel_requested === 1; }
   requeue(issueId: string, delayMs = 0, lastError?: string): boolean {
     if (!Number.isSafeInteger(delayMs) || delayMs < 0) throw new Error('Queue delay must be nonnegative');
-    return this.transaction(() => this.db.prepare("UPDATE assignments SET status='queued',token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,cancel_requested=0,available_at=?,last_error=? WHERE issue_id=? AND status IN ('running','queued')").run(this.now() + delayMs, lastError ?? null, issueId).changes === 1);
+    return this.transaction(() => this.db.prepare("UPDATE assignments SET status='queued',token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_pgid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,cancel_requested=0,available_at=?,last_error=? WHERE issue_id=? AND status IN ('running','queued')").run(this.now() + delayMs, lastError ?? null, issueId).changes === 1);
   }
   retry(issueId: string): boolean {
-    return this.transaction(() => this.db.prepare("UPDATE assignments SET status='queued',token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,cancel_requested=0,available_at=?,last_error=NULL WHERE issue_id=? AND status IN ('failed','blocked','canceled')").run(this.now(), issueId).changes === 1);
+    return this.transaction(() => this.db.prepare("UPDATE assignments SET status='queued',token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_pgid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,cancel_requested=0,available_at=?,last_error=NULL WHERE issue_id=? AND status IN ('failed','blocked','canceled')").run(this.now(), issueId).changes === 1);
   }
   recover(issueId: string, message: string): boolean {
-    return this.transaction(() => this.db.prepare("UPDATE assignments SET status='queued',token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,cancel_requested=0,available_at=?,last_error=? WHERE issue_id=? AND status IN ('running','queued')").run(this.now(), message, issueId).changes === 1);
+    return this.transaction(() => this.db.prepare("UPDATE assignments SET status='queued',token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_pgid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,cancel_requested=0,available_at=?,last_error=? WHERE issue_id=? AND status IN ('running','queued')").run(this.now(), message, issueId).changes === 1);
   }
   failClaim(claim: ExecutionClaim, message: string, status: 'failed' | 'blocked' = 'failed'): void { this.finishClaim(claim, status, message); }
   cancelClaim(claim: ExecutionClaim, message = 'canceled by operator'): void { this.finishClaim(claim, 'canceled', message); }
@@ -264,7 +274,7 @@ export class LinearStore {
       const current = this.db.prepare('SELECT cancel_requested FROM assignments WHERE issue_id=?').get(claim.assignment.issueId) as { cancel_requested?: unknown } | undefined;
       const canceled = current?.cancel_requested === 1;
       const finalStatus = canceled ? 'canceled' : status;
-      this.db.prepare('UPDATE assignments SET status=?,manifest=COALESCE(?,manifest),last_error=?,token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,cancel_requested=0 WHERE issue_id=?')
+      this.db.prepare('UPDATE assignments SET status=?,manifest=COALESCE(?,manifest),last_error=?,token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_pgid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,cancel_requested=0 WHERE issue_id=?')
         .run(finalStatus, manifest ? JSON.stringify(manifest) : null, message ?? null, claim.assignment.issueId);
     });
   }
@@ -284,14 +294,14 @@ export class LinearStore {
     if (!Number.isSafeInteger(delayMs) || delayMs < 0) throw new Error('Queue delay must be nonnegative');
     this.transaction(() => {
       this.assertLease(claim);
-      this.db.prepare("UPDATE assignments SET status='queued',token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,available_at=? WHERE issue_id=?").run(this.now() + delayMs, claim.assignment.issueId);
+      this.db.prepare("UPDATE assignments SET status='queued',token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_pgid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,available_at=? WHERE issue_id=?").run(this.now() + delayMs, claim.assignment.issueId);
     });
   }
   reclaimExpired(issueId: string): boolean {
     return this.transaction(() => {
       const row = this.db.prepare('SELECT expires_at FROM assignments WHERE issue_id=? AND token IS NOT NULL').get(issueId) as { expires_at?: unknown } | undefined;
       if (!row || typeof row.expires_at !== 'number' || row.expires_at > this.now()) return false;
-      const result = this.db.prepare("UPDATE assignments SET status='queued',token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,available_at=? WHERE issue_id=? AND status IN ('running','queued') AND session_pid IS NULL AND expires_at<=?").run(this.now(), issueId, this.now());
+      const result = this.db.prepare("UPDATE assignments SET status='queued',token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_pgid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,available_at=? WHERE issue_id=? AND status IN ('running','queued') AND session_pid IS NULL AND expires_at<=?").run(this.now(), issueId, this.now());
       return result.changes === 1;
     });
   }
@@ -302,7 +312,7 @@ export class LinearStore {
       if (previous.status === 'complete' || ['complete', 'failed', 'blocked', 'canceled'].includes(status) && previous.status !== 'running') throw new Error('Invalid execution transition');
       this.db.prepare('UPDATE assignments SET status=?,manifest=COALESCE(?,manifest) WHERE issue_id=?').run(status, manifest ? JSON.stringify(manifest) : null, previous.issueId);
       for (const write of writes) this.db.prepare('INSERT INTO outbox(payload) VALUES(?)').run(JSON.stringify(write));
-      if (status !== 'running') this.db.prepare('UPDATE assignments SET token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,cancel_requested=0 WHERE issue_id=?').run(previous.issueId);
+      if (status !== 'running') this.db.prepare('UPDATE assignments SET token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_pgid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,cancel_requested=0 WHERE issue_id=?').run(previous.issueId);
     });
   }
   record(claim: ExecutionClaim, writes: LinearWrite[], manifest?: Execution): void {

@@ -72,18 +72,26 @@ Every value and state below is illustrative.
 
 ## Implementation (Phase 6)
 
-Status: **Validated** on fixture data in the sandboxed Claude Code 2.1.296 (`pnpm cockpit:proof`, and the interactive TUI driven through `pnpm cockpit`). No value is live except what the Claude Code session reports about itself; Linear, Jev, the gateway and the controller reach the cockpit when Phases 1-5 land. Sandbox runs are offline: the cockpit needs no model, so the child's model endpoint is a local stub and CLIProxyAPI is never contacted (`--live-model` opts in). `pnpm isolation:proof` traces a headless view, or with `--interactive` the TUI, to show the session never touches the real Claude, Codex or agents homes or port 8317. ADR 0006 records why the cockpit is a Claude Code mod.
+Status: **Validated** on a live daemon run in the sandboxed Claude Code 2.1.299: during a real execution of a LEE issue, `/kor` drew the issue, route, account pool and Jev's route decision `[LIVE]`; a `/kor override route <model>` was applied by the daemon, audited and commented on the issue; stopping the daemon turned every daemon value `[STALE]` with its age, and with no snapshot `[UNAVAILABLE]`. `pnpm cockpit:proof` replays the fixture execution behind `/kor demo` through all seven stages and every view, and checks that the live cockpit with no daemon draws `[UNAVAILABLE]`, never fixture data. ADR 0006 records why the cockpit is a Claude Code mod.
 
-`packages/claude-plugin` is one hooks module (`hooks/register.tsx`). It draws three things and writes nothing outside the session:
+`packages/claude-plugin` is one hooks module (`hooks/register.tsx`). It reads the daemon and draws; it writes nothing itself:
 
 | Surface | What it shows |
 | --- | --- |
-| Status line | `[FIXTURE] Kor FIX-123 · <stage> n/7 · <status> · <route> · <agents working> · <overrides> · [LIVE] CC <version>`, updated on every replay step and override |
-| `/kor [view] [id]` | Opens the cockpit pane on a view, focused; under `claude -p` it prints the same view as text |
-| `/kor-status` | The sandbox's load proof, answered by the plugin's own hook rather than the model |
+| Status line | `[LIVE] Kor LEE-57 · <stage> n/7 · <status> · <route> (<source>) · <overrides> · [LIVE] CC <version>`, re-read every 5 s; `[STALE 2m] …` or `[UNAVAILABLE] Kor · daemon down` when the daemon stops |
+| `/kor [view] [id]` | Opens the cockpit pane on a view of the daemon's status; under `claude -p` it prints the same view as text |
+| `/kor override <decision\|route> <choice>`, `/kor revert <override>` | Sent to the daemon, which decides; the cockpit prints its answer |
+| `/kor demo [view\|replay\|…]` | The fixture execution, labelled `[FIXTURE]`, with session-local actions |
+| `/kor-status` | The sandbox's load proof and the status line, answered by the plugin's own hook rather than the model |
 
-Views, with their pane hotkeys: `1` cockpit (the main mockup), `2` issue (intent, acceptance and evidence, next action), `3` project, `4` decisions (the decision stream), `5` agents, `6` accounts (slots, failover, the unavailable live catalogue), `7` context (manifest sources and what was dropped), `8` Linear links (records and writes), `9` overrides. Drill-downs: a decision row opens the decision view (question, choice, confidence, candidates, reasons, evidence, policy checks) with `a` apply, `o` override, `e` gather evidence, `r` re-evaluate and `b` back; an agent row opens that agent's events. `p` replays the fixture execution one event every 1.5 s through all seven lifecycle stages; `q` closes the pane.
+Data (`hooks/live.ts`): `GET http://127.0.0.1:8327/status` first (`KOR_STATUS_URL`), then `snapshots/index.json` under the Kor state directory (`KOR_STATE_DIR`, else `XDG_STATE_HOME/kor` or `~/.local/state/kor`). A status read that gets no answer within 2 s counts as the daemon not answering (Claude Code's fetch otherwise waits about 30 s on a closed loopback port). Each part of the view (execution, issue, decisions, accounts, acceptance, overrides) carries its own label; the account pool also honours the daemon's own label for it, so a failed gateway read is stale or unavailable, never a fresh empty pool:
 
-Labels: every row leads with its provenance (`[FIXTURE]`, `[LIVE]`, `[STALE]`, `[UNAVAILABLE]`), so truncation never hides it, and the pane title carries `FIXTURE DATA`. Overrides are session-local records, shown with the choice Jev made, revertible from the pane (`Revert ovr_n`) or with `/kor revert ovr_n`, and never sent to Jev, the gateway or Linear.
+- `[LIVE]`: the daemon answered over HTTP and the part's `observedAt` is within the daemon's `pollIntervalSeconds`.
+- `[STALE]`: older than that, or read from the snapshot because the daemon did not answer; the section title carries the age.
+- `[UNAVAILABLE]`: the daemon does not report the part (acceptance findings until verification reports them, failovers), or there is neither a daemon nor a snapshot.
 
-Commands for headless use: `/kor replay` prints every replay frame's status line and the final cockpit; `/kor override <decision> [choice]`, `/kor apply|evidence|reevaluate <decision>` and `/kor revert <override>` record and revert actions.
+Jev chose these rules (TypeSafe Choice, `jev-1.13.0`): HTTP and age for LIVE (0.73 over age alone), re-reading every 5 s (0.73), refusing an override when the daemon does not answer rather than queueing it (1.00), and requiring the override's choice to be named (0.88).
+
+Views, with their pane hotkeys: `1` cockpit (the main mockup), `2` issue, `3` project (the daemon's executions), `4` decisions, `5` agents, `6` accounts (the gateway's account slots by provider; identities are opaque hashes), `7` context, `8` Linear links, `9` overrides. A decision row opens its drill-down (question, choice, confidence, candidates, reasons, evidence, policy checks); live, it offers one `Override → <candidate>` button per other candidate. `f` re-reads the daemon, `m` switches between live and demo, `q` closes the pane; in the demo `p` replays the fixture one event every 1.5 s.
+
+Overrides (`packages/daemon`): `POST /overrides` with `{ executionId, target, choice }` (`target` is `route` or a decision ID), from local tools only (JSON bodies, no browser `Origin`). The daemon checks policy (the execution is not finished; a route names a model `kor models probe` verified and differs from the route in force; a decision choice is one of its candidates), records the override in `override_audit` in `kor.db` whatever the outcome, logs it to `kor logs <execution>`, and comments on the Linear issue when it applies (a stable comment ID, retried on the next poll if Linear fails). An applied route override takes effect from the execution's next attempt. `POST /overrides/<id>/revert` reverts one and comments again.

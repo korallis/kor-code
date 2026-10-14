@@ -87,7 +87,8 @@ function accountHealthFrom(management: JsonValue | null): GatewayAccountHealth[]
       : authFailure ? "authentication"
       : value.unavailable === true || cooldowns.length > 0 || statusText === "error" ? "unavailable"
       : statusText === "active" || statusText === "available" ? "available" : "unknown";
-    return [{ id, status, resetAt: retry }];
+    const provider = text(value.provider) ?? text(value.type);
+    return [{ id, status, resetAt: retry, ...(provider ? { provider } : {}) }];
   }).sort((a, b) => a.id.localeCompare(b.id));
 }
 

@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { fakeIssue, FakeLinearClient, type LinearIssue } from "../packages/linear/src/index.js";
 import { parseKorConfig, runtimePaths } from "../packages/config/src/index.js";
 import { KorDaemon } from "../packages/daemon/src/index.js";
-import { captureProcess, processMatches, stopSession } from "../packages/daemon/src/process.js";
+import { captureProcess, processExists, processMatches, stopSession } from "../packages/daemon/src/process.js";
 import { sessionGroupAlive } from "../packages/daemon/src/process.js";
 import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController } from "../packages/controller/src/index.js";
 import { execFile as execFileCallback } from "node:child_process";
@@ -121,6 +121,12 @@ await failureDaemon.stop();
 const recycled = { ...captureProcess(process.pid), startTicks: "0" };
 if (processMatches(recycled)) throw new Error("recycled PID identity unexpectedly matched");
 await stopSession(recycled);
+const unrelated = spawn("sleep", ["30"], { stdio: "ignore", detached: true });
+if (!unrelated.pid) throw new Error("unrelated process did not start");
+const unrelatedIdentity = captureProcess(unrelated.pid);
+await stopSession({ ...unrelatedIdentity, startTicks: "0" });
+if (!processExists(unrelated.pid)) throw new Error("recycled process-group leader was killed");
+try { process.kill(-unrelated.pid, "SIGKILL"); } catch { /* the proof process owns this disposable group */ }
 
 const controllerRoot = await mkdtemp(join(tmpdir(), "kor-daemon-controller-cancel-"));
 const controllerPaths = runtimePaths({ HOME: controllerRoot, XDG_CONFIG_HOME: join(controllerRoot, "config"), XDG_STATE_HOME: join(controllerRoot, "state"), XDG_DATA_HOME: join(controllerRoot, "share") });
@@ -148,4 +154,4 @@ if (!controllerDaemon.cancel(controllerIssue.id)) throw new Error("real controll
 await waitFor(() => controllerDaemon.status().runs.some(run => run.status === "canceled"));
 if (sessionGroupAlive(controllerIdentity)) throw new Error("real controller cancellation left a child process alive");
 await controllerDaemon.stop();
-console.log(`daemon proof passed; picked=${issue.id}; status=live; restart=queued; attempts=${recovered.attempts}; orphan=removed; lease=exclusive; cancel=terminal; failure=retryable; pid-guard=pass; controller-child=gone`);
+console.log(`daemon proof passed; picked=${issue.id}; status=live; restart=queued; attempts=${recovered.attempts}; orphan=removed; lease=exclusive; cancel=terminal; failure=retryable; pid-guard=pass; unrelated-group=survived; controller-child=gone`);

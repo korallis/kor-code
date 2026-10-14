@@ -6,7 +6,7 @@
 # elsewhere on the host cannot make it pass or fail. It proves offline runs
 # only: --live-model and the controller's --run contact CLIProxyAPI by design.
 #   scripts/isolation-proof.sh                 traces the /kor-status proof
-#   scripts/isolation-proof.sh "/kor replay"   traces any headless prompt
+#   scripts/isolation-proof.sh "/kor demo replay"   traces any headless prompt
 #   scripts/isolation-proof.sh --interactive   traces the TUI until it exits
 # Needs strace on PATH, or STRACE=/path/to/strace. Set KOR_CLIPROXYAPI_DIR to the
 # CLIProxyAPI install directory to also require its configuration unchanged.
