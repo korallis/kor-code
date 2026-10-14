@@ -90,7 +90,8 @@ function apply(event: MissionEvent): void {
     }
     case 'terminal': {
       const existing = state.terminals[event.executionId] ?? [];
-      if (existing.some(chunk => chunk.offset === event.offset)) return;
+      // Session output is keyed by its end offset; daemon log lines all carry offset 0, so they dedupe by text.
+      if (existing.some(chunk => event.channel === 'daemon' ? chunk.channel === 'daemon' && chunk.text === event.text : chunk.channel !== 'daemon' && chunk.offset === event.offset)) return;
       const next = [...existing, { offset: event.offset, channel: event.channel, text: event.text, at }].slice(-TERMINAL_LIMIT);
       set({ terminals: { ...state.terminals, [event.executionId]: next }, lastEventAt: at });
       return;

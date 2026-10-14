@@ -301,4 +301,12 @@ export const tint = stylex.defineVars({
   providerCopilot: '#a5b4fc',
   providerCopilotFill: 'rgba(99, 102, 241, 0.16)',
   providerCopilotEdge: 'rgba(165, 180, 252, 0.3)',
+  markStart: '#d8ccff',
+  markMid: '#8b8cf8',
+  markEnd: '#22d3ee',
+  markCore: '#c4b5fd',
+  markFill: 'rgba(139, 92, 246, 0.14)',
+  markGlow: 'drop-shadow(0 0 10px rgba(139, 92, 246, 0.55))',
+  iconGlow: 'drop-shadow(0 0 6px rgba(167, 139, 250, 0.7))',
+  livePillEdge: 'rgba(52, 229, 161, 0.3)',
 });

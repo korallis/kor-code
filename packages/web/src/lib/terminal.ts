@@ -85,3 +85,24 @@ export function parseTerminal(text: string): TermLine[] {
 export function toolSteps(lines: readonly TermLine[]): TermLine[] {
   return lines.filter(line => line.whoTone === 'tool');
 }
+
+export interface SessionUsage { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; costUsd: number | null; final: boolean }
+
+/** Token usage from the session's stream-json: the final result when present, else the running sum of assistant turns. */
+export function sessionUsage(text: string): SessionUsage | null {
+  let sum: SessionUsage | null = null;
+  for (const raw of text.split('\n')) {
+    if (!raw.startsWith('{')) continue;
+    let event: Record<string, unknown>;
+    try { event = JSON.parse(raw) as Record<string, unknown>; } catch { continue; }
+    const usage = (event.type === 'result' ? event.usage : (event.message as Record<string, unknown> | undefined)?.usage) as Record<string, unknown> | undefined;
+    if (!usage || (event.type !== 'result' && event.type !== 'assistant')) continue;
+    const n = (key: string) => typeof usage[key] === 'number' ? usage[key] as number : 0;
+    if (event.type === 'result') {
+      return { inputTokens: n('input_tokens'), outputTokens: n('output_tokens'), cacheReadTokens: n('cache_read_input_tokens'), cacheCreationTokens: n('cache_creation_input_tokens'), costUsd: typeof event.total_cost_usd === 'number' ? event.total_cost_usd : null, final: true };
+    }
+    sum = sum ?? { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: null, final: false };
+    sum.inputTokens += n('input_tokens'); sum.outputTokens += n('output_tokens'); sum.cacheReadTokens += n('cache_read_input_tokens'); sum.cacheCreationTokens += n('cache_creation_input_tokens');
+  }
+  return sum;
+}
