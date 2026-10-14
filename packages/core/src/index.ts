@@ -67,6 +67,8 @@ export interface RunStatus {
   cancelRequested?: boolean;
   errorCode?: "execution_failed" | "verification_blocked" | "canceled" | "recovered";
   pullRequestUrl?: string;
+  /** Reported execution cost when persisted telemetry is available. */
+  costUsd?: number;
   decisionIds?: string[];
   repository?: string;
   worktree?: string;
@@ -107,6 +109,21 @@ export interface OverrideRecord {
   linearComment: "written" | "pending" | "failed" | "skipped";
 }
 export interface KorRunSnapshot { schemaVersion: 1; observedAt: string; run: RunStatus }
+/** Selected execution contract for CLI supervisors. Missing measurements are null. */
+export interface SupervisedRun {
+  executionId: string;
+  issueId: string;
+  issueKey: string | null;
+  state: RunLifecycle;
+  attempts: number;
+  cancelRequested: boolean;
+  pullRequestUrl: string | null;
+  needsInput: { reason: string } | null;
+  costUsd: number | null;
+}
+export type KorExecutionStatusResponse =
+  | { schemaVersion: 1; provenance: "live" | "stale"; observedAt: string; run: SupervisedRun; reason?: string }
+  | { schemaVersion: 1; provenance: "unavailable"; observedAt: string; run: null; reason: string };
 export type StatusProvenance = "live" | "stale" | "unavailable";
 export type KorStatusResponse =
   | { schemaVersion: 1; provenance: "live" | "stale"; observedAt: string; snapshot: KorStatusSnapshot; reason?: string }

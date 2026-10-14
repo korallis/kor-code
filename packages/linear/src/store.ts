@@ -158,13 +158,22 @@ export class LinearStore {
     });
   }
 
-  enqueue(issueId: string): Assignment { return this.transaction(() => this.enqueueInTransaction(issueId)); }
+  enqueue(issueId: string, metadata?: { issueKey: string; issueTitle: string }): Assignment {
+    return this.transaction(() => {
+      const assignment = this.enqueueInTransaction(issueId);
+      if (metadata) this.db.prepare('UPDATE assignments SET issue_key=?,issue_title=? WHERE issue_id=?').run(metadata.issueKey, metadata.issueTitle, issueId);
+      return assignment;
+    });
+  }
   private enqueueInTransaction(issueId: string): Assignment {
     this.db.prepare(`INSERT OR IGNORE INTO assignments(issue_id,execution_id,session_id,status,available_at) VALUES(?,?,?,'queued',?)`).run(issueId, randomUUID(), randomUUID(), this.now());
     return this.getAssignment(issueId);
   }
   getAssignment(issueId: string): Assignment {
     return parseAssignment(this.db.prepare('SELECT * FROM assignments WHERE issue_id=?').get(issueId));
+  }
+  findAssignment(reference: string): AssignmentRecord | undefined {
+    return this.listAssignments().find(assignment => assignment.executionId === reference || assignment.issueId === reference || assignment.issueKey === reference);
   }
   listAssignments(): AssignmentRecord[] {
     return (this.db.prepare('SELECT * FROM assignments ORDER BY rowid').all() as unknown[]).map(row => {
@@ -233,8 +242,8 @@ export class LinearStore {
   requestCancel(issueId: string): boolean {
     return this.transaction(() => {
       const row = this.db.prepare('SELECT status FROM assignments WHERE issue_id=?').get(issueId) as { status?: unknown } | undefined;
-      if (!row || (row.status !== 'queued' && row.status !== 'running')) return false;
-      if (row.status === 'queued') return this.db.prepare("UPDATE assignments SET status='canceled',cancel_requested=0,token=NULL,owner=NULL,expires_at=NULL WHERE issue_id=?").run(issueId).changes === 1;
+      if (!row || (row.status !== 'queued' && row.status !== 'running' && row.status !== 'blocked')) return false;
+      if (row.status !== 'running') return this.db.prepare("UPDATE assignments SET status='canceled',cancel_requested=0,token=NULL,owner=NULL,expires_at=NULL WHERE issue_id=?").run(issueId).changes === 1;
       return this.db.prepare('UPDATE assignments SET cancel_requested=1 WHERE issue_id=?').run(issueId).changes === 1;
     });
   }

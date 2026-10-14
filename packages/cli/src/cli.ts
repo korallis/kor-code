@@ -7,7 +7,7 @@ import { runPlan } from "./plan.js";
 import { createServeRouting } from "./serve-routing.js";
 import { ensureRuntimeDirectories, loadGatewayEnvironment, loadKorConfig, repositoryKeyForIssue, runtimePaths } from "@kor-code/config";
 import { HttpLinearClient, LinearStore } from "@kor-code/linear";
-import { KorDaemon, readStatus } from "@kor-code/daemon";
+import { KorDaemon, readExecutionStatus, readStatus } from "@kor-code/daemon";
 import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController } from "@kor-code/controller";
 import { GatewayAdapter, readModelRegistry } from "@kor-code/gateway-adapter";
 import { PersistentDecisionAuditLog } from "@kor-code/jev";
@@ -22,9 +22,7 @@ function valueAfter(args: readonly string[], name: string): string | undefined {
 function print(value: unknown, json: boolean): void {
   process.stdout.write(`${json ? JSON.stringify(value, null, 2) : typeof value === "string" ? value : JSON.stringify(value, null, 2)}\n`);
 }
-function uuid(value: string): boolean { return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value); }
 async function canonicalIssue(reference: string): Promise<{ id: string; identifier: string; title: string; repository: string }> {
-  if (uuid(reference)) return { id: reference, identifier: reference, title: reference, repository: reference };
   const client = new HttpLinearClient();
   const issue = await client.getIssue(reference);
   const loaded = await loadKorConfig();
@@ -32,15 +30,25 @@ async function canonicalIssue(reference: string): Promise<{ id: string; identifi
 }
 
 async function status(args: readonly string[]): Promise<number> {
+  const selectors = args.filter(arg => arg !== "--json");
+  if (selectors.length > 1 || selectors.some(arg => arg.startsWith("-"))) { process.stderr.write("Usage: kor status [--json] [EXECUTION-ID|ISSUE-ID]\n"); return 2; }
   const paths = runtimePaths();
   const loaded = await loadKorConfig(paths.configFile, { home: paths.home });
-  print(await readStatus(paths, Math.max(2_000, loaded.config.pollIntervalSeconds * 2_000)), jsonFlag(args));
+  const maxAgeMs = Math.max(2_000, loaded.config.pollIntervalSeconds * 2_000);
+  const reference = selectors[0];
+  if (reference) {
+    const response = await readExecutionStatus(paths, reference, maxAgeMs);
+    print(response, jsonFlag(args));
+    return response.provenance === "unavailable" ? 1 : 0;
+  }
+  print(await readStatus(paths, maxAgeMs), jsonFlag(args));
   return 0;
 }
 
 async function runIssue(args: readonly string[]): Promise<number> {
-  const issueReference = args.find(arg => !arg.startsWith("-"));
-  if (!issueReference) { process.stderr.write("Usage: kor run ISSUE-ID [--dry-run] [--json]\n"); return 2; }
+  const references = args.filter(arg => arg !== "--json" && arg !== "--dry-run");
+  const issueReference = references[0];
+  if (references.length !== 1 || !issueReference || issueReference.startsWith("-")) { process.stderr.write("Usage: kor run ISSUE-ID [--dry-run] [--json]\n"); return 2; }
   const json = jsonFlag(args);
   const dryRun = args.includes("--dry-run");
   const paths = runtimePaths();
@@ -52,21 +60,23 @@ async function runIssue(args: readonly string[]): Promise<number> {
   }
   const store = new LinearStore(paths.databaseFile);
   try {
-    const assignment = store.enqueue(issue.id);
-    print({ issueId: issue.identifier, canonicalIssueId: issue.id, executionId: assignment.executionId, status: assignment.status, queued: true }, json);
+    const assignment = store.enqueue(issue.id, { issueKey: issue.identifier, issueTitle: issue.title });
+    print({ schemaVersion: 1, issueId: issue.identifier, canonicalIssueId: issue.id, executionId: assignment.executionId, status: assignment.status, queued: assignment.status === "queued" }, json);
     return 0;
   } finally { store.close(); }
 }
 
 async function updateQueue(command: "cancel" | "retry", args: readonly string[]): Promise<number> {
-  const issueReference = args.find(arg => !arg.startsWith("-"));
-  if (!issueReference) { process.stderr.write(`Usage: kor ${command} ISSUE-ID [--json]\n`); return 2; }
-  const issue = await canonicalIssue(issueReference);
+  const references = args.filter(arg => arg !== "--json");
+  const issueReference = references[0];
+  if (references.length !== 1 || !issueReference || issueReference.startsWith("-")) { process.stderr.write(`Usage: kor ${command} EXECUTION-ID|ISSUE-ID [--json]\n`); return 2; }
   const paths = runtimePaths();
   const store = new LinearStore(paths.databaseFile);
   try {
-    const accepted = command === "cancel" ? store.requestCancel(issue.id) : store.retry(issue.id);
-    print({ issueId: issue.identifier, canonicalIssueId: issue.id, command, accepted }, jsonFlag(args));
+    const assignment = store.findAssignment(issueReference);
+    if (!assignment) throw new Error("execution not found");
+    const accepted = command === "cancel" ? store.requestCancel(assignment.issueId) : store.retry(assignment.issueId);
+    print({ schemaVersion: 1, issueId: assignment.issueKey ?? assignment.issueId, canonicalIssueId: assignment.issueId, executionId: assignment.executionId, command, accepted }, jsonFlag(args));
     return accepted ? 0 : 1;
   } finally { store.close(); }
 }
@@ -171,7 +181,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     process.stderr.write(`FAIL ${command}: ${error instanceof Error ? error.message : "unable to run"}\n`);
     return 1;
   }
-  process.stdout.write("Usage: kor serve [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--json] | kor status [--json] | kor plan ISSUE-ID | kor run ISSUE-ID [--dry-run] [--json] | kor cancel ISSUE-ID [--json] | kor retry ISSUE-ID | kor logs EXECUTION-ID | kor doctor | kor models list | kor models probe [--family family] [--model model]\n");
+  process.stdout.write("Usage: kor serve [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor plan ISSUE-ID | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor | kor models list | kor models probe [--family family] [--model model]\n");
   return ["help", "--help", "-h"].includes(command) ? 0 : 2;
 }
 
