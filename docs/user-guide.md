@@ -322,7 +322,8 @@ Add a `question(name)` function to `src/greeting.js`.
 
 Each bullet becomes one acceptance condition that Jev judges against the diff.
 Without acceptance criteria the execution blocks with a needs-input reason before
-any model session starts.
+any model session starts; [recovery](#recover-from-a-restart-a-crash-or-a-block)
+explains how to clear that block.
 
 Linear setup:
 
@@ -759,6 +760,20 @@ $ kor logs 5520bb1e-3b82-4063-8e92-98cdb7fc1fa2
 2026-10-14T18:05:42.939Z shipping blocked: git failed (2): error: No such remote 'origin'
 ```
 
+**A preflight block.** Missing acceptance criteria, an unfinished blocking dependency
+or a healthy Jev readiness denial stop the execution before any model session
+starts. The execution is `blocked`, Kor writes a durable clarification comment on the
+Linear issue and adds the `kor:blocked` label. Fix the issue (add the `Acceptance`
+section, finish the dependency, or state the clarified intent in the issue
+description), then run `kor retry`. When execution resumes, Kor removes
+`kor:blocked`.
+
+A retry with unchanged input replays the recorded preflight audit instead of
+deciding again. Clarified intent, or a change to the eligible models, creates a
+fresh immutable decision revision. Earlier decisions stay in the audit. With
+calibration enabled, recorded attempt metrics show provider-reported costs when
+available; a provider cost may be unknown.
+
 **Retry and cancel.** `kor retry EXECUTION-ID|ISSUE-ID` works on failed, blocked
 and canceled executions and keeps the execution ID. It does not rerun a session
 whose work already verified and reached shipping; it continues delivery. `kor
@@ -799,7 +814,7 @@ issue back to Todo (or cancel it) in Linear yourself.
 | `jev: unavailable (TypeSafe API key not found …)` | Set `TYPESAFE_API_KEY`. Until then routes are labelled `fallback` and acceptance stays blocked. |
 | `Session failed: 1 permission denial` | The session used a tool outside `toolAllowlist`; see the [walk-through](#recover-from-a-restart-a-crash-or-a-block). |
 | `git failed (2): error: No such remote 'origin'` | Delivery needs a GitHub `origin` (or `remote` in the config). The verified work is still in the worktree; add the remote and `kor retry`. |
-| Execution `blocked` with a needs-input reason about acceptance criteria | Add an `Acceptance` section to the Linear issue, then `kor retry`. |
+| Execution `blocked` with a clarification comment and `kor:blocked` on the issue | A preflight block: missing acceptance criteria, an unfinished dependency or a Jev readiness denial. Fix the issue as the comment says, then `kor retry` ([walk-through](#recover-from-a-restart-a-crash-or-a-block)). |
 | `Local cockpit installation requires a standalone checkout …` | `--pilot` was a linked worktree. Use a normal clone. |
 | `/kor` shows `[STALE]` or `[UNAVAILABLE]` | The daemon is down, or the cockpit cannot reach it. Start `kor serve`; check `KOR_STATUS_URL` and `KOR_STATE_DIR`. |
 | `FAIL status: …` | `kor status` could not read the snapshot or the execution; the hint says which. |

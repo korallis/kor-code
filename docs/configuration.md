@@ -36,7 +36,10 @@ Execution sessions receive `KOR_STATUS_URL` and `KOR_STATE_DIR`, so the cockpit
 inside them reads this daemon.
 The route handoff retains Jev's provider, model, label and `decisionId`; controller
 metrics and terminal observations refer to that preflight audit. Retry replays the
-same decision without another preflight, and rechecks that its model is eligible.
+same decision while issue intent, blocking dependencies and eligible models are
+unchanged, and rechecks that its model is eligible. Changed inputs create a fresh
+immutable preflight revision while retaining earlier decisions. With calibration
+enabled, recorded attempt metrics retain provider-reported costs, which may be unknown.
 `--jev` filters candidates against the live gateway catalogue at startup; plain
 `serve` reads the verified registry. Both modes use Jev for acceptance judgments,
 which stay blocked during an outage even though execution uses the default route.
