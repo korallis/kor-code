@@ -188,16 +188,20 @@ calibration:
 
 `linearTeam` and `linearProject` map a Linear issue to this repository. `linearProject` wins when both match; otherwise Kor uses the team mapping. A repository key that exactly matches the issue's team key or project ID is also accepted for small pilots.
 
-Use `kor run LEE-123 --dry-run` to read a Todo issue and its team's workflow states, resolve the configured repository, and print the exact state and comment writes without changing Linear. The live command applies the same writes with a deterministic UUID v4 comment ID, so retrying it updates or reuses the existing progress comment. `kor cancel LEE-123` writes Todo and a deterministic cancellation comment. Agent-session mutations remain disabled for a personal key; they require the later OAuth app capability.
+Use `kor run LEE-123 --dry-run` to resolve a Linear issue and preview the queue operation without writing anything. It prints the issue's canonical UUID and title, the intake label, the default route, and the planned actions (`enqueue durable assignment`, `run isolated session when kor serve is active`). It fails with `No Kor repository mapping for Linear team …` when `config.yaml` has no repository for the issue's team or project, and it does not check the issue's state. `kor run LEE-123` enqueues the assignment and prints its `executionId`; the daemon claims it and writes the Linear progress, using deterministic comment IDs so a retry updates or reuses the existing comment. `kor cancel` and `kor retry` change only Kor's queue: a cancelled execution's Linear issue is not moved back to Todo, so do that in Linear. Agent-session mutations remain disabled for a personal key; they require the later OAuth app capability.
 
-Run `pnpm kor doctor` (or the installed `kor doctor`) for bounded checks of the credentials, CLIProxyAPI, management endpoint, quota-axi, Claude Code, no-mistakes, and every configured repository. A missing Kor client key reports the exact one-line proxy addition to make:
+Run `kor doctor` (or `pnpm kor doctor`) for bounded checks of the credentials, CLIProxyAPI, management endpoint, quota-axi, Claude Code, no-mistakes, and every configured repository. Only the config, the keys, the gateway, Claude Code and the repositories are needed to run and verify an issue; the management endpoint and quota-axi feed the cockpit's account panel, and the no-mistakes daemon is needed for delivery. A missing Kor client key reports the exact one-line proxy addition to make:
 
-The doctor prints one generated key-list item, such as `CLIProxyAPI addition: - kor-<generated-value>`. Add that exact item to the proxy's `api-keys` list and put the same value in `KOR_GATEWAY_KEY` in `gateway.env`.
+```text
+FAIL CLIProxyAPI with Kor key: missing; CLIProxyAPI addition: - kor-<generated-value>
+```
+
+Add that exact item to the proxy's `api-keys` list and put the same value in `KOR_GATEWAY_KEY` in `gateway.env`. The [user guide](user-guide.md#check-your-setup-with-kor-doctor) shows the whole output.
 
 
 ## Calibration
 
-Calibration rows share `kor.db` with the daemon. Each Jev or baseline arm records one `run_metrics` row per attempt, including cost, token and cache counters, wall-clock time, failovers, verification failures, policy blocks, and clarifications. Terminal outcomes are recorded separately; the product observes rejected, escalated, and abandoned outcomes, while merge observation remains a T6 integration point. Outcome recording updates the persisted preflight audit even when the controller did not select the route itself. A retry clears its stale terminal outcome and decision observations while retaining all attempts. Its run records the route actually used on retry; a lost model or operator override cannot remain in the Jev sample.
+Calibration rows share `kor.db` with the daemon. Each Jev or baseline arm records one `run_metrics` row per attempt, including cost, token and cache counters, wall-clock time, failovers, verification failures, policy blocks, and clarifications. Terminal outcomes are recorded separately; the controller records rejected, escalated, and abandoned outcomes, and the shipping daemon records merged or rejected outcomes when it observes a pull request merge or closure. Outcome recording updates the persisted preflight audit even when the controller did not select the route itself. A retry clears its stale terminal outcome and decision observations while retaining all attempts. Its run records the route actually used on retry; a lost model or operator override cannot remain in the Jev sample.
 
 Run the report with:
 

@@ -35,7 +35,7 @@ function errorHint(command: string, error: unknown): string {
   if (command === "install") return "check the reported path and `kor install --help`; if recovery is required, run `kor uninstall --purge`";
   if (command === "uninstall") return "save any later edits; restore the reported installed snapshot, then retry `kor uninstall`";
   if (command === "serve") return "check the Kor configuration and daemon state, then retry";
-  if (command === "run" || command === "plan") return "check the issue identifier and Linear credentials, then retry";
+  if (command === "run" || command === "plan") return "check the issue identifier, the Linear credentials, and that config.yaml maps the issue's team or project to a repository, then retry";
   if (command === "status" || command === "cancel" || command === "retry" || command === "logs") return "check the execution ID or issue key, then retry";
   return `run \`kor ${command} --help\` or retry with --debug for details`;
 }
