@@ -16,6 +16,10 @@ export interface LinearIssue extends Issue {
   resources: Array<{ title: string; url: string }>;
   /** Label names are used by the daemon's explicit intake opt-in. */
   labels: string[];
+  /** The human key (`LEE-57`), link and state name, for display; `id` stays the stable UUID. */
+  identifier?: string;
+  url?: string;
+  stateName?: string;
 }
 
 export type LinearStateType = "backlog" | "unstarted" | "started" | "completed" | "canceled" | "triage" | "duplicate";
@@ -127,6 +131,7 @@ export function parseIssue(value: unknown): LinearIssue {
     acceptanceCriteria: acceptanceSection.split('\n').map(line => line.replace(/^\s*[-*]\s*(?:\[[ x]\]\s*)?/i, '').trim()).filter(Boolean),
     ...(project ? { projectId: string(project.id) } : {}),
     teamId: string(object(data.team).id), teamKey: string(object(data.team).key), stateId: string(state.id), stateType: stateType(state.type),
+    ...(typeof data.identifier === 'string' ? { identifier: data.identifier } : {}), ...(typeof data.url === 'string' ? { url: data.url } : {}), ...(typeof state.name === 'string' ? { stateName: state.name } : {}),
     updatedAt: string(data.updatedAt), priority: data.priority, documents, dependencies,
     subIssueIds: connection(data.children).map(value => string(object(value).id)),
     comments: connection(data.comments).map(value => { const comment = object(value); return { id: string(comment.id), body: string(comment.body) }; }),
