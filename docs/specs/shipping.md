@@ -123,15 +123,17 @@ migration proof: v4 -> v5; execution/lease/metadata/outbox preserved; shipping n
 ```
 
 Scratch artifacts are retained under a fresh directory in `$TMPDIR` (or
-`KOR_PROOF_DIR` when supplied); the command prints its location. Historical T6
-scratch validation also used live Jev acceptance judgments and a real gh-axi read.
+`KOR_PROOF_DIR` when supplied); the command prints its location. Earlier scratch
+validation also used live Jev acceptance judgments and a real gh-axi read.
 
-The worker's delivery contract forbids running a no-mistakes pipeline or managing
-worktrees, so the gate, forge writes, Linear writes, and cleanup are **Illustrative
-contract replays**, not a live end-to-end shipping claim. The real gh-axi read
-envelope and this change's ready PR are checked separately. A live initialized-repo
-pilot remains necessary before calling the entire shipping flow **Validated**.
+The gate, forge writes, Linear writes, and cleanup are **Illustrative contract
+replays**, not a live end-to-end shipping claim. A live run of the daemon against a
+repository with no GitHub `origin` was captured for the [user guide](../user-guide.md):
+verification passed, shipping stopped with `git failed (2): error: No such remote
+'origin'`, and the verified work stayed in its worktree. A live initialized-repo run
+that reaches a pull request remains necessary before calling the entire shipping
+flow **Validated**.
 
 Jev (`jev-1.13.0`) selected daemon-owned delivery with confidence 0.96, preserving
 approval gates with confidence 1.00, and cleanup only after merge with confidence
-1.00. The T6 PR records the decision output and executed proof commands.
+1.00.
