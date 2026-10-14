@@ -192,6 +192,9 @@ importers:
       '@kor-code/core':
         specifier: workspace:*
         version: link:../core
+      '@kor-code/gateway-adapter':
+        specifier: workspace:*
+        version: link:../gateway-adapter
       '@kor-code/jev':
         specifier: workspace:*
         version: link:../jev

@@ -15,7 +15,9 @@ export class SessionLauncher implements SessionLauncherLike {
   launch(input: SessionLaunch): Promise<SessionResult> {
     const collector = new EventCollector();
     const script = this.options.sandboxScript ?? resolve(this.repoRoot, "scripts/sandbox.sh");
-    const commandArgs = this.options.args ?? ["claude", "-p", input.prompt, "--plugin-dir", resolve(this.repoRoot, "packages/claude-plugin"), "--no-session-persistence", "--permission-mode", "dontAsk", "--output-format", "text", "--bare", "--setting-sources", ""];
+    const effort = input.route?.reasoningLevel;
+    const routeArgs = input.route?.model ? ["--model", input.route.model, ...(effort ? ["--effort", effort] : [])] : [];
+    const commandArgs = this.options.args ?? ["claude", "-p", input.prompt, "--plugin-dir", resolve(this.repoRoot, "packages/claude-plugin"), "--no-session-persistence", ...routeArgs, "--permission-mode", "acceptEdits", "--allowedTools", "Read", "Write", "Edit", "Bash(git status*)", "--output-format", "stream-json", "--verbose", "--setting-sources", ""];
     const args = ["--run", ...commandArgs];
     const tool = commandArgs[0] ?? "claude";
     const toolDir = tool.includes("/") ? dirname(tool) : this.findToolDir(tool);

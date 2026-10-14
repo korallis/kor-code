@@ -4,7 +4,7 @@ Kor Code is the documentation project for a Linear-first engineering environment
 
 The design gives one control plane to read project intent from Linear, choose models and agents, run isolated Claude Code sessions, use an account-aware subscription gateway, and write evidence back to Linear.
 
-This repository contains the foundation monorepo and documentation. The foundation exposes typed integration boundaries and runnable Phase 0 probes; later phases remain unimplemented until their contracts are validated.
+This repository contains the foundation monorepo and documentation. The foundation exposes typed integration boundaries and runnable probes. Model compatibility is recorded by `pnpm kor models probe --family claude` and listed by `pnpm kor models list`.
 
 ## Read first
 
@@ -15,6 +15,7 @@ This repository contains the foundation monorepo and documentation. The foundati
 5. [Decision records](docs/adr/)
 6. [Implementation plan](docs/implementation-plan.md)
 7. [Open questions](docs/open-questions.md)
+8. [Model compatibility](docs/model-compatibility.md)
 
 ## Responsibility split
 
@@ -34,6 +35,7 @@ Linear is the source of truth for intent. GitHub is the source of truth for vers
 - **Validated** means a local or integration check supports the statement.
 - **Blocked** means an external account, provider, or product behaviour prevents validation.
 - **Illustrative** means a mock value or UI state, not live telemetry.
+- **Verified** means a model passed the recorded sandbox compatibility probe and is routable.
 
 ## Foundation
 

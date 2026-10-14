@@ -9,6 +9,7 @@ import { ConcurrencyLimiter } from "./limiter.js";
 import { type SessionLaunch, type SessionResult, type SessionLauncherLike } from "./launcher.js";
 import { RestartReconciler, type ReconciliationReport } from "./reconcile.js";
 import { VerificationError, VerificationTracker } from "@kor-code/verification";
+import type { GatewayAdapter } from "@kor-code/gateway-adapter";
 
 export * from "./repository.js";
 export * from "./worktree.js";
@@ -26,6 +27,7 @@ export interface ControllerOptions {
   linear?: ControllerLinearRuntime;
   jev?: JevDecisionCore;
   catalogue?: readonly CatalogueModel[];
+  gateway?: GatewayAdapter;
   limits?: ConcurrencyLimiter;
   owner?: string;
   defaultRoute?: Route;
@@ -55,7 +57,9 @@ function promptFor(issue: LinearIssue, prefix = ""): string {
 }
 async function chooseRoute(options: ControllerOptions, executionId: string, issue: LinearIssue, existing?: Route): Promise<Route | undefined> {
   if (existing) return existing;
-  const catalogue = options.catalogue ?? [];
+  const catalogue = options.gateway
+    ? (await options.gateway.catalogue({ capabilities: ["streaming", "tool_calls"] })).map(model => ({ provider: model.provider ?? "unknown", model: model.id, capabilities: Object.entries(model.capabilities).map(([name, supported]) => ({ name, supported })), available: true } satisfies CatalogueModel))
+    : options.catalogue ?? [];
   if (!options.jev || catalogue.length === 0) return options.defaultRoute;
   const candidates = catalogue.filter(item => item.available !== false).map(item => item.model);
   if (candidates.length === 0) throw new Error("No available model routes in catalogue");
@@ -114,7 +118,9 @@ class ExecutionController implements Controller {
       const session = await Promise.race([sessionPromise, ...(heartbeat ? [heartbeat.failed] : [])]);
       heartbeat?.stop();
       if (this.writer && claim) {
-        if (session.exitCode === 0) {
+        const permissionDenied = /permission_denials|permission denied|blocked .*write|don't ask mode/i.test(`${session.stdout}\n${session.stderr}`);
+        const providerError = /"is_error"\s*:\s*true/.test(session.stdout);
+        if (session.exitCode === 0 && !permissionDenied && !providerError) {
           const sessionEvidence: Evidence = { id: `session-${input.id}`, kind: "provider", summary: "Sandbox session exited with status 0", status: "pass" };
           try {
             verification?.addMany([...(input.evidence ?? []), sessionEvidence]);
@@ -131,8 +137,7 @@ class ExecutionController implements Controller {
             throw error;
           }
           await this.writer.complete(claim, { summary: `Execution ${input.id} completed`, evidence: verification?.evidence() ?? [sessionEvidence] });
-        }
-        else this.options.linear?.store.release(claim, 1_000);
+        } else this.options.linear?.store.release(claim, 1_000);
         await this.writer.flush();
       }
       return { execution, issue, repository, worktree, session, ...(claim ? { claim } : {}) };
