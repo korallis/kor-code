@@ -70,7 +70,10 @@ export interface QueueResponse { schemaVersion: 1; runs: MissionRun[] }
 export interface MessageRequest { message: string }
 export interface OverrideRequest { executionId: string; target: string; choice: string; decisionId?: string }
 export interface OverrideResponse { schemaVersion: 1; record: OverrideRecord }
-export interface ActionResponse { schemaVersion: 1; executionId: string; accepted: true; run: MissionRun }
+/** Pending writes remain durable and are retried by the daemon's Linear poll.
+ * The count covers the daemon's entire outbox, including earlier actions. */
+export type LinearSync = { status: "synced" } | { status: "pending"; pendingWrites: number };
+export interface ActionResponse { schemaVersion: 1; executionId: string; accepted: true; run: MissionRun; linearSync: LinearSync }
 export type ConnectRequest =
   | { provider: "linear"; apiKey: string }
   | { provider: "github"; token: string }

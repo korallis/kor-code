@@ -4,7 +4,7 @@ import { extname, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import { parseKorConfig, repositorySchema } from "@kor-code/config";
 import { redact, runtimeSecrets } from "@kor-code/jev";
-import type { ApiError, ApiErrorCode, ConfigResponse, PoolResponse, ProjectsResponse, RunsResponse } from "@kor-code/mission-control";
+import type { ActionResponse, ApiError, ApiErrorCode, ConfigResponse, PoolResponse, ProjectsResponse, RunsResponse } from "@kor-code/mission-control";
 import type { KorDaemon } from "./index.js";
 import { acceptsUiToken } from "./ui-token.js";
 import { atomicPrivateFile, unavailable } from "./mission-services.js";
@@ -124,8 +124,8 @@ export class MissionApi {
           const executionId = this.daemon.missionRun(decodeURIComponent(actionPath[1])).executionId;
           const action = z.enum(["cancel", "retry", "answer", "approve", "request-changes", "note"]).parse(actionPath[2]);
           const body = ["answer", "request-changes", "note"].includes(action) ? message.parse(input) : (empty.parse(input), undefined);
-          await this.daemon.runAction(executionId, action, body?.message);
-          send(200, { schemaVersion: 1, executionId, accepted: true, run: this.daemon.missionRun(executionId) }); return;
+          const linearSync = await this.daemon.runAction(executionId, action, body?.message);
+          send(200, { schemaVersion: 1, executionId, accepted: true, run: this.daemon.missionRun(executionId), linearSync } satisfies ActionResponse); return;
         }
         if (path === "/api/overrides") {
           const body = z.strictObject({ executionId: id, target: id, choice: id, decisionId: id.optional() }).parse(input);
