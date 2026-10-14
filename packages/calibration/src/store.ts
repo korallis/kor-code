@@ -8,7 +8,7 @@ import { MemoryDecisionAuditLog, redact, type AppliedDecision, type DecisionAudi
 
 const count = z.number().int().nonnegative();
 const measurement = z.number().nonnegative().nullable();
-const route = z.object({ provider: z.string(), model: z.string(), accountPolicy: z.enum(["fill-first", "manual", "least-used"]), sessionAffinity: z.boolean(), reasoningLevel: z.enum(["low", "medium", "high"]).optional() });
+const route = z.object({ provider: z.string(), model: z.string(), accountPolicy: z.enum(["fill-first", "manual", "least-used"]), sessionAffinity: z.boolean(), reasoningLevel: z.enum(["low", "medium", "high"]).optional(), label: z.enum(["jev", "fallback", "escalated"]).optional() });
 export const runSchema = z.object({
   executionId: z.string(), pairId: z.string(), issueId: z.string(), arm: z.enum(["jev", "baseline", "fallback"]),
   baseRevision: z.string(), route, sampled: z.boolean(), startedAt: z.string().datetime(),

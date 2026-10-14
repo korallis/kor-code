@@ -13,14 +13,21 @@
       "path": "../config"
     },
     {
+      "path": "../core"
+    },
+    {
+      "path": "../gateway-adapter"
+    },
+    {
+      "path": "../jev"
+    },
+    {
       "path": "../linear"
     },
     {
       "path": "../daemon"
     },
     { "path": "../calibration" },
-    { "path": "../controller" },
-    { "path": "../gateway-adapter" },
-    { "path": "../jev" }
+    { "path": "../controller" }
   ]
 }

@@ -148,6 +148,7 @@ class ExecutionController implements Controller {
           await this.writer.recordVerificationBlock(claim, { ...execution, status: "blocked", verification: verificationReport }, failure.findings, latest.blockers);
           await this.writer.flush();
           this.finishCalibration(input.id, "failed", "controller.verification-block");
+          if (this.options.calibration) await this.runBaselineIfSampled({ execution, issue, repository, baseRevision, initialPrompt, settings, calibration: this.options.calibration });
           throw failure;
         }
         await this.writer.complete(claim, { summary: `Execution ${input.id} completed`, evidence: verification?.evidence() ?? [] });
@@ -155,14 +156,11 @@ class ExecutionController implements Controller {
       }
       if (latest.blockers.length > 0) {
         this.finishCalibration(input.id, "failed", "controller.verification-block");
+        if (this.options.calibration) await this.runBaselineIfSampled({ execution, issue, repository, baseRevision, initialPrompt, settings, calibration: this.options.calibration });
         throw new ExecutionVerificationError(verificationReport);
       }
       this.finishCalibration(input.id, "verified", "controller.completed");
-      if (this.options.calibration && calibrationRoute && this.options.calibration.store.run(input.id)?.arm === "jev" && this.options.calibration.store.run(input.id)?.sampled) {
-        // The primary outcome is durable before a baseline replay begins. The
-        // replay is a comparison arm and cannot hold up the real Linear write.
-        await this.runBaseline({ execution, issue, repository, baseRevision, initialPrompt, settings, calibration: this.options.calibration, ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}) });
-      }
+      if (this.options.calibration) await this.runBaselineIfSampled({ execution, issue, repository, baseRevision, initialPrompt, settings, calibration: this.options.calibration, ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}) });
       return { execution: completedExecution, issue, repository, worktree, session, ...(claim ? { claim } : {}) };
     } catch (error) {
       const run = this.options.calibration?.store.run(input.id);
@@ -189,6 +187,12 @@ class ExecutionController implements Controller {
     if (!calibration || !run || calibration.store.outcomes().some(item => item.executionId === executionId)) return;
     if (run.status === "running") calibration.store.finishRun(executionId, outcome.status === "merged" ? "verified" : outcome.status === "rejected" ? "failed" : outcome.status === "escalated" ? "escalated" : "interrupted");
     calibration.store.recordExecutionOutcome(executionId, outcome, this.options.jev);
+  }
+  private async runBaselineIfSampled(input: { execution: Execution; issue: LinearIssue; repository: Repository; baseRevision: string; initialPrompt: string; settings: ReturnType<typeof verificationSettings>; calibration?: NonNullable<ControllerOptions["calibration"]>; onSpawn?: (pid: number) => void }): Promise<void> {
+    const calibration = input.calibration;
+    const run = calibration?.store.run(input.execution.id);
+    if (!calibration || run?.arm !== "jev" || !run.sampled) return;
+    await this.runBaseline({ ...input, calibration });
   }
   private async runBaseline(input: { execution: Execution; issue: LinearIssue; repository: Repository; baseRevision: string; initialPrompt: string; settings: ReturnType<typeof verificationSettings>; calibration: NonNullable<ControllerOptions["calibration"]>; leaseFailure?: Promise<never>; onSpawn?: (pid: number) => void }): Promise<void> {
     const { execution, issue, repository, baseRevision, initialPrompt, settings, calibration } = input;

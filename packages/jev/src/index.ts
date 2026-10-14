@@ -1,13 +1,15 @@
 export * from "./contracts.js";
 export * from "./client.js";
 export * from "./redact.js";
+export * from "./preflight.js";
 import type { CatalogueModel, DecisionBundle, DecisionInput, JsonValue, Route } from "@kor-code/core";
 import { z } from "zod";
-import { answerSchema, type JevAnswer, type JevQuestion, type JevResponse } from "./contracts.js";
+import { answerSchema, type JevAnswer, type JevJsonValue, type JevQuestion, type JevResponse } from "./contracts.js";
 import type { JevClient } from "./client.js";
 import { redact } from "./redact.js";
 
-export type DecisionKind = "route" | "skill" | "agent" | "context" | "acceptance";
+export type DecisionKind = "route" | "skill" | "agent" | "context" | "readiness" | "complexity" | "risk" | "acceptance";
+export type DecisionAnswerType = "choice" | "noul" | "score";
 export interface AcceptanceJudgmentRequest {
   executionId: string;
   attempt?: number;
@@ -20,36 +22,40 @@ export interface AcceptanceJudgment {
   probability: number;
   passed: boolean;
 }
-export interface DecisionRequest { decisionId: string; executionId: string; kind: DecisionKind; question: string; state: JsonValue; inputs: DecisionInput[]; candidates: string[]; evidenceRefs?: string[]; policyChecks?: DecisionBundle["policyChecks"]; threshold?: number; overrides?: JsonValue }
-export interface AppliedDecision extends DecisionBundle { kind: DecisionKind; applied: boolean; escalated: boolean; model?: string; probabilities?: Record<string, number>; overrides?: JsonValue; observedOutcome?: JsonValue }
+export interface DecisionRequest { decisionId: string; executionId: string; kind: DecisionKind; question: string; state: JsonValue; inputs: DecisionInput[]; candidates: string[]; criteria?: Record<string, JevJsonValue>; nonApplyingCandidates?: string[]; answerType?: DecisionAnswerType; evidenceRefs?: string[]; policyChecks?: DecisionBundle["policyChecks"]; threshold?: number; overrides?: JsonValue }
+export interface AppliedDecision extends DecisionBundle { kind: DecisionKind; applied: boolean; escalated: boolean; answerType?: DecisionAnswerType; model?: string; probabilities?: Record<string, number>; noul?: number; score?: number; overrides?: JsonValue; observedOutcome?: JsonValue }
 export interface DecisionAuditRecord { request: DecisionRequest; response: AppliedDecision; recordedAt: string; rawAnswer?: JevAnswer; overrides?: JsonValue; observedOutcome?: JsonValue }
 export interface DecisionAuditLog { append(record: DecisionAuditRecord): void; get(decisionId: string): DecisionAuditRecord | undefined; explain(decisionId: string): DecisionAuditRecord; replay(decisionId: string): AppliedDecision; recordOutcome(decisionId: string, outcome: JsonValue): void }
+export interface DecisionAuditPersistence { read(decisionId: string): string | undefined; write(decisionId: string, recordedAt: string, payload: string): void; update(decisionId: string, recordedAt: string, payload: string): void }
 
 const jsonValue = z.json();
 const policyCheckSchema = z.object({ name: z.string(), result: z.enum(["pass", "fail", "unresolved"]) });
 const decisionRequestSchema = z.object({
-  decisionId: z.string(), executionId: z.string(), kind: z.enum(["route", "skill", "agent", "context", "acceptance"]), question: z.string(), state: jsonValue,
-  inputs: z.array(z.object({ name: z.string(), value: jsonValue, source: z.string().optional() })), candidates: z.array(z.string()), evidenceRefs: z.array(z.string()).optional(),
+  decisionId: z.string(), executionId: z.string(), kind: z.enum(["route", "skill", "agent", "context", "readiness", "complexity", "risk", "acceptance"]), question: z.string(), state: jsonValue,
+  inputs: z.array(z.object({ name: z.string(), value: jsonValue, source: z.string().optional() })), candidates: z.array(z.string()), criteria: z.record(z.string(), jsonValue).optional(), nonApplyingCandidates: z.array(z.string()).optional(), answerType: z.enum(["choice", "noul", "score"]).optional(), evidenceRefs: z.array(z.string()).optional(),
   policyChecks: z.array(policyCheckSchema).optional(), threshold: z.number().optional(), overrides: jsonValue.optional(),
 });
 const appliedDecisionSchema = z.object({
-  decisionId: z.string(), executionId: z.string(), question: z.string(), inputs: z.array(z.object({ name: z.string(), value: jsonValue, source: z.string().optional() })), choice: z.string(), candidates: z.array(z.string()), confidence: z.number(), reasons: z.array(z.string()), evidenceRefs: z.array(z.string()), policyChecks: z.array(policyCheckSchema), kind: z.enum(["route", "skill", "agent", "context", "acceptance"]), applied: z.boolean(), escalated: z.boolean(), model: z.string().optional(), probabilities: z.record(z.string(), z.number()).optional(), overrides: jsonValue.optional(), observedOutcome: jsonValue.optional(),
+  decisionId: z.string(), executionId: z.string(), question: z.string(), inputs: z.array(z.object({ name: z.string(), value: jsonValue, source: z.string().optional() })), choice: z.string(), candidates: z.array(z.string()), confidence: z.number(), reasons: z.array(z.string()), evidenceRefs: z.array(z.string()), policyChecks: z.array(policyCheckSchema), kind: z.enum(["route", "skill", "agent", "context", "readiness", "complexity", "risk", "acceptance"]), applied: z.boolean(), escalated: z.boolean(), answerType: z.enum(["choice", "noul", "score"]).optional(), model: z.string().optional(), probabilities: z.record(z.string(), z.number()).optional(), noul: z.number().optional(), score: z.number().optional(), overrides: jsonValue.optional(), observedOutcome: jsonValue.optional(),
 });
 const auditRecordSchema = z.object({ request: decisionRequestSchema, response: appliedDecisionSchema, recordedAt: z.string(), rawAnswer: answerSchema.optional(), overrides: jsonValue.optional(), observedOutcome: jsonValue.optional() });
 function applyDecision(request: DecisionRequest, answer: JevAnswer | undefined, model?: string): AppliedDecision {
-  if (request.kind === "acceptance" && answer?.type === "noul") {
-    const applied = answer.noul >= (request.threshold ?? 0.7);
-    return { decisionId: request.decisionId, executionId: request.executionId, question: request.question, inputs: request.inputs, choice: answer.noul >= 0.5 ? "yes" : "no", candidates: request.candidates, confidence: answer.noul, reasons: ["Acceptance Noul probability of yes."], evidenceRefs: request.evidenceRefs ?? [], policyChecks: request.policyChecks ?? [], kind: request.kind, applied, escalated: !applied, ...(model ? { model } : {}) };
-  }
-  const choiceAnswer = answer?.type === "choice" ? answer : undefined;
-  const confidence = choiceAnswer?.confidence ?? 0;
+  const answerType = request.answerType ?? "choice";
+  const choiceAnswer = answerType === "choice" && answer?.type === "choice" ? answer : undefined;
+  const noulAnswer = answerType === "noul" && answer?.type === "noul" ? answer : undefined;
+  const scoreAnswer = answerType === "score" && answer?.type === "score" ? answer : undefined;
+  // Noul supplies probability of yes, not a separate confidence.
+  const confidence = choiceAnswer?.confidence ?? scoreAnswer?.confidence ?? noulAnswer?.noul ?? 0;
   const threshold = request.threshold ?? 0.7;
-  const validChoice = choiceAnswer !== undefined && request.candidates.includes(choiceAnswer.choice);
+  const validChoice = choiceAnswer !== undefined && request.candidates.includes(choiceAnswer.choice)
+    || noulAnswer !== undefined && request.candidates.length === 2
+    || scoreAnswer !== undefined && request.candidates.length >= 2 && scoreAnswer.score <= request.candidates.length - 1;
   const policyChecks = request.policyChecks ?? [];
   const policyBlocked = policyChecks.some(check => check.result === "fail");
-  const escalated = policyBlocked || !validChoice || confidence < threshold;
-  const choice = validChoice ? choiceAnswer.choice : "escalate";
-  return { decisionId: request.decisionId, executionId: request.executionId, question: request.question, inputs: request.inputs, choice, candidates: request.candidates, confidence, reasons: escalated ? [policyBlocked ? "A policy check failed." : "Confidence or answer validity is below the configured threshold."] : ["Jev selected the highest-confidence candidate."], evidenceRefs: request.evidenceRefs ?? [], policyChecks, kind: request.kind, applied: !escalated, escalated, ...(choiceAnswer ? { probabilities: choiceAnswer.probabilities } : {}), ...(request.overrides !== undefined ? { overrides: request.overrides } : {}), ...(model ? { model } : {}) };
+  const nonApplyingChoice = choiceAnswer !== undefined && (request.nonApplyingCandidates ?? []).includes(choiceAnswer.choice);
+  const escalated = policyBlocked || !validChoice || nonApplyingChoice || confidence < threshold;
+  const choice = escalated && request.kind === "readiness" ? "blocked" : validChoice ? choiceAnswer?.choice ?? (noulAnswer ? (noulAnswer.noul >= 0.5 ? request.candidates[0]! : request.candidates[1]!) : request.candidates[Math.max(0, Math.min(request.candidates.length - 1, Math.round(scoreAnswer?.score ?? 0)))]!) : "escalate";
+  return { decisionId: request.decisionId, executionId: request.executionId, question: request.question, inputs: request.inputs, choice, candidates: request.candidates, confidence, reasons: escalated ? [policyBlocked ? "A policy check failed." : nonApplyingChoice ? "Jev selected a clarification instead of an executable candidate." : "Confidence or answer validity is below the configured threshold."] : ["Jev selected the highest-confidence candidate."], evidenceRefs: request.evidenceRefs ?? [], policyChecks, kind: request.kind, applied: !escalated, escalated, answerType, ...(choiceAnswer || scoreAnswer ? { probabilities: (choiceAnswer ?? scoreAnswer)!.probabilities } : {}), ...(noulAnswer ? { noul: noulAnswer.noul } : {}), ...(scoreAnswer ? { score: scoreAnswer.score } : {}), ...(request.overrides !== undefined ? { overrides: request.overrides } : {}), ...(model ? { model } : {}) };
 }
 export class MemoryDecisionAuditLog implements DecisionAuditLog {
   private readonly records = new Map<string, DecisionAuditRecord>();
@@ -61,7 +67,7 @@ export class MemoryDecisionAuditLog implements DecisionAuditLog {
   explain(decisionId: string): DecisionAuditRecord { const record = this.get(decisionId); if (!record) throw new Error(`Decision not found: ${decisionId}`); return record; }
   replay(decisionId: string): AppliedDecision {
     const record = this.explain(decisionId);
-    const replayed = applyDecision(record.request, record.rawAnswer, record.response.model);
+    const replayed = record.rawAnswer ? applyDecision(record.request, record.rawAnswer, record.response.model) : record.response;
     return record.response.observedOutcome === undefined ? replayed : { ...replayed, observedOutcome: record.response.observedOutcome };
   }
   recordOutcome(decisionId: string, outcome: JsonValue): void {
@@ -81,6 +87,35 @@ export class MemoryDecisionAuditLog implements DecisionAuditLog {
   }
 }
 
+/** Adds a durable storage boundary without coupling Jev to SQLite or Linear. */
+export class PersistentDecisionAuditLog implements DecisionAuditLog {
+  private readonly memory = new MemoryDecisionAuditLog();
+  constructor(private readonly persistence: DecisionAuditPersistence) {}
+  append(record: DecisionAuditRecord): void {
+    const safe = redact(structuredClone(record)) as DecisionAuditRecord;
+    this.persistence.write(safe.response.decisionId, safe.recordedAt, JSON.stringify(safe));
+    this.memory.append(safe);
+  }
+  get(decisionId: string): DecisionAuditRecord | undefined {
+    const inMemory = this.memory.get(decisionId);
+    if (inMemory) return inMemory;
+    const serialized = this.persistence.read(decisionId);
+    if (!serialized) return undefined;
+    const record = auditRecordSchema.parse(JSON.parse(serialized)) as DecisionAuditRecord;
+    this.memory.append(record);
+    return record;
+  }
+  explain(decisionId: string): DecisionAuditRecord { const record = this.get(decisionId); if (!record) throw new Error(`Decision not found: ${decisionId}`); return record; }
+  replay(decisionId: string): AppliedDecision { const record = this.explain(decisionId); const replayed = record.rawAnswer ? applyDecision(record.request, record.rawAnswer, record.response.model) : record.response; return record.response.observedOutcome === undefined ? replayed : { ...replayed, observedOutcome: record.response.observedOutcome }; }
+  recordOutcome(decisionId: string, outcome: JsonValue): void {
+    const record = this.explain(decisionId);
+    const safeOutcome = redact(outcome) as JsonValue;
+    const updated = { ...record, observedOutcome: safeOutcome, response: { ...record.response, observedOutcome: safeOutcome } };
+    this.persistence.update(decisionId, record.recordedAt, JSON.stringify(updated));
+    this.memory.recordOutcome(decisionId, safeOutcome);
+  }
+}
+
 export interface PreflightResult { decisions: AppliedDecision[]; response: JevResponse }
 export class JevDecisionCore {
   constructor(private readonly client: Pick<JevClient, "evaluate">, private readonly audit: DecisionAuditLog = new MemoryDecisionAuditLog(), private readonly now: () => string = () => new Date().toISOString()) {}
@@ -91,7 +126,14 @@ export class JevDecisionCore {
     for (const request of requests) if (this.audit.get(request.decisionId) !== undefined) throw new Error(`Decision audit record already exists: ${request.decisionId}`);
     const state = requests.map(request => ({ decisionId: request.decisionId, kind: request.kind, state: request.state, inputs: request.inputs.map(input => ({ name: input.name, value: input.value, ...(input.source ? { source: input.source } : {}) })) }));
     const questions: Record<string, JevQuestion> = {};
-    for (const request of requests) questions[request.decisionId] = { type: "choice", instructions: request.question, criteria: Object.fromEntries(request.candidates.map(candidate => [candidate, null])) };
+    for (const request of requests) {
+      const answerType = request.answerType ?? "choice";
+      questions[request.decisionId] = answerType === "choice"
+        ? { type: "choice", instructions: request.question, criteria: Object.fromEntries(request.candidates.map(candidate => [candidate, request.criteria?.[candidate] ?? null])) }
+        : answerType === "noul"
+          ? { type: "noul", instructions: request.question, criteria: { true: request.criteria?.true ?? request.candidates[0] ?? "true", false: request.criteria?.false ?? request.candidates[1] ?? "false" } }
+          : { type: "score", instructions: request.question, criteria: request.candidates };
+    }
     const response = await this.client.evaluate(state, questions);
     const decisions = requests.map(request => this.apply(request, response.answers[request.decisionId], response.model));
     return { decisions, response };
@@ -115,7 +157,7 @@ export class JevDecisionCore {
     return request.criteria.map(criterion => {
       const answer = response.answers[criterion.id];
       if (!answer || answer.type !== "noul") throw new Error(`Jev acceptance answer missing for ${criterion.id}`);
-      this.apply({ decisionId: `acceptance-${request.executionId}-${request.attempt ?? 1}-${criterion.id}`, executionId: request.executionId, kind: "acceptance", question: `Does the implementation satisfy: ${criterion.description}?`, state: request.state, inputs: [{ name: "attempt", value: request.attempt ?? 1 }], candidates: ["yes", "no"], threshold }, answer, response.model);
+      this.apply({ decisionId: `acceptance-${request.executionId}-${request.attempt ?? 1}-${criterion.id}`, executionId: request.executionId, kind: "acceptance", answerType: "noul", question: `Does the implementation satisfy: ${criterion.description}?`, state: request.state, inputs: [{ name: "attempt", value: request.attempt ?? 1 }], candidates: ["yes", "no"], threshold }, answer, response.model);
       return { criterionId: criterion.id, probability: answer.noul, passed: answer.noul >= threshold };
     });
   }

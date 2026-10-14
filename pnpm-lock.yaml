@@ -201,6 +201,9 @@ importers:
       '@kor-code/controller':
         specifier: workspace:*
         version: link:../controller
+      '@kor-code/core':
+        specifier: workspace:*
+        version: link:../core
       '@kor-code/daemon':
         specifier: workspace:*
         version: link:../daemon
