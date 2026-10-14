@@ -4,6 +4,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "test -f .claude-plugin/types/tsconfig.json || bash ../../scripts/sandbox.sh >/dev/null; claude plugin validate . && tsc -p tsconfig.json"
+    "typecheck": "test -f .claude-plugin/types/tsconfig.json || bash ../../scripts/sandbox.sh >/dev/null; bash ../../scripts/validate-plugin.sh . && tsc -p tsconfig.json"
   }
 }

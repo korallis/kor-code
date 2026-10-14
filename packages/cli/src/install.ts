@@ -6,10 +6,11 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { loadKorConfig, parseDotEnv, readRuntimeEnvFile, runtimePaths } from "@kor-code/config";
 import { z } from "zod";
-import { checkRestore, fingerprint, mkdirRecorded, missing, readManifest, recordAfter, remember, restoreManifest, saveManifest, type InstallManifest } from "./install-journal.js";
+import { checkRestore, fingerprint, mkdirRecorded, missing, pruneDirectories, readManifest, recordAfter, remember, restoreManifest, saveManifest, type InstallManifest } from "./install-journal.js";
+
+import { addKorSettings, installedPluginSchema, PLUGIN_ID, readObject, writeObject } from "./install-json.js";
 
 const execFileAsync = promisify(execFile);
-const PLUGIN_ID = "kor-cockpit@kor";
 const pluginListSchema = z.array(z.object({ id: z.string(), scope: z.string(), installPath: z.string() }));
 export type InstallScope = "local" | "user";
 const root = fileURLToPath(new URL("../../..", import.meta.url));
@@ -53,7 +54,7 @@ function unitFile(environment: NodeJS.ProcessEnv): string {
     XDG_CONFIG_HOME: dirname(paths.configDir),
     XDG_STATE_HOME: dirname(paths.stateDir),
     XDG_DATA_HOME: dirname(paths.shareDir),
-    PATH: environment.PATH ?? "/usr/local/bin:/usr/bin:/bin",
+    PATH: [...new Set([join(paths.home, ".local/bin"), join(paths.home, ".npm-global/bin"), dirname(process.execPath), "/usr/local/bin", "/usr/bin", "/bin"])].join(":"),
   };
   return ["[Unit]", "Description=Kor Code Linear execution daemon", "After=network-online.target", "", "[Service]", "Type=simple",
     `WorkingDirectory=${root.replaceAll("%", "%%")}`,
@@ -92,14 +93,47 @@ async function scaffoldGateway(environment: NodeJS.ProcessEnv): Promise<string |
   return key;
 }
 
-async function prepareMarketplace(marketplaceDir: string): Promise<void> {
+async function prepareMarketplace(marketplaceDir: string, pilot: string | undefined): Promise<void> {
   await mkdir(join(marketplaceDir, ".claude-plugin"), { recursive: true, mode: 0o700 });
   await cp(join(root, "packages/claude-plugin"), join(marketplaceDir, "plugin"), {
     recursive: true, filter: source => !["node_modules", ".git"].includes(basename(source)),
   });
+  await writeFile(join(marketplaceDir, "plugin/hooks/install-scope.ts"), `export const installationPilot: string | undefined = ${pilot === undefined ? "undefined" : JSON.stringify(pilot)};\n`);
   await writeFile(join(marketplaceDir, ".claude-plugin/marketplace.json"), `${JSON.stringify({
     name: "kor", owner: { name: "Kor Code" }, metadata: { description: "Kor Code live cockpit" }, plugins: [{ name: "kor-cockpit", source: "./plugin" }],
   }, null, 2)}\n`);
+}
+
+/** Claude's plugin CLI can migrate unrelated settings. Run it only in staging. */
+async function installCockpit(manifest: InstallManifest, marketplaceDir: string, stage: string, environment: NodeJS.ProcessEnv): Promise<void> {
+  const stagedConfig = join(stage, ".claude");
+  const stagedPilot = join(stage, "pilot");
+  await mkdir(stagedPilot, { recursive: true, mode: 0o700 });
+  const isolated = { HOME: stage, CLAUDE_CONFIG_DIR: stagedConfig, XDG_CONFIG_HOME: join(stage, ".config"),
+    XDG_STATE_HOME: join(stage, ".local/state"), XDG_DATA_HOME: join(stage, ".local/share"),
+    PATH: environment.PATH, DISABLE_AUTOUPDATER: "1", CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1" };
+  await command("git", ["init", "-q", stagedPilot], isolated, stage);
+  await command("claude", ["plugin", "marketplace", "add", marketplaceDir, "--scope", manifest.scope], isolated, stagedPilot);
+  await command("claude", ["plugin", "install", PLUGIN_ID, "--scope", manifest.scope], isolated, stagedPilot);
+  const plugins = pluginListSchema.parse(JSON.parse(await command("claude", ["plugin", "list", "--json"], isolated, stagedPilot)));
+  if (!plugins.some(plugin => plugin.id === PLUGIN_ID && plugin.scope === manifest.scope)) throw new Error("Claude did not report the installed cockpit at the requested scope");
+  const known = join(manifest.claudeConfigDir, "plugins/known_marketplaces.json");
+  const registry = join(manifest.claudeConfigDir, "plugins/installed_plugins.json");
+  const stagedKnown = await readObject(join(stagedConfig, "plugins/known_marketplaces.json"));
+  const stagedPlugins = z.object({ plugins: z.record(z.string(), z.array(installedPluginSchema)) }).parse(await readObject(join(stagedConfig, "plugins/installed_plugins.json")));
+  const entries = stagedPlugins.plugins[PLUGIN_ID];
+  if (!stagedKnown.kor || !entries?.length) throw new Error("Claude did not prepare the Kor registry entries");
+  const installed = entries.map(entry => {
+    if (!contains(join(stagedConfig, "plugins/cache/kor"), entry.installPath)) throw new Error("Claude returned an unexpected cache path");
+    return { ...entry, installPath: join(manifest.claudeConfigDir, relative(stagedConfig, entry.installPath)), ...(manifest.scope === "local" ? { projectPath: manifest.pilot } : {}) };
+  });
+  await cp(join(stagedConfig, "plugins/cache/kor"), join(manifest.claudeConfigDir, "plugins/cache/kor"), { recursive: true });
+  const existing = z.looseObject({ version: z.literal(2).optional(), plugins: z.record(z.string(), z.unknown()).optional() }).parse(await readObject(registry));
+  await writeObject(known, { ...await readObject(known), kor: stagedKnown.kor });
+  await writeObject(registry, { ...existing, version: 2, plugins: { ...existing.plugins, [PLUGIN_ID]: installed } });
+  const settings = manifest.scope === "local" ? join(manifest.pilot, ".claude/settings.local.json") : join(manifest.claudeConfigDir, "settings.json");
+  const stagedSettings = manifest.scope === "local" ? join(stagedPilot, ".claude/settings.local.json") : join(stagedConfig, "settings.json");
+  await addKorSettings(settings, stagedSettings);
 }
 
 function journalPath(environment: NodeJS.ProcessEnv): string { return `${runtimePaths(environment).stateDir}-install/manifest.json`; }
@@ -146,32 +180,21 @@ export async function installKor(options: { scope: InstallScope; pilot?: string;
     }
   }
   const configDir = resolve(environment.CLAUDE_CONFIG_DIR || join(paths.home, ".claude"));
-  const claudeEnv = { ...environment, HOME: paths.home, CLAUDE_CONFIG_DIR: configDir };
   const cliLink = join(paths.home, ".local/bin/kor");
   const serviceFile = join(dirname(paths.configDir), "systemd/user/kor.service");
   const marketplaceDir = join(paths.shareDir, "marketplace");
   const pluginCache = join(configDir, "plugins/cache/kor");
   const known = join(configDir, "plugins/known_marketplaces.json");
   const registry = join(configDir, "plugins/installed_plugins.json");
-  const settings = [join(configDir, "settings.json"), known, registry];
-  const metadata = [join(configDir, ".claude.json"), join(configDir, "backups")];
-  const ignoreFiles = new Set<string>();
-  if (options.scope === "local") {
-    settings.push(join(pilot, ".claude/settings.local.json"));
-    // Claude also adds settings.local.json to Git's global ignore file.
-    ignoreFiles.add(join(dirname(paths.configDir), "git/ignore"));
-    try {
-      const configured = await command("git", ["config", "--path", "--get", "core.excludesFile"], environment, pilot);
-      if (configured) ignoreFiles.add(resolve(pilot, configured));
-    } catch { /* No configured excludesFile: Git uses the XDG default. */ }
-    settings.push(...ignoreFiles);
-  }
+  const settings = [join(configDir, "settings.json")];
+  const exclude = options.scope === "local" ? join(pilot, ".git/info/exclude") : undefined;
+  if (options.scope === "local") settings.push(join(pilot, ".claude/settings.local.json"));
   const roots = [paths.configDir, paths.stateDir, paths.shareDir, dirname(manifestPath), configDir];
   for (const [index, path] of roots.entries()) {
     if (contains(path, root) || contains(path, pilot) || roots.some((other, i) => i !== index && contains(path, other))) throw new Error("Kor and Claude directories must be separate from one another and must not contain a checkout");
   }
-  for (const path of [...settings, ...metadata, cliLink, serviceFile, paths.configDir, paths.stateDir, paths.shareDir, manifestPath, marketplaceDir, pluginCache]) await rejectSymlinkParents(path);
-  for (const path of [...settings, ...metadata, ...roots, paths.configFile, paths.gatewayEnvFile]) {
+  for (const path of [...settings, known, registry, ...(exclude ? [exclude] : []), cliLink, serviceFile, paths.configDir, paths.stateDir, paths.shareDir, manifestPath, marketplaceDir, pluginCache]) await rejectSymlinkParents(path);
+  for (const path of [...settings, known, registry, ...(exclude ? [exclude] : []), ...roots, paths.configFile, paths.gatewayEnvFile]) {
     try { if ((await lstat(path)).isSymbolicLink()) throw new Error(`Install destination must not be a symlink: ${path}`); }
     catch (error) { if (!missing(error)) throw error; }
   }
@@ -192,16 +215,21 @@ export async function installKor(options: { scope: InstallScope; pilot?: string;
     if (await serviceInUse(environment)) throw new Error("kor.service is already active or enabled; uninstall its current installation first");
   }
   const backupDir = join(dirname(manifestPath), "backups", `${Date.now()}-${randomBytes(4).toString("hex")}`);
-  await mkdir(backupDir, { recursive: true, mode: 0o700 });
-  const manifest: InstallManifest = { version: 1, phase: "preparing", scope: options.scope, pilot, claudeConfigDir: configDir, systemd: options.systemd, backupDir, entries: [], createdDirectories: [] };
+  const manifest: InstallManifest = { version: 1, phase: "preparing", scope: options.scope, pilot, claudeConfigDir: configDir, systemd: options.systemd, backupDir, entries: [], createdDirectories: old?.createdDirectories ?? [] };
+  await mkdirRecorded(manifest, backupDir);
   // Retained roots are snapshotted before anything inside them is initialized.
   for (const path of [paths.configDir, paths.stateDir, paths.shareDir]) await remember(manifest, path, "retained");
-  for (const path of [cliLink, serviceFile, ...settings, marketplaceDir, pluginCache]) await remember(manifest, path);
-  for (const path of metadata) await remember(manifest, path, "runtime");
+  for (const path of [cliLink, serviceFile, ...(exclude ? [exclude] : [])]) await remember(manifest, path);
+  for (const path of settings) await remember(manifest, path, "settings");
+  for (const path of [marketplaceDir, pluginCache]) await remember(manifest, path, "owned");
+  await remember(manifest, known, "marketplaces");
+  await remember(manifest, registry, "plugins");
+  const stage = join(backupDir, "staging");
+  await remember(manifest, stage, "owned");
   await saveManifest(manifestPath, manifest);
   let key: string | undefined;
   try {
-    for (const path of [paths.configDir, paths.stateDir, paths.shareDir, dirname(cliLink), dirname(serviceFile), configDir, join(configDir, "plugins"), join(configDir, "plugins/cache"), ...Array.from(ignoreFiles, path => dirname(path)), ...(options.scope === "local" ? [join(pilot, ".claude")] : [])]) {
+    for (const path of [paths.configDir, paths.stateDir, paths.shareDir, dirname(cliLink), dirname(serviceFile), configDir, join(configDir, "plugins"), join(configDir, "plugins/cache"), join(configDir, "plugins/marketplaces"), ...(options.scope === "local" ? [join(pilot, ".claude")] : [])]) {
       await mkdirRecorded(manifest, path);
       await saveManifest(manifestPath, manifest);
     }
@@ -212,15 +240,20 @@ export async function installKor(options: { scope: InstallScope; pilot?: string;
     await writeFile(serviceFile, unit, { mode: 0o600 });
     await scaffoldConfig(pilot, environment);
     key = await scaffoldGateway(environment);
-    await prepareMarketplace(marketplaceDir);
-    await command("claude", ["plugin", "marketplace", "add", marketplaceDir, "--scope", options.scope], claudeEnv, pilot);
-    await command("claude", ["plugin", "install", PLUGIN_ID, "--scope", options.scope], claudeEnv, pilot);
-    const plugins = pluginListSchema.parse(JSON.parse(await command("claude", ["plugin", "list", "--json"], claudeEnv, pilot)));
-    if (!plugins.some(plugin => plugin.id === PLUGIN_ID && plugin.scope === options.scope)) throw new Error("Claude did not report the installed cockpit at the requested scope");
+    await prepareMarketplace(marketplaceDir, options.scope === "local" ? pilot : undefined);
+    await installCockpit(manifest, marketplaceDir, stage, environment);
+    if (exclude) {
+      const previous = await readFile(exclude, "utf8").catch(error => { if (missing(error)) return ""; throw error; });
+      if (!previous.split(/\r?\n/).includes("/.claude/settings.local.json")) {
+        await writeFile(exclude, `${previous}${previous.endsWith("\n") || !previous ? "" : "\n"}/.claude/settings.local.json\n`);
+      }
+    }
+    await rm(stage, { recursive: true, force: true });
     if (options.systemd) await command("systemctl", ["--user", "daemon-reload"], environment, root);
     await recordAfter(manifest);
     manifest.phase = "installed";
     await saveManifest(manifestPath, manifest);
+    if (old) await rm(old.backupDir, { recursive: true, force: true });
   } catch (error) {
     // Preserve the journal if rollback fails so a subsequent uninstall can resume.
     try {
@@ -236,7 +269,7 @@ export async function installKor(options: { scope: InstallScope; pilot?: string;
   }
   return { output: [
     `Kor installed (scope: ${options.scope})`, `CLI: ${cliLink}`, `Config: ${paths.configFile}`, `Service: ${serviceFile} (not started${options.systemd ? "" : "; systemd control skipped"})`,
-    `Cockpit: ${PLUGIN_ID}${options.scope === "local" ? ` in ${pilot}` : ""}`, `Manifest: ${manifestPath}`,
+    `Cockpit: ${PLUGIN_ID}${options.scope === "local" ? ` only when Claude starts in ${pilot} (linked worktrees disabled)` : ""}`, `Manifest: ${manifestPath}`,
     ...(key ? [`CLIProxyAPI addition: - ${key}`, `Stored the same new key in ${paths.gatewayEnvFile} (0600). Add the printed line to CLIProxyAPI manually.`] : ["CLIProxyAPI addition: existing credential retained; add its api-keys line manually if needed (value not printed)."]),
     "Configure repository mapping, checks and toolAllowlist; run kor doctor before starting the service.",
   ].join("\n") };
@@ -250,7 +283,9 @@ export async function uninstallKor(options: { purge: boolean }): Promise<{ outpu
   if (manifest.phase !== "restored" || options.purge) await undo(manifest, environment, options.purge);
   if (options.purge) {
     await rm(manifestPath);
+    await rm(`${manifestPath}.tmp`, { force: true });
     await rm(manifest.backupDir, { recursive: true });
+    await pruneDirectories(manifest);
   }
   return { output: `Kor uninstalled${options.purge ? " (purged new Kor data; restored pre-existing data)" : "; config and state retained"}\n${options.purge ? "Replayed" : "Backups:"} ${manifest.backupDir}` };
 }

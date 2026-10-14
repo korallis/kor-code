@@ -60,17 +60,35 @@ Build with `pnpm install --frozen-lockfile && pnpm build`, then run
 `~/.local/bin/kor` points at the compiled CLI. Keep its source checkout available
 and rebuild after updating it. The unit uses absolute paths to Node and the CLI,
 the source checkout as its working directory, and the install's HOME, XDG roots
-and PATH. Install reloads the user manager but leaves startup explicit.
+and a fixed PATH (the home's `.local/bin` and `.npm-global/bin`, Node's directory,
+and system binary directories). Installer PATH shims are not embedded in the
+service. Install reloads the user manager but leaves startup explicit.
 `--no-systemd` writes the unit without contacting a user manager and records that
 choice so uninstall also skips systemctl.
 
 The default `--scope local` requires a standalone Git checkout root in `--pilot`.
 Both the local-path marketplace and `kor-cockpit@kor` are declared in that
-checkout's `.claude/settings.local.json`. Claude's edit to Git's global ignore
-file (including a configured `core.excludesFile`) is backed up and restored too. The cache
-and registries live under `CLAUDE_CONFIG_DIR` (default `~/.claude`). A linked Git
-worktree is refused before mutation because Claude Code 2.1.299 resolves its
-local settings through the primary checkout. Use a normal clone instead.
+checkout's `.claude/settings.local.json`. The pilot's `.git/info/exclude` gets
+an ignore rule for that local settings file, backed up and restored on uninstall;
+Git's global ignore file is not changed by the installer. The cache and registries
+live under `CLAUDE_CONFIG_DIR` (default `~/.claude`). A linked Git worktree is
+refused before mutation because Claude Code 2.1.299 resolves its local settings
+through the primary checkout. Use a normal clone instead.
+
+Claude's plugin commands run in a private staging HOME and temporary Git root.
+The installer copies their cache and publishes only Kor's settings and registry
+entries into the actual locations. Local scope never writes user `settings.json`,
+even when Claude would migrate `opus` to `opus[1m]`; user scope adds only Kor's
+settings keys and preserves the other values. User session metadata is outside
+installation ownership: neither `~/.claude.json` (without `CLAUDE_CONFIG_DIR`)
+nor `CLAUDE_CONFIG_DIR/.claude.json` is read or rewritten by installation.
+
+The installed local plugin pins the canonical pilot directory. Every command,
+UI and policy hook, plus polling, checks the actual session directory before
+acting. Start Claude at the pilot root; other directories, including linked
+worktrees that inherit its settings, do not activate the cockpit. Claude may
+still list the inherited registration there. User-scope and explicit sandbox
+plugin loads have no pilot restriction.
 
 After pilot acceptance, run `kor uninstall` and then
 `node packages/cli/dist/cli.js install --scope user`. Existing config and keys
@@ -89,31 +107,41 @@ The recovery journal lives at `XDG_STATE_HOME/kor-install/manifest.json`
 (default `~/.local/state/kor-install/manifest.json`), with private backups under
 `kor-install/backups/<install-id>/`. Keeping it beside `kor` makes purge
 recoverable. Entries contain paths, backup locations, before/after hashes
-(including bytes, modes and symlink targets), and retention policy. Config,
-state and share directories are backed up before initialization; account for
+(including bytes, modes and symlink targets), installed-byte snapshots for
+shared files, and retention policy. Config, state and share directories are backed up before initialization; account for
 that disk space when reinstalling an existing runtime.
 
 Normal uninstall stops and disables a systemd-managed unit, restores settings,
-registries, the old CLI link and unit, and removes the marketplace/cache. It
-retains Kor config, data and backups. Purge additionally restores pre-install
+the old CLI link and unit, and removes the marketplace/cache. It deletes only
+Kor's entries from current registries, retaining unrelated plugins and marketplace
+refreshes; if the remaining content equals the original, it restores its exact
+backup bytes. It retains Kor config, data and backups. Purge additionally restores pre-install
 config/state/share contents, removing newly created data. It can also run after
 normal uninstall, via the source CLI. An installation failure rolls back; an
 interruption leaves a journal that `kor uninstall --purge` can replay.
 
-Uninstall verifies backups and refuses changes to shared settings or registries
-made since install before restoring anything. Compare the reported paths,
-save later edits elsewhere, and resolve the conflict before retrying. It never
-automatically overwrites those edits. Claude's transient `.claude.json` and
-metadata backups are restored if unchanged since install; newer session
-metadata is preserved. Empty parent directories created by install are removed
-only when still empty. After normal uninstall, a later purge touches retained
-Kor data only, preserving any new Claude settings changes.
+Uninstall verifies backups before restoring anything. Unrelated shared settings
+edits stop it and identify the current file, the original backup (or absence),
+and the installed snapshot. Save your edits, restore that installed snapshot,
+then retry. Automatic JSON reformatting and Claude's known `opus` alias migration
+are accepted, restoring the original bytes and modes. Other value or mode changes
+still stop restoration. Session metadata created by later Claude sessions is
+left alone.
+
+Empty parent directories created by installation, including the journal's parents
+and Claude's marketplace directory, are removed when still empty. A fresh-HOME
+install followed by purge leaves no directory leftovers. After normal uninstall,
+a later purge touches retained Kor data only, preserving new Claude settings.
+A subsequent successful install replaces the restored installation's backups;
+failed attempts keep the recovery journal.
 
 Validated with real Claude plugin commands and cockpit loading in a standalone
-sandbox clone: local settings stayed local, user settings compared equal to
-the backup, uninstall left `claude plugin list --json` empty, user-scope install
-worked, and purge restored pre-existing bytes, modes and symlinks. The generated
-unit passed `systemd-analyze --user verify`; systemctl sequencing was checked
+sandbox clone with an `opus` user setting: user settings compared equal to the
+backup immediately after installation and after uninstall; the cockpit activated
+in the pilot but not its linked worktree. After real sessions rewrote the Kor
+registry and another plugin's marketplace refreshed, uninstall removed Kor and
+preserved that plugin. User-scope installation also worked. A separate fresh-HOME
+purge restored the complete path/type/mode/link inventory without leftovers. The generated unit passed `systemd-analyze --user verify`; systemctl sequencing was checked
 with a shim, not the shared real user manager. No live gateway key was used.
 
 The YAML schema is:

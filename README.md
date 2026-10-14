@@ -50,7 +50,15 @@ The cockpit labels every row it draws:
 
 The TypeScript pnpm workspace contains `core`, `jev`, `gateway-adapter`, `linear`, `controller`, `context`, `verification`, `config`, `cli`, and `claude-plugin` packages. Run `pnpm probe` for the external contract checks and read the [Phase 0 probe record](docs/phase-0-probe.md). Use `scripts/sandbox.sh` to load the Claude Code plugin in a disposable `CLAUDE_CONFIG_DIR`; it never installs the plugin globally or changes the existing Claude Code configuration, runs offline unless `--live-model` opts in to CLIProxyAPI, and `pnpm isolation:proof` traces the sandboxed session to show it never touches the real Claude, Codex or agents homes or port 8317.
 
-The reversible installer is Validated in a disposable HOME and XDG tree for both local pilot and user scope. It uses Claude Code's local-path marketplace commands, records backups before the commands run, restores the exact settings bytes on uninstall, and leaves `claude plugin list --json` without Kor. The proof used the offline endpoint and no live gateway key. It validated the generated unit with `systemd-analyze --user verify`; systemctl sequencing used a command shim, so service lifecycle on the real user manager remains unvalidated.
+`pnpm typecheck` runs Claude's plugin validator in a throwaway HOME and configuration directory, so validation cannot migrate your user settings. To run the validator alone:
+
+```sh
+bash scripts/validate-plugin.sh packages/claude-plugin
+```
+
+The isolated run ended with `✔ Validation passed`; its caller's `opus` settings and file inventory stayed unchanged. See [validation isolation](ISOLATION.md#plugin-validation).
+
+The reversible installer is Validated in a disposable HOME and XDG tree for both local pilot and user scope. It stages Claude Code's local-path marketplace commands in a private HOME, publishes only Kor entries, restores the exact settings bytes on uninstall, and leaves `claude plugin list --json` without Kor. The revision proof used an `opus` user setting, a linked sandbox worktree, and an unrelated plugin refresh; uninstall preserved that plugin and its updated registry entries. The proof used the offline endpoint and no live gateway key. It validated the generated unit with `systemd-analyze --user verify`; systemctl sequencing used a command shim, so service lifecycle on the real user manager remains unvalidated.
 
 The Phase 6 cockpit (`packages/claude-plugin`) is Validated on a live daemon run: `/kor` draws the daemon's status with LIVE, STALE and UNAVAILABLE labels, `/kor override` sends overrides to the daemon, and `/kor demo` keeps the fixture execution, which `pnpm cockpit:proof` replays (see [Open the live cockpit](#open-the-live-cockpit)). Execution sessions are Validated locally with parsed stream-json telemetry and policy checks; `pnpm e2e:live` runs the scratch-repository hello-file check when supplied a runtime `KOR_GATEWAY_KEY` or `KOR_GATEWAY_KEY_FILE` (without a key it reports the external validation as Blocked and makes no provider call). Sessions use `dontAsk` with an explicit repository tool allowlist, so removing `Write` produces a permission denial and a failed attempt. See the [cockpit specification](docs/specs/cockpit-mockups.md).
 
@@ -191,7 +199,7 @@ kor --help
 kor models list
 ```
 
-The installed `kor` symlink runs the compiled CLI without rebuilding. Install writes a systemd user unit with the checkout's working directory and absolute Node path, a config scaffold, and a private `gateway.env`. It registers `kor-cockpit@kor` through a local-path marketplace under Kor's data directory. In stage one, both the marketplace declaration and cockpit are local to `--pilot`; user settings stay unchanged. **A local install refuses linked Git worktrees** because Claude 2.1.299 writes their local settings into the primary checkout. Use a normal clone for the pilot.
+The installed `kor` symlink runs the compiled CLI without rebuilding. Install writes a systemd user unit with the checkout's working directory and absolute Node path, a config scaffold, and a private `gateway.env`. It registers `kor-cockpit@kor` through a local-path marketplace under Kor's data directory. In stage one, both the marketplace declaration and cockpit are local to `--pilot`; user settings stay byte-identical, including the `opus` alias. Plugin commands run in a private staging HOME so Claude cannot migrate those settings during installation. The installed cockpit activates only when Claude runs at the exact canonical pilot directory; inherited settings in linked worktrees do not activate commands, polling, UI or policy hooks. **A local install refuses linked Git worktrees** because Claude 2.1.299 writes their local settings into the primary checkout. Use a normal clone for the pilot.
 
 The service is installed and reloaded but not started. Add a Linear mapping (`linearTeam` or `linearProject`), checks and tool allowlist to the scaffold before running work. When no gateway credential exists, install generates one, stores it in `gateway.env` with mode `0600`, and prints the exact line to add to CLIProxyAPI's `api-keys`. Existing credentials are retained and never printed. Kor never edits CLIProxyAPI configuration.
 
@@ -202,14 +210,14 @@ Kor installed (scope: local)
 CLI: <sandbox-home>/.local/bin/kor
 Config: <sandbox-home>/.config/kor/config.yaml
 Service: <sandbox-home>/.config/systemd/user/kor.service (not started; systemd control skipped)
-Cockpit: kor-cockpit@kor in <sandbox-home>/pilot
+Cockpit: kor-cockpit@kor only when Claude starts in <sandbox-home>/pilot (linked worktrees disabled)
 Manifest: <sandbox-home>/.local/state/kor-install/manifest.json
 CLIProxyAPI addition: - kor-<generated-value>
 Stored the same new key in <sandbox-home>/.config/kor/gateway.env (0600). Add the printed line to CLIProxyAPI manually.
 Configure repository mapping, checks and toolAllowlist; run kor doctor before starting the service.
 ```
 
-After configuring credentials and policy, run `kor doctor`, then `systemctl --user enable --now kor`. Open Claude in the pilot and type `/kor`. The real sandbox proof loaded the cockpit there, while `/kor-status` outside the pilot reached the offline endpoint without loading Kor:
+After configuring credentials and policy, run `kor doctor`, then `systemctl --user enable --now kor`. Open Claude in the pilot and type `/kor`. The real sandbox proof loaded the cockpit there, while `/kor-status` in its linked worktree reached the offline endpoint without activating Kor:
 
 ```text
 kor-code-cockpit: Kor Code cockpit plugin loaded (session-local; no configuration changes).
@@ -223,7 +231,7 @@ kor uninstall
 node packages/cli/dist/cli.js install --scope user
 ```
 
-`kor uninstall` stops/disables a managed Kor service and replays the manifest: restores prior settings, registry files, Git ignore rules, CLI link and unit, and removes the cockpit and marketplace. Every changed path has a backup outside the directories that purge removes. Changed settings or registries cause uninstall to stop before restoring files, with the conflict and backup paths printed; preserve your edits before resolving the conflict. Later Claude session metadata is kept. See [the recovery details](docs/configuration.md#install-and-uninstall).
+`kor uninstall` stops/disables a managed Kor service and replays the manifest: restores prior settings, the pilot's `.git/info/exclude`, CLI link and unit, and removes the cockpit and marketplace. It removes only Kor entries from Claude's current registries, preserving unrelated plugin installs and automatic refreshes. Shared-file backups include both original and installed bytes. Unrelated settings edits stop uninstall before restoration and name the installed snapshot to restore after saving your edits. Claude's automatic JSON reformatting and `opus` → `opus[1m]` migration do not block restoration of the original settings bytes. The installer never reads or rewrites user session metadata. See [the recovery details](docs/configuration.md#install-and-uninstall).
 
 ```sh
 kor uninstall
@@ -238,7 +246,14 @@ Backups: <sandbox-home>/.local/state/kor-install/backups/<install-id>
 []
 ```
 
-`diff` of user settings against the recorded backup was empty both during the local install and after uninstall. `kor uninstall --purge` also removes new Kor config, state and execution data; anything that predates this installation is restored from its backup. To purge after an ordinary uninstall removed the CLI link, run `node packages/cli/dist/cli.js uninstall --purge`. Do not remove a CLIProxyAPI key line until you are finished using it; proxy keys are managed manually. Kor never changes `~/.codex` or `~/.agents`.
+`diff` of user settings against the recorded backup was empty both immediately after the local install and after uninstall, including with a pre-existing `"model": "opus"`. A separate fresh-HOME install/purge left no extra files or directories (path, type, mode and link-target diff empty). `kor uninstall --purge` also removes new Kor config, state and execution data; anything that predates this installation is restored from its backup. To purge after an ordinary uninstall removed the CLI link, run `node packages/cli/dist/cli.js uninstall --purge`. Do not remove a CLIProxyAPI key line until you are finished using it; proxy keys are managed manually. Kor never changes `~/.codex` or `~/.agents`.
+
+Both commands support `--help` and `--json`. Invalid arguments produce the shared structured error format:
+
+```text
+$ kor uninstall --bogus --json
+{"schemaVersion":1,"error":{"code":"invalid_arguments","message":"invalid command arguments","hint":"use kor uninstall [--purge] [--json]"}}
+```
 
 ## Plan a Linear issue
 

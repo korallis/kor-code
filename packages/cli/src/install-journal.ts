@@ -2,13 +2,15 @@ import { createHash } from "node:crypto";
 import { chmod, cp, lstat, mkdir, readFile, readdir, readlink, rename, rm, rmdir, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod";
+import { registryRestoration, sameClaudeSettings, writeObject } from "./install-json.js";
 
 const entrySchema = z.strictObject({
   path: z.string(),
   backup: z.string(),
   before: z.string().nullable(),
   after: z.string().nullable().optional(),
-  policy: z.enum(["shared", "runtime", "retained"]),
+  afterBackup: z.string().optional(),
+  policy: z.enum(["shared", "settings", "marketplaces", "plugins", "owned", "runtime", "retained"]),
 });
 export const manifestSchema = z.strictObject({
   version: z.literal(1),
@@ -75,7 +77,14 @@ export async function mkdirRecorded(manifest: InstallManifest, path: string): Pr
 }
 
 export async function recordAfter(manifest: InstallManifest): Promise<void> {
-  for (const entry of manifest.entries) if (entry.policy !== "retained") entry.after = await fingerprint(entry.path);
+  for (const entry of manifest.entries) {
+    if (entry.policy === "retained") continue;
+    entry.after = await fingerprint(entry.path);
+    if (entry.after !== null && ["shared", "settings"].includes(entry.policy)) {
+      entry.afterBackup = `${entry.backup}.after`;
+      await cp(entry.path, entry.afterBackup, { recursive: true, verbatimSymlinks: true, preserveTimestamps: true });
+    }
+  }
 }
 
 /** Verify all backups and conflicts before deleting any installed file. */
@@ -84,10 +93,15 @@ export async function checkRestore(manifest: InstallManifest, purge: boolean): P
     if (entry.policy === "retained" && !purge) continue;
     if (entry.policy !== "retained" && ["restored", "purging"].includes(manifest.phase)) continue;
     if (entry.before !== null && await fingerprint(entry.backup) !== entry.before) throw new Error(`Missing or damaged install backup: ${entry.backup}`);
-    if (entry.policy === "shared" && manifest.phase === "installed") {
+    if (entry.policy === "marketplaces" || entry.policy === "plugins") {
+      // Parse before any restoration, and preserve unrelated automatic updates.
+      await registryRestoration(entry.path, entry.backup, entry.policy);
+    }
+    if ((entry.policy === "shared" || entry.policy === "settings") && manifest.phase === "installed") {
       const current = await fingerprint(entry.path);
       if (current !== entry.after && current !== entry.before) {
-        throw new Error(`Changed since install: ${entry.path}; preserve your edits and compare with ${entry.backup} before retrying uninstall`);
+        if (entry.policy === "settings" && entry.afterBackup && current !== null && await sameClaudeSettings(entry.path, entry.afterBackup)) continue;
+        throw new Error(`Changed since install: ${entry.path}; save your edits, then restore ${entry.afterBackup ?? "the original path (absent before install)"} before retrying uninstall. Original: ${entry.before === null ? "absent" : entry.backup}`);
       }
     }
   }
@@ -99,6 +113,10 @@ export async function restoreManifest(manifest: InstallManifest, purge: boolean)
     if (entry.policy !== "retained" && manifest.phase === "purging") continue;
     const current = await fingerprint(entry.path);
     if (current === entry.before) continue;
+    if (entry.policy === "marketplaces" || entry.policy === "plugins") {
+      const restored = await registryRestoration(entry.path, entry.backup, entry.policy);
+      if (!restored.original) { await writeObject(entry.path, restored.value); continue; }
+    }
     // Session metadata is not plugin configuration. Keep later sessions' state.
     if (entry.policy === "runtime" && entry.after !== undefined && current !== entry.after) continue;
     await rm(entry.path, { recursive: true, force: true });
@@ -112,7 +130,11 @@ export async function restoreManifest(manifest: InstallManifest, purge: boolean)
       }
     }
   }
-  // Remove only empty parents created by this transaction; never other contents.
+  await pruneDirectories(manifest);
+}
+
+/** Also called after removing the journal on purge. Never remove other contents. */
+export async function pruneDirectories(manifest: InstallManifest): Promise<void> {
   for (const path of [...manifest.createdDirectories].reverse()) {
     await rmdir(path).catch(error => {
       if (missing(error) || error instanceof Error && "code" in error && error.code === "ENOTEMPTY") return;

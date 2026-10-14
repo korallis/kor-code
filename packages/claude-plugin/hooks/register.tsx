@@ -7,6 +7,8 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
+import { installationPilot } from './install-scope'
+
 import type { KorOverride, KorProvenance, KorView } from '../types'
 import { DECISIONS, demoChoice, demoData, EVENTS } from './fixture'
 import { fetchStatus, fromStatus, liveSource, type LiveSource } from './live'
@@ -63,6 +65,14 @@ function policyDecision(toolName: string, input: unknown): string | undefined {
   return blocked ? 'Kor policy denied a destructive or remote-mutating command.' : undefined
 }
 
+/** Inherited local settings must not activate Kor in a linked worktree. */
+async function active($: EngineInterface): Promise<boolean> {
+  if ((await $.env.get('KOR_COCKPIT')) === 'off') return false
+  if (installationPilot === undefined) return true
+  const directory = await $.fs.stat(await $.session.cwd(), { resolve: true }).catch(() => undefined)
+  return directory?.realPath === installationPilot
+}
+
 async function liveFacts($: EngineInterface): Promise<LiveFacts> {
   return { claudeCode: (await $.session.version()).version }
 }
@@ -93,7 +103,7 @@ async function data($: EngineInterface, fresh = false): Promise<CockpitData> {
 }
 
 async function refreshStatus($: EngineInterface, fresh = false): Promise<void> {
-  if ((await $.env.get('KOR_COCKPIT')) === 'off') return
+  if (!await active($)) return
   $.ui.status(statusLine(await data($, fresh), await liveFacts($)))
 }
 
@@ -227,6 +237,7 @@ async function demo($: EngineInterface, args: string[], isHeadless: boolean): Pr
 function startPoll($: EngineInterface): void {
   poll?.cancel()
   poll = $.clock.every(POLL_MS, async () => {
+    if (!await active($)) return
     if ((await read($, mode)) === 'demo') return
     await readLive($)
     $.ui.invalidate('ui.render')
@@ -235,12 +246,14 @@ function startPoll($: EngineInterface): void {
 }
 
 export const register: Register = on => {
-  on('classic.PreToolUse', ($, e, next) => {
+  on('classic.PreToolUse', async ($, e, next) => {
+    if (!await active($)) return next(e)
     const reason = policyDecision(e.tool, e)
     return reason ? { deny: reason } : next(e)
   }).catch(() => ({ deny: 'Kor policy hook failed closed.' }))
 
   on('session.start', async ($, e, next) => {
+    if (!await active($)) return next(e)
     await $.command.register({ name: 'kor', description: 'Kor Code cockpit: live daemon status; /kor demo for the fixture', argumentHint: '[view] [id] | override <decision> <choice> | demo …' })
     await $.command.register({ name: 'kor-status', description: 'Show the Kor Code cockpit status line' })
     // The first read must not hold the session's start while a stopped daemon times out.
@@ -249,12 +262,14 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'kor-status' }, async $ => {
+  on('command.run', { command: 'kor-status' }, async ($, e, next) => {
+    if (!await active($)) return next(e)
     const line = statusLine(await data($, true), await liveFacts($))
     return { text: `Kor Code cockpit plugin loaded (session-local; no configuration changes).\n${line}`, exitCode: 0 }
   })
 
-  on('command.run', { command: 'kor' }, async ($, e) => {
+  on('command.run', { command: 'kor' }, async ($, e, next) => {
+    if (!await active($)) return next(e)
     const isHeadless = e.origin.kind === 'sdk'
     const args = e.args.trim().split(/\s+/).filter(Boolean)
     const [verb = '', first, ...rest] = args
@@ -272,7 +287,8 @@ export const register: Register = on => {
     return { text: `Kor cockpit: ${target.id}${target.target ? ` ${target.target}` : ''} [${LABEL[current.execution.provenance]} from ${current.origin}]` }
   })
 
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
+    if (!await active($)) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const current = await read($, view)
     const isDemo = (await read($, mode)) === 'demo'
