@@ -26,7 +26,7 @@ The default is three repetitions per case. Use `--case contributor-note --repeat
 | `keyboard-focus` | Add button keyboard focus styling. |
 | `finite-compact` | Handle nonfinite compact counts as unavailable. |
 
-Each repetition uses a fresh local clone at the specified commit, the selected launch profile (`lean` by default), and the same allowed tools. Artifacts live outside the checkout in a unique run directory. Keep the revision, route decisions, CLI version, and case set constant when comparing later changes. Cache warmth depends on the upstream provider and is measured rather than assumed.
+Each repetition uses a fresh local clone at the specified commit, the selected launch profile (`standard` by default), and the same allowed tools. Artifacts live outside the checkout in a unique run directory. Keep the revision, route decisions, CLI version, and case set constant when comparing later changes. Cache warmth depends on the upstream provider and is measured rather than assumed.
 
 To compare settings alone, run the same command twice with
 `--launch-profile standard` and `--launch-profile lean`, keeping the tools and
@@ -129,3 +129,7 @@ miss occurred despite the stable prefix. These captures rule out changing
 launcher prompt content as its explanation, but do not identify the upstream
 cause or establish that the original miss was a one-off warm-up. Cache reuse
 remains variable; the repeatable benefit here is the 605-token startup saving.
+
+`standard` remains the default. `lean` is opt-in while gateway account or shard
+affinity is investigated as a possible explanation for the alternating cache
+hits. The request captures do not establish that upstream cause.

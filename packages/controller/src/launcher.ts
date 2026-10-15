@@ -236,7 +236,7 @@ export class SessionLauncher implements SessionLauncherLike {
       ...(input.route?.model ? ["--model", input.route.model] : []),
       ...(input.route?.reasoningLevel ? ["--effort", input.route.reasoningLevel] : []),
     ];
-    const lean = (this.options.launchProfile ?? "lean") === "lean";
+    const lean = this.options.launchProfile === "lean";
     const settingsArgs = ["--settings", JSON.stringify(lean ? LEAN_SETTINGS : CONTEXT_SETTINGS), ...(lean ? ["--exclude-dynamic-system-prompt-sections"] : [])];
     const commandArgs = this.options.args ?? ["claude", "-p", prompt, ...routeArgs, "--plugin-dir", resolve(this.repoRoot, "packages/claude-plugin"), ...(skills?.pluginDir ? ["--plugin-dir", skills.pluginDir] : []), "--tools", tools.join(","), "--no-session-persistence", "--permission-mode", "dontAsk", "--allowedTools", ...toolArgs, "--output-format", "stream-json", "--verbose", "--setting-sources", "", ...settingsArgs];
     const args = ["--run", ...commandArgs];

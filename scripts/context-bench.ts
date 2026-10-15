@@ -24,7 +24,7 @@ function option(name: string): string | undefined {
 const routeFile = option("--routes");
 const revision = option("--revision");
 if (!routeFile || !revision) throw new Error("Usage: pnpm context:bench --revision COMMIT --routes FILE [--output DIR] [--case ID] [--repeats N] [--launch-profile lean|standard]");
-const launchProfile = z.enum(["lean", "standard"]).parse(option("--launch-profile") ?? "lean");
+const launchProfile = z.enum(["lean", "standard"]).parse(option("--launch-profile") ?? "standard");
 const repeats = Number(option("--repeats") ?? 3);
 if (!Number.isInteger(repeats) || repeats < 1) throw new Error("--repeats must be a positive integer");
 const cases = [

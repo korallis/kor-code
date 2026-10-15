@@ -58,8 +58,8 @@ The CLI freshness threshold is the configured poll interval multiplied by two un
 
 ## Session launch profile
 
-Set the top-level `launchProfile` in `config.yaml` to `lean` (the default) or
-`standard`, then restart `kor serve` to use it for subsequent sessions.
+Set the top-level `launchProfile` in `config.yaml` to `standard` (the default) or
+`lean`, then restart `kor serve` to use it for subsequent sessions.
 
 ```yaml
 launchProfile: lean
@@ -71,7 +71,9 @@ sets `includeGitInstructions: false` and `disableBundledSkills: true` in Claude
 Code’s `--settings` JSON and passes `--exclude-dynamic-system-prompt-sections`.
 This removes built-in commit/PR guidance and bundled skills and stabilizes the
 system prefix across execution homes. `standard` retains the P1-1 settings for
-A/B measurement. These flags apply only to isolated execution sessions.
+A/B measurement and stays the default while gateway cache behaviour is
+investigated. Use `launchProfile: lean` to opt in. These flags apply only to
+isolated execution sessions.
 
 The profile does not change Jev’s per-task route. Embedders can pass the same
 `launchProfile` option to `SessionLauncher`; an explicit `args` override still

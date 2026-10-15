@@ -164,7 +164,7 @@ repos:
     toolAllowlist: [Read, Write, Edit, "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)", "Bash(ls*)", "Bash(cat*)", "Bash(grep*)", "Bash(test*)"]
 limits: { total: 2, perRepository: 1 }
 defaultRoute: { provider: anthropic, model: claude-haiku-5-5, accountPolicy: fill-first, sessionAffinity: true, reasoningLevel: medium }
-launchProfile: lean       # default; "standard" keeps the earlier session settings for comparison
+launchProfile: standard   # default; opt in to reduced startup context with "lean"
 pollIntervalSeconds: 120
 intakeLabel: kor
 ```
@@ -182,9 +182,10 @@ Jev cannot add a tool outside that cap or grant shell commands. Without Jev,
 or during an outage, optional tools stay off. `kor doctor` prints the configured
 ceiling; the decision audit records the per-task probabilities.
 
-The default `launchProfile: lean` also removes bundled skills, Git instructions
-and dynamic system-prompt sections while keeping the cockpit plugin. Use
-`launchProfile: standard` to compare the earlier settings. See the
+Opt in to `launchProfile: lean` to remove bundled skills, Git instructions
+and dynamic system-prompt sections while keeping the cockpit plugin.
+`launchProfile: standard` remains the default while gateway cache behaviour is
+investigated. Tool selection is independent of the settings profile. See the
 [user guide](docs/user-guide.md#configure-a-repository) for repository setup
 and [configuration](docs/configuration.md#session-launch-profile) for session
 profiles.
@@ -309,8 +310,8 @@ Each job, step by step, is in the
 
 Measure context with `kor calibrate report --context`. Run `pnpm context:proof`
 for the recorded-stream proof, or `pnpm context:bench --revision COMMIT --routes FILE`
-for live sessions at a pinned revision; add `--launch-profile standard` for the
-earlier settings baseline. See [Measure session context](docs/context-bench.md)
+for live sessions at a pinned revision; add `--launch-profile lean` to compare
+the opt-in settings profile. See [Measure session context](docs/context-bench.md)
 for Jev route input, fixed cases, token definitions, and private capture artifacts.
 
 ## The CLI and the Claude Code status line
