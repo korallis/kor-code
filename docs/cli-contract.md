@@ -37,13 +37,38 @@ shapes, hashes, source configuration and budgets are documented in
   wrong (a usage error). Two commands deviate for usage errors: `kor calibrate`
   and `kor models` report a wrong argument as `command_failed` with exit `1`.
 - `--json` is accepted by `run`, `status`, `cancel`, `retry`, `logs`, `doctor`,
-  `plan`, `install`, `uninstall` and `calibrate report`, and a failure of any
-  command is reported as a JSON error object when `--json` is present (see
+  `plan`, `install`, `uninstall`, `linear lint`, `linear attach-image`, `skills lint` and
+  `calibrate report`, and a failure of any command is reported as a JSON error
+  object when `--json` is present (see
   [Errors](#errors)). Only some commands print JSON on success: `run`, `status`,
-  `cancel`, `retry`, `logs`, `doctor`, `plan`, `linear lint`, `install` and `uninstall` do.
+  `cancel`, `retry`, `logs`, `doctor`, `plan`, `install`, `uninstall`,
+  `linear lint`, `linear attach-image` and `skills lint` do.
   `kor models list` and `kor models probe` always print a table, and `kor
   calibrate report` prints its text report unless you pass `--json` to get
   the report object.
+
+## Attach a PNG: `kor linear attach-image ISSUE FILE --alt CAPTION [--json]`
+
+This is an explicit host-side Linear write, independent of the daemon and
+repository mapping. It creates an image attachment, adds a Markdown image under
+`## Screens`, and verifies the saved issue and authenticated image bytes.
+
+| JSON field | Meaning |
+| --- | --- |
+| `schemaVersion` | `1`. |
+| `issue` | Canonical Linear issue identifier. |
+| `attachmentId` | Stable ID derived from issue UUID, PNG content and normalized caption. |
+| `bytes` | Verified downloaded byte count. |
+| `sha256` | Digest matching the source PNG and downloaded asset. |
+| `verified` | `true` after description, attachment and byte readback pass. |
+
+Signed URLs and credentials are omitted. Repeat the same inputs to resume a
+partial write. Changing the caption or bytes creates another attachment.
+Failures can leave a partial remote write; description updates are not atomic
+with attachment creation. See [PNG uploads](skills.md#linear-skills-and-png-uploads)
+for credentials, file limits, retries and concurrent-edit limitations. Invalid
+arguments exit `2`; runtime, file and API failures exit `1` with the shared error
+shape. A verified operation exits `0`.
 
 ## Queue an issue: `kor run ISSUE-ID --json`
 

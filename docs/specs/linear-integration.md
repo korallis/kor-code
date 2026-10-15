@@ -98,3 +98,16 @@ Upstream response bodies are bounded and redacted on HTTP, transport, and GraphQ
 ## Cross-project work
 
 A change across several projects uses linked issues. Each repository gets its own branch, worktree, and verification record.
+
+## Explicit screenshot uploads
+
+`kor linear attach-image` is a host-side, user-requested write separate from the
+execution outbox. It uploads a PNG through `fileUpload`, supplies every returned
+header on the signed PUT, creates a stable-ID file attachment and embeds the
+private asset in the issue's Screens section. It verifies both references and
+authenticated image bytes before reporting success. Read [the CLI contract](../cli-contract.md)
+and [usage and retry limits](../skills.md#linear-skills-and-png-uploads).
+
+The public `using-linear` and `writing-linear-tickets` skills cover operations
+and content respectively. They require visible screen evidence for UI tickets;
+this guidance does not itself enforce readiness or deliver images to sessions.

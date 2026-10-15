@@ -304,6 +304,7 @@ Secondary routes to the same daemon. Every command prints JSON for scripts with
 | Stop an execution | `kor cancel LEE-123` (this does not move the Linear issue) |
 | Preview Jev's plan | `kor plan LEE-123` |
 | Check your setup | `kor doctor` |
+| Attach and verify a ticket screenshot | `kor linear attach-image APP-123 ./screen.png --alt "/settings — error — desktop" [--json]` |
 | Validate public skills | `kor skills lint` (`[DIRECTORY] [--json]`) |
 | Build or inspect the skill catalogue | `kor skills index`, `list`, `show NAME`, `doctor` (`[--from DIRECTORY]... [--estimate] [--json]`) |
 | Open Mission Control | `kor ui` |
@@ -350,12 +351,15 @@ the same as an object.
 
 ## Documentation
 
-- [Public skills](docs/skills.md): bundled code and PR standards, authoring schema,
-  lint, catalogue commands, private and configured sources, routing guardrails and
-  token costs. `kor skills index` writes a private catalogue in Kor state;
-  `list`, `show` and `doctor` inspect sources without writing. Use repeated
-  `--from DIRECTORY` for an explicit local scan and `--estimate` for reproducible
-  costs without a gateway. Session selection and delivery are separate work.
+- [Public skills](docs/skills.md): bundled code and PR standards, Linear operations
+  and ticket-writing guidance, authoring schema, lint, catalogue commands, private
+  and configured sources, routing guardrails and token costs. `kor skills index`
+  writes a private catalogue in Kor state; `list`, `show` and `doctor` inspect
+  sources without writing. Use repeated `--from DIRECTORY` for an explicit local
+  scan and `--estimate` for reproducible costs without a gateway.
+  `kor linear attach-image` uploads a PNG, embeds it in the ticket and verifies
+  the saved bytes using runtime Linear credentials. Session selection and
+  delivery are separate work.
 
 - [User guide](docs/user-guide.md): install, credentials, configuration, Linear
   setup, Mission Control job by job, the CLI and status line, recovery,
