@@ -684,6 +684,53 @@ continues to evaluate readiness, complexity, risk, route and agent; selection
 waits for the resolved session tools and worktree. Routing remains an independent
 per-task Jev decision.
 
+### Playbook selection
+
+The separate `playbook` Choice offers up to 12 eligible procedures plus `none`.
+Kor filters by stage, tools, stack and repository `skills.never`, then orders
+trigger matches before taking the first 12. Initial execution may include
+planning and project-setup procedures because those phases run inside the
+session. Repairs require a procedure available at stage `repair`.
+
+Jev receives names, summaries, anti-triggers and examples. Private entries expose
+only a name and fixed label. The selected body is pinned regardless of its Choice
+probability, with a hard 1,500-token cap separate from the skills budget below.
+Other playbooks stay hidden. `none` and a labelled outage fallback load no
+playbook. The pack builder rejects multiple playbooks, non-pinned playbooks,
+oversized bodies and routing content. Guidance cannot expand tool permissions.
+
+Each decision records probabilities, policy checks and `playbookPlan`, including
+the catalogue hash, selected name, tier, token cost, source, latency and reported
+Jev usage. `explain`, `replay` and serialized audits retain this plan. The decision
+revision includes the current attempt ID. A repair receives check, acceptance
+and policy failure classes plus blockers, so an initial feature procedure can
+switch to `fix-bug` after a failing check.
+
+For override consumers, `JevDecisionCore.selectPlaybook` accepts `override` as a
+catalogue name or `none`. Overrides must pass the same stage, tool, deny and
+budget filters. The session preparation callback accepts `playbookOverride` for
+the next session. This API supports the separate Mission Control override work;
+it does not add an override button or configuration setting here. Repository
+`skills.always` and `pins` continue to select ordinary skills, while playbooks
+use their own Choice and override. Model and provider selection remain in the
+per-task `route` decision.
+
+After building, run the live fixture with runtime TypeSafe credentials:
+
+```sh
+node scripts/playbooks-proof.mjs /tmp/kor-playbooks-proof
+```
+
+The 12 tasks cover feature and bug work, structural changes, investigation,
+documentation, prototypes, visual matching, interface sketches, diagnosis,
+project setup, no procedure and repair. The script uses the real catalogue CLI,
+live Jev and pack builder, checks replay and policy boundaries, and keeps audit
+and result files outside the checkout. It does not launch execution sessions.
+See [recorded selection evidence](skills-evaluations/playbook-selection.md) for
+the fixture results and a separate real-session repair run.
+
+### Skill selection
+
 The selector filters by stage, required tools, `kor.stack` tags (comma-separated
 `package.json` dependency names), and repository denies. Playbooks have a separate
 decision. It ranks trigger matches to cap eligible options at 100, plus
