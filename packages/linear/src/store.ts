@@ -406,7 +406,7 @@ export class LinearStore {
     if (!row || row.token !== claim.token) throw new Error('Execution lease ownership was superseded');
   }
   /** Only settle after the session and verification have stopped, even if the lease expired. */
-  finishClaim(claim: ExecutionClaim, status: 'waiting' | 'shipping' | 'review' | 'complete' | 'failed' | 'blocked' | 'canceled', message?: string, manifest?: Execution): void {
+  finishClaim(claim: ExecutionClaim, status: 'waiting' | 'shipping' | 'review' | 'complete' | 'failed' | 'blocked' | 'canceled', message?: string, manifest?: Execution, writes: readonly LinearWrite[] = []): void {
     this.transaction(() => {
       this.assertOwner(claim);
       const current = this.db.prepare('SELECT cancel_requested FROM assignments WHERE issue_id=?').get(claim.assignment.issueId) as { cancel_requested?: unknown } | undefined;
@@ -414,6 +414,7 @@ export class LinearStore {
       const finalStatus = canceled ? 'canceled' : status;
       this.db.prepare('UPDATE assignments SET status=?,manifest=COALESCE(?,manifest),last_error=?,token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_pgid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,cancel_requested=0 WHERE issue_id=?')
         .run(finalStatus, manifest ? JSON.stringify(manifest) : null, message ?? null, claim.assignment.issueId);
+      if (!canceled) for (const write of writes) this.db.prepare('INSERT INTO outbox(payload) VALUES(?)').run(JSON.stringify(write));
     });
   }
   /** The exclusively owned daemon advances delivery without reopening an execution lease. */

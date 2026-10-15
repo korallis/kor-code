@@ -33,11 +33,21 @@ not copied into the generated public Intent section.
 
 ## Pull request format
 
-Direct publication uses the bundled `pr-standard` layout in this order:
+Direct publication asks Jev to route a PR-writing pass among the live verified
+models. The selected model receives a bounded, redacted diff at the verified head,
+the issue, repository check results, and acceptance findings. Its structured answer
+supplies the title, plain-prose summary, user-facing changelog, and testing summary.
+A missing route, unavailable completion, or invalid answer blocks publication for
+retry; Kor does not substitute an issue-title-only description. The route decision
+is recorded under `route-pr-<execution>-<head>` and reused for that commit.
 
-1. `What does this PR do?` contains the issue title and tracker reference.
-2. `Changelog` contains a `Changed:` line from the issue title.
-3. `How was it tested?` contains recorded commands, exit codes, output, and the
+The bundled `pr-standard` layout appears in this order:
+
+1. `What does this PR do?` explains the user outcome and reason, with a tracker reference.
+2. `Changelog` uses `Added:`, `Changed:`, or `Fixed:` for each user-visible change,
+   or a no-changelog note for maintenance.
+3. `How was it tested?` summarizes the actual evidence and limits, then includes
+   recorded commands, exit codes, output, and the
    direct-delivery gate result. It does not claim unrecorded browser checks.
 4. `Screenshots` links passing verification evidence with a public HTTPS image
    source ending in `.png`, `.jpg`, `.jpeg`, `.webp`, or `.gif`. Kor does not upload
@@ -49,11 +59,12 @@ The generated default keeps all five sections even when screenshot evidence is
 missing. Large command output is omitted at whole-block boundaries so the
 checklist stays visible and code fences stay closed.
 
-A title already matching `type(scope): outcome` is preserved. The supported types
-are `feat`, `fix`, `refactor`, `perf`, `docs`, `ci`, and `chore`. Other issue titles
-use `chore(task): <issue title>` rather than guessing a change type. Newlines and
-trailing periods are removed, secrets and paths are redacted, and titles are
-capped at 200 characters. The tracker reference remains in the body.
+The generated title uses `type(scope): plain outcome`, matching the diff rather
+than tracker labels. The supported types are `feat`, `fix`, `refactor`, `perf`,
+`docs`, `ci`, and `chore`. Titles cannot contain newlines or trailing periods and
+are capped at 200 characters. Model input and output both pass through publication
+redaction; raw verification evidence remains attached so prose can be checked
+against measured results.
 
 Kor reads the first committed template at the verified publication head in this
 order: `.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE.md`,
@@ -67,8 +78,8 @@ placeholders insert generated content at the chosen position:
 
 | Placeholder | Content |
 | --- | --- |
-| `{{summary}}` | Issue title and tracker reference |
-| `{{changelog}}` | `Changed:` line |
+| `{{summary}}` | Plain-prose outcome and tracker reference |
+| `{{changelog}}` | User-facing Added/Changed/Fixed lines or maintenance note |
 | `{{verification}}` | Commands, results, and verification limits |
 | `{{screenshots}}` | Public image evidence or a missing-evidence note |
 | `{{checklist}}` | Acceptance findings |
@@ -112,7 +123,12 @@ SQLite schema version 5 adds `shipping` and `review` assignment states while
 preserving existing assignments, leases, manifests, and outbox entries. The daemon
 does not reclaim delivery as executable work on restart. Publication recovers an
 existing PR by branch and commit; a saved pipeline run is inspected by ID.
-Stable Linear comment IDs and the transactional outbox make write retries idempotent.
+When `ship: approve` holds a verified execution, the waiting transition and its
+Linear comment are queued in one transaction. The comment reports passing checks
+and acceptance findings and directs the operator to approve in Mission Control.
+Each distinct block reason gets a new comment ID, preserving earlier reasons;
+retries of the same reason keep their ID. Review evidence can still update the
+existing review comment. Stable IDs and the outbox make write retries idempotent.
 
 ## Cleanup
 
@@ -164,7 +180,7 @@ its old schema, so migration proof does not depend on git history.
 The replay commits the intended files while leaving a decoy `.env.local` and an
 unrelated file untracked. It also blocks an already-staged or session-committed
 secret file and inspects the generated PR body for leaked credentials and paths.
-It verifies the five ordered headings, title fallback, bounded evidence, committed
+It verifies the five ordered headings, model-generated prose, bounded evidence, committed
 repository template precedence, plain templates, screenshot links, and unticked
 unresolved acceptance findings. Templates are committed in the scratch repository;
 an uncommitted replacement does not change the rendered body.
@@ -179,13 +195,19 @@ Scratch artifacts are retained under a fresh directory in `$TMPDIR` (or
 `KOR_PROOF_DIR` when supplied); the command prints its location. Earlier scratch
 validation also used live Jev acceptance judgments and a real gh-axi read.
 
-The gate, forge writes, Linear writes, and cleanup are **Illustrative contract
-replays**, not a live end-to-end shipping claim. A live run of the daemon against a
-repository with no GitHub `origin` was captured for the [user guide](../user-guide.md):
-verification passed, shipping stopped with `git failed (2): error: No such remote
-'origin'`, and the verified work stayed in its worktree. A live initialized-repo run
-that reaches a pull request remains necessary before calling the entire shipping
-flow **Validated**.
+The offline gate, forge, Linear, and cleanup scenarios above are **Illustrative
+contract replays**. Separate live acceptance exercised two real coding sessions
+against a private scratch repository, each passing two checks and three acceptance
+criteria and opening a ready PR through direct delivery. Both PRs were closed
+without merging. Linear's approval-wait comments and two distinct block comments
+were read back through the API; the first block's text and update timestamp stayed
+unchanged. The PR route decisions were present in the durable audit, and the final
+PR preserved relative source paths in recorded check commands while redacting local
+absolute paths and secrets in the replay.
+
+The initialized no-mistakes pipeline, configured GitHub CI, merge observation, and
+cleanup remain replay coverage; the live scratch repository had no CI and neither
+PR was merged.
 
 Jev (`jev-1.13.0`) selected daemon-owned delivery with confidence 0.96, preserving
 approval gates with confidence 1.00, and cleanup only after merge with confidence

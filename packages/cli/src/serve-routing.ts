@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { hasScreenshot } from "@kor-code/linear";
 import type { CatalogueModel, Route } from "@kor-code/core";
-import { NeedsInputError, type DaemonOptions } from "@kor-code/daemon";
+import { NeedsInputError, type DaemonOptions, type DescribePullRequest } from "@kor-code/daemon";
 import { JevClient, JevDecisionCore, JevUnavailableError, redact, planPreflight, preflightRequests, routeFromDecision, type DecisionAuditLog } from "@kor-code/jev";
 
 /** One persistent decision core for serve's preflight and acceptance judgments. */
@@ -10,6 +10,7 @@ export function createServeRouting(options: {
   defaultRoute: Route;
   models: () => Promise<readonly CatalogueModel[]>;
   client?: Pick<JevClient, "evaluate">;
+  complete?: (prompt: string, route: Route) => Promise<string>;
 }) {
   const jev = new JevDecisionCore(options.client ?? new JevClient(), options.audit);
   const chooseRoute: NonNullable<DaemonOptions["chooseRoute"]> = async ({ executionId, issue }) => {
@@ -54,5 +55,20 @@ export function createServeRouting(options: {
     }
     return { route, source: route.label === "jev" ? "jev" : "fallback" };
   };
-  return { jev, chooseRoute };
+  const describePullRequest: DescribePullRequest = async ({ executionId, head, prompt }) => {
+    if (!options.complete) throw new Error('PR model completion is unavailable');
+    const models = [...await options.models()];
+    if (!models.length) throw new Error('PR writing requires a verified model; run kor models probe');
+    const decisionId = `route-pr-${executionId}-${head}`;
+    const decision = options.audit.get(decisionId) ? options.audit.replay(decisionId) : await jev.selectRoute({
+      decisionId, executionId, kind: 'route',
+      question: 'Select a verified model route to write accurate, concise PR prose from this diff and verification evidence.',
+      state: { task: 'pull request description', prompt }, inputs: [{ name: 'verified commit', value: head, source: 'git' }],
+      candidates: [...models.map(model => model.model), "clarification"], nonApplyingCandidates: ["clarification"],
+      criteria: { ...Object.fromEntries(models.map(model => [model.model, { provider: model.provider, capabilities: model.capabilities.map(capability => ({ ...capability })), costUsd: model.costUsd ?? null, durationMs: model.durationMs ?? null }])), clarification: "No supplied route is suitable for this PR-writing task." },
+    });
+    if (!decision.applied || decision.escalated || !models.some(model => model.model === decision.choice)) throw new Error('Jev could not select a verified route for PR writing');
+    return options.complete(prompt, routeFromDecision(decision, models, { accountPolicy: 'fill-first', sessionAffinity: true, label: 'jev', decisionId }));
+  };
+  return { jev, chooseRoute, describePullRequest };
 }

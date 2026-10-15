@@ -58,17 +58,21 @@ In practice:
   completion. [Verification budgets and the live proof](docs/specs/context-and-verification.md#prompt-budgets)
   describe the limits.
 - **Be aware of the edge of the evidence.** Queue, plan, work, verify, request
-  changes, override and undo, retry and stop were all run live for this README.
-  The final step, **Approve and ship to GitHub, was not**: the sandbox never
-  published, so no pull request was opened. That path is covered by an offline
-  replay and a written specification, not a live capture. The
-  [user guide](docs/user-guide.md#what-happens-after-the-checks-pass) has the details.
+  changes, override and undo, retry and stop were run live. Approve and ship has
+  also published a real PR to a private scratch repository through direct delivery,
+  including Jev-routed PR prose and Linear comments. The scratch PR was closed
+  without merging. The initialized no-mistakes pipeline path remains covered by
+  offline replay. The [user guide](docs/user-guide.md#what-happens-after-the-checks-pass)
+  has the details.
 
-Direct pull requests use `type(scope): outcome` titles and the bundled
+Direct pull requests get a Jev-routed model pass over the redacted diff and
+verification evidence to write `type(scope): outcome` titles and the bundled
 [PR standard](skills/pr-standard/SKILL.md), with recorded checks, acceptance
 checkboxes, and public screenshot evidence. A committed repository PR template
 takes precedence. See [shipping templates](docs/specs/shipping.md#pull-request-format)
-for supported locations and optional placeholders.
+for supported locations and optional placeholders. Linear receives a comment when
+verification is waiting for approval, and a new comment for each distinct block
+reason, preserving the history across retries.
 
 ## Install
 
@@ -533,12 +537,16 @@ issues that were created for the captures and canceled afterwards. The Models sc
 shows the author's real gateway pool, with Kor's opaque slot ids. Four models were
 probed (about thirty cents); the runs used `claude-haiku-5-5` and cost about five cents.
 
-What was not run live: Approve and ship against GitHub (the sandbox never
-published), entering a new key in Settings (the fields are shown empty), a Linear
-outage with synchronization pending, the systemd service lifecycle, for those original screenshots. The one-line installer and `kor ui` launch flow
-have since been exercised separately in an isolated home. Each is marked where it
-comes up. The screenshots are 1600-pixel captures of the real page in Chrome,
-saved as WebP.
+The original screenshots did not exercise entering a key in Settings, a Linear
+outage with synchronization pending, or the systemd service lifecycle. The one-line
+installer and `kor ui` launch flow have since been exercised in an isolated home.
+Direct shipping has also been exercised with two real coding sessions, each passing
+two repository checks and three acceptance criteria, then publishing a ready PR to
+a private scratch repository. Both PRs were closed without merging. Linear retained
+two distinct block comments and reported verification before approval; Jev's PR
+routing decisions were read back from the audit. These checks do not exercise an
+initialized no-mistakes pipeline, configured GitHub CI, or merge cleanup. The original
+screenshots are 1600-pixel Chrome captures saved as WebP.
 
 
 ## Manual installation
