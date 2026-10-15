@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { access, readFile, realpath } from "node:fs/promises";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { loadGatewayEnvironment, loadKorConfig, parseDotEnv, runtimePaths, type GatewayEnvironment, type KorPaths, type KorRepositoryConfig } from "@kor-code/config";
 import { MissionServices } from "@kor-code/daemon";
@@ -145,7 +145,11 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   const environment = options.environment ?? process.env;
   const paths = options.paths ?? runtimePaths(environment);
   const mission = new MissionServices(paths);
-  await mission.initialize();
+  const connectionsFile = join(paths.stateDir, "connections.json");
+  let connections: DoctorCheck | undefined;
+  // A corrupt file leaves saved connections empty; the remaining checks then use the environment.
+  try { await mission.initialize(); }
+  catch { connections = { name: "Saved connections", status: "error", detail: `${connectionsFile} is corrupt or unreadable, so the daemon will not start. Move it aside with \`mv ${connectionsFile} ${connectionsFile}.bad\`, reconnect in Mission Control Settings, then rerun \`kor doctor\`.` }; }
   const command: DoctorCommand = options.command ?? commandRunner(mission.shippingEnvironment(environment));
   let jevKey: DoctorCheck;
   try {
@@ -160,6 +164,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   } catch { configCheck = { name: "Kor config", status: "error", detail: "invalid or unreadable; see docs/configuration.md" }; }
   const checks: DoctorCheck[] = [
     configCheck,
+    ...(connections ? [connections] : []),
     await checkCredential("Linear key", ["LINEAR_API_KEY"], resolve(paths.home, ".config", "linear", "env"), environment),
     jevKey,
     await checkGateway(environment, paths, options.fetcher ?? globalThis.fetch),

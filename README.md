@@ -246,7 +246,9 @@ Doctor also checks each repository’s GitHub shipping target, `user.name` and
 in the project checkout (add `--global` if you want it for all repositories).
 The push check uses `git push --dry-run --no-verify`; it changes no remote refs
 and skips local push hooks. It checks current access, not future branch protection
-or CI requirements. Failures include commands to fix the setup.
+or CI requirements. Failures include commands to fix the setup. If the
+connections file saved by Settings is corrupt, doctor reports `FAIL Saved
+connections` with how to move it aside, and still runs every other check.
 
 The one `FAIL` in the example is the `no-mistakes` daemon, which only the
 shipping step needs, so a run still verifies without it. [The guide](docs/user-guide.md#check-your-setup-with-kor-doctor)

@@ -363,6 +363,7 @@ FAIL quota-axi: unavailable
 | Line | Needed for | If it fails |
 | --- | --- | --- |
 | `Kor config` | everything | Create or fix `config.yaml`. |
+| `Saved connections` (only when it fails) | the daemon and Mission Control | `~/.local/state/kor/connections.json`, written by Settings, is corrupt or unreadable, so the daemon will not start. Move it aside as the line says, reconnect in Settings, and rerun doctor. The other checks still run, using your environment. |
 | `Linear key`, `TypeSafe key` | everything | Set the key. Without TypeSafe, planning is `blocked` and every acceptance judgment stays blocked. |
 | `CLIProxyAPI with Kor key` | every model call | Start CLIProxyAPI, add Kor's key to its `api-keys`, check `KOR_GATEWAY_URL`. `HTTP 401` means the proxy does not know the key. |
 | `Claude Code` | every session | Install Claude Code 2.1.299 or newer. |
