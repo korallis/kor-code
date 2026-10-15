@@ -48,9 +48,12 @@ export interface ControllerOptions {
   onStage?: (executionId: string, stage: "context" | "execute" | "verify") => void;
   onSpend?: (executionId: string, spend: SessionSpend) => void;
   calibration?: { store: CalibrationStore; sampleRate?: number; baselineRoute?: Route };
+  /** A sampled calibration baseline for an execution started or finished; it never ships or changes the execution's outcome. */
+  onBaseline?: (executionId: string, baseline: CalibrationBaseline) => void;
   /** Operator skill, playbook and tool overrides for an execution; never applied to a calibration baseline. */
   sessionOverrides?: (executionId: string) => SessionOverrides;
 }
+export interface CalibrationBaseline { purpose: "route" | "skills"; model: string; status: "started" | Exclude<CalibrationRun["status"], "running">; costUsd?: number }
 export interface ControllerRunResult {
   execution: Execution;
   issue: LinearIssue;
@@ -245,6 +248,8 @@ class ExecutionController implements Controller {
     if (!route || !baseRevision) return;
     const id = `${execution.id}-${skillsBaseline ? "skills-baseline" : "baseline"}`;
     if (!calibration.store.beginRun({ executionId: id, pairId: skillsBaseline ? `${execution.id}-skills` : execution.id, ...(skillsBaseline ? { purpose: "skills" } : {}), issueId: issue.id, arm: "baseline", baseRevision, route, sampled: true, startedAt: new Date().toISOString(), status: "running" })) return;
+    const report = (status: CalibrationBaseline["status"], costUsd?: number) => this.options.onBaseline?.(execution.id, { purpose: skillsBaseline ? "skills" : "route", model: route.model, status, ...(costUsd !== undefined ? { costUsd } : {}) });
+    report("started");
     let worktree: Worktree | undefined;
     try {
       worktree = await this.options.worktrees.create({ executionId: id, issueId: issue.id, repository, branch: `kor/calibration/${id}`, baseRevision, detached: true });
@@ -262,9 +267,11 @@ class ExecutionController implements Controller {
         ...(this.options.jev ? { jev: this.options.jev } : {}), calibration: calibration.store,
         ...(input.leaseFailure ? { leaseFailure: input.leaseFailure } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}) });
       calibration.store.finishRun(id, result.verificationReport.passed ? "verified" : "failed");
+      report(result.verificationReport.passed ? "verified" : "failed", result.verificationReport.costUsd);
     } catch {
       // Baseline failures are visible in the report; never change the real issue's outcome.
       calibration.store.finishRun(id, "interrupted");
+      report("interrupted");
     } finally { if (worktree) await this.options.worktrees.remove?.(worktree); }
   }
 

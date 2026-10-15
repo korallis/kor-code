@@ -29,6 +29,7 @@ const TOOL_EDIT = new RegExp(`^tool:([+-])(${TOOL})$`);
 const LABEL = /^kor:(skill|playbook|tool)\/(.+)$/;
 const NO_PLAYBOOK = "none";
 const UNCONFIRMED_OVERRIDE = "Override not applied: over the skill budget without confirmation.";
+export const OVERRIDE_REASON = "Operator override.";
 
 export function parseSessionEdit(target: string, choice: string): SessionEdit | undefined {
   let match: RegExpExecArray | null;
@@ -119,7 +120,7 @@ export function applySkillOverrides(plan: SkillPlan, skills: readonly SkillCandi
     if (problem) return { ...entry, reason: `Override not applied: ${problem}` };
     applied.add(entry.name);
     const tokens = tier === "pinned" || tier === "armed" ? skill!.cost.bodyTokens : tier === "listed" ? skill!.cost.listingTokens : 0;
-    return { ...entry, tier, tokens, reason: "Operator override." };
+    return { ...entry, tier, tokens, reason: OVERRIDE_REASON };
   });
   const repository = (name: string) => policy.always?.includes(name) || policy.pins?.includes(name);
   const costly = (entry: SkillPlan["skills"][number]) => entry.tier === "pinned" || entry.tier === "listed";

@@ -22,9 +22,13 @@ export interface SkillStats extends SkillLearning {
   terminal: number;
   merged: number;
   overrides: number;
+  /** How far Jev's offer probability ran ahead of merge outcomes; it raises every tier threshold once samples suffice. */
+  overconfidence: number;
   reliability: SkillReliabilityBin[];
 }
 export interface SkillsReport { since: string | null; minimumSamples: number; windowDays: number; skills: SkillStats[]; note: string }
+/** One change outcome learning makes to Jev's skill selection, and why. */
+export interface SkillLearningChange { skill: string; kind: "hidden" | "stricter"; reason: string }
 
 export function buildSkillsReport(store: CalibrationStore, options: { since?: string; now?: string; excludeExecutionId?: string } = {}): SkillsReport {
   const since = options.since === undefined ? null : new Date(options.since).toISOString();
@@ -91,9 +95,9 @@ export function buildSkillsReport(store: CalibrationStore, options: { since?: st
     const passed = (id: string): number => Number((metricsByExecution.get(id) ?? []).at(-1)?.verified ?? false);
     const samples = completed.length;
     const thresholds = { ...DEFAULT_SKILL_THRESHOLDS };
+    // Merge success is an outcome proxy: only penalise overconfidence, never relax a tier.
+    const penalty = Math.max(0, ...reliability.filter(bin => bin.n >= MIN_SKILL_SAMPLES).map(bin => (bin.mean ?? 0) - (bin.success ?? 0)));
     if (samples >= MIN_SKILL_SAMPLES) {
-      // Merge success is an outcome proxy: only penalise overconfidence, never relax a tier.
-      const penalty = Math.max(0, ...reliability.filter(bin => bin.n >= MIN_SKILL_SAMPLES).map(bin => (bin.mean ?? 0) - (bin.success ?? 0)));
       thresholds.pinned = Math.min(1, thresholds.pinned + penalty);
       thresholds.listed = Math.min(1, thresholds.listed + penalty);
       thresholds.armed = Math.min(1, thresholds.armed + penalty);
@@ -106,12 +110,35 @@ export function buildSkillsReport(store: CalibrationStore, options: { since?: st
       lift: mean(pairs.map(pair => pair.lift)), pairs: pairs.length, costDeltaUsd: mean(pairs.flatMap(pair => pair.cost === null ? [] : [pair.cost])),
       terminal: terminal.length, merged: terminal.filter(outcome => outcome.status === "merged").length,
       overrides: executions.filter(id => offers.some(offer => offer.executionId === id && offer.override)).length,
+      overconfidence: penalty,
       recentOffers: recent.length,
       demoted: samples >= MIN_SKILL_SAMPLES && recent.length >= MIN_RECENT_OFFERS && !offers.some(offer => recent.includes(offer.executionId) && offer.loaded),
       thresholds, reliability };
   }).sort((a, b) => a.name.localeCompare(b.name) || (a.hash ?? "").localeCompare(b.hash ?? ""));
   return { since, minimumSamples: MIN_SKILL_SAMPLES, windowDays: WINDOW_DAYS, skills,
     note: "Below 20 completed samples per skill version, statistics are display-only. Lift below 20 completed same-route no-skills pairs is directional. Reliability uses terminal merge success as an outcome proxy, not proof of skill correctness. Policy and budgets never learn." };
+}
+
+const applies = (stats: SkillStats, catalogue: readonly { name: string; hash?: string | undefined }[]): boolean =>
+  stats.samples >= MIN_SKILL_SAMPLES && catalogue.some(skill => skill.name === stats.name && skill.hash === stats.hash);
+
+/** The learning the next session applies: skill versions still in the catalogue with enough completed samples. */
+export function appliedSkillLearning(report: SkillsReport, catalogue: readonly { name: string; hash?: string | undefined }[]): Record<string, SkillLearning> {
+  return Object.fromEntries(report.skills.filter(stats => applies(stats, catalogue)).map(stats => [stats.name, {
+    samples: stats.samples, offered: stats.offered, loaded: stats.loaded, used: stats.used, passRate: stats.passRate,
+    lift: stats.pairs >= MIN_SKILL_SAMPLES ? stats.lift : null, demoted: stats.demoted, thresholds: stats.thresholds,
+  }]));
+}
+
+/** What that learning changes in Jev's skill selection, and why, in the words Mission Control shows. */
+export function skillLearningChanges(report: SkillsReport, catalogue: readonly { name: string; hash?: string | undefined }[]): SkillLearningChange[] {
+  const value = (number: number): string => number.toFixed(2);
+  return report.skills.filter(stats => applies(stats, catalogue)).flatMap((stats): SkillLearningChange[] => {
+    return [
+      ...(stats.demoted ? [{ skill: stats.name, kind: "hidden" as const, reason: `Offered in ${stats.recentOffers} finished sessions in the last ${WINDOW_DAYS} days and never loaded, so Jev stops offering it unless a repository pins it.` }] : []),
+      ...(stats.overconfidence > 0 ? [{ skill: stats.name, kind: "stricter" as const, reason: `Jev's confidence ran ${value(stats.overconfidence)} ahead of merge outcomes over ${stats.samples} completed runs, so it now pins at ${value(stats.thresholds.pinned)}, lists at ${value(stats.thresholds.listed)} and arms at ${value(stats.thresholds.armed)} (defaults ${value(DEFAULT_SKILL_THRESHOLDS.pinned)}, ${value(DEFAULT_SKILL_THRESHOLDS.listed)}, ${value(DEFAULT_SKILL_THRESHOLDS.armed)}).` }] : []),
+    ];
+  });
 }
 
 export function formatSkillsReport(report: SkillsReport): string {

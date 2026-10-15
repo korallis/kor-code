@@ -126,7 +126,8 @@ Run `kor ui` afterwards. Local checkout edits or divergent commits stop the upda
 with a fix-it message. `kor uninstall` removes the integration; `kor uninstall
 --purge` also removes Kor's own data and `~/.cache/kor-code` (or
 `$XDG_CACHE_HOME/kor-code`), including the installer's pnpm shim, Corepack downloads
-and pnpm store/cache. The downloaded checkout, its dependencies/builds, external
+and pnpm store/cache; a symlinked `~/.cache` is followed and only its `kor-code`
+is removed. The downloaded checkout, its dependencies/builds, external
 credentials, proxy key entry and caches/state owned by other tools remain.
 
 For a private fork or mirror, authenticate with `gh auth login`, then use the
@@ -246,7 +247,9 @@ Doctor also checks each repository’s GitHub shipping target, `user.name` and
 in the project checkout (add `--global` if you want it for all repositories).
 The push check uses `git push --dry-run --no-verify`; it changes no remote refs
 and skips local push hooks. It checks current access, not future branch protection
-or CI requirements. Failures include commands to fix the setup.
+or CI requirements. Failures include commands to fix the setup. If the
+connections file saved by Settings is corrupt, doctor reports `FAIL Saved
+connections` with how to move it aside, and still runs every other check.
 
 The one `FAIL` in the example is the `no-mistakes` daemon, which only the
 shipping step needs, so a run still verifies without it. [The guide](docs/user-guide.md#check-your-setup-with-kor-doctor)
@@ -332,7 +335,10 @@ settings, including `ship`.
 
 **Watch the agents.** **Agents** (and **Terminal**, Ctrl+Backtick) streams each
 run's actual output, its seven stages, tokens and cost, and has **Stop run**,
-**Retry** and a **Note for Jev** box.
+**Retry** and a **Note for Jev** box. A sampled calibration baseline runs after the
+run verifies and appears in the stream only as labelled `baseline` lines with its
+cost; it never ships. **Plan** lists the skills, playbook and per-turn guidance
+tokens each attempt actually received.
 
 ![Agents: a live run with its terminal output, stages, tokens and cost](docs/images/mc-agents.webp)
 
@@ -359,7 +365,8 @@ skill budget, which only an explicit **Accept over budget** can exceed. Each edi
 is audited and commented on the Linear issue. Labels such as
 `kor:skill/human-written-code` on a Linear issue do the same per issue. Repository
 pins, denies and the budget are in **Repository settings**. The model stays Jev's
-per-task route decision.
+per-task route decision. **Sessions received** shows what each attempt was given,
+so you can check that an override reached the session.
 
 ![The next session's skills, playbook and tools with live token costs](docs/images/mc-next-session.png)
 
@@ -370,9 +377,12 @@ verified-model table with **Probe**, and the routing policy.
 
 **See what Jev learned.** **Jev Brain** shows the decision audit and the
 calibration report: cost per verified run, Jev against the baseline route,
-overrides.
+overrides. **Learnings** shows what skill outcome learning changed and why (a skill
+hidden because it was never loaded, or a stricter bar because Jev's confidence ran
+ahead of merges), with each skill's runs against the 20 it needs. Home's **Jev
+learned** card summarises it; a new install shows `Nothing learned yet`.
 
-![Jev Brain](docs/images/mc-brain.webp)
+![Jev Brain](docs/images/mc-brain.png)
 
 Each job, step by step, is in the
 [user guide](docs/user-guide.md#work-in-mission-control).
@@ -496,7 +506,9 @@ the same as an object.
   repository pins still apply. Sampled Jev runs also execute a no-skills arm on
   the task's existing route and tool profile, alongside the routing baseline;
   this adds session cost. `--calibration-rate 0` disables both sampled baselines,
-  and `--no-calibration` disables outcome learning. See [outcome learning](docs/skills.md#outcome-learning).
+  and `--no-calibration` disables outcome learning. Mission Control shows the same
+  learning on Home and **Jev Brain**, and each attempt's delivered pack in the run's
+  **Plan** tab. See [outcome learning](docs/skills.md#outcome-learning).
   Run `pnpm skills:fixture` for the recorded 23-task proof, or add `--live-jev`
   to compare against live TypeSafe answers.
   Jev also records a separate `playbook` Choice before each session. At most one

@@ -4,13 +4,13 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadEventSchema } from "@kor-code/calibration";
 import type { SessionTurn, SessionLoadEvent, SessionGatewayTelemetry } from "@kor-code/calibration";
-import type { Execution, Route, GatewayStrategyObservation } from "@kor-code/core";
+import type { Execution, Route, GatewayStrategyObservation, SessionSkillPackRecord } from "@kor-code/core";
 import { sessionGateway } from "./session-gateway.js";
 import { EventCollector, type SessionEvent } from "./events.js";
 import { redact, type SessionOverrides } from "@kor-code/jev";
 import { DEFAULT_ALLOWED_TOOLS, permissionGuidance, sessionPermissions, sessionTools } from "./session-permissions.js";
 
-export interface SessionLaunch { skillsDisabled?: boolean; attemptId?: string; playbookFailure?: { classes: string[]; blockers: string[] }; playbookOverride?: string; skillOverrides?: Pick<SessionOverrides, "skills" | "confirmed">; skillStage?: "execute" | "repair"; execution: Execution; repositoryPath: string; worktreePath: string; prompt: string; route?: Route; allowedTools?: readonly string[]; tools?: readonly string[]; checks?: readonly string[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }
+export interface SessionLaunch { skillsDisabled?: boolean; attemptId?: string; playbookFailure?: { classes: string[]; blockers: string[] }; playbookOverride?: string; skillOverrides?: Pick<SessionOverrides, "skills" | "confirmed">; onSkillPack?: (pack: SessionSkillPackRecord) => void; skillStage?: "execute" | "repair"; execution: Execution; repositoryPath: string; worktreePath: string; prompt: string; route?: Route; allowedTools?: readonly string[]; tools?: readonly string[]; checks?: readonly string[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }
 export interface PermissionDenial { toolName: string; toolUseId: string; input: string }
 export interface ToolResult { toolName: string; toolUseId: string; input: string; output: string; isError: boolean }
 export interface SessionTelemetry {
@@ -33,6 +33,7 @@ export interface SessionTelemetry {
 }
 export interface SessionResult {
   skillDecisionId?: string;
+  skillPack?: SessionSkillPackRecord;
   tools?: readonly string[];
   exitCode: number;
   signal?: NodeJS.Signals;
@@ -44,7 +45,7 @@ export interface SessionResult {
   failureReasons?: readonly string[];
 }
 export interface SessionLauncherLike { launch(input: SessionLaunch): Promise<SessionResult> }
-export interface SessionSkillPack { decisionId?: string; pluginDir?: string; listedSkills: readonly string[]; pinnedGuidance: string }
+export interface SessionSkillPack { decisionId?: string; record?: SessionSkillPackRecord; pluginDir?: string; listedSkills: readonly string[]; pinnedGuidance: string }
 export interface SessionLauncherOptions {
   repoRoot?: string; command?: string; args?: string[]; env?: NodeJS.ProcessEnv; gatewayKey?: string; sandboxScript?: string; allowedTools?: readonly string[]; tools?: readonly string[];
   /** Where the daemon publishes status, so the cockpit inside the session reads it rather than the session's own sandbox home. */
@@ -259,6 +260,8 @@ export class SessionLauncher implements SessionLauncherLike {
     const result: SessionResult = await new Promise<SessionResult>((resolvePromise, reject) => {
       const child = spawn(this.options.command ?? "bash", [script, ...args], { cwd: input.worktreePath, env: this.isolatedEnv(env), stdio: ["ignore", "pipe", "pipe"], detached: true, signal: input.signal });
       if (child.pid) input.onSpawn?.(child.pid);
+      // Reported at spawn, so a session stopped or failed before it ends still records the pack it received.
+      if (child.pid && skills?.record) input.onSkillPack?.(skills.record);
       let stdout = ""; let stderr = "";
       collector.add("started", input.execution.id);
       child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
@@ -283,7 +286,7 @@ export class SessionLauncher implements SessionLauncherLike {
         const telemetry = parseResultEvent(collector.events) ?? (gatewayTelemetry.responses.length ? { result: "", isError: false, permissionDenials: 0 } : undefined);
         if (telemetry) telemetry.gateway = gatewayTelemetry;
         const reasons = failureReasons(actualExitCode, telemetry, collector.events.some(event => event.kind === "json" && record(event.value)?.type === "result"));
-        resolvePromise({ tools: availableTools, ...(skills?.decisionId ? { skillDecisionId: skills.decisionId } : {}), exitCode: actualExitCode, ...(signal ? { signal } : {}), events: collector.events, stdout, stderr, ...(telemetry ? { telemetry } : {}), failed: reasons.length > 0, ...(reasons.length > 0 ? { failureReasons: reasons } : {}) });
+        resolvePromise({ tools: availableTools, ...(skills?.decisionId ? { skillDecisionId: skills.decisionId } : {}), ...(skills?.record ? { skillPack: skills.record } : {}), exitCode: actualExitCode, ...(signal ? { signal } : {}), events: collector.events, stdout, stderr, ...(telemetry ? { telemetry } : {}), failed: reasons.length > 0, ...(reasons.length > 0 ? { failureReasons: reasons } : {}) });
       });
     }).finally(() => relay.close());
     if (skills?.pluginDir && result.telemetry) {

@@ -870,6 +870,24 @@ so a repair cannot learn from its own partially completed run. With
 `--no-calibration`, skill selection continues with the original thresholds.
 Model, provider, harness and effort routing remain Jev's separate task decision.
 
+Mission Control shows the same learning: Home's **Jev learned** card and the
+**Learnings** card on **Jev Brain** list each change the next session applies
+(`hidden` or `stricter`, with the measured reason) and every skill version's
+completed runs against the 20-sample gate. The report JSON's `overconfidence` is
+the measured gap behind a stricter bar. A new install has no rows and says so.
+
+### What each session received
+
+Every attempt records the pack it was actually given, after Jev's plan, operator
+overrides, repository policy and the skill budget: each delivered skill with its
+tier, per-turn tokens and source (`jev`, `override` or `repository`), the pinned
+playbook with its body tokens, and the per-turn token totals. The record is the
+attempt's `skillPack` in `run_metrics`, and the same value appears on the run's
+`spend` records in Mission Control (**Plan → Sessions received**). It is captured
+when the session spawns, so a session stopped or failed before it ends keeps its
+pack, with its cost unknown. Sessions without skills, such as the no-skills
+baseline, record `null`.
+
 ### Paired no-skills baseline
 
 For sampled Jev-routed executions, Kor retains the existing route baseline and
@@ -879,7 +897,10 @@ gate and repair budget. The launcher bypasses skill preparation entirely: no
 pinned bodies, skill plugin, armed entries or `Skill` tool. Repairs reuse the
 corresponding primary tool profile, or its last profile for an extra repair.
 The baseline never ships changes. Failed baseline infrastructure is recorded as
-interrupted, and excluded from lift; it does not change the primary result.
+interrupted, and excluded from lift; it does not change the primary result. Both
+baselines run after the primary verifies and before it waits for approval; their
+own output stays out of the run's live stream, which shows one labelled
+`baseline` line as each starts and ends, with its cost.
 
 `lift` is verification pass rate with guidance minus the no-skills arm's pass
 rate. `costDeltaUsd` is total primary session cost minus baseline session cost,

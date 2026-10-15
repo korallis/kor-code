@@ -1,5 +1,5 @@
 import type { SessionTurn, SessionLoadEvent, SessionGatewayTelemetry } from "./context.js";
-import type { Route } from "@kor-code/core";
+import type { Route, SessionSkillPackRecord } from "@kor-code/core";
 export interface SessionTelemetryLike {
   gateway?: SessionGatewayTelemetry;
   permissionDenials: number;
@@ -13,7 +13,7 @@ export interface SessionTelemetryLike {
   usage?: Readonly<Record<string, number>>;
   apiErrorStatus?: number;
 }
-export interface SessionResultLike { telemetry?: SessionTelemetryLike; skillDecisionId?: string; tools?: readonly string[] }
+export interface SessionResultLike { telemetry?: SessionTelemetryLike; skillDecisionId?: string; skillPack?: SessionSkillPackRecord; tools?: readonly string[] }
 import { metricSchema, type CalibrationRun, type CalibrationStore, type RunMetric, type RunOutcome } from "./store.js";
 
 export interface SessionMetricInput {
@@ -56,6 +56,7 @@ export function metricFromSession(input: SessionMetricInput): RunMetric {
   const cacheCreationTokens = usageValue(telemetry?.usage, "cache_creation_input_tokens", "cacheCreationInputTokens");
   return metricSchema.parse({
     ...(input.session.skillDecisionId ? { skillDecisionId: input.session.skillDecisionId } : {}),
+    skillPack: input.session.skillPack ?? null,
     tools: input.session.tools ?? null,
     executionId: input.executionId,
     attempt: input.attempt,

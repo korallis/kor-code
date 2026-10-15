@@ -41,6 +41,7 @@ export async function runVerifiedSessions(input: {
     const previous = attempts.at(-1);
     const startedAt = new Date().toISOString();
     let session: SessionResult;
+    let delivered: SessionResult["skillPack"];
     try {
       input.onStage?.(execution.id, "execute");
       const prompt = previous ? repairPrompt(input.initialPrompt, previous) : input.initialPrompt;
@@ -55,21 +56,25 @@ export async function runVerifiedSessions(input: {
           ...(previous.findings.some(finding => finding.status !== "pass") ? ["acceptance-failure"] : []),
           ...(previous.evidence.some(item => item.kind === "policy" && item.status !== "pass") ? ["policy-denial"] : [])],
         blockers: previous.blockers,
-      } } : {}), ...(overrides?.playbook !== undefined ? { playbookOverride: overrides.playbook } : {}), ...(overrides?.skills.size ? { skillOverrides: { skills: overrides.skills, confirmed: overrides.confirmed } } : {}),
+      } } : {}), onSkillPack: pack => { delivered = pack; }, ...(overrides?.playbook !== undefined ? { playbookOverride: overrides.playbook } : {}), ...(overrides?.skills.size ? { skillOverrides: { skills: overrides.skills, confirmed: overrides.confirmed } } : {}),
         skillStage: previous ? "repair" : "execute", execution, repositoryPath: repository.path, worktreePath: execution.worktree,
         prompt, tools: toolPlan.tools,
         ...(input.skillsDisabled ? { skillsDisabled: true } : {}),
         ...(execution.route ? { route: execution.route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}), ...(repository.checks ? { checks: repository.checks } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}), ...(input.signal ? { signal: input.signal } : {}) }));
     } catch (error) {
-      // Preserve the attempt and elapsed time even when the provider never emits a result.
-      if (input.calibration && execution.route) input.calibration.recordAttempt(metricFromSession({ executionId: execution.id, attempt: attemptNumber, attemptId, ...(input.decisionId ? { decisionId: input.decisionId } : {}), route: execution.route, startedAt, finishedAt: new Date().toISOString(), session: {}, verified: false, verificationFailures: 0 }));
+      // Preserve the attempt, its elapsed time and the pack it was launched with even when the provider never emits a result.
+      const finishedAt = new Date().toISOString();
+      if (input.calibration && execution.route) input.calibration.recordAttempt(metricFromSession({ executionId: execution.id, attempt: attemptNumber, attemptId, ...(input.decisionId ? { decisionId: input.decisionId } : {}), route: execution.route, startedAt, finishedAt, session: delivered ? { skillPack: delivered } : {}, verified: false, verificationFailures: 0 }));
+      if (delivered && execution.route) input.onSpend?.(execution.id, { attempt: attemptNumber, attemptId, recordedAt: finishedAt, model: execution.route.model, costUsd: null,
+        inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheCreationTokens: null, skillPack: delivered });
       throw error;
     }
     input.onStage?.(execution.id, "verify");
     if (execution.route) {
       const metric = metricFromSession({ executionId: execution.id, attempt: attemptNumber, attemptId, route: execution.route, startedAt, finishedAt: new Date().toISOString(), session, verified: false });
       input.onSpend?.(execution.id, { attempt: attemptNumber, attemptId, recordedAt: metric.recordedAt, model: metric.model, costUsd: metric.costUsd,
-        inputTokens: metric.inputTokens, outputTokens: metric.outputTokens, cacheReadTokens: metric.cacheReadTokens, cacheCreationTokens: metric.cacheCreationTokens });
+        inputTokens: metric.inputTokens, outputTokens: metric.outputTokens, cacheReadTokens: metric.cacheReadTokens, cacheCreationTokens: metric.cacheCreationTokens,
+        ...(session.skillPack ? { skillPack: session.skillPack } : {}) });
     }
     costs.push(session.telemetry?.totalCostUsd);
     const attempt = await race(verifyAttempt({ execution, acceptance: execution.manifest?.acceptance ?? [], session, attempt: attemptNumber, attemptId,

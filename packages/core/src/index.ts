@@ -24,6 +24,14 @@ export interface VerificationAttempt {
   publication?: { baseRevision: string; paths: string[] };
 }
 export interface VerificationReport { attempts: VerificationAttempt[]; passed: boolean; costUsd?: number }
+/** The guidance one session received after operator overrides, repository policy and the budget: delivered skills only. */
+export interface SessionSkillPackRecord {
+  catalogueHash: string;
+  skills: Array<{ name: string; tier: "pinned" | "listed" | "armed"; tokens: number; source: "jev" | "override" | "repository" }>;
+  playbook: { name: string; tokens: number } | null;
+  /** Per-turn guidance tokens of the skills, as Mission Control's next-session editor counts them. */
+  tokens: { pinned: number; listed: number; tool: number; total: number };
+}
 /** One actual provider session measurement; null means the provider omitted it. */
 export interface SessionSpend {
   attempt: number;
@@ -35,6 +43,8 @@ export interface SessionSpend {
   outputTokens: number | null;
   cacheReadTokens: number | null;
   cacheCreationTokens: number | null;
+  /** Absent when the session ran without skills, such as a calibration baseline, or predates this record. */
+  skillPack?: SessionSkillPackRecord;
 }
 export interface AgentManifest { id: string; name: string; description?: string; skills: string[]; capabilities: string[]; acceptance: AcceptanceCondition[] }
 export interface ExecutionManifest { executionId: string; issueId: string; repository: string; worktree: string; branch: string; agents: AgentManifest[]; acceptance: AcceptanceCondition[] }

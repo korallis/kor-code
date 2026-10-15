@@ -25,6 +25,7 @@ import { Table, Td, Th, Tr } from '../ui/table';
 import { layout } from '../ui/layout';
 import { text, type Tone } from '../ui/text';
 import { count, pct, prob, usd } from '../lib/format';
+import { learnedSummary, learningStatus, type LearningStatus } from '../lib/learning';
 import { keyOf } from '../lib/runs';
 import { clock, shortDate, useNow } from '../lib/time';
 import { page, QueryError } from './shared';
@@ -67,7 +68,10 @@ const styles = stylex.create({
   next: { paddingBlock: space.s3, paddingInline: space.s3h, borderRadius: '12px', borderWidth: '1px', borderStyle: 'dashed', borderColor: tint.violetEdgeStrong, fontSize: fontSize.smPlus, color: color.textSecondary, lineHeight: 1.5 },
   rateInput: { width: '120px' },
   tableWrap: { paddingInline: space.s2, overflowX: 'auto' },
+  skillRow: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto 44px 52px', gap: space.s2h, alignItems: 'center', paddingBlock: '5px', fontFamily: font.mono, fontSize: fontSize.xsPlus, color: color.textSecondary },
 });
+
+const STATUS_TONE: Record<LearningStatus, Tone | 'ghost'> = { hidden: 'rose', stricter: 'amber', learning: 'green', measuring: 'cyan', 'old version': 'ghost' };
 
 const RANGES = { '7': 7, '30': 30, '90': 90 } as const;
 type Range = keyof typeof RANGES;
@@ -156,7 +160,8 @@ export function JevBrain() {
   }).filter(entry => entry.n > 0).sort((a, b) => (b.rate ?? 0) - (a.rate ?? 0));
   const sampleRate = config.data?.config.calibration.sampleRate ?? null;
   const setSampleRate = (value: number) => { if (config.data) save.mutate({ ...config.data.config, calibration: { ...config.data.config.calibration, sampleRate: value } }, { onSuccess: () => setRate(null) }); };
-  const learnings = brain.data?.learnings.value ?? [];
+  const learned = brain.data?.learnings;
+  const learnings = learned?.value.changes ?? [];
   const actionError = save.error;
   return (
     <AppFrame active="brain" crumbs={['Jev', 'Brain']} askHint={'Ask Jev — "what did you learn about a project?", "why do some runs fail on retry?"'}>
@@ -268,16 +273,35 @@ export function JevBrain() {
           <Card index={9}>
             <CardHeader icon={Lightbulb} title="Learnings" count={learnings.length} aside={brain.data && <ProvenanceChip provenance={brain.data.learnings.provenance} reason={brain.data.learnings.reason} />} />
             <CardBody>
-              {learnings.map((learning, index) => (
-                <div key={index} {...stylex.props(styles.learning)}>
+              {learnings.map(change => (
+                <div key={`${change.skill}-${change.kind}`} {...stylex.props(styles.learning)}>
                   <span {...stylex.props(styles.learnIcon)}><Icon icon={Lightbulb} size={14} /></span>
                   <div>
-                    <div {...stylex.props(styles.learnText)}>{learning}</div>
-                    <div {...stylex.props(layout.row, layout.mt2)}><Button size="sm" variant="violet" icon={Sparkles} onClick={() => openAsk({ prompt: `Explain this learning and what you would change: "${learning}"` })}>Ask Jev why</Button></div>
+                    <div {...stylex.props(layout.row)}><b {...stylex.props(text.mono, text.strong)}>{change.skill}</b><Pill tone={STATUS_TONE[change.kind]} small>{change.kind}</Pill></div>
+                    <div {...stylex.props(styles.learnText, layout.mt2)}>{change.reason}</div>
+                    <div {...stylex.props(layout.row, layout.mt2)}><Button size="sm" variant="violet" icon={Sparkles} onClick={() => openAsk({ prompt: `Explain why you changed how you pick the ${change.skill} skill: "${change.reason}"` })}>Ask Jev why</Button></div>
                   </div>
                 </div>
               ))}
-              {learnings.length === 0 && (brain.data?.learnings.provenance === 'unavailable' ? <Empty title="Learnings unavailable.">{brain.data.learnings.reason ?? 'Not reported by the daemon.'}</Empty> : <Empty title="No learnings yet.">Jev proposes them once calibration has enough finished runs.</Empty>)}
+              {learned?.provenance === 'unavailable' && <Empty title="Learnings unavailable.">{learned.reason ?? 'Not reported by the daemon.'}</Empty>}
+              {learned?.provenance === 'live' && learnings.length === 0 && <p {...stylex.props(text.secondary, text.sm, layout.mt2)}>{learnedSummary(learned.value)}</p>}
+              {learned && learned.value.skills.length > 0 && (
+                <div {...stylex.props(layout.mt3)}>
+                  <div {...stylex.props(styles.skillRow, styles.armHead)}><span>skill</span><span>status</span><span>runs</span><span>loaded</span></div>
+                  {learned.value.skills.map(skill => {
+                    const status = learningStatus(skill, learned.value);
+                    return (
+                      <div key={`${skill.name}-${skill.hash ?? 'legacy'}`} {...stylex.props(styles.skillRow)} title={`offered ${skill.offered} · loaded ${skill.loaded} · used ${skill.used} · pass rate ${pct(skill.passRate)} · lift ${skill.lift === null ? '—' : prob(skill.lift)}`}>
+                        <span {...stylex.props(text.ellipsis, !skill.current && text.faint)}>{skill.name}</span>
+                        <Pill tone={STATUS_TONE[status]} small>{status}</Pill>
+                        <span>{skill.samples}/{learned.value.minimumSamples}</span>
+                        <span>{skill.loaded}/{skill.offered}</span>
+                      </div>
+                    );
+                  })}
+                  <p {...stylex.props(text.muted, text.xs, layout.mt2)}>{learned.value.note}</p>
+                </div>
+              )}
             </CardBody>
           </Card>
           <Card index={10} variant="neon" style={styles.experiment}>

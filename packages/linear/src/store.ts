@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { chmodSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { Execution, SessionProcessIdentity, SessionSpend } from '@kor-code/core';
+import type { Execution, SessionProcessIdentity, SessionSkillPackRecord, SessionSpend } from '@kor-code/core';
 import { object, string, type AgentSessionRecord, type LinearWrite } from './contract.js';
 
 export interface Assignment {
@@ -40,7 +40,8 @@ function spendFrom(value: unknown): Omit<SessionSpend, 'attemptId'> & { attemptI
   const measurement = (input: unknown) => input === null ? null : number(input);
   return { attempt: number(row.attempt), ...(typeof row.attemptId === 'string' ? { attemptId: row.attemptId } : {}), recordedAt: string(row.recordedAt), model: string(row.model),
     costUsd: measurement(row.costUsd), inputTokens: measurement(row.inputTokens), outputTokens: measurement(row.outputTokens),
-    cacheReadTokens: measurement(row.cacheReadTokens), cacheCreationTokens: measurement(row.cacheCreationTokens) };
+    cacheReadTokens: measurement(row.cacheReadTokens), cacheCreationTokens: measurement(row.cacheCreationTokens),
+    ...(typeof row.skillPack === 'object' && row.skillPack !== null ? { skillPack: row.skillPack as SessionSkillPackRecord } : {}) };
 }
 function parseAssignment(value: unknown): Assignment {
   const row = object(value);

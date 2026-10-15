@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import type { DecisionRecord, Execution, GatewayAccountHealth, KorRunSnapshot, KorStatusResponse, KorStatusSnapshot, Labelled, OverrideRecord, Route, RouteSource, RunStatus, SessionProcessIdentity } from "@kor-code/core";
 import { repositoryKeyForIssue, type KorConfig, type KorPaths } from "@kor-code/config";
-import { ExecutionVerificationError, policyTools, type Controller } from "@kor-code/controller";
+import { ExecutionVerificationError, policyTools, type CalibrationBaseline, type Controller } from "@kor-code/controller";
 import type { LinearClient, LinearIssue } from "@kor-code/linear";
 import { AgentSessionWriter, LinearStore, flushLinearWrites, hasScreenshot, stableId, workflowMapping, type LinearWrite, type AssignmentRecord, type ExecutionClaim } from "@kor-code/linear";
 import { captureProcess, processExists, processMatches, stopSession } from "./process.js";
@@ -513,6 +513,14 @@ export class KorDaemon {
     this.stages.set(executionId, stage);
     this.events.publish({ kind: "stage", executionId, stage });
   }
+  /** Labels a sampled calibration baseline in the run's own stream, so its extra session is not mistaken for the run. */
+  recordBaseline(executionId: string, baseline: CalibrationBaseline): void {
+    const arm = baseline.purpose === "skills" ? "the same route without skills, to measure skill lift" : "the baseline route, to measure Jev's routing";
+    const message = baseline.status === "started"
+      ? `calibration baseline started on ${baseline.model}: ${arm}. It never ships and does not change this run.`
+      : `calibration baseline ${baseline.status}${baseline.costUsd === undefined ? "" : ` · $${baseline.costUsd.toFixed(4)}`}. This run's result is unchanged.`;
+    void this.log(executionId, message).catch(error => this.reportError(error));
+  }
   recordOutput(executionId: string, channel: "stdout" | "stderr" | "daemon", text: string): void {
     const safe = redact(text, [this.token, ...runtimeSecrets(), ...this.mission.secrets()]);
     if (typeof safe !== "string") return;
@@ -647,6 +655,13 @@ export class KorDaemon {
     await this.writeSnapshot();
     const { commentId: _, ...stored } = this.overrides.get(record.id) ?? record;
     return { status: applied ? 200 : 409, record: stored, ...(tokens !== undefined ? { tokens } : {}) };
+  }
+
+  /** The skill catalogue sessions plan from; empty while no repository is configured. */
+  async skillCatalogue(): Promise<readonly SkillCandidate[]> {
+    const repository = Object.values(this.config.repos)[0];
+    if (!repository || !this.options.sessionPolicy) return [];
+    return (await this.options.sessionPolicy(repository.path)).catalogue.skills;
   }
 
   /** Skill names in repository settings that the catalogue does not hold; a session would refuse them. */

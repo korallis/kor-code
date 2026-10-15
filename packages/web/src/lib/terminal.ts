@@ -3,6 +3,8 @@
 export type LineTone = 'plain' | 'tool' | 'ok' | 'warn' | 'err' | 'jev' | 'dim' | 'hi';
 export interface TermLine { key: string; time: string; who: string; whoTone: LineTone; body: string; tone: LineTone; extra?: string; extraTone?: LineTone }
 
+import { usd } from './format';
+
 const ISO = /^(\d{4}-\d{2}-\d{2}T(\d{2}:\d{2}:\d{2})(?:\.\d+)?Z)\s+(.*)$/;
 
 function localTime(iso: string): string {
@@ -23,6 +25,7 @@ function toolSummary(name: string, input: Record<string, unknown>): string {
 }
 
 function daemonLine(key: string, time: string, message: string): TermLine {
+  if (/^calibration baseline\b/.test(message)) return { key, time, who: 'baseline', whoTone: 'dim', body: message.slice('calibration baseline '.length), tone: 'dim' };
   const jev = /^(jev|route|readiness|risk|complexity|context|skill|agent|acceptance|supervise)\b/i.test(message) || /\bjev\b/i.test(message);
   const tone: LineTone = /fail|error|blocked|denied|refused/i.test(message) ? 'warn' : /verified|passed|complete|opened|shipped/i.test(message) ? 'ok' : jev ? 'jev' : 'plain';
   return { key, time, who: jev ? 'jev' : 'kor', whoTone: jev ? 'jev' : 'dim', body: message, tone };
@@ -35,7 +38,7 @@ function sessionLines(key: string, time: string, event: Record<string, unknown>)
     return [{ key, time, who: 'session', whoTone: 'dim', body: `${str(event.model) || 'session'} started${tools ? ` · ${tools} tools allowed` : ''}`, tone: 'plain' }];
   }
   if (type === 'result') {
-    const cost = typeof event.total_cost_usd === 'number' ? ` · $${event.total_cost_usd.toFixed(2)}` : '';
+    const cost = typeof event.total_cost_usd === 'number' ? ` · ${usd(event.total_cost_usd)}` : '';
     const turns = typeof event.num_turns === 'number' ? ` · ${event.num_turns} turns` : '';
     const failed = event.is_error === true || str(event.subtype).startsWith('error');
     return [{ key, time, who: 'session', whoTone: 'dim', body: `${failed ? 'ended with an error' : 'finished'}${turns}${cost}`, tone: failed ? 'err' : 'ok' }];
