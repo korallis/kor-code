@@ -184,6 +184,20 @@ Stored the same new key in /tmp/kor-t15/fresh2/.config/kor/gateway.env (0600). A
 Configure repository mapping, checks and toolAllowlist; run kor doctor before starting the service.
 ```
 
+After verification, a repository with `ship: approve` posts its checks and
+acceptance results to Linear and waits for approval in Mission Control. Distinct
+block reasons appear as separate comments, so a later retry preserves earlier
+failures. Direct PR publication uses a Jev-routed model pass to explain the verified
+change, classify its changelog, and summarize the recorded testing. A low-confidence
+route answer is not saved for reuse: Jev gets one narrower prose-only request. If
+it remains uncertain, the PR uses issue text and recorded evidence in the standard
+layout, with a `PR prose fallback` note asking you to review the summary and
+changelog. If PR creation needs retrying, Jev can be asked again for the same
+commit. Existing PR descriptions are left unchanged. Service,
+registry, completion, or invalid-content failures still require resolving the
+reported problem and retrying shipping; the verified coding session does not run
+again. See [shipping](specs/shipping.md).
+
 ## Credentials and the gateway
 
 | Credential | Where Kor looks (first match wins) |
@@ -738,10 +752,15 @@ show as `waiting · your go-ahead` under Running agents.
   request. Approving releases publication; it does not merge anything. See [what
   happens next](#what-happens-after-the-checks-pass).
 
-**Approve and ship was not run against GitHub in these captures:** the sandbox
-repository is a clone of this one, and nothing was published. The control, the
-daemon route behind it (`POST /api/runs/:id/approve`) and the shipping logic are
-exercised by the replay and by the [specification](specs/shipping.md).
+The original captures used an unpublished sandbox clone. A later live acceptance
+run exercised **Approve and ship** in Mission Control against a private scratch
+repository: two coding sessions each passed two checks and three acceptance
+criteria, then opened a ready PR through direct delivery. Both PRs were closed
+without merging. Linear posted the approval-wait comments and preserved two distinct
+shipping block reasons. Jev selected each PR-writing route; the generated prose and
+recorded command results were read back from GitHub. The initialized pipeline, CI,
+and merge cleanup still rely on the replay described in the
+[shipping specification](specs/shipping.md).
 
 ### Request changes
 

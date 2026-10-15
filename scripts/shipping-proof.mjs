@@ -16,18 +16,56 @@ const { FakeLinearClient, LinearStore } = await import(pathToFileURL(join(repo, 
 const { linearIssueFixture, workflowMappingFixture } = await import(pathToFileURL(join(repo, 'packages/linear/dist/fixture.js')));
 const { JevClient, JevDecisionCore, MemoryDecisionAuditLog } = await import(pathToFileURL(join(repo, 'packages/jev/dist/index.js')));
 const { runtimePaths, parseKorConfig } = await import(pathToFileURL(join(repo, 'packages/config/dist/index.js')));
+const { createServeRouting } = await import(pathToFileURL(join(repo, 'packages/cli/dist/serve-routing.js')));
 const { encode } = await import(createRequire(new URL('../packages/daemon/package.json', import.meta.url)).resolve('@toon-format/toon'));
 const fixtureJev = () => new JevClient({ apiKey: 'fixture-only', fetch: async (_url, options) => {
   const { questions } = JSON.parse(options.body);
   assert(Object.values(questions).every(question => question.type === 'noul'));
   return Response.json({ model: 'fixture', answers: Object.fromEntries(Object.keys(questions).map(id => [id, { type: 'noul', noul: 0.99 }])) });
 } });
+const routeInput = { executionId: 'pr-recovery', head: 'verified-head', prompt: 'Write PR prose from the recorded diff and passing checks.' };
+const routeModels = [{ model: 'fixture-model', provider: 'fixture-provider', capabilities: [] }];
+function routingProof(confidences, audit = new MemoryDecisionAuditLog()) {
+  let calls = 0, completions = 0;
+  const questions = [];
+  const routing = createServeRouting({ audit, defaultRoute: { model: 'fixture-model', provider: 'fixture-provider' }, models: async () => routeModels,
+    client: { evaluate: async (_state, requested) => {
+      const [id, question] = Object.entries(requested)[0]; questions.push(question.instructions);
+      return { model: 'fixture', answers: { [id]: { type: 'choice', choice: 'fixture-model', confidence: confidences[calls++], probabilities: { 'fixture-model': 1, clarification: 0 } } } };
+    } }, complete: async () => { completions++; return '{}'; },
+  });
+  return { routing, audit, questions, counts: () => ({ calls, completions }) };
+}
+const recovering = routingProof([0.6, 0.95]);
+assert.equal(await recovering.routing.describePullRequest(routeInput), '{}');
+assert.deepEqual(recovering.counts(), { calls: 2, completions: 1 });
+assert.notEqual(recovering.questions[0], recovering.questions[1]);
+assert.equal(recovering.audit.export().length, 1);
+assert.equal(recovering.audit.export()[0].response.confidence, 0.95);
+assert.equal(await recovering.routing.describePullRequest(routeInput), '{}');
+assert.deepEqual(recovering.counts(), { calls: 2, completions: 2 });
+const uncertain = routingProof([0.6, 0.6, 0.95]);
+assert.equal(await uncertain.routing.describePullRequest(routeInput), null);
+assert.deepEqual(uncertain.counts(), { calls: 2, completions: 0 });
+assert.equal(uncertain.audit.export().length, 0);
+assert.equal(await uncertain.routing.describePullRequest(routeInput), '{}');
+assert.deepEqual(uncertain.counts(), { calls: 3, completions: 1 });
+const legacyAudit = new MemoryDecisionAuditLog();
+const accepted = recovering.audit.export()[0];
+legacyAudit.append({ ...accepted, response: { ...accepted.response, applied: false, escalated: true, confidence: 0.6 }, rawAnswer: { type: 'choice', choice: 'fixture-model', confidence: 0.6, probabilities: { 'fixture-model': 1, clarification: 0 } } });
+const legacy = routingProof([0.95], legacyAudit);
+assert.equal(await legacy.routing.describePullRequest(routeInput), '{}');
+assert.deepEqual(legacy.counts(), { calls: 1, completions: 1 });
+assert(legacy.audit.export()[1].response.decisionId.endsWith('-retry-1'));
+console.log('PR route recovery: low/high re-asks once; low/low falls back without caching; same head retries recover; accepted routes replay; legacy rejected routes are ignored');
 const exec = promisify(execFile);
 const parent = process.env.KOR_PROOF_DIR ?? tmpdir();
 await mkdir(parent, { recursive: true });
 const root = await mkdtemp(join(parent, 'kor-shipping-proof-'));
 const secret = 'sk-ant-fixture-not-a-real-token-123456789';
 const leak = `token=${secret} Bearer fixture-bearer-123 /home/fixture/private/project C:\\Users\\fixture\\private file:///tmp/private/output`;
+const description = { title: 'feat(greeting): print a greeting', summary: 'Users can print a greeting from the command line.', changelog: [{ kind: 'Added', text: 'Print a greeting from the command line.' }], testing: 'Ran node hello.js with exit 0. Browser flows were not checked.' };
+const describe = async ({ prompt }) => { assert(!prompt.includes(secret)); assert(!prompt.includes('/home/fixture')); return JSON.stringify({ ...description, summary: `${description.summary} ${leak}` }); };
 const envelope = value => ({code:0,stdout:encode(value),stderr:''});
 const ok = (stdout = '') => ({code:0,stdout,stderr:''});
 const real = async (file,args,cwd) => {
@@ -74,10 +112,10 @@ for(const mode of ['direct','no-mistakes']) {
     }
     if(file==='gh-axi'&&args[0]==='pr') {
       assert.equal(args[1],'create');creates++;assert(!args.includes('--draft'));
-      assert.equal(args[args.indexOf('--title')+1],'chore(task): Write hello.js');
+      assert.equal(args[args.indexOf('--title')+1],description.title);
       const body=await readFile(args.at(-1),'utf8');
       assert.deepEqual(body.match(/^## .+$/gm),['## What does this PR do?','## Changelog','## How was it tested?','## Screenshots','## Checklist']);
-      assert(body.includes('- Changed: Write hello.js'));assert(body.includes('- [x]'));assert(body.includes('Evidence truncated'));
+      assert(body.includes('- Added: Print a greeting from the command line.'));assert(body.includes('- [x]'));assert(body.includes('Evidence truncated'));
       assert(body.includes('node hello.js'));assert(body.includes('[redacted]'));assert(!body.includes(secret));assert(!body.includes('fixture-bearer-123'));assert(!body.includes('/home/fixture'));assert(!body.includes('C:\\Users'));assert(!body.includes('/tmp/private'));assert(!body.includes(cwd));assert(body.length<=60000);
       await writeFile(join(home,'pr-body.md'),body);published=true;return ok('pr:\n  url: https://github.com/example/kor-fixture/pull/1');
     }
@@ -90,7 +128,7 @@ for(const mode of ['direct','no-mistakes']) {
     }
     throw new Error(`Unexpected command ${file} ${args.join(' ')}`);
   };
-  const shipping=new GitHubShipping(command);
+  const shipping=new GitHubShipping(command, describe);
   const calibration=new CalibrationStore(paths.databaseFile);
   const controller=createController({repositories:new RepositoryRegistry([{key:'LEE',...repository}]),worktrees:{create:async input=>({executionId:input.executionId,issueId:input.issueId,path:cwd,branch:input.branch,repository:cwd})},launcher:{launch:async()=>{launches++;await writeFile(join(cwd,'hello.js'),"console.log('hello');\n");await writeFile(join(cwd,'feature [literal].txt'),'literal filename\n');return {exitCode:0,events:[],stdout:'',stderr:'',failed:false};}},jev:new JevDecisionCore(fixtureJev(),new MemoryDecisionAuditLog()),defaultRoute:config.defaultRoute,calibration:{store:calibration,sampleRate:0,baselineRoute:config.defaultRoute}});
   let daemon=new KorDaemon({paths,config,store,linear,controller,shipping,port:0,pollIntervalMs:3_600_000});
@@ -196,8 +234,6 @@ console.log('excluded-path proof: verified id_helper.ts blocked explicitly befor
 
 const renderer = new GitHubShipping(real);
 const renderInput = { execution: structuredClone(execution), issue: { id: sample.issueId, title: `fix(shipping): retain evidence.\n${leak}` }, repository: { path: sample.worktree, defaultBranch: 'main' } };
-assert.match(renderer.title(renderInput), /^fix\(shipping\): retain evidence/);
-assert(!renderer.title(renderInput).includes(secret));assert(!renderer.title(renderInput).includes('\n'));
 renderInput.execution.verification.attempts.at(-1).evidence.push({ id: 'screen', kind: 'review', status: 'pass', summary: 'After', source: 'https://example.invalid/after.png' });
 renderInput.execution.verification.attempts.at(-1).findings.push({ conditionId: 'manual-browser', status: 'unresolved', evidenceIds: [], note: 'Not checked in a browser' });
 const templateDirectory = join(sample.worktree, '.github');
@@ -207,28 +243,38 @@ await writeFile(templateFile, `## Repository outcome\n\n{{summary}}\n\n## Requir
 await exec('git', ['add', '--', '.github/pull_request_template.md'], { cwd: sample.worktree });
 await exec('git', ['commit', '-qm', 'fixture: repository PR template'], { cwd: sample.worktree });
 const templateHead = (await exec('git', ['rev-parse', 'HEAD'], { cwd: sample.worktree })).stdout.trim();
-const templateBody = await renderer.body(renderInput, templateHead);
+const templateBody = await renderer.body(renderInput, templateHead, description);
 assert.deepEqual(templateBody.match(/^## .+$/gm), ['## Repository outcome', '## Required checks', '## Captures', '## Acceptance']);
 assert(templateBody.includes('- [ ] Maintainer approval'));assert(templateBody.includes('- [ ] manual-browser: unresolved; Not checked in a browser'));
 assert(templateBody.includes('![After](<https://example.invalid/after.png>)'));assert(!templateBody.includes(secret));assert(!templateBody.includes('/home/fixture'));assert(!templateBody.includes('{{'));
 await writeFile(templateFile, '## Uncommitted replacement\n');
-assert.equal(await renderer.body(renderInput, templateHead), templateBody);
+assert.equal(await renderer.body(renderInput, templateHead, description), templateBody);
 const literalInput = structuredClone(renderInput);
 literalInput.execution.verification.attempts.at(-1).checks[0].output = 'Literal {{checklist}} remains evidence';
-assert((await renderer.body(literalInput, templateHead)).includes('Literal {{checklist}} remains evidence'));
+assert((await renderer.body(literalInput, templateHead, description)).includes('Literal {{checklist}} remains evidence'));
 await writeFile(join(root, 'template-body.md'), templateBody);
 await writeFile(templateFile, '## Custom policy\n\n- [ ] Human checks the client\n');
 await exec('git', ['add', '--', '.github/pull_request_template.md'], { cwd: sample.worktree });
 await exec('git', ['commit', '-qm', 'fixture: plain repository template'], { cwd: sample.worktree });
-const plainBody = await renderer.body(renderInput, (await exec('git', ['rev-parse', 'HEAD'], { cwd: sample.worktree })).stdout.trim());
+const plainBody = await renderer.body(renderInput, (await exec('git', ['rev-parse', 'HEAD'], { cwd: sample.worktree })).stdout.trim(), description);
 assert(plainBody.startsWith('## Custom policy\n\n- [ ] Human checks the client\n'));assert(plainBody.includes('Kor execution evidence'));assert(plainBody.includes('node hello.js'));assert(plainBody.includes('- [ ] manual-browser'));
 await unlink(templateFile);
 await symlink('../README.md', templateFile);
 await exec('git', ['add', '--', '.github/pull_request_template.md'], { cwd: sample.worktree });
 await exec('git', ['commit', '-qm', 'fixture: symlink template'], { cwd: sample.worktree });
-const symlinkBody = await renderer.body(renderInput, (await exec('git', ['rev-parse', 'HEAD'], { cwd: sample.worktree })).stdout.trim());
+const symlinkBody = await renderer.body(renderInput, (await exec('git', ['rev-parse', 'HEAD'], { cwd: sample.worktree })).stdout.trim(), description);
 assert(symlinkBody.startsWith('## What does this PR do?'));
-console.log(`PR standard proof: five ordered headings; bounded evidence keeps checklist; conventional titles; committed repository template wins; plain template retains policy; screenshots linked; unresolved checks unticked; template redaction; defaultBytes=${(await readFile(join(root,'direct/pr-body.md'))).length}; templateBytes=${Buffer.byteLength(templateBody)}`);
+const fallbackRenderer = new GitHubShipping(real, async () => null);
+const fallbackHead = (await exec('git', ['rev-parse', 'HEAD'], { cwd: sample.worktree })).stdout.trim();
+const fallbackDescription = await fallbackRenderer.description(renderInput, fallbackHead);
+const fallbackBody = await fallbackRenderer.body(renderInput, fallbackHead, fallbackDescription);
+assert.match(fallbackDescription.title, /^fix\(shipping\):/);
+assert(fallbackBody.includes('PR prose fallback:'));
+assert(fallbackBody.includes('after two requests'));
+assert(fallbackBody.includes('node hello.js'));
+assert(!fallbackBody.includes(secret));
+assert.deepEqual(fallbackBody.match(/^## .+$/gm), ['## What does this PR do?', '## Changelog', '## How was it tested?', '## Screenshots', '## Checklist']);
+console.log(`PR standard proof: five ordered headings; bounded evidence keeps checklist; model prose and conventional titles; committed repository template wins; plain template retains policy; screenshots linked; unresolved checks unticked; template redaction; defaultBytes=${(await readFile(join(root,'direct/pr-body.md'))).length}; templateBytes=${Buffer.byteLength(templateBody)}`);
 
 // Construct the v4 schema directly, independent of git history or a previous dist build.
 const migrationFile = join(root, 'migration.db');

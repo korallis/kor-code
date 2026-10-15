@@ -69,10 +69,10 @@ export class AgentSessionWriter {
 
   recordVerificationBlock(claim: ExecutionClaim, execution: Execution, findings: readonly AcceptanceFinding[], blockers: readonly string[] = []): void {
     const body = [`Execution ${execution.id} blocked: acceptance evidence is incomplete`, ...(blockers.length > 0 ? ['Blockers:', ...blockers.map(blocker => `- ${blocker}`)] : []), ...findings.map(finding => `${finding.conditionId}: ${finding.status}${finding.evidenceIds.length > 0 ? ` (${finding.evidenceIds.join(', ')})` : ''}${finding.note ? ` — ${finding.note}` : ''}`)].join('\n');
-    const writes: LinearWrite[] = [{ kind: 'comment', id: stableId('kor-progress', `${claim.assignment.executionId}:blocked`), issueId: claim.assignment.issueId, body }];
+    const writes: LinearWrite[] = [{ kind: 'comment', id: stableId('kor-progress', `${claim.assignment.executionId}:blocked:${body}`), issueId: claim.assignment.issueId, body }];
     if (this.client.capabilities?.agentSessions) writes.unshift(
       { kind: 'summary', sessionId: claim.assignment.sessionId, summary: body },
-      { kind: 'activity', id: stableId('kor-activity', `${claim.assignment.executionId}:blocked`), sessionId: claim.assignment.sessionId, activity: 'error', body },
+      { kind: 'activity', id: stableId('kor-activity', `${claim.assignment.executionId}:blocked:${body}`), sessionId: claim.assignment.sessionId, activity: 'error', body },
     );
     this.store.record(claim, writes, execution);
   }

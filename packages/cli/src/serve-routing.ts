@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { hasScreenshot } from "@kor-code/linear";
 import type { CatalogueModel, Route } from "@kor-code/core";
-import { NeedsInputError, type DaemonOptions } from "@kor-code/daemon";
-import { JevClient, JevDecisionCore, JevUnavailableError, redact, planPreflight, preflightRequests, routeFromDecision, type DecisionAuditLog } from "@kor-code/jev";
+import { NeedsInputError, type DaemonOptions, type DescribePullRequest } from "@kor-code/daemon";
+import { JevClient, JevDecisionCore, JevUnavailableError, MemoryDecisionAuditLog, redact, planPreflight, preflightRequests, routeFromDecision, type DecisionAuditLog } from "@kor-code/jev";
+
+const PR_ROUTE_ATTEMPTS = 2;
 
 /** One persistent decision core for serve's preflight and acceptance judgments. */
 export function createServeRouting(options: {
@@ -10,8 +12,10 @@ export function createServeRouting(options: {
   defaultRoute: Route;
   models: () => Promise<readonly CatalogueModel[]>;
   client?: Pick<JevClient, "evaluate">;
+  complete?: (prompt: string, route: Route) => Promise<string>;
 }) {
-  const jev = new JevDecisionCore(options.client ?? new JevClient(), options.audit);
+  const client = options.client ?? new JevClient();
+  const jev = new JevDecisionCore(client, options.audit);
   const chooseRoute: NonNullable<DaemonOptions["chooseRoute"]> = async ({ executionId, issue }) => {
     let models: CatalogueModel[] = [];
     let catalogueFailure: JevUnavailableError | undefined;
@@ -54,5 +58,36 @@ export function createServeRouting(options: {
     }
     return { route, source: route.label === "jev" ? "jev" : "fallback" };
   };
-  return { jev, chooseRoute };
+  const describePullRequest: DescribePullRequest = async ({ executionId, head, prompt }) => {
+    if (!options.complete) throw new Error('PR model completion is unavailable');
+    const models = [...await options.models()];
+    if (!models.length) throw new Error('PR writing requires a verified model; run kor models probe');
+    const baseId = `route-pr-${executionId}-${head}`;
+    let decisionId = baseId;
+    for (let revision = 1; options.audit.get(decisionId); revision++) {
+      const saved = options.audit.replay(decisionId);
+      if (saved.applied && !saved.escalated && models.some(model => model.model === saved.choice)) {
+        return options.complete(prompt, routeFromDecision(saved, models, { accountPolicy: 'fill-first', sessionAffinity: true, label: 'jev', decisionId }));
+      }
+      decisionId = `${baseId}-retry-${revision}`;
+    }
+    for (let attempt = 0; attempt < PR_ROUTE_ATTEMPTS; attempt++) {
+      const pending = new MemoryDecisionAuditLog();
+      const decision = await new JevDecisionCore(client, pending).selectRoute({
+        decisionId, executionId, kind: 'route',
+        question: attempt === 0
+          ? 'Select a verified model route to write accurate, concise PR prose from this diff and verification evidence.'
+          : 'Select a verified route only to write a title, summary, changelog and testing text. Coding and verification are already complete; no repository changes are needed.',
+        state: attempt === 0 ? { task: 'pull request description', prompt } : { task: 'write short PR prose from supplied evidence', promptCharacters: prompt.length },
+        inputs: [{ name: 'verified commit', value: head, source: 'git' }],
+        candidates: [...models.map(model => model.model), "clarification"], nonApplyingCandidates: ["clarification"],
+        criteria: { ...Object.fromEntries(models.map(model => [model.model, { provider: model.provider, capabilities: model.capabilities.map(capability => ({ ...capability })), costUsd: model.costUsd ?? null, durationMs: model.durationMs ?? null }])), clarification: "No supplied route is suitable for this PR-writing task." },
+      });
+      if (!decision.applied || decision.escalated || !models.some(model => model.model === decision.choice)) continue;
+      options.audit.append(pending.explain(decisionId));
+      return options.complete(prompt, routeFromDecision(decision, models, { accountPolicy: 'fill-first', sessionAffinity: true, label: 'jev', decisionId }));
+    }
+    return null;
+  };
+  return { jev, chooseRoute, describePullRequest };
 }

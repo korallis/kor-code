@@ -22,7 +22,7 @@ import { MissionServices, atomicPrivateFile, live, unavailable } from "./mission
 import { ensureUiToken } from "./ui-token.js";
 export { ensureUiToken } from "./ui-token.js";
 export { MissionServices } from "./mission-services.js";
-export { GitHubShipping, type ShippingDriver, type ShippingCommand } from "./shipping.js";
+export { GitHubShipping, type ShippingDriver, type ShippingCommand, type DescribePullRequest } from "./shipping.js";
 
 export { OverrideStore } from "./overrides.js";
 
@@ -347,7 +347,7 @@ export class KorDaemon {
             writes.push({ kind: 'attachment', issueId: issue.id, url: stage.url, title: 'GitHub pull request' });
             writes.push({ kind: 'state', issueId: issue.id, stateId: stage.kind === 'merged' ? states.complete.id : states.review.id });
           }
-          writes.push({ kind: 'comment', id: stableId('kor-shipping', `${execution.id}:${execution.status}`), issueId: issue.id,
+          writes.push({ kind: 'comment', id: stableId('kor-shipping', `${execution.id}:${execution.status}${execution.status === 'blocked' ? `:${report.error ?? ''}` : ''}`), issueId: issue.id,
             body: [`Kor execution ${execution.id}: ${execution.status}`, 'url' in stage ? stage.url : '', report.error ?? '', ...report.evidence.map(item => `${item.kind}: ${item.status} — ${item.summary}`)].filter(Boolean).join('\n') });
         }
         if (changed && (report.stage.kind === 'merged' || report.stage.kind === 'closed')) {
@@ -881,13 +881,13 @@ export class KorDaemon {
     else if (this.stopping) this.store.recover(claim.assignment.issueId, "daemon stopped; session stopped; re-queued");
     else if (failure !== undefined) {
       if (failure instanceof NeedsInputError) this.store.record(claim, [
-        { kind: 'comment', id: stableId('kor-progress', `${id}:needs-input`), issueId: claim.assignment.issueId, body: `Kor needs input for execution ${id}: ${failure.message}` },
+        { kind: 'comment', id: stableId('kor-progress', `${id}:needs-input:${failure.message}`), issueId: claim.assignment.issueId, body: `Kor needs input for execution ${id}: ${failure.message}` },
         { kind: 'label', issueId: claim.assignment.issueId, name: 'kor:blocked', present: true },
       ]);
       if (failure instanceof ExecutionVerificationError) {
         const manifest = this.store.listAssignments().find(item => item.executionId === id)?.manifest;
         if (manifest) this.store.record(claim, [
-          { kind: 'comment', id: stableId('kor-shipping', `${id}:verification-blocked`), issueId: manifest.issueId, body: `Kor verification blocked: ${safeMessage(failure)}\n${failure.findings.map(finding => `${finding.conditionId}: ${finding.status}`).join('\n')}` },
+          { kind: 'comment', id: stableId('kor-shipping', `${id}:verification-blocked:${JSON.stringify(failure.report)}`), issueId: manifest.issueId, body: `Kor verification blocked: ${safeMessage(failure)}\n${failure.findings.map(finding => `${finding.conditionId}: ${finding.status}`).join('\n')}` },
           { kind: 'label', issueId: manifest.issueId, name: 'kor:blocked', present: true },
         ], { ...manifest, status: 'blocked', verification: failure.report });
       }
@@ -899,7 +899,14 @@ export class KorDaemon {
       if (!result?.execution.verification?.passed) this.store.failClaim(claim, 'Shipping requires a passing verification report', 'blocked');
       else {
         const gated = this.options.config.repos[result.execution.repository]?.ship === "approve";
-        this.store.finishClaim(claim, gated ? 'waiting' : 'shipping', undefined, { ...result.execution, status: gated ? 'waiting' : 'shipping', shipping: { stage: { kind: 'commit' }, evidence: [], cleanup: 'pending' } });
+        const latest = result.execution.verification.attempts.at(-1);
+        const writes: LinearWrite[] = gated ? [{ kind: 'comment', id: stableId('kor-progress', `${id}:verified:${latest?.attemptId ?? latest?.attempt ?? 0}`), issueId: result.execution.issueId,
+          body: [`Kor execution ${id} verified and is waiting for approval to publish.`,
+            ...(latest?.checks.map(check => `${check.command}: ${check.status} (exit ${check.exitCode})`) ?? []),
+            ...(latest?.findings.map(finding => `${finding.conditionId}: ${finding.status}`) ?? []),
+            'Review the recorded evidence, then approve and ship in Mission Control.',
+          ].join('\n') }] : [];
+        this.store.finishClaim(claim, gated ? 'waiting' : 'shipping', undefined, { ...result.execution, status: gated ? 'waiting' : 'shipping', shipping: { stage: { kind: 'commit' }, evidence: [], cleanup: 'pending' } }, writes);
       }
     } else this.store.completeClaim(claim, result?.execution);
     await this.log(id, `execution ${this.store.getAssignment(claim.assignment.issueId).status}${failure ? `: ${safeMessage(failure)}` : ""}`);
