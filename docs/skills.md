@@ -35,6 +35,12 @@ packages, even when your working directory is elsewhere. An explicit directory
 is relative to your working directory and contains one directory per skill.
 Lint reads files only. Keep private guidance outside the public checkout.
 
+## Bundled session guidance
+
+The [pstack principles and operational playbooks](pstack-playbooks.md) add portable
+engineering procedures with source attribution, a reviewed commit pin, and paired
+scenario evaluations. Use the catalogue commands below to inspect individual bodies.
+
 ## Format
 
 Use YAML frontmatter followed by a Markdown body:

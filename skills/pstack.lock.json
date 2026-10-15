@@ -1,0 +1,244 @@
+{
+  "schemaVersion": 1,
+  "source": "https://github.com/cursor/plugins",
+  "commit": "e5136d82418d2db3165ea1050d17577cd618cc05",
+  "license": "MIT",
+  "licenseFile": "pstack/LICENSE",
+  "licenseSha256": "bc957ca6bee02792566a1a028d105e02e247c6e77cf057061674273da77b200e",
+  "adaptations": [
+    {
+      "name": "principle-attack-the-premise",
+      "upstream": "pstack/skills/principle-attack-the-premise/SKILL.md",
+      "upstreamSha256": "6a932884daad4aa189e9b5d1665226bbc75621d4d2a398fd4003bebd382f4599",
+      "installedSha256": "4190334a9328db4c8e4abbdb9e43d0305542265f6b46806d01c816e41b9530a8"
+    },
+    {
+      "name": "principle-boundary-discipline",
+      "upstream": "pstack/skills/principle-boundary-discipline/SKILL.md",
+      "upstreamSha256": "62ac2862c2caa22dd14531f51c9c6bb445ceb198ca98a687e25b4d47c1f10a28",
+      "installedSha256": "f5f73dc072eedbfa9a3df613f5e8624c78bac4f0925a0181886a9f8fc6094ac3"
+    },
+    {
+      "name": "principle-build-the-lever",
+      "upstream": "pstack/skills/principle-build-the-lever/SKILL.md",
+      "upstreamSha256": "3434b0ad0c640c6f1d7960be7a8986c3bcdc14e26060360dec29903df60074ff",
+      "installedSha256": "1901746789e950eb98aabe02a3b0f15fe5759cd1473065f377c71a58a198888f"
+    },
+    {
+      "name": "principle-encode-lessons-in-structure",
+      "upstream": "pstack/skills/principle-encode-lessons-in-structure/SKILL.md",
+      "upstreamSha256": "228963799189f481827d6f28065f278bc2008ffa37030b1234cbd5814d36b9e9",
+      "installedSha256": "275383144c337479198af928110c0d61ccb505613823c1557186c0695b67021b"
+    },
+    {
+      "name": "principle-exhaust-the-design-space",
+      "upstream": "pstack/skills/principle-exhaust-the-design-space/SKILL.md",
+      "upstreamSha256": "2de83d99f93f60ec6313455b0bc9aa9f0bfb93dd59f414f403691322db00d4db",
+      "installedSha256": "5332c705ff7efe6179e570e0041aeca47655474122ca7dfdf92765d1dd03a39c"
+    },
+    {
+      "name": "principle-experience-first",
+      "upstream": "pstack/skills/principle-experience-first/SKILL.md",
+      "upstreamSha256": "58903529d733b1c1a7c9ccf127d45ef3c7d0d9f0b81164a4dc6b80efe6f2912b",
+      "installedSha256": "bda4e3901ee18ec5c8cad8e32e57b193d0bea1f4802a25bd9ebba067a28a0124"
+    },
+    {
+      "name": "principle-explain-the-number",
+      "upstream": "pstack/skills/principle-explain-the-number/SKILL.md",
+      "upstreamSha256": "cd5a25f9e7cf023627ccb470dc5faa97542f29b4319496a32b839a8e1e988047",
+      "installedSha256": "b575ceb8d5bbb8257a8144b0711c4fc373e7d79bd213169bf4e566c3a5d45291"
+    },
+    {
+      "name": "principle-fix-root-causes",
+      "upstream": "pstack/skills/principle-fix-root-causes/SKILL.md",
+      "upstreamSha256": "8df3c8c3fe57eb0055a5c8efab8ab144557fdf301da70b1cdc77a3a3ef3f3052",
+      "installedSha256": "b0e3bfd8c5a0d83ad059fdcfa457ca1ab08c9494dd1dcc91d173f1e9f2faae91"
+    },
+    {
+      "name": "principle-foundational-thinking",
+      "upstream": "pstack/skills/principle-foundational-thinking/SKILL.md",
+      "upstreamSha256": "864b827e8199d946ce58beca0f89c4ed4099ed6e426fb698a3aaa45de2a9eea2",
+      "installedSha256": "0eada60073a33689c9124988137799533c35d13c22ec76f218644be9f6e86246"
+    },
+    {
+      "name": "principle-guard-the-context-window",
+      "upstream": "pstack/skills/principle-guard-the-context-window/SKILL.md",
+      "upstreamSha256": "af0b9dd70b43628ce4a59a4d332e9d9ad055084e460f430e7a757495c627e81a",
+      "installedSha256": "7b4a70999bda946ad814d8d4440fbb50f385a6e66a3ed548d4de0248e189ce97"
+    },
+    {
+      "name": "principle-laziness-protocol",
+      "upstream": "pstack/skills/principle-laziness-protocol/SKILL.md",
+      "upstreamSha256": "1be6e7a435f26a75a76eb848b9c3d611b9977d0f5822361753244da25ca3ca45",
+      "installedSha256": "ccdc5da7ae2d4c5f5b057467df1fb59885859235ae1a7d7e9c776c34e4ead41b"
+    },
+    {
+      "name": "principle-make-operations-idempotent",
+      "upstream": "pstack/skills/principle-make-operations-idempotent/SKILL.md",
+      "upstreamSha256": "7aa9327cf1f1aa057e95d47a0a78bd88a8f9d556b608866fee939d455a53a019",
+      "installedSha256": "c70cca5202359d41f5981461345635fac130fd7f82eee776eb416b5f432b609c"
+    },
+    {
+      "name": "principle-migrate-callers-then-delete-legacy-apis",
+      "upstream": "pstack/skills/principle-migrate-callers-then-delete-legacy-apis/SKILL.md",
+      "upstreamSha256": "09978915a4a11990cf0a9a02d9c08cc59e0b7a04c5c24b83aa560fbe4146f75b",
+      "installedSha256": "a867f4fd072ccfe1d46825edd856695e4451bb526c5110b1551d35cb5b548024"
+    },
+    {
+      "name": "principle-minimize-reader-load",
+      "upstream": "pstack/skills/principle-minimize-reader-load/SKILL.md",
+      "upstreamSha256": "1ea2b7fef2391cae5844c4efdbd59031f775e8a52d06b7495d707229a200dcca",
+      "installedSha256": "349ce1f5d76ec8810aeb7fcb199b35981ce7fae81af8b28a2cd30e1b1020db60"
+    },
+    {
+      "name": "principle-model-the-domain",
+      "upstream": "pstack/skills/principle-model-the-domain/SKILL.md",
+      "upstreamSha256": "52c0d85e0c3827c41c18299b642657d7b47eaf77b7b31609e42e0df42b84c75f",
+      "installedSha256": "4e2eb9fa8b08ae0e2aa28b614fbc9d4b8b0eed3116c2b71dabd600fa83678ced"
+    },
+    {
+      "name": "principle-outcome-oriented-execution",
+      "upstream": "pstack/skills/principle-outcome-oriented-execution/SKILL.md",
+      "upstreamSha256": "10eb91633aa570355ba4bb37088fcade2b22e498df7a58edc749e65bc5a78e2d",
+      "installedSha256": "5e9a05017c439875f46f1995b6dbe61ebf2cb2825793d35fb03d02a8d085f74a"
+    },
+    {
+      "name": "principle-prove-it-works",
+      "upstream": "pstack/skills/principle-prove-it-works/SKILL.md",
+      "upstreamSha256": "ec79a15025bac8d33d62011c54f3b612733fd2a024e623b531b3637aa75070e2",
+      "installedSha256": "472cd72a969a1dc07a2427dc04d31888f4d8687ad4fe3be14f62c950a3d358de"
+    },
+    {
+      "name": "principle-redesign-from-first-principles",
+      "upstream": "pstack/skills/principle-redesign-from-first-principles/SKILL.md",
+      "upstreamSha256": "170e0a658783e43fee8ec5a8c2422a4abb8f69cef621dd1819a95910b8207034",
+      "installedSha256": "175db4dada0b64fc2e610b49d07b0681a85378c0ce89d3abfc30f7039825e121"
+    },
+    {
+      "name": "principle-separate-before-serializing-shared-state",
+      "upstream": "pstack/skills/principle-separate-before-serializing-shared-state/SKILL.md",
+      "upstreamSha256": "05294b40448e927c5da1c7b6f5c6b9fed3744637e3833d2d948b9154a9dd00bb",
+      "installedSha256": "1bf130f1b2eebb2c40f11832db51f553145b315f91de164dc7d09148320a2030"
+    },
+    {
+      "name": "principle-sequence-verifiable-units",
+      "upstream": "pstack/skills/principle-sequence-verifiable-units/SKILL.md",
+      "upstreamSha256": "2ccbbacc56ace5afdfb8670cef19d7bd009fb2a0033b9a741cbdf2b6baf72187",
+      "installedSha256": "9ea12b097b9a632a1b1ce88c7c2cc9401b20bf6819c332b7017e08e63a41eb3c"
+    },
+    {
+      "name": "principle-subtract-before-you-add",
+      "upstream": "pstack/skills/principle-subtract-before-you-add/SKILL.md",
+      "upstreamSha256": "8c93bb9d1a7f38e2ef37655d93f0e790fa59903105af3d500cc8a663ebe45f3f",
+      "installedSha256": "ae2a28159a1c621347fb74406649773d0e8732692c9c377d705541b7e7c9c015"
+    },
+    {
+      "name": "principle-type-system-discipline",
+      "upstream": "pstack/skills/principle-type-system-discipline/SKILL.md",
+      "upstreamSha256": "2e492cef34bb25a20b9115df61f9ef3a9837e3fda144ffda8079e5f45a1b72e8",
+      "installedSha256": "fd6d5223e28c7cebf1300d954fb34e4a6d9d1c12c29e82b58b0a51290680e8c1"
+    },
+    {
+      "name": "typescript-best-practices",
+      "upstream": "pstack/skills/typescript-best-practices/SKILL.md",
+      "upstreamSha256": "28f9e61710e205f6f3c5476f333483cff0e988f6a5b639e2faad536344b40c5e",
+      "installedSha256": "31e89e92ae69af66e086fe47c659e53871f6b2eca8f0f3cfb3deaba4f3022034"
+    },
+    {
+      "name": "correct",
+      "upstream": "pstack/skills/correct/SKILL.md",
+      "upstreamSha256": "e347045d00c967a0b831ef883cc6ac79d21329aa10b5968637df95de7febf0ba",
+      "installedSha256": "d5dbc504d30a8edbab2812d87f454d65ab79bda923eab6425481d2404e0cc452"
+    },
+    {
+      "name": "blast-radius",
+      "upstream": "pstack/skills/blast-radius/SKILL.md",
+      "upstreamSha256": "2e10745b97f5862323dcda3b29ca60d56b5c3c98e37020085d26b48efbe0a436",
+      "installedSha256": "31f2211ded9678153a35313a0188c42271d4a00c0f0be39ffd02ab0ef775dd6c"
+    },
+    {
+      "name": "unslop",
+      "upstream": "pstack/skills/unslop/SKILL.md",
+      "upstreamSha256": "ccab208e315ce05e2fab8eeee2f7879f1289b5c6844840b2d307adf31c79144f",
+      "installedSha256": "d11b33fe87fb48e28665c879f6388b3dcbd63df6a594b06ca190f4d32d669094"
+    },
+    {
+      "name": "technical-writing",
+      "upstream": "pstack/skills/technical-writing/SKILL.md",
+      "upstreamSha256": "61fe9c424a798ebf36ad94941f87be049cb8827bdf86d21474a0dde37b513c43",
+      "installedSha256": "a454ffaa24aa423c8c45a586e008c9feb1ccf4ed0d4b952b32fe58d48a6242c9"
+    },
+    {
+      "name": "create-verification-skill",
+      "upstream": "pstack/skills/create-verification-skill/SKILL.md",
+      "upstreamSha256": "d353973547bf8ad8977eca645f4cd4feaed0d32f4b43d1448f906b0a76c4d694",
+      "installedSha256": "84dd1a12b06fb21c7ac3b7e0b04e32b0996f370ada021dd29b948d0998495e8c"
+    },
+    {
+      "name": "maintain-verification-skill",
+      "upstream": "pstack/skills/maintain-verification-skill/SKILL.md",
+      "upstreamSha256": "515c0eaa054b3f6be1b1fb06f2c2f173c80fddb58bbcac57576f89c479bc68e8",
+      "installedSha256": "d77890714bd7c1a5fa99f010e62370ddd3d52244eab1fc9d73b00bf62b0d6ee5"
+    },
+    {
+      "name": "how",
+      "upstream": "pstack/skills/how/SKILL.md",
+      "upstreamSha256": "08a00079bb15b4258874ac3ff62d4ca7e94350ffedb521d0fd296dc9dd21904e",
+      "installedSha256": "dc273efb5d46175d94f088ea1a29c750fa3dda2f5b4d7398a0e14414daeea3fe"
+    },
+    {
+      "name": "investigate",
+      "upstream": "pstack/skills/poteto-mode/playbooks/investigation.md",
+      "upstreamSha256": "dc66bcf6af3a074fc7f67aa5e12b93ef571a4fb4d8e17f2f1af5ae5359f42e46",
+      "installedSha256": "c4de839afca73c17a8f49605395573dcf9d7dc7c0b4db023613567c37bf43656"
+    },
+    {
+      "name": "fix-bug",
+      "upstream": "pstack/skills/poteto-mode/playbooks/bug-fix.md",
+      "upstreamSha256": "66e26542dad131cfd7df80ac0cdf81ed4d85e7b5e3f0eb65b933888760c4831f",
+      "installedSha256": "84eb95c09343da265f6344caaed2d75c278b9d5135b468cf73ca6a1c57c00f5d"
+    },
+    {
+      "name": "build-feature",
+      "upstream": "pstack/skills/poteto-mode/playbooks/feature.md",
+      "upstreamSha256": "af8ce700b99953741cb547e34308fde0cf6b98ce67e1652c800d0deedf53aba1",
+      "installedSha256": "b2f220368c48ce4530012f8539e7d1c3547edefe85a080e9ffbb22db997eae84"
+    },
+    {
+      "name": "refactor",
+      "upstream": "pstack/skills/poteto-mode/playbooks/refactoring.md",
+      "upstreamSha256": "0f5dd38113379ea8cf61e2182eca0a7478eea9a869eb40c2dddab3335aeca197",
+      "installedSha256": "7ca926e45294f0cb7c1bc49ed60f71bbdcea7701ba065ed5bc8cf76ebd3c9b03"
+    },
+    {
+      "name": "prototype",
+      "upstream": "pstack/skills/poteto-mode/playbooks/prototype.md",
+      "upstreamSha256": "7aa1f52c691c3d46d5afc527b23f90977fce869ce33573c73c81a4c7f0cde962",
+      "installedSha256": "694064c985689f8c5069ea787980f10828fa72902b49c069f84508dd790932d3"
+    },
+    {
+      "name": "match-design",
+      "upstream": "pstack/skills/poteto-mode/playbooks/visual-parity.md",
+      "upstreamSha256": "950ca51999a6454c98eee6bcbc3d1bbe501a4e3a5d5439b6f6ddc378991b256c",
+      "installedSha256": "c6daa1a3c75579b05fe3def6268900f0434147d54a07a3a456e7a663b526db26"
+    },
+    {
+      "name": "change-docs",
+      "upstream": "pstack/skills/technical-writing/SKILL.md",
+      "upstreamSha256": "61fe9c424a798ebf36ad94941f87be049cb8827bdf86d21474a0dde37b513c43",
+      "installedSha256": "3979630cb28b61e65935dc1217238a564811e087d5b7a04233b088ad54560891"
+    },
+    {
+      "name": "bespoke-playbook",
+      "upstream": "pstack/skills/figure-it-out/SKILL.md",
+      "upstreamSha256": "bdb23cdbd82a1e6af094b495691c832a6f7f3ab9706ba9edbeb664ef51a726e1",
+      "installedSha256": "b3591500ba8c7895d5442c1a03ab0373ebd6539991c1b073f332549ee8b70596"
+    },
+    {
+      "name": "sketch-types",
+      "upstream": "pstack/skills/architect/SKILL.md",
+      "upstreamSha256": "31f8e97a52bfa5432edd61f68ade2a8632ef0bacbc2d2a6802d7a0e6821944ac",
+      "installedSha256": "d23d17cc38f0c2a4c222be4fd6c57c96c55acbd4a41db9c3f4129e8b27950d33"
+    }
+  ]
+}

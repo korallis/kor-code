@@ -1,0 +1,825 @@
+{
+  "schemaVersion": 1,
+  "evaluations": [
+    {
+      "skill": "bespoke-playbook",
+      "cases": [
+        {
+          "id": "bespoke-playbook-1",
+          "task": "A large migration fits no existing checklist. What should be written before implementation?",
+          "rubric": "Define a falsifiable end state and evidence, order risky units, log decisions, and keep inconclusive outcomes open."
+        },
+        {
+          "id": "bespoke-playbook-2",
+          "task": "Half a migration passes checks but one runtime comparison is inconclusive. How should the verdict and next step be recorded?",
+          "rubric": "Define a falsifiable end state and evidence, order risky units, log decisions, and keep inconclusive outcomes open."
+        },
+        {
+          "id": "bespoke-playbook-3",
+          "task": "A risky unknown could invalidate every later phase. Should it be investigated at the end or earlier?",
+          "rubric": "Define a falsifiable end state and evidence, order risky units, log decisions, and keep inconclusive outcomes open."
+        }
+      ]
+    },
+    {
+      "skill": "blast-radius",
+      "cases": [
+        {
+          "id": "blast-radius-1",
+          "task": "A change renames a JSON field and all direct TypeScript callers compile. What else could break?",
+          "rubric": "Trace indirect consumers and state the safety invariant with executable evidence or explicitly mark it unproven."
+        },
+        {
+          "id": "blast-radius-2",
+          "task": "A cache deletion is claimed safe because only expired entries are removed. What evidence would prove that claim?",
+          "rubric": "Trace indirect consumers and state the safety invariant with executable evidence or explicitly mark it unproven."
+        },
+        {
+          "id": "blast-radius-3",
+          "task": "A dependency upgrade changes teardown timing. Direct symbol search finds no callers. What should be traced?",
+          "rubric": "Trace indirect consumers and state the safety invariant with executable evidence or explicitly mark it unproven."
+        }
+      ]
+    },
+    {
+      "skill": "build-feature",
+      "cases": [
+        {
+          "id": "build-feature-1",
+          "task": "Add export to a CLI. Acceptance says it writes JSON at a chosen path. Outline the work and completion evidence.",
+          "rubric": "Ground acceptance and data shape, implement in bounded steps, verify the real surface, and hand evidence to shipping."
+        },
+        {
+          "id": "build-feature-2",
+          "task": "Add retry to a failed-job screen. The spec includes keyboard access and loading state. Outline the work and completion evidence.",
+          "rubric": "Ground acceptance and data shape, implement in bounded steps, verify the real surface, and hand evidence to shipping."
+        },
+        {
+          "id": "build-feature-3",
+          "task": "Add an API filter that preserves pagination. Outline the work and completion evidence.",
+          "rubric": "Ground acceptance and data shape, implement in bounded steps, verify the real surface, and hand evidence to shipping."
+        }
+      ]
+    },
+    {
+      "skill": "change-docs",
+      "cases": [
+        {
+          "id": "change-docs-1",
+          "task": "Update the startup guide after the executable changed from app start to app serve. What should you check?",
+          "rubric": "Edit only the requested documentation, check claims against authoritative behavior, and state any unexecuted command."
+        },
+        {
+          "id": "change-docs-2",
+          "task": "Update an API example using supplied actual response status 202 and field jobId. Old docs say 200 and id. What should change?",
+          "rubric": "Edit only the requested documentation, check claims against authoritative behavior, and state any unexecuted command."
+        },
+        {
+          "id": "change-docs-3",
+          "task": "A requested installation command cannot be run because the target platform is unavailable. How should the docs and proof describe it?",
+          "rubric": "Edit only the requested documentation, check claims against authoritative behavior, and state any unexecuted command."
+        }
+      ]
+    },
+    {
+      "skill": "correct",
+      "cases": [
+        {
+          "id": "correct-1",
+          "task": "Two past reverts concern duplicated schema definitions. What prevention should you implement?",
+          "rubric": "Use evidence of recurrence and structural prevention; prove enforcement on a real mistake before adding more prose."
+        },
+        {
+          "id": "correct-2",
+          "task": "Two agents import a private module despite a reminder. What should change beyond that reminder?",
+          "rubric": "Use evidence of recurrence and structural prevention; prove enforcement on a real mistake before adding more prose."
+        },
+        {
+          "id": "correct-3",
+          "task": "An instruction was violated once and the issue is subjective naming taste. What evidence is needed before a mandatory lint?",
+          "rubric": "Use evidence of recurrence and structural prevention; prove enforcement on a real mistake before adding more prose."
+        }
+      ]
+    },
+    {
+      "skill": "create-verification-skill",
+      "cases": [
+        {
+          "id": "create-verification-skill-1",
+          "task": "Given npm run dev starts port 4100 and a Save button persists to data/settings.json, outline verification guidance. You cannot run it here.",
+          "rubric": "Ground guidance in the real launch and driving surface; isolate ownership, preserve evidence, and mark unexecuted verification honestly."
+        },
+        {
+          "id": "create-verification-skill-2",
+          "task": "Given ./app --data DIR starts a CLI, exits after each command, and writes result.json, outline verification guidance. You cannot run it here.",
+          "rubric": "Ground guidance in the real launch and driving surface; isolate ownership, preserve evidence, and mark unexecuted verification honestly."
+        },
+        {
+          "id": "create-verification-skill-3",
+          "task": "Given a service requires an unavailable token and GET /health only checks the database, can a verification skill be declared proven?",
+          "rubric": "Ground guidance in the real launch and driving surface; isolate ownership, preserve evidence, and mark unexecuted verification honestly."
+        }
+      ]
+    },
+    {
+      "skill": "diagnose-bug",
+      "cases": [
+        {
+          "id": "diagnose-bug-1",
+          "task": "A report says checkout fails only after restart. Persisted currency is EUR, but the working default is USD. What should diagnosis establish?",
+          "rubric": "Reproduce on the user surface, distinguish trigger from cause and symptom, and use counterfactual evidence before scoping a fix."
+        },
+        {
+          "id": "diagnose-bug-2",
+          "task": "A button throws only when a record has no avatar. New accounts legitimately lack avatars. How should the cause be distinguished from the trigger?",
+          "rubric": "Reproduce on the user surface, distinguish trigger from cause and symptom, and use counterfactual evidence before scoping a fix."
+        },
+        {
+          "id": "diagnose-bug-3",
+          "task": "Doubling a timeout hides an error, but logs show queue saturation. What should be established before declaring the timeout the cause?",
+          "rubric": "Reproduce on the user surface, distinguish trigger from cause and symptom, and use counterfactual evidence before scoping a fix."
+        }
+      ]
+    },
+    {
+      "skill": "fix-bug",
+      "cases": [
+        {
+          "id": "fix-bug-1",
+          "task": "A CLI crashes on empty input that the specification permits. Outline the repair and verification sequence.",
+          "rubric": "Reproduce, establish cause, make the smallest justified repair, and verify the original surface with honest evidence."
+        },
+        {
+          "id": "fix-bug-2",
+          "task": "A screen loses saved state after reload. Outline the repair and verification sequence.",
+          "rubric": "Reproduce, establish cause, make the smallest justified repair, and verify the original surface with honest evidence."
+        },
+        {
+          "id": "fix-bug-3",
+          "task": "An API regression returns 500 for a supported optional field. Outline the repair and verification sequence.",
+          "rubric": "Reproduce, establish cause, make the smallest justified repair, and verify the original surface with honest evidence."
+        }
+      ]
+    },
+    {
+      "skill": "how",
+      "cases": [
+        {
+          "id": "how-1",
+          "task": "Given cli parses input, service computes, and store persists, explain where a business calculation belongs and why.",
+          "rubric": "Explain real runtime flow and ownership using source evidence, distinguish inference, and avoid an unrequested implementation."
+        },
+        {
+          "id": "how-2",
+          "task": "Given POST /jobs calls enqueue, worker claims jobs, then runner writes results, explain the runtime flow and what remains unobserved.",
+          "rubric": "Explain real runtime flow and ownership using source evidence, distinguish inference, and avoid an unrequested implementation."
+        },
+        {
+          "id": "how-3",
+          "task": "Given an internal module exposes a wire response shape to all callers, explain the boundary and what sources you would inspect before recommending placement.",
+          "rubric": "Explain real runtime flow and ownership using source evidence, distinguish inference, and avoid an unrequested implementation."
+        }
+      ]
+    },
+    {
+      "skill": "investigate",
+      "cases": [
+        {
+          "id": "investigate-1",
+          "task": "Investigate why job processing is slow using logs and source, but do not change code. What is the deliverable?",
+          "rubric": "Keep the task read-only and deliver a standalone evidence-based answer, recommendation and explicit limits."
+        },
+        {
+          "id": "investigate-2",
+          "task": "Compare two storage approaches from official docs and the existing code, without implementing either. What is the deliverable?",
+          "rubric": "Keep the task read-only and deliver a standalone evidence-based answer, recommendation and explicit limits."
+        },
+        {
+          "id": "investigate-3",
+          "task": "Explain the auth flow and identify an unverified browser behavior. What is the deliverable?",
+          "rubric": "Keep the task read-only and deliver a standalone evidence-based answer, recommendation and explicit limits."
+        }
+      ]
+    },
+    {
+      "skill": "maintain-verification-skill",
+      "cases": [
+        {
+          "id": "maintain-verification-skill-1",
+          "task": "A verification map has three features; only one was exercised and all source links resolve. Is the audit clean?",
+          "rubric": "Cover all mapped features live, separate product regressions from doc drift, and preserve evidence and owned-instance boundaries."
+        },
+        {
+          "id": "maintain-verification-skill-2",
+          "task": "A mapped behavior fails in the real app, while source confirms it should work. Should the doc be rewritten to call failure expected?",
+          "rubric": "Cover all mapped features live, separate product regressions from doc drift, and preserve evidence and owned-instance boundaries."
+        },
+        {
+          "id": "maintain-verification-skill-3",
+          "task": "A corrected driving helper passes source review but has not been rerun. Is maintenance complete?",
+          "rubric": "Cover all mapped features live, separate product regressions from doc drift, and preserve evidence and owned-instance boundaries."
+        }
+      ]
+    },
+    {
+      "skill": "match-design",
+      "cases": [
+        {
+          "id": "match-design-1",
+          "task": "Match a settings screen to an approved screenshot. Viewport and font differ on your machine. What must be established?",
+          "rubric": "Hold an approved baseline and capture conditions fixed, compare actual states and report differences without hiding them."
+        },
+        {
+          "id": "match-design-2",
+          "task": "A component image diff is nonzero and someone suggests replacing the baseline with the current output. What should happen?",
+          "rubric": "Hold an approved baseline and capture conditions fixed, compare actual states and report differences without hiding them."
+        },
+        {
+          "id": "match-design-3",
+          "task": "A screen matches its default state but error and loading states are required. What remains before a parity claim?",
+          "rubric": "Hold an approved baseline and capture conditions fixed, compare actual states and report differences without hiding them."
+        }
+      ]
+    },
+    {
+      "skill": "needs-input-protocol",
+      "cases": [
+        {
+          "id": "needs-input-protocol-1",
+          "task": "The task authorizes a reversible local parser fix. You can inspect the schema but have not done so. Must the operator choose an implementation?",
+          "rubric": "Use observable evidence and existing authorization, proceed on routine reversible choices, and hold unauthorized irreversible or product decisions open."
+        },
+        {
+          "id": "needs-input-protocol-2",
+          "task": "The proposed repair requires deleting production records, with no authorization. What should happen before acting?",
+          "rubric": "Use observable evidence and existing authorization, proceed on routine reversible choices, and hold unauthorized irreversible or product decisions open."
+        },
+        {
+          "id": "needs-input-protocol-3",
+          "task": "The product must choose whether historical reports stay visible after account deletion. No policy or evidence decides it. How should input be requested and resolved?",
+          "rubric": "Use observable evidence and existing authorization, proceed on routine reversible choices, and hold unauthorized irreversible or product decisions open."
+        }
+      ]
+    },
+    {
+      "skill": "principle-attack-the-premise",
+      "cases": [
+        {
+          "id": "principle-attack-the-premise-1",
+          "task": "Two timeout increases fail. All errors happen before the request is sent. The proposed third fix doubles the timeout. What next?",
+          "rubric": "Challenge the shared assumption with a discriminating observation before another workaround."
+        },
+        {
+          "id": "principle-attack-the-premise-2",
+          "task": "Two CSS specificity changes fail to change a button. The screenshot comes from another deployment. What next?",
+          "rubric": "Challenge the shared assumption with a discriminating observation before another workaround."
+        },
+        {
+          "id": "principle-attack-the-premise-3",
+          "task": "Two cache invalidation fixes fail. The failing requests bypass that cache entirely. What next?",
+          "rubric": "Challenge the shared assumption with a discriminating observation before another workaround."
+        }
+      ]
+    },
+    {
+      "skill": "principle-boundary-discipline",
+      "cases": [
+        {
+          "id": "principle-boundary-discipline-1",
+          "task": "An HTTP handler passes raw JSON into calculateInvoice, which repeatedly checks property types. How should ownership change?",
+          "rubric": "Parse and validate once at the external boundary, keep domain logic independent and trust validated internal values."
+        },
+        {
+          "id": "principle-boundary-discipline-2",
+          "task": "A CLI parses an integer port, then every internal function reparses it. What should change?",
+          "rubric": "Parse and validate once at the external boundary, keep domain logic independent and trust validated internal values."
+        },
+        {
+          "id": "principle-boundary-discipline-3",
+          "task": "A framework callback both decodes a storage row and computes account eligibility. How should the responsibilities split?",
+          "rubric": "Parse and validate once at the external boundary, keep domain logic independent and trust validated internal values."
+        }
+      ]
+    },
+    {
+      "skill": "principle-build-the-lever",
+      "cases": [
+        {
+          "id": "principle-build-the-lever-1",
+          "task": "You must rename a config key in 70 files with slightly different formatting. How should you make this reviewable?",
+          "rubric": "Prefer a small rerunnable mechanism, validate it on a representative unit, and avoid a framework."
+        },
+        {
+          "id": "principle-build-the-lever-2",
+          "task": "A report needs counts across 400 log files. You can read them manually or use a short query. What artifact should you produce?",
+          "rubric": "Prefer a small rerunnable mechanism, validate it on a representative unit, and avoid a framework."
+        },
+        {
+          "id": "principle-build-the-lever-3",
+          "task": "A migration touches 30 metadata files. How can the reviewer verify the transformation without repeating all manual edits?",
+          "rubric": "Prefer a small rerunnable mechanism, validate it on a representative unit, and avoid a framework."
+        }
+      ]
+    },
+    {
+      "skill": "principle-encode-lessons-in-structure",
+      "cases": [
+        {
+          "id": "principle-encode-lessons-in-structure-1",
+          "task": "Two regressions came from hand-updated copies of the same list. What prevention should ship?",
+          "rubric": "Use structural or executable enforcement before another instruction, and verify it against a demonstrated mistake."
+        },
+        {
+          "id": "principle-encode-lessons-in-structure-2",
+          "task": "Two reviews caught use of an obsolete import path. A third reminder is proposed. What prevention should ship?",
+          "rubric": "Use structural or executable enforcement before another instruction, and verify it against a demonstrated mistake."
+        },
+        {
+          "id": "principle-encode-lessons-in-structure-3",
+          "task": "Two bugs used a completed flag without a completion timestamp. What prevention should ship?",
+          "rubric": "Use structural or executable enforcement before another instruction, and verify it against a demonstrated mistake."
+        }
+      ]
+    },
+    {
+      "skill": "principle-exhaust-the-design-space",
+      "cases": [
+        {
+          "id": "principle-exhaust-the-design-space-1",
+          "task": "A new timeline interaction has no precedent and usability depends on feel. What should precede production implementation?",
+          "rubric": "Compare genuinely distinct low-cost alternatives with observations before committing to an uncertain design."
+        },
+        {
+          "id": "principle-exhaust-the-design-space-2",
+          "task": "You must choose a dense or spacious dashboard without evidence about scanability. What should you do?",
+          "rubric": "Compare genuinely distinct low-cost alternatives with observations before committing to an uncertain design."
+        },
+        {
+          "id": "principle-exhaust-the-design-space-3",
+          "task": "A new module can own parsing centrally or distribute it among callers. The tradeoff is unclear. How should you investigate?",
+          "rubric": "Compare genuinely distinct low-cost alternatives with observations before committing to an uncertain design."
+        }
+      ]
+    },
+    {
+      "skill": "principle-experience-first",
+      "cases": [
+        {
+          "id": "principle-experience-first-1",
+          "task": "An import wizard can expose ten raw internal flags or three common workflows. Which tradeoff should guide the design?",
+          "rubric": "Judge the result from the consumer workflow and prioritize a coherent usable experience over implementation convenience."
+        },
+        {
+          "id": "principle-experience-first-2",
+          "task": "A library API is easiest to implement with five required setup calls that every caller must remember. What should guide revision?",
+          "rubric": "Judge the result from the consumer workflow and prioritize a coherent usable experience over implementation convenience."
+        },
+        {
+          "id": "principle-experience-first-3",
+          "task": "A form can ship extra options today, but its error recovery is incomplete. What should be prioritized?",
+          "rubric": "Judge the result from the consumer workflow and prioritize a coherent usable experience over implementation convenience."
+        }
+      ]
+    },
+    {
+      "skill": "principle-explain-the-number",
+      "cases": [
+        {
+          "id": "principle-explain-the-number-1",
+          "task": "A benchmark claims 10x speedup, but the new arm silently skips failed requests. Is the number trustworthy?",
+          "rubric": "Request evidence for the measurement, sample spread and confounders before trusting a claimed improvement."
+        },
+        {
+          "id": "principle-explain-the-number-2",
+          "task": "A latency improvement appears in one warm run against a cold baseline. What must be controlled and reported?",
+          "rubric": "Request evidence for the measurement, sample spread and confounders before trusting a claimed improvement."
+        },
+        {
+          "id": "principle-explain-the-number-3",
+          "task": "A throughput result doubles when the load generator moves to a larger machine. What must you investigate before claiming a server speedup?",
+          "rubric": "Request evidence for the measurement, sample spread and confounders before trusting a claimed improvement."
+        }
+      ]
+    },
+    {
+      "skill": "principle-fix-root-causes",
+      "cases": [
+        {
+          "id": "principle-fix-root-causes-1",
+          "task": "A checkout crashes on a missing price. Logs show a parser accepted an invalid price earlier. Where should the fix go?",
+          "rubric": "Trace and repair the faulty state producer or legitimate unhandled state, rather than hiding the symptom."
+        },
+        {
+          "id": "principle-fix-root-causes-2",
+          "task": "A profile legitimately has no avatar and rendering assumes it does. Is handling the missing avatar masking a deeper bug?",
+          "rubric": "Trace and repair the faulty state producer or legitimate unhandled state, rather than hiding the symptom."
+        },
+        {
+          "id": "principle-fix-root-causes-3",
+          "task": "A restart restores an obsolete config value and requests fail. Retrying requests masks it briefly. Where should diagnosis focus?",
+          "rubric": "Trace and repair the faulty state producer or legitimate unhandled state, rather than hiding the symptom."
+        }
+      ]
+    },
+    {
+      "skill": "principle-foundational-thinking",
+      "cases": [
+        {
+          "id": "principle-foundational-thinking-1",
+          "task": "Two pipeline workers need independent progress counters. Should both update one global JSON object?",
+          "rubric": "Choose the data ownership and shape first, sequence shared prerequisites, and isolate independent mutable state."
+        },
+        {
+          "id": "principle-foundational-thinking-2",
+          "task": "A feature has several status booleans and impossible combinations. What should be designed before handlers?",
+          "rubric": "Choose the data ownership and shape first, sequence shared prerequisites, and isolate independent mutable state."
+        },
+        {
+          "id": "principle-foundational-thinking-3",
+          "task": "Three upcoming features need the same parsed configuration. Should each feature invent its own format first?",
+          "rubric": "Choose the data ownership and shape first, sequence shared prerequisites, and isolate independent mutable state."
+        }
+      ]
+    },
+    {
+      "skill": "principle-guard-the-context-window",
+      "cases": [
+        {
+          "id": "principle-guard-the-context-window-1",
+          "task": "A 300 MB log contains a failing request ID. How should you inspect it without flooding context?",
+          "rubric": "Use bounded targeted reads and retain concise pointers rather than loading bulk irrelevant material."
+        },
+        {
+          "id": "principle-guard-the-context-window-2",
+          "task": "A question concerns one parser in a 9000-line file. How should you gather context?",
+          "rubric": "Use bounded targeted reads and retain concise pointers rather than loading bulk irrelevant material."
+        },
+        {
+          "id": "principle-guard-the-context-window-3",
+          "task": "You already read the same source twice. What should you retain before continuing a long investigation?",
+          "rubric": "Use bounded targeted reads and retain concise pointers rather than loading bulk irrelevant material."
+        }
+      ]
+    },
+    {
+      "skill": "principle-laziness-protocol",
+      "cases": [
+        {
+          "id": "principle-laziness-protocol-1",
+          "task": "One caller needs a boolean option. A proposal adds a plugin registry and three adapter layers. What should ship?",
+          "rubric": "Choose the smallest justified change and consolidate repeated decisions instead of speculative abstraction."
+        },
+        {
+          "id": "principle-laziness-protocol-2",
+          "task": "Three places independently decide whether a feature is enabled using the same inputs. What should change?",
+          "rubric": "Choose the smallest justified change and consolidate repeated decisions instead of speculative abstraction."
+        },
+        {
+          "id": "principle-laziness-protocol-3",
+          "task": "A dead wrapper has one caller. A cleanup proposes another abstraction around it. What should change?",
+          "rubric": "Choose the smallest justified change and consolidate repeated decisions instead of speculative abstraction."
+        }
+      ]
+    },
+    {
+      "skill": "principle-make-operations-idempotent",
+      "cases": [
+        {
+          "id": "principle-make-operations-idempotent-1",
+          "task": "An attachment upload succeeds but saving the ticket times out. Blind retry uploads a duplicate. How should retry work?",
+          "rubric": "Reconcile observed state to the goal and handle partial completion without duplicating effects."
+        },
+        {
+          "id": "principle-make-operations-idempotent-2",
+          "task": "A file migration crashes after writing half its outputs. How should the next run decide what remains?",
+          "rubric": "Reconcile observed state to the goal and handle partial completion without duplicating effects."
+        },
+        {
+          "id": "principle-make-operations-idempotent-3",
+          "task": "A command may be invoked twice after a lost response. How should it reach the same final state?",
+          "rubric": "Reconcile observed state to the goal and handle partial completion without duplicating effects."
+        }
+      ]
+    },
+    {
+      "skill": "principle-migrate-callers-then-delete-legacy-apis",
+      "cases": [
+        {
+          "id": "principle-migrate-callers-then-delete-legacy-apis-1",
+          "task": "Only three internal callers use oldParse; newParse is ready. Should a permanent adapter remain?",
+          "rubric": "Coordinate migration of internal callers and remove the obsolete API, while preserving required external compatibility."
+        },
+        {
+          "id": "principle-migrate-callers-then-delete-legacy-apis-2",
+          "task": "An exported public method has external consumers and a promised compatibility window. Can it be deleted with internal callers?",
+          "rubric": "Coordinate migration of internal callers and remove the obsolete API, while preserving required external compatibility."
+        },
+        {
+          "id": "principle-migrate-callers-then-delete-legacy-apis-3",
+          "task": "A rename changed function references but missed documentation and string-based registrations. What must be checked before deletion?",
+          "rubric": "Coordinate migration of internal callers and remove the obsolete API, while preserving required external compatibility."
+        }
+      ]
+    },
+    {
+      "skill": "principle-minimize-reader-load",
+      "cases": [
+        {
+          "id": "principle-minimize-reader-load-1",
+          "task": "To learn a timeout value a reader follows six one-line wrappers. What would reduce maintenance cost?",
+          "rubric": "Reduce unnecessary tracing layers or hidden mutable state and justify any remaining abstraction."
+        },
+        {
+          "id": "principle-minimize-reader-load-2",
+          "task": "A flat file uses 40 mutable globals for request-local state. Is removing wrappers enough?",
+          "rubric": "Reduce unnecessary tracing layers or hidden mutable state and justify any remaining abstraction."
+        },
+        {
+          "id": "principle-minimize-reader-load-3",
+          "task": "A new abstraction repeats every argument and exposes its implementation details. What should change?",
+          "rubric": "Reduce unnecessary tracing layers or hidden mutable state and justify any remaining abstraction."
+        }
+      ]
+    },
+    {
+      "skill": "principle-model-the-domain",
+      "cases": [
+        {
+          "id": "principle-model-the-domain-1",
+          "task": "A job has isQueued, isRunning, isDone and failed flags that can all be true. What data shape fits?",
+          "rubric": "Choose a domain structure matching states and access patterns, avoiding synchronized booleans or needless indirection."
+        },
+        {
+          "id": "principle-model-the-domain-2",
+          "task": "Three files duplicate a switch over the same command definitions. What structure fits?",
+          "rubric": "Choose a domain structure matching states and access patterns, avoiding synchronized booleans or needless indirection."
+        },
+        {
+          "id": "principle-model-the-domain-3",
+          "task": "A tiny pure function already has one clear local condition and no repeated rules. Should a registry be added?",
+          "rubric": "Choose a domain structure matching states and access patterns, avoiding synchronized booleans or needless indirection."
+        }
+      ]
+    },
+    {
+      "skill": "principle-outcome-oriented-execution",
+      "cases": [
+        {
+          "id": "principle-outcome-oriented-execution-1",
+          "task": "A private migration branch permits intermediate compilation breakage at declared checkpoints. Must you build a permanent adapter for each intermediate commit?",
+          "rubric": "Use explicit reversible migration boundaries and prove the complete target, without sacrificing external guarantees."
+        },
+        {
+          "id": "principle-outcome-oriented-execution-2",
+          "task": "A rewrite is nearly done but runtime verification of the final target has not run. Can the task be called complete?",
+          "rubric": "Use explicit reversible migration boundaries and prove the complete target, without sacrificing external guarantees."
+        },
+        {
+          "id": "principle-outcome-oriented-execution-3",
+          "task": "A production deployment cannot tolerate downtime. Does a private-branch migration rule authorize breaking production during transition?",
+          "rubric": "Use explicit reversible migration boundaries and prove the complete target, without sacrificing external guarantees."
+        }
+      ]
+    },
+    {
+      "skill": "principle-prove-it-works",
+      "cases": [
+        {
+          "id": "principle-prove-it-works-1",
+          "task": "A process wrote a recent heartbeat file but may have died. What proves it is running?",
+          "rubric": "Inspect or exercise the actual output instead of inferring success from a proxy or self-report."
+        },
+        {
+          "id": "principle-prove-it-works-2",
+          "task": "A UI change compiles. What proves the requested interaction works?",
+          "rubric": "Inspect or exercise the actual output instead of inferring success from a proxy or self-report."
+        },
+        {
+          "id": "principle-prove-it-works-3",
+          "task": "A worker says it saved a setting. What must you inspect before declaring the setting correct?",
+          "rubric": "Inspect or exercise the actual output instead of inferring success from a proxy or self-report."
+        }
+      ]
+    },
+    {
+      "skill": "principle-redesign-from-first-principles",
+      "cases": [
+        {
+          "id": "principle-redesign-from-first-principles-1",
+          "task": "A system designed for one tenant now needs isolated per-tenant state. Should another tenant boolean be bolted onto globals?",
+          "rubric": "Reconsider the design around the new requirement, account for all affected references, and deliver a scoped migration."
+        },
+        {
+          "id": "principle-redesign-from-first-principles-2",
+          "task": "An API now accepts multiple currencies but stores amounts as untagged numbers. What needs reconsideration?",
+          "rubric": "Reconsider the design around the new requirement, account for all affected references, and deliver a scoped migration."
+        },
+        {
+          "id": "principle-redesign-from-first-principles-3",
+          "task": "A new requirement changes ownership of a resource. The proposal updates a handler but leaves types and docs unchanged. What is missing?",
+          "rubric": "Reconsider the design around the new requirement, account for all affected references, and deliver a scoped migration."
+        }
+      ]
+    },
+    {
+      "skill": "principle-separate-before-serializing-shared-state",
+      "cases": [
+        {
+          "id": "principle-separate-before-serializing-shared-state-1",
+          "task": "Two workers publish unrelated counters into one file. Must they share a lock or can the targets split?",
+          "rubric": "Remove unnecessary sharing; where one canonical object is required enforce structural serialization."
+        },
+        {
+          "id": "principle-separate-before-serializing-shared-state-2",
+          "task": "Two writers must increment one canonical balance atomically. What coordination is required?",
+          "rubric": "Remove unnecessary sharing; where one canonical object is required enforce structural serialization."
+        },
+        {
+          "id": "principle-separate-before-serializing-shared-state-3",
+          "task": "Two jobs use the same temporary filename despite producing independent outputs. What should change?",
+          "rubric": "Remove unnecessary sharing; where one canonical object is required enforce structural serialization."
+        }
+      ]
+    },
+    {
+      "skill": "principle-sequence-verifiable-units",
+      "cases": [
+        {
+          "id": "principle-sequence-verifiable-units-1",
+          "task": "A migration edits 100 consumers and plans to check only after all edits. How should it be sequenced?",
+          "rubric": "Order small changes with real checks at each boundary and capture a baseline before treatment."
+        },
+        {
+          "id": "principle-sequence-verifiable-units-2",
+          "task": "A refactor combines deletion, a new abstraction, and unrelated cleanup in one opaque change. What order helps review?",
+          "rubric": "Order small changes with real checks at each boundary and capture a baseline before treatment."
+        },
+        {
+          "id": "principle-sequence-verifiable-units-3",
+          "task": "A scripted conversion can verify each file cheaply. Should those checks wait until the final batch?",
+          "rubric": "Order small changes with real checks at each boundary and capture a baseline before treatment."
+        }
+      ]
+    },
+    {
+      "skill": "principle-subtract-before-you-add",
+      "cases": [
+        {
+          "id": "principle-subtract-before-you-add-1",
+          "task": "A replacement parser would be added beside a demonstrably unused parser and obsolete wrappers. What should happen first?",
+          "rubric": "Remove dead or redundant structure first, without deleting supported behavior or expanding scope."
+        },
+        {
+          "id": "principle-subtract-before-you-add-2",
+          "task": "A validator repeats an already enforced internal type invariant. A new feature would add another copy. What should happen first?",
+          "rubric": "Remove dead or redundant structure first, without deleting supported behavior or expanding scope."
+        },
+        {
+          "id": "principle-subtract-before-you-add-3",
+          "task": "A wrapper is still required by a supported external contract. Does subtraction justify deleting it immediately?",
+          "rubric": "Remove dead or redundant structure first, without deleting supported behavior or expanding scope."
+        }
+      ]
+    },
+    {
+      "skill": "principle-type-system-discipline",
+      "cases": [
+        {
+          "id": "principle-type-system-discipline-1",
+          "task": "A type combines completed:boolean and completedAt?:Date. How can invalid combinations be rejected?",
+          "rubric": "Use precise constructive types and boundary validation, avoid unsupported assertions, and exhaust variants."
+        },
+        {
+          "id": "principle-type-system-discipline-2",
+          "task": "An HTTP response is cast directly to User without validation. What should happen at the boundary?",
+          "rubric": "Use precise constructive types and boundary validation, avoid unsupported assertions, and exhaust variants."
+        },
+        {
+          "id": "principle-type-system-discipline-3",
+          "task": "UserId and OrderId are plain strings in swapped positional arguments. How can the types prevent confusion?",
+          "rubric": "Use precise constructive types and boundary validation, avoid unsupported assertions, and exhaust variants."
+        }
+      ]
+    },
+    {
+      "skill": "prototype",
+      "cases": [
+        {
+          "id": "prototype-1",
+          "task": "Choose between a table and cards for 100 records. No preference is specified and scanability matters. Outline the experiment.",
+          "rubric": "State the uncertain decision, build isolated throwaway alternatives, compare actual observations, and distinguish prototype from production."
+        },
+        {
+          "id": "prototype-2",
+          "task": "Choose whether client-side filtering is fast enough for 5000 items. Outline the experiment.",
+          "rubric": "State the uncertain decision, build isolated throwaway alternatives, compare actual observations, and distinguish prototype from production."
+        },
+        {
+          "id": "prototype-3",
+          "task": "A UI direction is already approved and there is no unresolved empirical question. Is a throwaway prototype still necessary?",
+          "rubric": "State the uncertain decision, build isolated throwaway alternatives, compare actual observations, and distinguish prototype from production."
+        }
+      ]
+    },
+    {
+      "skill": "refactor",
+      "cases": [
+        {
+          "id": "refactor-1",
+          "task": "Rename an internal config module without changing saved keys or user text. Outline the verification.",
+          "rubric": "Pin behavior and real baseline, restructure without new behavior, and prove equivalence while separating discovered bugs."
+        },
+        {
+          "id": "refactor-2",
+          "task": "Collapse a one-caller wrapper and discover an unrelated parsing bug. What belongs in this refactor?",
+          "rubric": "Pin behavior and real baseline, restructure without new behavior, and prove equivalence while separating discovered bugs."
+        },
+        {
+          "id": "refactor-3",
+          "task": "A structure-only UI change compiles but no before/after captures exist. Is behavior equivalence established?",
+          "rubric": "Pin behavior and real baseline, restructure without new behavior, and prove equivalence while separating discovered bugs."
+        }
+      ]
+    },
+    {
+      "skill": "sketch-types",
+      "cases": [
+        {
+          "id": "sketch-types-1",
+          "task": "Design an interface for storing drafts with per-user ownership before implementing storage logic. What should be sketched first?",
+          "rubric": "Write caller usage before signatures, choose boundaries and shapes deliberately, and revisit a sketch when repeated deviations reveal a flaw."
+        },
+        {
+          "id": "sketch-types-2",
+          "task": "Two independent call sites need escape-hatch parameters absent from the sketch. What should happen before adding more?",
+          "rubric": "Write caller usage before signatures, choose boundaries and shapes deliberately, and revisit a sketch when repeated deviations reveal a flaw."
+        },
+        {
+          "id": "sketch-types-3",
+          "task": "A module interface exposes ten storage-specific methods and forces each caller to coordinate them. How should alternatives be assessed?",
+          "rubric": "Write caller usage before signatures, choose boundaries and shapes deliberately, and revisit a sketch when repeated deviations reveal a flaw."
+        }
+      ]
+    },
+    {
+      "skill": "technical-writing",
+      "cases": [
+        {
+          "id": "technical-writing-1",
+          "task": "Rewrite for a how-to: In order to get started it is important to note that the initialization of the process should be performed by invoking app init. Expected output is Ready.",
+          "rubric": "Choose a coherent document purpose, use concrete active instructions or reference facts, and verify claims or state limits."
+        },
+        {
+          "id": "technical-writing-2",
+          "task": "A CLI reference lists --port and --json but includes a long beginner walkthrough between them. How should it be organized?",
+          "rubric": "Choose a coherent document purpose, use concrete active instructions or reference facts, and verify claims or state limits."
+        },
+        {
+          "id": "technical-writing-3",
+          "task": "A README claims 12 commands, but --help lists 14. What must be checked before publishing?",
+          "rubric": "Choose a coherent document purpose, use concrete active instructions or reference facts, and verify claims or state limits."
+        }
+      ]
+    },
+    {
+      "skill": "typescript-best-practices",
+      "cases": [
+        {
+          "id": "typescript-best-practices-1",
+          "task": "Choose a type for a request that is pending or completed with a result. The proposed type has status:string and result?:string.",
+          "rubric": "Parse unknown data at boundaries, use discriminated or derived types, and preserve compiler checking without unsupported casts."
+        },
+        {
+          "id": "typescript-best-practices-2",
+          "task": "JSON.parse is assigned to User using as User. How should the value be trusted?",
+          "rubric": "Parse unknown data at boundaries, use discriminated or derived types, and preserve compiler checking without unsupported casts."
+        },
+        {
+          "id": "typescript-best-practices-3",
+          "task": "A literal config needs checked property names while retaining literal types. Should it use as Config or satisfies Config?",
+          "rubric": "Parse unknown data at boundaries, use discriminated or derived types, and preserve compiler checking without unsupported casts."
+        }
+      ]
+    },
+    {
+      "skill": "unslop",
+      "cases": [
+        {
+          "id": "unslop-1",
+          "task": "Edit: It is important to note that this powerful system leverages an innovative mechanism to save the configuration to settings.json.",
+          "rubric": "Preserve factual meaning while removing inflated filler, vague claims and unnecessary repeated conclusions."
+        },
+        {
+          "id": "unslop-2",
+          "task": "Edit: Experts agree the endpoint is a game changer. POST /items returns 201 and the new item ID.",
+          "rubric": "Preserve factual meaning while removing inflated filler, vague claims and unnecessary repeated conclusions."
+        },
+        {
+          "id": "unslop-3",
+          "task": "Edit: In conclusion, the command is not just fast but also efficient. It wrote 20 files in 2 seconds in one local run.",
+          "rubric": "Preserve factual meaning while removing inflated filler, vague claims and unnecessary repeated conclusions."
+        }
+      ]
+    }
+  ]
+}
