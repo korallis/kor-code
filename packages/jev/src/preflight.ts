@@ -1,4 +1,4 @@
-import type { CatalogueModel, DecisionInput, JsonValue, Route } from "@kor-code/core";
+import type { CatalogueModel, DecisionBundle, DecisionInput, JsonValue, Route } from "@kor-code/core";
 import { JevUnavailableError } from "./client.js";
 import type { JevJsonValue } from "./contracts.js";
 import { JevDecisionCore, type AppliedDecision, type DecisionAuditLog, type DecisionRequest, type PreflightResult } from "./index.js";
@@ -9,6 +9,8 @@ export interface PreflightIssue {
   description?: string;
   acceptanceCriteria: string[];
   dependencies: Array<{ id: string; state: string }>;
+  labels?: string[];
+  hasScreenshot?: boolean;
 }
 export interface PreflightInput {
   executionId: string;
@@ -35,11 +37,24 @@ const defaultAgents = ["generalist", "specialist"] as const;
 const complexityLevels = ["small bounded change", "multi-file change", "cross-system change"] as const;
 const riskLevels = ["low operational risk", "review required", "high risk or external change"] as const;
 
-function issueState(input: PreflightInput, readinessChecks: readonly { name: string; result: "pass" | "fail" }[] = []): JsonValue {
+export function screenshotReadinessCheck(issue: Pick<PreflightIssue, "labels" | "hasScreenshot">): DecisionBundle["policyChecks"][number] {
+  const requiresScreenshot = (issue.labels ?? []).some(label => label.trim().toLowerCase() === "ui");
+  return { name: "ui-screenshot", result: !requiresScreenshot || issue.hasScreenshot === true ? "pass" : "fail", reason: "UI-labelled tickets need a screenshot or mockup. Embed an image in the description or a comment, or attach an image file, then retry." };
+}
+
+export function issueReadinessChecks(issue: PreflightIssue): DecisionBundle["policyChecks"] {
+  return [
+    { name: "acceptance-criteria", result: issue.acceptanceCriteria.length > 0 ? "pass" : "fail", reason: "Add explicit acceptance criteria to the issue." },
+    { name: "dependencies-complete", result: issue.dependencies.every(dependency => dependency.state === "completed") ? "pass" : "fail", reason: "Complete the issue's blocking dependencies before retrying." },
+    screenshotReadinessCheck(issue),
+  ];
+}
+
+function issueState(input: PreflightInput, readinessChecks: DecisionBundle["policyChecks"]): JsonValue {
   return {
-    issue: { id: input.issue.id, title: input.issue.title, description: input.issue.description ?? "", acceptance: input.issue.acceptanceCriteria, dependencies: input.issue.dependencies },
+    issue: { id: input.issue.id, title: input.issue.title, description: input.issue.description ?? "", acceptance: input.issue.acceptanceCriteria, dependencies: input.issue.dependencies, labels: input.issue.labels ?? [], hasScreenshot: input.issue.hasScreenshot ?? false },
     verifiedModels: input.verifiedModels.map(model => ({ model: model.model, provider: model.provider, capabilities: Object.fromEntries(model.capabilities.map(capability => [capability.name, capability.supported])), ...(model.costUsd !== undefined ? { costUsd: model.costUsd } : {}), ...(model.durationMs !== undefined ? { durationMs: model.durationMs } : {}) })),
-    readinessChecks: readinessChecks.map(check => ({ name: check.name, result: check.result })),
+    readinessChecks: readinessChecks.map(check => ({ ...check })),
   };
 }
 function input(name: string, value: JsonValue, source = "linear"): DecisionInput { return { name, value, source }; }
@@ -50,8 +65,7 @@ function makeRequests(inputData: PreflightInput): DecisionRequest[] {
   const models = inputData.verifiedModels.map(model => model.model);
   const routeCandidates = models.length >= 2 ? models : [...models, "no-verified-route", "clarification"].slice(0, 2);
   const readinessChecks = [
-    { name: "acceptance-criteria", result: inputData.issue.acceptanceCriteria.length > 0 ? "pass" as const : "fail" as const },
-    { name: "dependencies-complete", result: inputData.issue.dependencies.every(dependency => dependency.state === "completed") ? "pass" as const : "fail" as const },
+    ...issueReadinessChecks(inputData.issue),
     { name: "verified-route", result: models.length > 0 ? "pass" as const : "fail" as const },
   ];
   const routeCriteria: Record<string, JevJsonValue> = Object.fromEntries(inputData.verifiedModels.map(model => [model.model, {
@@ -64,7 +78,7 @@ function makeRequests(inputData: PreflightInput): DecisionRequest[] {
   const threshold = inputData.threshold ?? 0.7;
   const common = { executionId: inputData.executionId, state: issueState(inputData, readinessChecks), inputs: [input("issue", inputData.issue.title)], threshold };
   return [
-    { ...common, decisionId: decisionId(inputData, "readiness"), kind: "readiness", answerType: "noul", question: "Is this issue ready for Kor to execute? Answer ready only when the issue has explicit acceptance criteria, every dependency is completed, and the verified route list is non-empty. The state includes each deterministic check.", candidates: ["ready", "blocked"], policyChecks: readinessChecks, criteria: { true: "All supplied readinessChecks pass and the acceptance conditions specify a bounded, actionable change without unresolved scope questions.", false: "At least one readiness check fails, or the issue leaves essential implementation scope or acceptance unclear." } },
+    { ...common, decisionId: decisionId(inputData, "readiness"), kind: "readiness", answerType: "noul", question: "Is this issue ready for Kor to execute? Answer ready only when the issue has explicit acceptance criteria, every dependency is completed, UI-labelled issues have hasScreenshot=true, and the verified route list is non-empty. The state includes each deterministic check.", candidates: ["ready", "blocked"], policyChecks: readinessChecks, criteria: { true: "All supplied readinessChecks pass and the acceptance conditions specify a bounded, actionable change without unresolved scope questions.", false: "At least one readiness check fails, or the issue leaves essential implementation scope or acceptance unclear." } },
     { ...common, decisionId: decisionId(inputData, "complexity"), kind: "complexity", answerType: "score", question: "How complex is this issue for an isolated coding session?", candidates: [...complexityLevels], threshold: 0 },
     { ...common, decisionId: decisionId(inputData, "risk"), kind: "risk", answerType: "score", question: "How much delivery or operational risk does this issue carry?", candidates: [...riskLevels], threshold: 0 },
     { ...common, decisionId: decisionId(inputData, "route"), kind: "route", question: "Which verified model best fits this issue? Compare the supplied provider, capabilities, cost, and duration. Choose no-verified-route when no supplied model is suitable.", candidates: routeCandidates, policyChecks: [{ name: "verified-model", result: models.length > 0 ? "pass" : "fail" }], criteria: routeCriteria, nonApplyingCandidates: ["no-verified-route", "clarification"] },
@@ -76,7 +90,7 @@ function makeRequests(inputData: PreflightInput): DecisionRequest[] {
 function fallbackDecision(request: DecisionRequest, choice: string, reason: string): AppliedDecision {
   return {
     decisionId: request.decisionId, executionId: request.executionId, question: request.question, inputs: request.inputs,
-    choice, candidates: request.candidates, confidence: 0, reasons: [reason], evidenceRefs: request.evidenceRefs ?? [], policyChecks: request.policyChecks ?? [], kind: request.kind,
+    choice, candidates: request.candidates, confidence: 0, reasons: [reason, ...(request.policyChecks ?? []).filter(check => check.result === "fail").map(check => check.reason ?? `Policy check failed: ${check.name}.`)], evidenceRefs: request.evidenceRefs ?? [], policyChecks: request.policyChecks ?? [], kind: request.kind,
     applied: false, escalated: true, answerType: request.answerType ?? "choice",
   };
 }

@@ -485,6 +485,18 @@ Linear setup:
 Before queueing, run the preflight yourself to see what Jev thinks. It writes one
 comment to the issue only when it needs your input:
 
+For a read-only ticket check first, use `kor linear lint LEE-123`. Add `--json`
+for scripts or use `kor linear lint --project PROJECT-ID` to check a project of
+up to 100 issues. Tickets need explicit acceptance criteria and completed blocking
+dependencies. A ticket labelled `UI` (case-insensitive) also needs a screenshot or
+mockup embedded in its description or a comment, or attached as an image file.
+Lint exits `1` with instructions when a check fails. It does not judge scope,
+check routes, download images, or write to Linear. The same screenshot check is
+included in Jev readiness for `kor plan` and daemon execution. See the
+[Linear specification](specs/linear-integration.md#issue-readiness) for formats.
+
+Run the full preflight when those ticket checks pass:
+
 ```text
 $ kor plan LEE-1111
 PLAN plan-d8bf415a-8ca3-4991-b2bb-d0b78959e1a4

@@ -24,6 +24,34 @@ Linear is the command centre for intent and delivery history. Kor Code uses Line
 
 An issue is ready when it has an owning team and project, a stated outcome, acceptance conditions, a repository or project resource, resolved blocking dependencies, enough context to start, and a policy-compatible execution path.
 
+`kor linear lint ISSUE-ID [--json]` checks explicit acceptance criteria, completed
+blocking dependencies and the `ui-screenshot` policy. The exact label `UI` is
+matched after trimming whitespace and ignoring case. Other labels do not require
+an image. `hasScreenshot` is true when the description or a comment embeds an
+image (inline or reference Markdown, or an HTML `img`), or an attachment URL has
+an image filename extension. HTTP(S) image embeds and inline `data:image/` embeds
+count; ordinary links and fenced or inline code examples do not. Attachment image formats are PNG,
+JPEG, GIF, WebP, AVIF, SVG, BMP, TIFF and HEIC, including URLs with query strings.
+Project documents and linked web pages do not count as ticket images.
+
+These are presence checks: lint does not download or judge the image, confirm
+that it covers every affected screen, or choose a route. It uses only Linear
+credentials and never writes a comment or changes an issue. Exit `0` means every
+ticket check passes; exit `1` means a check failed or the request failed; exit `2`
+means invalid arguments. A successful lint does not replace Jev's scope judgment
+or the verified-route check.
+
+`kor linear lint --project PROJECT-ID [--json]` checks all project issues, including
+completed issues. Use the project's UUID. Projects exceeding 100 issues fail
+explicitly rather than returning a partial readiness report; lint individual
+issues in that case. An empty project reports no issues and exits `0`.
+
+Both `kor plan` and daemon preflight supply labels and `hasScreenshot` to Jev,
+alongside the deterministic `ui-screenshot` check. A missing image blocks a
+UI-labelled ticket even if Jev answers ready, is unavailable, or a route override is active. The decision audit,
+plan output and daemon blocker retain the instruction to embed or attach an image
+and retry. Adding a missing image or changing the UI label updates the preflight inputs.
+
 ## Lifecycle
 
 ~~~mermaid

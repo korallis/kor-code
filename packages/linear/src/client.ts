@@ -109,6 +109,13 @@ export class HttpLinearClient implements LinearClient {
     });
   }
 
+  async listProjectIssues(projectId: string): Promise<ReturnType<typeof parseIssue>[]> {
+    const data = await this.query(`query KorProjectIssues($projectId: ID!) {
+      issues(first: 100, filter: { project: { id: { eq: $projectId } } }) { nodes { ${issueFields} } ${page} }
+    }`, { projectId });
+    return connection(data.issues).map(parseIssue);
+  }
+
   async apply(write: LinearWrite): Promise<void> {
     const writes = this.options.writes;
     if (!writes) throw new Error('Linear writes disabled');

@@ -9,13 +9,13 @@ import type { DecisionRecord, Execution, GatewayAccountHealth, KorRunSnapshot, K
 import { repositoryKeyForIssue, type KorConfig, type KorPaths } from "@kor-code/config";
 import { ExecutionVerificationError, type Controller } from "@kor-code/controller";
 import type { LinearClient, LinearIssue } from "@kor-code/linear";
-import { AgentSessionWriter, LinearStore, flushLinearWrites, stableId, workflowMapping, type LinearWrite, type AssignmentRecord, type ExecutionClaim } from "@kor-code/linear";
+import { AgentSessionWriter, LinearStore, flushLinearWrites, hasScreenshot, stableId, workflowMapping, type LinearWrite, type AssignmentRecord, type ExecutionClaim } from "@kor-code/linear";
 import { captureProcess, processExists, processMatches, stopSession } from "./process.js";
 import { OverrideStore } from "./overrides.js";
 import type { ShippingDriver } from "./shipping.js";
 import type { IssuesResponse, LinearSync, MissionRun, Stage } from "@kor-code/mission-control";
 import type { JsonValue } from "@kor-code/core";
-import { redact, runtimeSecrets } from "@kor-code/jev";
+import { redact, runtimeSecrets, screenshotReadinessCheck } from "@kor-code/jev";
 import { ApiFailure, MissionApi } from "./api.js";
 import { MissionEvents } from "./events.js";
 import { MissionServices, atomicPrivateFile, live, unavailable } from "./mission-services.js";
@@ -727,6 +727,8 @@ export class KorDaemon {
       const repository = repositoryKeyForIssue(issue, this.options.config);
       this.setStage(id, "preflight");
       const route = await this.routeFor(id, issue);
+      const screenshotCheck = screenshotReadinessCheck({ labels: issue.labels, hasScreenshot: hasScreenshot(issue) });
+      if (screenshotCheck.result === "fail") throw new NeedsInputError(screenshotCheck.reason);
       const previousBranch = this.store.listAssignments().find(assignment => assignment.executionId === id)?.manifest?.branch;
       const manifest: Execution = { id, issueId: issue.id, repository, worktree: "", branch: previousBranch || `kor/${issue.identifier ?? issue.id}`, status: "running", ...(route ? { route } : {}) };
       this.store.markRunning(claim, manifest);

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { hasScreenshot } from "@kor-code/linear";
 import type { CatalogueModel, Route } from "@kor-code/core";
 import { NeedsInputError, type DaemonOptions } from "@kor-code/daemon";
 import { JevClient, JevDecisionCore, planPreflight, preflightRequests, routeFromDecision, type DecisionAuditLog } from "@kor-code/jev";
@@ -14,7 +15,7 @@ export function createServeRouting(options: {
   const chooseRoute: NonNullable<DaemonOptions["chooseRoute"]> = async ({ executionId, issue }) => {
     const models = [...await options.models()].sort((a, b) => a.model.localeCompare(b.model));
     const input = { executionId,
-      issue: { id: issue.id, title: issue.title, ...(issue.description !== undefined ? { description: issue.description } : {}), acceptanceCriteria: issue.acceptanceCriteria, dependencies: issue.dependencies.map(dependency => ({ id: dependency.id, state: dependency.stateType })).sort((a, b) => a.id.localeCompare(b.id)) },
+      issue: { id: issue.id, title: issue.title, ...(issue.description !== undefined ? { description: issue.description } : {}), acceptanceCriteria: issue.acceptanceCriteria, labels: issue.labels, hasScreenshot: hasScreenshot(issue), dependencies: issue.dependencies.map(dependency => ({ id: dependency.id, state: dependency.stateType })).sort((a, b) => a.id.localeCompare(b.id)) },
       verifiedModels: models, defaultRoute: options.defaultRoute,
     };
     const state = preflightRequests(input)[0]?.state;
@@ -27,7 +28,7 @@ export function createServeRouting(options: {
     let route: Route;
     if (options.audit.get(decisionId)) {
       const readiness = options.audit.replay(readinessId);
-      if (readiness.model && (!readiness.applied || readiness.choice !== 'ready')) throw new NeedsInputError('Jev readiness is blocked or uncertain. Clarify the issue or complete its dependencies, then retry.');
+      if ((readiness.model || readiness.policyChecks.some(check => check.name === "ui-screenshot" && check.result === "fail")) && (!readiness.applied || readiness.choice !== 'ready')) throw new NeedsInputError(readiness.reasons.join(' ') || 'Jev readiness is blocked or uncertain. Clarify the issue or complete its dependencies, then retry.');
       const decision = options.audit.replay(decisionId);
       route = decision.applied && !decision.escalated && models.some(model => model.model === decision.choice && model.available !== false)
         ? routeFromDecision(decision, models, { ...options.defaultRoute, label: "jev", decisionId })
@@ -35,7 +36,7 @@ export function createServeRouting(options: {
     } else {
       const plan = await planPreflight({ ...input, ...(decisionRevision ? { decisionRevision } : {}) }, jev, options.audit);
       const readiness = plan.decisions.find(decision => decision.kind === 'readiness');
-      if (!plan.outage && (!readiness?.applied || readiness.choice !== 'ready')) throw new NeedsInputError('Jev readiness is blocked or uncertain. Clarify the issue or complete its dependencies, then retry.');
+      if (readiness?.policyChecks.some(check => check.name === 'ui-screenshot' && check.result === 'fail') || !plan.outage && (!readiness?.applied || readiness.choice !== 'ready')) throw new NeedsInputError(readiness?.reasons.join(' ') || 'Jev readiness is blocked or uncertain. Clarify the issue or complete its dependencies, then retry.');
       route = plan.route;
     }
     return { route, source: route.label === "jev" ? "jev" : "fallback" };
