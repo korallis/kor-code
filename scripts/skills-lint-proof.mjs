@@ -40,6 +40,20 @@ try {
     ["no-routing", source("", "Use gpt-example-1 for this task.\n")],
     ["no-routing", source("", "```sh\nrun --agents '{\"worker\": {\"model\": \"gpt-example-1\"}}'\n```\n")],
     ["no-routing", source("", "Choose the Codex harness.\n")],
+    ["no-routing", source("", "Use the sonnet model.\n")],
+    ...[
+      "Run this on Sonnet.", "Run this with Sonnet 4.", "Run this using Sonnet.",
+      "Run this via Sonnet.", "Run this under Sonnet.", "Run it with xhigh effort.",
+      "Spawn a subagent with model sonnet.", "Use the o3 model.",
+      "Use OpenAI for this step.", "Prefer Anthropic over OpenAI.",
+    ].map(instruction => ["no-routing", source("", `${instruction}\n`)]),
+    ["no-routing", source("", "Prefer the Anthropic provider.\n")],
+    ["no-routing", source("", "Set the model to example.\n")],
+    ["no-routing", source("", "Use high effort for this task.\n")],
+    ["no-routing", source("", "Set reasoning effort to high.\n")],
+    ["no-routing", source("", "tool --effort high\n")],
+    ["no-routing", source("", 'effort: high\n')],
+    ["no-routing", source("", '{"model": "example"}\n')],
     ["body-empty", source("", "")],
     ["body-lines", source("", "Read this line.\n".repeat(501))],
     ["forward-slash-paths", source("", "Read C:\\docs\\guide.md.\n")],
@@ -59,7 +73,9 @@ try {
     ["vital-rule-late", source("", "Read this line.\n".repeat(150) + "MUST verify the diff.\n"), {}, 0],
     ["time-sensitive", source("", "As of 2026-01-01, review changes.\n"), {}, 0],
     ["terminology", source("", "JEV selects the skillset.\n"), {}, 0],
-    ["overlap-anti", source(), { "../other-skill/SKILL.md": source("", undefined, description, "other-skill") }],
+    ["overlap-anti", source(), { "../other-skill/SKILL.md": source("", undefined, description, "other-skill") }, 0],
+    ...["scripts/run.tsx", "scripts/run.rb", "scripts/run.ps1", "scripts/run", "assets/cfg.toml", "assets/cfg.html", "assets/cfg.css", "assets/cfg.xml", "assets/.config", "assets/README", "assets/custom.xyz"]
+      .map(path => ["no-routing", source(), { [path]: "Use gpt-example-1.\n" }]),
   ];
   for (const [index, [rule, skill, files = {}, status = 1]] of cases.entries()) {
     const root = join(scratch, String(index));
@@ -71,9 +87,29 @@ try {
       await writeFile(join(directory, path), text);
     }
     const report = run(["lint", root, "--json"], status);
-    if (!report.diagnostics.some(item => item.rule === rule)) throw new Error(`Missing diagnostic ${rule}`);
+    const severity = status === 0 ? "warning" : "error";
+    if (!report.diagnostics.some(item => item.rule === rule && item.severity === severity)) throw new Error(`Missing ${severity} diagnostic ${rule}`);
     console.log(`PASS planted ${index + 1}: ${rule} (exit ${status})`);
   }
+  const prose = join(scratch, "prose", "proof-skill");
+  await mkdir(prose, { recursive: true });
+  const ordinary = [
+    "Use the domain model to name things.",
+    "Make minimal effort to cut scope.",
+    "Prefer the Anthropic style guide.",
+    "Choose a provider pattern for the adapter.",
+    "This skill never names or suggests a model, harness, effort or provider.",
+    "Read the haiku and annotate the opus.",
+    "Select the harness for the test rig.",
+    "Use the effort estimate from the ticket.",
+    "Prefer Google style comments in the file.",
+    "Opus is a musical work; the sonnet is a poem.",
+  ];
+  await writeFile(join(prose, "SKILL.md"), source("", ordinary.join("\n")));
+  await writeFile(join(prose, "image.png"), Buffer.from("PNG\0gpt-example-1\0"));
+  const proseReport = run(["lint", join(prose, ".."), "--json"]);
+  if (!proseReport.ok || proseReport.diagnostics.length) throw new Error("Ordinary prose and binary assets must pass without diagnostics.");
+  console.log(`PASS ${ordinary.length} ordinary prose lines and a NUL-containing binary asset`);
   const quotes = join(scratch, "quotation", "proof-skill");
   await mkdir(quotes, { recursive: true });
   await writeFile(join(quotes, "SKILL.md"), source("", "```upstream-quote https://example.org/source\nQuoted gpt-example-1 and effort.\n```\n\nRead the diff.\n"));

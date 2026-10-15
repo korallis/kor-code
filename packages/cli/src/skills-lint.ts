@@ -14,7 +14,18 @@ const CHARS_PER_TOKEN = 3.7;
 const OVERLAP_KEYWORDS = 3;
 const DESCRIPTION_STOP_WORDS = new Set(["a", "an", "the", "and", "or", "for", "to", "of", "in", "on", "with", "when", "whenever", "use", "uses", "writes", "reviews", "creates", "editing", "writing", "reviewing"]);
 const TRIGGER = /\buse (?:when|whenever|for)\b/i;
-const ROUTING_TEXT = /\b(?:(?:claude|gpt|grok|gemini|kimi|o[134])-[a-z0-9][a-z0-9._-]*|opus|sonnet|haiku|fable|xhigh|effort|reasoning[ -]level)\b|--(?:model|agents|provider|harness)\b|\b(?:model|provider|harness)\s*[:=]|\b(?:use|choose|select|prefer|pin|switch to|run with)\s+(?:the\s+)?(?:[\w-]+\s+){0,2}(?:model|provider|harness|Claude Code|Codex|Cursor|OpenAI|Anthropic|Google|xAI|Moonshot)\b/i;
+const ROUTING_TEXT = [
+  /\bxhigh\b/i,
+  /\b(?:claude|gpt|grok|gemini|kimi|o[134])-[a-z0-9][a-z0-9._-]*\b/i,
+  /--(?:model|agents|provider|harness|effort|reasoning[-_](?:effort|level))\b/i,
+  /\b(?:model|provider|harness|effort|reasoning[ _-](?:level|effort))["']?\s*[:=]/i,
+  /\b(?:use|choose|select|prefer|pin|switch to|run with)\s+(?:the\s+)?(?:opus|sonnet|haiku|fable|o[134]\s+model|Claude Code|Codex|Cursor)\b/i,
+  /\b(?:on|with|using|via|under)\s+(?:the\s+)?(?:model\s+)?(?:opus|sonnet|haiku|fable|o[134]\s+model|Claude Code|Codex|Cursor)\b/i,
+  /\b(?:use|choose|select|prefer|pin|switch to|run with)\s+(?:the\s+)?(?:OpenAI|Anthropic|Google|xAI|Moonshot)\s+(?:model|provider|harness|for|over)\b/i,
+  /\b(?:set|pin|switch)\s+(?:the\s+)?(?:model|provider|harness)\s+to\b/i,
+  /\b(?:use|choose|select|prefer|pin|set|run with)\s+(?:the\s+)?(?:(?:reasoning[ -])?effort|reasoning[ -]level)\s+(?:to\s+)?(?:none|minimal|low|medium|high|xhigh|max|ultra)\b/i,
+  /\b(?:use|choose|select|prefer|pin|set|run with)\s+(?:none|minimal|low|medium|high|xhigh|max|ultra)\s+(?:(?:reasoning[ -])?effort|reasoning[ -]level)\b/i,
+];
 const ROUTING_KEY = /^(?:model|models|effort|agent|agents|provider|harness|reasoning[-_]?level)$/i;
 const STAGES = new Set(["plan", "execute", "repair", "review", "ship", "project-setup"]);
 
@@ -103,7 +114,7 @@ export async function lintSkills(root: string): Promise<SkillLintReport> {
       }
       if (upstreamQuote) continue;
       const number = startLine + index;
-      if (ROUTING_TEXT.test(line)) add(file, number, "error", "no-routing", "Remove routing text; Jev owns the per-task route decision.");
+      if (ROUTING_TEXT.some(pattern => pattern.test(line))) add(file, number, "error", "no-routing", "Remove routing text; Jev owns the per-task route decision.");
       if (/\b\d{4}-\d{2}-\d{2}\b|\b(?:currently|nowadays|as of|latest version)\b/i.test(line)) add(file, number, "warning", "time-sensitive", "Replace time-sensitive guidance with a stable condition or pinned source.");
       if (/(?:[A-Za-z]:\\|\b[\w.-]+\\[\w.-]+(?:\\[\w.-]+)*)/.test(line)) add(file, number, "error", "forward-slash-paths", "Use forward slashes in paths.");
       if (/\b(?:JEV|jev|play-book|skillset)\b/.test(line)) add(file, number, "warning", "terminology", "Use the canonical terms: Jev, playbook, skill pack.");
@@ -158,8 +169,12 @@ export async function lintSkills(root: string): Promise<SkillLintReport> {
       skills.push({ name, listingTokens: parsed.data["disable-model-invocation"] ? 0 : tokenEstimate(`${name}: ${description}`), bodyTokens });
     }
     for (const file of files) {
-      if (!/\.(?:md|txt|json|ya?ml|[cm]?js|ts|sh|py)$/i.test(file)) continue;
-      const text = file === skillFile ? body : await readFile(file, "utf8");
+      let text = body;
+      if (file !== skillFile) {
+        const content = await readFile(file);
+        if (content.includes(0)) continue;
+        text = content.toString("utf8");
+      }
       checkText(file, text, file === skillFile ? bodyStart : 1);
       if (!file.endsWith(".md")) continue;
       if (file !== skillFile && lines(text).length > REFERENCE_TOC_LINES && !/^#{1,6}\s+(?:table of )?contents\b/im.test(text)) add(file, 1, "error", "reference-toc", `References over ${REFERENCE_TOC_LINES} lines need a Contents heading.`);
@@ -180,7 +195,7 @@ export async function lintSkills(root: string): Promise<SkillLintReport> {
     for (const other of descriptions.slice(index + 1)) {
       if ([...skill.keywords].filter(word => other.keywords.has(word)).length < OVERLAP_KEYWORDS) continue;
       for (const candidate of [skill, other]) {
-        if (!candidate.anti?.trim()) add(candidate.file, 1, "error", "overlap-anti", "Overlapping descriptions need kor.anti to distinguish their use cases.");
+        if (!candidate.anti?.trim()) add(candidate.file, 1, "warning", "overlap-anti", "Descriptions share keywords; consider kor.anti to distinguish their use cases.");
       }
     }
   }

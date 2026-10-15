@@ -83,9 +83,6 @@ Errors fail the command:
 - Reference Markdown over 100 lines without a `Contents` or `Table of contents`
   heading. A reviewer checks that its entries actually cover the document.
 - Backslash paths. Write portable forward-slash paths.
-- Overlapping descriptions without `kor.anti`. The deterministic overlap check
-  counts at least three shared words of three or more letters, excluding common
-  description boilerplate. Review neighbouring skills even when this check passes.
 - Routing content, as described below.
 
 Warnings identify a trigger after the first 120 description characters, estimated
@@ -94,15 +91,30 @@ line 150, date patterns and time-sensitive wording, and noncanonical spellings
 (`JEV`/`jev`, `play-book`, `skillset`). Canonical terms are **Jev**, **playbook**
 and **skill pack**. Warnings do not change the exit code.
 
+`overlap-anti` is also a warning: descriptions sharing at least three words of
+three or more letters (excluding common description boilerplate) suggest adding
+`kor.anti`. Shared vocabulary alone does not establish overlapping use cases;
+review neighbouring skills even when this check passes.
+
 ### Routing belongs to Jev
 
 Skills and playbooks describe how to do work. The per-task Jev route decision
 owns model, provider, harness and reasoning settings. Lint rejects routing fields
 at any frontmatter depth, including `model`, `effort`, `agent`, `provider`,
-`harness` and reasoning-level variants. Frontmatter text and bundled Markdown,
-text, scripts, JSON and YAML are also scanned for model slugs, model tiers,
-reasoning settings, routing flags and common model/provider/harness instructions.
-An ordinary code fence does not exempt routing text.
+`harness` and reasoning-level variants. Frontmatter text and every bundled text
+file are scanned, including extensionless scripts, dotfiles and unfamiliar
+extensions. Files containing NUL bytes are treated as binary and skipped; the
+required `SKILL.md` is always scanned. Text is decoded as UTF-8.
+
+The text scan rejects model slugs, routing flags, routing assignments, explicit
+instructions naming a model tier or harness, provider selection instructions,
+and instructions setting an effort level. This includes tiers after routing
+prepositions (`on`, `with`, `using`, `via`, `under`), provider choices followed by
+`for` or `over`, and the routing-specific `xhigh` token. Ordinary mentions of
+effort or a domain model are allowed, as are statements that leave routing to Jev.
+For example, "Use the domain model to name things" and "Make minimal effort to cut
+scope" pass. A provider's style guide is also ordinary prose. An ordinary code
+fence does not exempt routing text.
 
 A necessary quotation of an upstream source must be fenced with an explicit
 `upstream-quote` label followed by an HTTPS source URL. Only that closed quotation
@@ -128,8 +140,9 @@ node scripts/skills-lint-proof.mjs
 ```
 
 The proof invokes the real built CLI on the seeds and temporary planted-bad
-bundles, including each lint diagnostic, routing in references and scripts, the
-quotation exception and usage errors. It writes no fixture into the public tier.
+bundles, including each lint diagnostic, routing in references and scripts of
+varied extensions, ordinary prose, binary assets, the quotation exception and
+usage errors. It writes no fixture into the public tier.
 CI runs public lint and the proof after building Kor.
 
 Before adding a skill, review these judgment checks alongside lint:
