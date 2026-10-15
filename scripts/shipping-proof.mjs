@@ -72,7 +72,15 @@ for(const mode of ['direct','no-mistakes']) {
       if(args[1]==='status')return ok(encode(starts?pipeline():{current_branch:'kor/LEE-600',runs_on_current_branch:0}));
       assert.equal(args[1],'run');assert(args.includes('--intent'));assert(!args.includes('--yes'));assert(args.includes('--no-publish-intent'));starts++;return ok(encode(pipeline()));
     }
-    if(file==='gh-axi'&&args[0]==='pr') {assert.equal(args[1],'create');creates++;assert(!args.includes('--draft'));const body=await readFile(args.at(-1),'utf8');assert(body.includes('node hello.js'));assert(body.includes('[redacted]'));assert(!body.includes(secret));assert(!body.includes('fixture-bearer-123'));assert(!body.includes('/home/fixture'));assert(!body.includes('C:\\Users'));assert(!body.includes('/tmp/private'));assert(!body.includes(cwd));assert(body.length<=60000);await writeFile(join(home,'pr-body.md'),body);published=true;return ok('pr:\n  url: https://github.com/example/kor-fixture/pull/1');}
+    if(file==='gh-axi'&&args[0]==='pr') {
+      assert.equal(args[1],'create');creates++;assert(!args.includes('--draft'));
+      assert.equal(args[args.indexOf('--title')+1],'chore(task): Write hello.js');
+      const body=await readFile(args.at(-1),'utf8');
+      assert.deepEqual(body.match(/^## .+$/gm),['## What does this PR do?','## Changelog','## How was it tested?','## Screenshots','## Checklist']);
+      assert(body.includes('- Changed: Write hello.js'));assert(body.includes('- [x]'));assert(body.includes('Evidence truncated'));
+      assert(body.includes('node hello.js'));assert(body.includes('[redacted]'));assert(!body.includes(secret));assert(!body.includes('fixture-bearer-123'));assert(!body.includes('/home/fixture'));assert(!body.includes('C:\\Users'));assert(!body.includes('/tmp/private'));assert(!body.includes(cwd));assert(body.length<=60000);
+      await writeFile(join(home,'pr-body.md'),body);published=true;return ok('pr:\n  url: https://github.com/example/kor-fixture/pull/1');
+    }
     if(file==='gh-axi'&&args[0]==='api') {
       const path=args[1];
       if(path.includes('/pulls?'))return envelope(published?[pr()]:[]);
@@ -170,6 +178,33 @@ await exec('git', ['commit', '-qm', 'fixture: precommitted credential must block
 assert.equal((await unsafeDriver.advance(unsafeInput)).status, 'blocked');
 assert.equal(unsafePublications, 0);
 console.log('sensitive-path proof: staged and session-committed .env.local blocked before publication');
+
+const renderer = new GitHubShipping(real);
+const renderInput = { execution: structuredClone(execution), issue: { id: sample.issueId, title: `fix(shipping): retain evidence.\n${leak}` }, repository: { path: sample.worktree, defaultBranch: 'main' } };
+assert.match(renderer.title(renderInput), /^fix\(shipping\): retain evidence/);
+assert(!renderer.title(renderInput).includes(secret));assert(!renderer.title(renderInput).includes('\n'));
+renderInput.execution.verification.attempts.at(-1).evidence.push({ id: 'screen', kind: 'review', status: 'pass', summary: 'After', source: 'https://example.invalid/after.png' });
+renderInput.execution.verification.attempts.at(-1).findings.push({ conditionId: 'manual-browser', status: 'unresolved', evidenceIds: [], note: 'Not checked in a browser' });
+const templateDirectory = join(sample.worktree, '.github');
+await mkdir(templateDirectory);
+const templateFile = join(templateDirectory, 'pull_request_template.md');
+await writeFile(templateFile, `## Repository outcome\n\n{{summary}}\n\n## Required checks\n\n{{verification}}\n\n## Captures\n\n{{screenshots}}\n\n## Acceptance\n\n{{checklist}}\n\n- [ ] Maintainer approval\n${leak}\n`);
+await exec('git', ['add', '--', '.github/pull_request_template.md'], { cwd: sample.worktree });
+await exec('git', ['commit', '-qm', 'fixture: repository PR template'], { cwd: sample.worktree });
+const templateHead = (await exec('git', ['rev-parse', 'HEAD'], { cwd: sample.worktree })).stdout.trim();
+const templateBody = await renderer.body(renderInput, templateHead);
+assert.deepEqual(templateBody.match(/^## .+$/gm), ['## Repository outcome', '## Required checks', '## Captures', '## Acceptance']);
+assert(templateBody.includes('- [ ] Maintainer approval'));assert(templateBody.includes('- [ ] manual-browser: unresolved; Not checked in a browser'));
+assert(templateBody.includes('![After](<https://example.invalid/after.png>)'));assert(!templateBody.includes(secret));assert(!templateBody.includes('/home/fixture'));assert(!templateBody.includes('{{'));
+await writeFile(templateFile, '## Uncommitted replacement\n');
+assert.equal(await renderer.body(renderInput, templateHead), templateBody);
+await writeFile(join(root, 'template-body.md'), templateBody);
+await writeFile(templateFile, '## Custom policy\n\n- [ ] Human checks the client\n');
+await exec('git', ['add', '--', '.github/pull_request_template.md'], { cwd: sample.worktree });
+await exec('git', ['commit', '-qm', 'fixture: plain repository template'], { cwd: sample.worktree });
+const plainBody = await renderer.body(renderInput, (await exec('git', ['rev-parse', 'HEAD'], { cwd: sample.worktree })).stdout.trim());
+assert(plainBody.startsWith('## Custom policy\n\n- [ ] Human checks the client\n'));assert(plainBody.includes('Kor execution evidence'));assert(plainBody.includes('node hello.js'));assert(plainBody.includes('- [ ] manual-browser'));
+console.log(`PR standard proof: five ordered headings; bounded evidence keeps checklist; conventional titles; committed repository template wins; plain template retains policy; screenshots linked; unresolved checks unticked; template redaction; defaultBytes=${(await readFile(join(root,'direct/pr-body.md'))).length}; templateBytes=${Buffer.byteLength(templateBody)}`);
 
 // Construct the v4 schema directly, independent of git history or a previous dist build.
 const migrationFile = join(root, 'migration.db');

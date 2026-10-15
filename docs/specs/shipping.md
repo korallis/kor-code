@@ -31,6 +31,55 @@ Each evidence field is capped at 4,000 characters and the body stays below 60,00
 characters. The pipeline receives `--no-publish-intent` so Linear descriptions are
 not copied into the generated public Intent section.
 
+## Pull request format
+
+Direct publication uses the bundled `pr-standard` layout in this order:
+
+1. `What does this PR do?` contains the issue title and tracker reference.
+2. `Changelog` contains a `Changed:` line from the issue title.
+3. `How was it tested?` contains recorded commands, exit codes, output, and the
+   direct-delivery gate result. It does not claim unrecorded browser checks.
+4. `Screenshots` links passing verification evidence with a public HTTPS image
+   source ending in `.png`, `.jpg`, `.jpeg`, `.webp`, or `.gif`. Kor does not upload
+   local files. Without a source, it says that screenshot evidence is missing.
+5. `Checklist` contains acceptance findings, using manifest descriptions where
+   available. Only passing findings are ticked.
+
+The generated default keeps all five sections even when screenshot evidence is
+missing. Large command output is omitted at whole-block boundaries so the
+checklist stays visible and code fences stay closed.
+
+A title already matching `type(scope): outcome` is preserved. The supported types
+are `feat`, `fix`, `refactor`, `perf`, `docs`, `ci`, and `chore`. Other issue titles
+use `chore(task): <issue title>` rather than guessing a change type. Newlines and
+trailing periods are removed, secrets and paths are redacted, and titles are
+capped at 200 characters. The tracker reference remains in the body.
+
+Kor reads the first committed template at the verified publication head in this
+order: `.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE.md`,
+`pull_request_template.md`, `PULL_REQUEST_TEMPLATE.md`,
+`docs/pull_request_template.md`, `docs/PULL_REQUEST_TEMPLATE.md`. Uncommitted files
+and symlink targets are not read. Named templates in a `PULL_REQUEST_TEMPLATE/`
+directory are not selected automatically.
+
+Repository templates keep their own headings and checklist state. These optional
+placeholders insert generated content at the chosen position:
+
+| Placeholder | Content |
+| --- | --- |
+| `{{summary}}` | Issue title and tracker reference |
+| `{{changelog}}` | `Changed:` line |
+| `{{verification}}` | Commands, results, and verification limits |
+| `{{screenshots}}` | Public image evidence or a missing-evidence note |
+| `{{checklist}}` | Acceptance findings |
+
+When a template omits verification, checklist, or screenshot placeholders, Kor
+appends that evidence after a separator. Template prompts and custom checkboxes
+remain as written; Kor does not claim that repository-specific manual checks
+passed. A template over 12,000 characters, or a rendered body over 60,000, blocks
+PR creation. Redaction covers template text as well as evidence. Existing PRs and
+PRs created by the no-mistakes pipeline are observed without rewriting their bodies.
+
 ## State and evidence
 
 ```text
@@ -115,6 +164,10 @@ its old schema, so migration proof does not depend on git history.
 The replay commits the intended files while leaving a decoy `.env.local` and an
 unrelated file untracked. It also blocks an already-staged or session-committed
 secret file and inspects the generated PR body for leaked credentials and paths.
+It verifies the five ordered headings, title fallback, bounded evidence, committed
+repository template precedence, plain templates, screenshot links, and unticked
+unresolved acceptance findings. Templates are committed in the scratch repository;
+an uncommitted replacement does not change the rendered body.
 
 ```text
 publication proof: verified files committed; .env.local and unrelated file excluded; PR secrets/local paths redacted; body <= 60000 characters; literal filename preserved

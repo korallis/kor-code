@@ -7,6 +7,14 @@ They adapt the owner's code and PR conventions, with repository policy taking
 precedence. Shipping this tier does not yet load it into execution sessions;
 catalogue selection and delivery are separate work.
 
+The direct shipping path also enforces the PR layout in code, without loading a
+skill into the session. It uses the five sections from `pr-standard`, maps
+recorded checks and acceptance findings into the body, and respects a committed
+repository template. [Shipping templates](specs/shipping.md#pull-request-format)
+describe the title fallback, template placeholders, and publication limits.
+`human-written-code` remains guidance for editing and review; it does not change
+the repository's test policy.
+
 Run the built CLI from any directory, without credentials or a daemon:
 
 ```sh

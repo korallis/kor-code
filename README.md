@@ -58,6 +58,12 @@ In practice:
   replay and a written specification, not a live capture. The
   [user guide](docs/user-guide.md#what-happens-after-the-checks-pass) has the details.
 
+Direct pull requests use `type(scope): outcome` titles and the bundled
+[PR standard](skills/pr-standard/SKILL.md), with recorded checks, acceptance
+checkboxes, and public screenshot evidence. A committed repository PR template
+takes precedence. See [shipping templates](docs/specs/shipping.md#pull-request-format)
+for supported locations and optional placeholders.
+
 ## Install
 
 Requirements: Linux with Node 24+, Corepack and Git; Claude Code 2.1.299 or newer; a
