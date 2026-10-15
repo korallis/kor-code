@@ -370,6 +370,9 @@ the same as an object.
 
 ## Documentation
 
+- [Principles and playbooks](docs/pstack-playbooks.md): 22 portable principles,
+  eight supporting skills, and 11 session playbooks, with pinned MIT attribution
+  and a runnable paired-evaluation proof.
 - [Skills](docs/skills.md): bundled code and PR standards, Linear operations
   and ticket-writing guidance, complete screen mockups and verified ticket images,
   authoring schema, lint, catalogue commands, private
