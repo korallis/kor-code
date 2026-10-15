@@ -1,12 +1,57 @@
 # Context and verification specification
 
-**Status: Validated for worktree-only discovery, bounded redaction/compaction, Jev fixture ranking, per-execution evidence gates, configured check execution, diff collection, and bounded repair on fake Linear. GitHub review/check integration remains Proposed.**
+**Status: Controller context delivery is implemented. Worktree-only discovery, bounded redaction/compaction, per-execution evidence gates, configured checks and bounded repair have runnable proofs. GitHub review/check integration remains Proposed.**
 
 ## Context boundary
 
-Repository rules are discovered after resolving the execution worktree. Discovery recursively reads only repository-owned `AGENTS.md`, `CLAUDE.md`, `CLAUDE.local.md`, `CONTRIBUTING.md`, `INSTRUCTIONS.md`, and Markdown files under `.claude/rules/`; `.git` and `node_modules` are skipped. A resolved path must remain inside the worktree. The discovery code never reads user homes, Claude or Codex configuration, agent directories, or CLIProxyAPI files.
+Repository rules are discovered after resolving the execution worktree. Discovery recursively reads only repository-owned `AGENTS.md`, `CLAUDE.md`, `CLAUDE.local.md`, `CONTRIBUTING.md`, `INSTRUCTIONS.md`, and Markdown files under `.claude/rules/`; `.git`, `node_modules` and generated `.kor` directories are skipped. Rule reads are bounded to 256 KiB and do not follow file symlinks. A resolved path must remain inside the worktree. The discovery code never reads user homes, Claude or Codex configuration, agent directories, or CLIProxyAPI files.
 
 Context sources carry a stable identifier, relative path, purpose, and Jev relevance score. Jev receives bounded redacted excerpts; a caller rank callback is an explicit recorded override. The manifest records the execution, repository, worktree, selected sources, dropped source references, compaction, and redaction state. Compaction truncates sources to a bounded character budget while preserving source order. All text, including the issue sent to Jev, passes through the existing `@kor-code/jev` `redact` function.
+
+## Session delivery
+
+The controller calls `buildContextManifest` after creating the execution worktree.
+The task text informs ranking without being duplicated in the context block.
+Candidates include repository rules, Linear documents, supplied evidence, up to
+40 tracked file hints, and ticket-image captions. A word-overlap prefilter bounds
+the file shortlist; Jev's recorded context decision supplies its final order using
+the full probability map. No file bodies are read for file hints. When Jev is
+unavailable, deterministic source priorities remain in effect. Routing continues
+through the separate per-task route decision.
+
+The first prompt and each repair prompt retain the selected context. The context
+block is capped at **2,000 UTF-8 bytes**, a conservative upper bound of 2,000
+byte-tokenized text tokens without depending on a provider tokenizer. It reserves
+800 bytes for ranked guidance, 400 for up to five file hints and 800 for screens;
+each guidance excerpt is at most 600 characters. This budget includes headings
+and paths. Redaction runs before Jev sees source text and again on delivery.
+Hints are advisory: sessions can search and read other policy-permitted files.
+
+Claude execution sessions use explicit `claudeMdExcludes: ["**"]` and disabled
+auto memory through `--settings`, alongside `--setting-sources ""`. The execution
+sandbox no longer sets `CLAUDE_CODE_DISABLE_CLAUDE_MDS`. Native instruction files
+are excluded so the ranked excerpt is the automatic repository-rule channel.
+The separate cockpit sandbox retains its isolation switch. A custom launcher
+`args` override must preserve these settings itself.
+
+Markdown images in the issue description, comments and documents, plus resources
+whose URLs have image extensions, become image candidates. Kor downloads at most
+three in ranked order to `.kor/context/<ISSUE>/screens/` and lists local paths for
+`Read`. PNG, JPEG, WebP and GIF responses are supported, with a 5 MiB limit per
+image and a 15-second request timeout. Images must use direct HTTPS URLs resolving to public addresses, without URL
+credentials or custom ports; redirects and private address ranges are rejected.
+Public image hosts receive anonymous requests. Only `uploads.linear.app` receives
+`HttpLinearClient`'s existing runtime Linear credential for private assets; credentials never
+enter the execution environment. Images are downloaded locally, not injected as
+base64 into the text prompt; image-viewing tokens are separate from the text cap.
+Text redaction does not inspect image pixels.
+
+The context directory is private to the worktree (directories mode 0700, files
+0600), cannot escape it through directory symlinks, and has a generated `.gitignore`
+that excludes its contents from verification diffs and publication. The lease
+heartbeat remains active while ranking and downloading. A failed or unsupported
+image is listed as unavailable with an attachment hint; it does not silently
+pretend that a screen was supplied.
 
 ## Verification boundary
 

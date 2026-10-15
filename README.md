@@ -117,6 +117,15 @@ Alternatively, export `GH_TOKEN` with repository read access and use
 The clone uses the same exported token, or your existing `gh` login.
 The [manual installation appendix](#manual-installation) keeps the clone/build route.
 
+Execution sessions receive Jev-ranked repository guidance and file hints. Kor bounds
+this context block to 2,000 UTF-8 bytes, conservatively below 2,000 text tokens,
+and redacts it before ranking and delivery. Native instruction loading is excluded
+so repository rules enter through this block. Up to three ranked ticket
+screenshots are downloaded into `.kor/context/<ISSUE>/screens/` and listed for
+`Read`; these runtime files are ignored by Git. See the
+[context specification](docs/specs/context-and-verification.md) for image limits
+and credential handling.
+
 ## Quick start
 
 **1. Describe your project** in `~/.config/kor/config.yaml`. The installer scaffolds

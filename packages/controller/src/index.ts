@@ -1,5 +1,5 @@
 import type { CatalogueModel, Evidence, Execution, Route, SessionSpend } from "@kor-code/core";
-import { JevDecisionCore, routeFromDecision } from "@kor-code/jev";
+import { JevDecisionCore, redact, routeFromDecision } from "@kor-code/jev";
 import type { LinearClient, LinearIssue, WorkflowMapping, ExecutionClaim } from "@kor-code/linear";
 import { AgentSessionWriter, DurableQueue, ExecutionLease, LinearStore, SnapshotReader } from "@kor-code/linear";
 import { randomUUID } from "node:crypto";
@@ -13,6 +13,7 @@ import { CalibrationStore, sampledPair, type CalibrationRun, type RunOutcome } f
 import { ExecutionVerificationError, verificationBase, verificationSettings, type VerificationOptions } from "./verification.js";
 
 import { runVerifiedSessions } from "./attempts.js";
+import { buildContextManifest, contextPrompt, ticketImages } from "@kor-code/context";
 
 export * from "./repository.js";
 export * from "./worktree.js";
@@ -140,6 +141,7 @@ class ExecutionController implements Controller {
         this.writer.start(claim, execution);
         await this.writer.flush();
       }
+      heartbeat = claim && this.lease ? this.startHeartbeat(claim) : undefined;
       const baseRevision = this.options.calibration?.store.run(input.id)?.baseRevision ?? await verificationBase(worktree.path);
       const calibrationStartedAt = new Date().toISOString();
       if (this.options.calibration && calibrationRoute) {
@@ -148,9 +150,16 @@ class ExecutionController implements Controller {
         if (existing) this.options.calibration.store.resumeRun(input.id, calibrationStartedAt, calibrationRoute);
         else this.options.calibration.store.beginRun({ executionId: input.id, pairId: input.id, issueId: input.issueId, arm, baseRevision, route: calibrationRoute, sampled: arm === "jev" && sampledPair(input.id, this.options.calibration.sampleRate ?? 0.25), startedAt: calibrationStartedAt, status: "running" });
       }
-      const initialPrompt = input.prompt ?? promptFor(issue, this.options.promptPrefix);
+      const taskPrompt = input.prompt ?? promptFor(issue, this.options.promptPrefix);
+      const fetchImage = this.options.linear?.client.fetchImage?.bind(this.options.linear.client);
+      const contextBuild = buildContextManifest({ executionId: input.id, repository: repository.key, worktree: worktree.path,
+        task: taskPrompt, documents: issue.documents, ...(input.evidence ? { evidence: input.evidence } : {}), includeFiles: true, maxCharacters: 24_000, maxSourceCharacters: 600,
+        images: ticketImages([issue.description ?? "", ...issue.comments.map(comment => comment.body), ...issue.documents.map(document => document.content)], issue.resources),
+        issueIdentifier: issue.identifier ?? issue.id, ...(fetchImage ? { fetchImage } : {}),
+        ...(this.options.jev ? { jev: this.options.jev } : {}) });
+      const context = await (heartbeat ? Promise.race([contextBuild, heartbeat.failed]) : contextBuild);
+      const initialPrompt = String(redact(taskPrompt)) + contextPrompt(context);
       const settings = verificationSettings(this.options.verificationOptions);
-      heartbeat = claim && this.lease ? this.startHeartbeat(claim) : undefined;
       const { session, latest, verificationReport } = await runVerifiedSessions({ execution, repository, initialPrompt, baseRevision,
         launcher: this.options.launcher, settings, reserveAttempt: this.reserveAttempt, ...(this.options.onStage ? { onStage: this.options.onStage } : {}), ...(this.options.onSpend ? { onSpend: this.options.onSpend } : {}), ...(this.options.jev ? { jev: this.options.jev } : {}),
         ...(this.options.calibration && calibrationRoute ? { calibration: this.options.calibration.store } : {}),

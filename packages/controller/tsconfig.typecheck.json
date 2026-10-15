@@ -5,6 +5,7 @@
     "rootDir": "..",
     "baseUrl": ".",
     "paths": {
+      "@kor-code/context": ["../context/src/index.ts"],
       "@kor-code/core": ["../core/src/index.ts"],
       "@kor-code/jev": ["../jev/src/index.ts"],
       "@kor-code/linear": ["../linear/src/index.ts"],

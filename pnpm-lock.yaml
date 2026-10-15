@@ -249,6 +249,9 @@ importers:
       '@kor-code/calibration':
         specifier: workspace:*
         version: link:../calibration
+      '@kor-code/context':
+        specifier: workspace:*
+        version: link:../context
       '@kor-code/core':
         specifier: workspace:*
         version: link:../core
