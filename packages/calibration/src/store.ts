@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { JsonValue } from "@kor-code/core";
 import { MemoryDecisionAuditLog, redact, type AppliedDecision, type DecisionAuditLog, type DecisionAuditRecord } from "@kor-code/jev";
+import { turnSchema, loadEventSchema } from "./context.js";
 
 const count = z.number().int().nonnegative();
 const measurement = z.number().nonnegative().nullable();
@@ -19,6 +20,8 @@ export const metricSchema = z.object({
   executionId: z.string(), attempt: count.positive(), attemptId: z.string().uuid().optional(), recordedAt: z.string().datetime(),
   decisionId: z.string().optional(), model: z.string(), costUsd: measurement,
   inputTokens: measurement, outputTokens: measurement, cacheReadTokens: measurement, cacheCreationTokens: measurement,
+  startContextTokens: measurement.default(null), contextTokenSum: measurement.default(null),
+  turns: z.array(turnSchema).nullable().default(null), loadEvents: z.array(loadEventSchema).nullable().default(null),
   wallClockMs: z.number().nonnegative(), sessionDurationMs: measurement,
   failovers: measurement, apiErrorStatus: z.number().nullable(), policyBlocks: measurement, clarifications: measurement,
   verificationFailures: count, verified: z.boolean(),
@@ -48,6 +51,12 @@ export class CalibrationStore implements DecisionAuditLog {
       CREATE TABLE IF NOT EXISTS run_metrics (execution_id TEXT NOT NULL, attempt INTEGER NOT NULL, recorded_at TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(execution_id, attempt));
       CREATE TABLE IF NOT EXISTS run_outcomes (execution_id TEXT PRIMARY KEY, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS decision_audit (decision_id TEXT PRIMARY KEY, recorded_at TEXT NOT NULL, payload TEXT NOT NULL);`);
+    this.transaction(() => {
+      const columns = this.db.prepare("PRAGMA table_info(run_metrics)").all().map(row => z.object({ name: z.string() }).parse(row).name);
+      for (const { name, type } of [{ name: "start_context_tokens", type: "INTEGER" }, { name: "context_token_sum", type: "INTEGER" }, { name: "turns_json", type: "TEXT" }, { name: "load_events_json", type: "TEXT" }]) {
+        if (!columns.includes(name)) this.db.exec(`ALTER TABLE run_metrics ADD COLUMN ${name} ${type}`);
+      }
+    });
   }
   close(): void { this.db.close(); }
   private transaction<T>(action: () => T): T {
@@ -87,11 +96,13 @@ export class CalibrationStore implements DecisionAuditLog {
       }
     });
   }
-  recordAttempt(input: RunMetric): void {
+  recordAttempt(input: z.input<typeof metricSchema>): void {
     const metric = metricSchema.parse(input);
     if (!this.run(metric.executionId)) throw new Error("Attempt requires a calibration run");
     // Conflicting attempts must not silently replace measured costs after a restart.
-    this.db.prepare("INSERT INTO run_metrics VALUES(?,?,?,?)").run(metric.executionId, metric.attempt, metric.recordedAt, JSON.stringify(redact(metric)));
+    this.db.prepare("INSERT INTO run_metrics (execution_id, attempt, recorded_at, payload, start_context_tokens, context_token_sum, turns_json, load_events_json) VALUES(?,?,?,?,?,?,?,?)")
+      .run(metric.executionId, metric.attempt, metric.recordedAt, JSON.stringify(redact(metric)), metric.startContextTokens, metric.contextTokenSum,
+        metric.turns === null ? null : JSON.stringify(metric.turns), metric.loadEvents === null ? null : JSON.stringify(redact(metric.loadEvents)));
   }
   nextAttempt(executionId: string): number {
     const row = z.object({ attempt: count }).parse(this.db.prepare("SELECT COALESCE(MAX(attempt),0) AS attempt FROM run_metrics WHERE execution_id=?").get(executionId));

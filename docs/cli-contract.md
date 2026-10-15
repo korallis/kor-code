@@ -345,3 +345,7 @@ whether a clarification comment was posted to the issue.
 envelope as `kor status --json`. The cockpit sends overrides with
 `POST /overrides` and reverts them with `POST /overrides/<id>/revert`; both
 accept local JSON requests only. See [configuration](configuration.md).
+
+## Calibration context report
+
+`kor calibrate report [--since ISO-8601] [--context] [--json]` reads the local calibration database. `--context` adds per-arm context medians to text output. JSON output includes arm context estimates with observation counts. See [Measure session context](context-bench.md) for definitions and the live bench.

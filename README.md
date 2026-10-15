@@ -256,6 +256,11 @@ overrides.
 Each job, step by step, is in the
 [user guide](docs/user-guide.md#work-in-mission-control).
 
+Measure context with `kor calibrate report --context`. Run `pnpm context:proof`
+for the recorded-stream proof, or `pnpm context:bench --revision COMMIT --routes FILE`
+for live legacy sessions at a pinned revision. See [Measure session context](docs/context-bench.md)
+for Jev route input, fixed cases, token definitions, and private capture artifacts.
+
 ## The CLI and the Claude Code status line
 
 Secondary routes to the same daemon. Every command prints JSON for scripts with

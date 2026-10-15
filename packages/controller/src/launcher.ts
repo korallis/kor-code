@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { existsSync } from "node:fs";
+import type { SessionTurn, SessionLoadEvent } from "@kor-code/calibration";
 import type { Execution, Route } from "@kor-code/core";
 import { EventCollector, type SessionEvent } from "./events.js";
 import { redact } from "@kor-code/jev";
@@ -10,6 +11,10 @@ export interface SessionLaunch { execution: Execution; repositoryPath: string; w
 export interface PermissionDenial { toolName: string; toolUseId: string; input: string }
 export interface ToolResult { toolName: string; toolUseId: string; input: string; output: string; isError: boolean }
 export interface SessionTelemetry {
+  turns?: readonly SessionTurn[];
+  startContextTokens?: number;
+  contextTokenSum?: number;
+  loadEvents?: readonly SessionLoadEvent[];
   result: string;
   isError: boolean;
   permissionDenials: number;
@@ -107,26 +112,82 @@ function parseUsage(value: unknown): Readonly<Record<string, number>> | undefine
   }
   return Object.keys(usage).length > 0 ? usage : undefined;
 }
+function contextTelemetry(events: readonly SessionEvent[]): Pick<SessionTelemetry, "turns" | "startContextTokens" | "contextTokenSum" | "loadEvents"> {
+  const turns: SessionTurn[] = [];
+  const byMessage = new Map<string, SessionTurn>();
+  const loads = new Map<string, SessionLoadEvent[]>();
+  for (const event of events) {
+    if (event.kind !== "json") continue;
+    const value = record(event.value);
+    if (!value || value.parent_tool_use_id) continue;
+    const message = record(value.message);
+    if (value.type === "assistant") {
+      const id = stringField(message?.id);
+      const usage = parseUsage(message?.usage);
+      if (!id || usage?.input_tokens === undefined) continue;
+      let turn = byMessage.get(id);
+      const counts = {
+        inputTokens: usage.input_tokens,
+        cacheReadTokens: usage.cache_read_input_tokens ?? 0,
+        cacheCreationTokens: usage.cache_creation_input_tokens ?? 0,
+        outputTokens: usage.output_tokens ?? 0,
+        contextTokens: usage.input_tokens + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0),
+      };
+      if (Object.values(counts).some(count => !Number.isInteger(count) || count < 0)) continue;
+      if (turn) Object.assign(turn, counts, { outputTokens: Math.max(turn.outputTokens, counts.outputTokens) });
+      else { turn = { messageId: id, ...counts }; turns.push(turn); byMessage.set(id, turn); }
+      const turnNumber = turns.indexOf(turn) + 1;
+      for (const item of Array.isArray(message?.content) ? message.content : []) {
+        const block = record(item);
+        const toolUseId = stringField(block?.id);
+        const name = stringField(block?.name);
+        if (block?.type !== "tool_use" || !toolUseId || !name || loads.has(toolUseId)) continue;
+        const entries: SessionLoadEvent[] = [{ kind: "tool", name, toolUseId, turn: turnNumber, status: "requested" }];
+        const input = record(block.input);
+        const skill = name === "Skill" ? stringField(input?.skill) : undefined;
+        const path = name === "Read" ? stringField(input?.file_path) : undefined;
+        const readSkill = path?.replaceAll("\\", "/").match(/(?:^|\/)skills\/([^/]+)\/SKILL\.md$/)?.[1];
+        const skillName = skill ?? readSkill;
+        if (skillName) entries.push({ kind: "skill", name: skillName, toolUseId, turn: turnNumber, status: "requested" });
+        loads.set(toolUseId, entries);
+      }
+    } else if (value.type === "user") {
+      for (const item of Array.isArray(message?.content) ? message.content : []) {
+        const block = record(item);
+        const id = stringField(block?.tool_use_id);
+        if (block?.type !== "tool_result" || !id) continue;
+        for (const load of loads.get(id) ?? []) load.status = block.is_error === true ? "failed" : "succeeded";
+      }
+    }
+  }
+  return turns[0] ? { turns, loadEvents: [...loads.values()].flat(),
+    startContextTokens: turns[0].contextTokens,
+    contextTokenSum: turns.reduce((sum, turn) => sum + turn.contextTokens, 0),
+  } : {};
+}
 function parseResultEvent(events: readonly SessionEvent[]): SessionTelemetry | undefined {
   const event = [...events].reverse().find(candidate => {
     const value = record(candidate.value);
     return candidate.kind === "json" && value?.type === "result";
   });
   const value = event ? record(event.value) : undefined;
-  if (!value) return undefined;
-  const modelUsage = record(value.modelUsage);
-  const model = stringField(value.model) ?? (modelUsage ? Object.keys(modelUsage)[0] : undefined);
-  const permissionDenials = Array.isArray(value.permission_denials) ? value.permission_denials.length : value.permission_denials === undefined ? 0 : 1;
-  const usage = parseUsage(value.usage);
-  const totalCostUsd = numberField(value.total_cost_usd);
-  const durationMs = numberField(value.duration_ms);
-  const durationApiMs = numberField(value.duration_api_ms);
-  const numTurns = numberField(value.num_turns);
+  const context = contextTelemetry(events);
+  if (!value && !context.turns?.length) return undefined;
+  const result = value ?? {};
+  const modelUsage = record(result.modelUsage);
+  const model = stringField(result.model) ?? (modelUsage ? Object.keys(modelUsage)[0] : undefined);
+  const permissionDenials = Array.isArray(result.permission_denials) ? result.permission_denials.length : result.permission_denials === undefined ? 0 : 1;
+  const usage = parseUsage(result.usage);
+  const totalCostUsd = numberField(result.total_cost_usd);
+  const durationMs = numberField(result.duration_ms);
+  const durationApiMs = numberField(result.duration_api_ms);
+  const numTurns = numberField(result.num_turns);
   return {
-    result: stringField(value.result) ?? "",
-    isError: value.is_error === true,
+    ...context,
+    result: stringField(result.result) ?? "",
+    isError: result.is_error === true,
     permissionDenials,
-    permissionDenialDetails: denialDetails(value.permission_denials),
+    permissionDenialDetails: denialDetails(result.permission_denials),
     toolResults: toolResults(events),
     ...(totalCostUsd !== undefined ? { totalCostUsd } : {}),
     ...(durationMs !== undefined ? { durationMs } : {}),
@@ -136,11 +197,11 @@ function parseResultEvent(events: readonly SessionEvent[]): SessionTelemetry | u
     ...(usage ? { usage } : {}),
   };
 }
-function failureReasons(exitCode: number, telemetry: SessionTelemetry | undefined): string[] {
+function failureReasons(exitCode: number, telemetry: SessionTelemetry | undefined, hasResultEvent: boolean): string[] {
   const reasons: string[] = [];
   if (exitCode !== 0) reasons.push(`exit ${exitCode}`);
-  if (!telemetry) reasons.push("missing result event");
-  else {
+  if (!hasResultEvent) reasons.push("missing result event");
+  if (telemetry) {
     if (telemetry.isError) reasons.push("result is_error");
     if (telemetry.permissionDenials !== (telemetry.permissionDenialDetails?.length ?? 0)) reasons.push("unrecognized permission denial records");
   }
@@ -194,7 +255,7 @@ export class SessionLauncher implements SessionLauncherLike {
         collector.add("exited", exitCode);
         const actualExitCode = exitCode ?? 1;
         const telemetry = parseResultEvent(collector.events);
-        const reasons = failureReasons(actualExitCode, telemetry);
+        const reasons = failureReasons(actualExitCode, telemetry, collector.events.some(event => event.kind === "json" && record(event.value)?.type === "result"));
         resolvePromise({ exitCode: actualExitCode, ...(signal ? { signal } : {}), events: collector.events, stdout, stderr, ...(telemetry ? { telemetry } : {}), failed: reasons.length > 0, ...(reasons.length > 0 ? { failureReasons: reasons } : {}) });
       });
     });
