@@ -156,6 +156,28 @@ preserved that plugin. User-scope installation also worked. A separate fresh-HOM
 purge restored the complete path/type/mode/link inventory without leftovers. The generated unit passed `systemd-analyze --user verify`; systemctl sequencing was checked
 with a shim, not the shared real user manager. No live gateway key was used.
 
+## Skill catalogue sources
+
+The optional `skills` block configures catalogue sources and warning budgets:
+
+```yaml
+skills:
+  privatePath: ~/private-guidance
+  packs: [~/skill-packs/frontend]
+  jev: names-only
+  listingBudget: 8000
+  bodyBudget: 2000
+```
+
+Without it, Kor reads its bundled skills and the optional
+`XDG_CONFIG_HOME/kor/skills/` private directory. Extra pack paths and an explicit
+private path must exist. Relative paths resolve from `config.yaml`; `~` means
+the current Kor home. Private descriptions stay out of the selection view unless
+`jev: full`; a skill marked `local-only` remains restricted. `kor skills index`
+writes the merged catalogue under `XDG_STATE_HOME/kor/skills/catalogue.json`.
+See [the catalogue contract](skills.md#catalogue) for counting, deduplication,
+name collisions, visibility and the read-only `--from` scan.
+
 The YAML schema is:
 
 ```yaml

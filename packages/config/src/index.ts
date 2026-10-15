@@ -28,6 +28,13 @@ export const calibrationSchema = z.strictObject({
   sampleRate: z.number().min(0).max(1).default(0.25),
   baselineRoute: routeSchema.prefault({}),
 });
+export const skillsConfigSchema = z.strictObject({
+  privatePath: nonempty.optional(),
+  packs: z.array(nonempty).default([]),
+  jev: z.enum(["names-only", "full"]).default("names-only"),
+  listingBudget: positiveInteger.default(8_000),
+  bodyBudget: positiveInteger.default(2_000),
+});
 export const korConfigSchema = z.strictObject({
   repos: z.record(nonempty, repositorySchema).default({}),
   limits: z.strictObject({
@@ -39,6 +46,7 @@ export const korConfigSchema = z.strictObject({
   pollIntervalSeconds: positiveInteger.default(60),
   intakeLabel: nonempty.default("kor"),
   calibration: calibrationSchema.prefault({}),
+  skills: skillsConfigSchema.optional(),
 });
 export type KorRepositoryConfig = z.infer<typeof repositorySchema>;
 export type KorLimits = KorConfig["limits"];
@@ -103,8 +111,14 @@ export function parseKorConfig(input: unknown, options: { home?: string; baseDir
   if (!parsed.success) throw new Error("Invalid Kor config: expected the documented config schema");
   const home = options.home ?? homedir();
   const baseDir = options.baseDir ?? process.cwd();
+  const resolvePath = (path: string) => resolve(baseDir, path === "~" ? home : path.startsWith("~/") ? join(home, path.slice(2)) : path);
   return {
     ...parsed.data,
+    ...(parsed.data.skills ? { skills: {
+      ...parsed.data.skills,
+      packs: parsed.data.skills.packs.map(resolvePath),
+      ...(parsed.data.skills.privatePath ? { privatePath: resolvePath(parsed.data.skills.privatePath) } : {}),
+    } } : {}),
     repos: Object.fromEntries(Object.entries(parsed.data.repos).map(([key, repository]) => {
       const path = repository.path === "~" ? home : repository.path.startsWith("~/")
         ? join(home, repository.path.slice(2)) : repository.path;

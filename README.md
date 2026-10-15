@@ -296,6 +296,7 @@ Secondary routes to the same daemon. Every command prints JSON for scripts with
 | Preview Jev's plan | `kor plan LEE-123` |
 | Check your setup | `kor doctor` |
 | Validate public skills | `kor skills lint` (`[DIRECTORY] [--json]`) |
+| Build or inspect the skill catalogue | `kor skills index`, `list`, `show NAME`, `doctor` (`[--from DIRECTORY]... [--estimate] [--json]`) |
 | Open Mission Control | `kor ui` |
 
 A real timeline, from the run in the screenshots above (it was blocked once, retried
@@ -341,8 +342,11 @@ the same as an object.
 ## Documentation
 
 - [Public skills](docs/skills.md): bundled code and PR standards, authoring schema,
-  `kor skills lint`, routing guardrails and token estimates. Lint runs locally
-  without credentials or a daemon; session selection and delivery are separate work.
+  lint, catalogue commands, private and configured sources, routing guardrails and
+  token costs. `kor skills index` writes a private catalogue in Kor state;
+  `list`, `show` and `doctor` inspect sources without writing. Use repeated
+  `--from DIRECTORY` for an explicit local scan and `--estimate` for reproducible
+  costs without a gateway. Session selection and delivery are separate work.
 
 - [User guide](docs/user-guide.md): install, credentials, configuration, Linear
   setup, Mission Control job by job, the CLI and status line, recovery,

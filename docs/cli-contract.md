@@ -19,6 +19,12 @@ daemon or credential requirement. Its report schema, diagnostic rules and token
 estimates are documented in [Public skills](skills.md#output-and-proof). It uses
 the standard `0`/`1`/`2` exit codes and shared CLI errors for I/O failures.
 
+`kor skills index|list|doctor [--from DIRECTORY]... [--estimate] [--json]` and
+`kor skills show NAME` inspect the merged catalogue without a daemon. Only
+`index` writes state; errors preserve the last catalogue. Their versioned JSON
+shapes, hashes, source configuration and budgets are documented in
+[Catalogue](skills.md#catalogue). `show` accepts the same flags.
+
 - Use the installed `kor` (or `bin/kor` from the checkout). Both print clean
   JSON on stdout. `pnpm kor` prints pnpm build output before the command's own
   output and is meant for interactive use.
