@@ -33,7 +33,7 @@ export async function prepareSessionSkills(options: {
   if (!catalogue.ok) throw new Error("Cannot select session skills from an invalid catalogue; run kor skills doctor");
   const stackTags = await repositoryStackTags(input.worktreePath);
   const stage = input.skillStage ?? "execute";
-  const policy = { stage, allowedTools: input.allowedTools, stackTags, ...(repository?.skills?.never ? { never: repository.skills.never } : {}),
+  const policy = { stage, allowedTools: input.allowedTools, stackTags, ...repository?.skills,
     ...(config.skills ? { bodyBudget: config.skills.bodyBudget } : {}) };
   const playbookOverride = input.playbookOverride === undefined || input.playbookOverride === "none" ? input.playbookOverride
     : catalogue.skills.find(skill => skill.name === input.playbookOverride && !playbookProblem(skill, policy))?.name;
@@ -57,7 +57,7 @@ export async function prepareSessionSkills(options: {
     ...(playbookOverride !== undefined ? { override: playbookOverride } : {}),
   })]);
   const selected = playbook.playbookPlan.selected;
-  const skills = applySkillOverrides(decision.plan, catalogue.skills, input.skillOverrides ?? new Map(), policy).skills;
+  const skills = applySkillOverrides(decision.plan, catalogue.skills, input.skillOverrides ?? { skills: new Map(), confirmed: new Set() }, policy).skills;
   const plan: SkillDeliveryPlan = { catalogueHash: catalogue.hash, skills: skills.map(skill => ({ name: skill.name,
     tier: skill.name === selected ? "pinned" : skill.tier })) };
   const pack = await buildSkillsPack({ sessionsDir: paths.sessionsDir, executionId: input.execution.id, catalogue, plan, allowedTools: input.allowedTools });

@@ -50,13 +50,16 @@ export class OverrideStore {
         reason TEXT NOT NULL, policy_checks TEXT NOT NULL, origin TEXT NOT NULL, recorded_at TEXT NOT NULL,
         linear_comment TEXT NOT NULL, comment_id TEXT NOT NULL
       );`);
+    if (!(this.db.prepare("PRAGMA table_info(override_audit)").all() as Row[]).some(column => column.name === "over_budget")) {
+      this.db.exec("ALTER TABLE override_audit ADD COLUMN over_budget INTEGER NOT NULL DEFAULT 0");
+    }
   }
   close(): void { this.db.close(); }
 
   record(input: Omit<OverrideRecord, "id" | "recordedAt" | "linearComment">): OverrideRecord & { commentId: string } {
     const record = { ...input, id: `ovr_${randomUUID().slice(0, 8)}`, recordedAt: new Date(this.now()).toISOString(), linearComment: input.status === "rejected" ? "skipped" as const : "pending" as const, commentId: randomUUID() };
-    this.db.prepare("INSERT INTO override_audit(id,execution_id,issue_id,target,choice,previous,status,reason,policy_checks,origin,recorded_at,linear_comment,comment_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)")
-      .run(record.id, record.executionId, record.issueId, record.target, record.choice, record.previous ?? null, record.status, record.reason, JSON.stringify(record.policyChecks), record.origin, record.recordedAt, record.linearComment, record.commentId);
+    this.db.prepare("INSERT INTO override_audit(id,execution_id,issue_id,target,choice,previous,status,reason,policy_checks,origin,recorded_at,linear_comment,comment_id,over_budget) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+      .run(record.id, record.executionId, record.issueId, record.target, record.choice, record.previous ?? null, record.status, record.reason, JSON.stringify(record.policyChecks), record.origin, record.recordedAt, record.linearComment, record.commentId, record.overBudget ? 1 : 0);
     return record;
   }
 
@@ -126,6 +129,7 @@ export class OverrideStore {
     return {
       id: String(row.id), executionId: String(row.execution_id), issueId: String(row.issue_id), target: String(row.target), choice: String(row.choice),
       ...(typeof row.previous === "string" ? { previous: row.previous } : {}),
+      ...(row.over_budget === 1 ? { overBudget: true as const } : {}),
       status: row.status as OverrideRecord["status"], reason: String(row.reason), policyChecks: JSON.parse(String(row.policy_checks)) as OverrideRecord["policyChecks"],
       origin: String(row.origin), recordedAt: String(row.recorded_at), linearComment: row.linear_comment as OverrideRecord["linearComment"], commentId: String(row.comment_id),
     };

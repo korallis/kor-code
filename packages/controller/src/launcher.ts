@@ -10,7 +10,7 @@ import { EventCollector, type SessionEvent } from "./events.js";
 import { redact, type SessionOverrides } from "@kor-code/jev";
 import { DEFAULT_ALLOWED_TOOLS, permissionGuidance, sessionPermissions, sessionTools } from "./session-permissions.js";
 
-export interface SessionLaunch { skillsDisabled?: boolean; attemptId?: string; playbookFailure?: { classes: string[]; blockers: string[] }; playbookOverride?: string; skillOverrides?: SessionOverrides["skills"]; skillStage?: "execute" | "repair"; execution: Execution; repositoryPath: string; worktreePath: string; prompt: string; route?: Route; allowedTools?: readonly string[]; tools?: readonly string[]; checks?: readonly string[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }
+export interface SessionLaunch { skillsDisabled?: boolean; attemptId?: string; playbookFailure?: { classes: string[]; blockers: string[] }; playbookOverride?: string; skillOverrides?: Pick<SessionOverrides, "skills" | "confirmed">; skillStage?: "execute" | "repair"; execution: Execution; repositoryPath: string; worktreePath: string; prompt: string; route?: Route; allowedTools?: readonly string[]; tools?: readonly string[]; checks?: readonly string[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }
 export interface PermissionDenial { toolName: string; toolUseId: string; input: string }
 export interface ToolResult { toolName: string; toolUseId: string; input: string; output: string; isError: boolean }
 export interface SessionTelemetry {

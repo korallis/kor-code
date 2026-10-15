@@ -55,7 +55,7 @@ export async function runVerifiedSessions(input: {
           ...(previous.findings.some(finding => finding.status !== "pass") ? ["acceptance-failure"] : []),
           ...(previous.evidence.some(item => item.kind === "policy" && item.status !== "pass") ? ["policy-denial"] : [])],
         blockers: previous.blockers,
-      } } : {}), ...(overrides?.playbook !== undefined ? { playbookOverride: overrides.playbook } : {}), ...(overrides?.skills.size ? { skillOverrides: overrides.skills } : {}),
+      } } : {}), ...(overrides?.playbook !== undefined ? { playbookOverride: overrides.playbook } : {}), ...(overrides?.skills.size ? { skillOverrides: { skills: overrides.skills, confirmed: overrides.confirmed } } : {}),
         skillStage: previous ? "repair" : "execute", execution, repositoryPath: repository.path, worktreePath: execution.worktree,
         prompt, tools: toolPlan.tools,
         ...(input.skillsDisabled ? { skillsDisabled: true } : {}),

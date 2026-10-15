@@ -928,11 +928,15 @@ Each edit is judged before it is recorded. The daemon checks that the run is
 not finished, that the choice is well formed, that the skill or playbook is in
 the catalogue under the right target, and that repository policy allows it:
 not denied, available at the stage, required tools inside the repository's tool
-policy, the stack matches and the body fits the tier. A tool must be inside the
-repository's tool policy; an override never widens it. The new plan must stay
-within the repository's `skills.budget` unless the operator confirms **over
-budget**; that confirmation lifts only the soft budget. An edit that would not
-change the pack is refused as a no-op. Applied and refused edits alike go into
+policy, the stack matches and the body fits the tier. An explicit `pinned` tier
+obeys the configured `skills.bodyBudget` as well as the 2,000-token ceiling. A
+tool must be inside the repository's tool policy; an override never widens it.
+The new plan must stay within the repository's `skills.budget` unless the
+operator confirms **over budget**; that confirmation lifts only the soft budget,
+for that skill, and is stored with the override. An edit is judged against the overrides already
+in force, not against Jev's current plan: repeating the same override is refused,
+but hiding a skill Jev has not picked yet is kept for later sessions. Applied and
+refused edits alike go into
 `override_audit` and `kor logs`. Each applied edit, and each revert, is posted
 as a comment on the Linear issue with the per-turn token change, for example
 `Selected guidance goes from 671 to 1,581 tokens per turn.`
@@ -949,14 +953,20 @@ A Linear label on the issue sets a per-issue override:
 `kor:skill/NAME` (also `kor:skill/-NAME` and `kor:skill/NAME=TIER`),
 `kor:playbook/NAME`, and `kor:tool/NAME` (also `kor:tool/-NAME`). When an
 execution starts, Kor records each new label as an override from `Linear label`,
-through the same checks, audit and comment. A label that is later removed is
-reverted. Edits made later in Mission Control win over labels. A label cannot
-confirm over budget.
+through the same checks, audit and comment. A refused label is judged again at
+the next execution start. A label that is later removed is reverted. Edits made
+later in Mission Control win over labels. A label cannot confirm over budget.
 
 Policy is checked again at session time. A skill edit that is no longer allowed
 keeps Jev's tier, and the plan records `Override not applied:` with the reason.
-A playbook override that is not available at the session's stage, for example at
-repair, is left to Jev's Choice.
-An override can load a skill that outcome learning demoted. Neither calibration baseline arm receives overrides. No override can choose a
-model, provider, harness or effort; the route stays Jev's per-task decision.
-
+Jev plans every session again, so the merged plan is held to the budget again:
+Jev's own pinned and listed picks are hidden first, lowest probability first,
+then the overrides that were not confirmed over budget, latest first, with
+`Override not applied: over the skill budget without confirmation.` Armed
+entries cost nothing at the start and are never trimmed, nor are repository
+`always` and `pins`. Sending the same edit again with **Accept over budget**
+ticked confirms it. A playbook override that is not
+available at the session's stage, for example at repair, is left to Jev's
+Choice. An override can load a skill that outcome learning demoted. Neither
+calibration baseline arm receives overrides. No override can choose a model,
+provider, harness or effort; the route stays Jev's per-task decision.

@@ -597,6 +597,7 @@ export class KorDaemon {
     const checks: OverrideRecord["policyChecks"] = [{ name: "execution not finished", result: FINISHED.has(run.status) ? "fail" : "pass" }];
     let previous: string | undefined;
     let tokens: OverrideAnswer["tokens"];
+    let overBudget = false;
     if (session) {
       const edit = parseSessionEdit(session, request.choice);
       checks.push({ name: `valid ${session} edit`, result: edit ? "pass" : "fail", ...(edit ? {} : { reason: SESSION_GRAMMAR[session] }) });
@@ -604,6 +605,7 @@ export class KorDaemon {
         try {
           const review = reviewSessionEdit(edit, { ...await this.sessionContext(run.executionId, run.repository), ...(request.overBudget ? { overBudget: true } : {}) });
           checks.push(...review.checks);
+          overBudget = review.checks.some(check => check.name === "within the skill budget" && check.result === "pass" && check.reason !== undefined);
           tokens = review.tokens;
           previous = review.previous;
         } catch (error) { checks.push({ name: "skill catalogue available", result: "fail", reason: safeMessage(error) }); }
@@ -628,6 +630,7 @@ export class KorDaemon {
       target: session ?? (isRoute ? "route" : decision?.decisionId ?? request.target),
       choice: request.choice,
       ...(previous ? { previous } : {}),
+      ...(applied && overBudget ? { overBudget: true as const } : {}),
       status: applied ? "applied" : "rejected",
       reason: applied ? (session ? `Applies from the next session; the running session keeps its pack.${guidance}` : isRoute ? "Applies from the next attempt; the running session keeps its model." : "Recorded against the decision for the next evaluation.") : `Policy refused it: ${failed.join(", ")}.`,
       policyChecks: checks,
@@ -657,7 +660,7 @@ export class KorDaemon {
   sessionEdits(executionId: string): SessionEdit[] {
     return this.overrides.sessionOverrides(executionId).filter(record => record.status === "applied").flatMap(record => {
       const edit = parseSessionEdit(record.target, record.choice);
-      return edit ? [edit] : [];
+      return !edit ? [] : edit.target === "skills" && record.overBudget ? [{ ...edit, overBudget: true }] : [edit];
     });
   }
 
@@ -673,7 +676,7 @@ export class KorDaemon {
       skills: catalogue.skills,
       plan: planned.skills ? { ...planned.skills, budget } : emptySkillPlan(catalogue, budget),
       overrides: foldSessionEdits(this.sessionEdits(executionId)),
-      policy: { stage: "execute", allowedTools: eligibleTools, stackTags, ...(repository.skills?.never ? { never: repository.skills.never } : {}),
+      policy: { stage: "execute", allowedTools: eligibleTools, stackTags, ...repository.skills,
         ...(this.config.skills ? { bodyBudget: this.config.skills.bodyBudget } : {}) },
       playbook: planned.playbook ?? null,
       eligibleTools,
@@ -690,10 +693,10 @@ export class KorDaemon {
       const review = reviewSessionEdit(edit, { ...context, overBudget: true });
       const failed = review.checks.find(check => check.result === "fail");
       return { choice: sessionEditChoice(edit), tokenDelta: review.tokens ? review.tokens.after - review.tokens.before : null,
-        overBudget: review.tokens !== null && review.tokens.after > context.plan.budget && review.tokens.after > review.tokens.before,
+        overBudget: edit.target === "skills" && review.tokens !== null && review.tokens.after > context.plan.budget && review.tokens.after > review.tokens.before,
         blocked: failed ? failed.reason ?? failed.name : null };
     };
-    const effective = applySkillOverrides(context.plan, context.skills, context.overrides.skills, context.policy);
+    const effective = applySkillOverrides(context.plan, context.skills, context.overrides, context.policy);
     const kinds = new Map(context.skills.map(skill => [skill.name, skill.kind]));
     const playbook = context.overrides.playbook ?? context.playbook ?? "none";
     return {
@@ -711,7 +714,11 @@ export class KorDaemon {
     };
   }
 
-  /** Records each `kor:skill/…`, `kor:playbook/…` and `kor:tool/…` label on the issue as an override once, and reverts one whose label was removed. */
+  /**
+   * Records each `kor:skill/…`, `kor:playbook/…` and `kor:tool/…` label on the issue as an
+   * override, and reverts one whose label was removed. A refused label is judged again at the
+   * next execution start, since the catalogue or repository policy may have changed.
+   */
   private async syncLabelOverrides(executionId: string, labels: readonly string[]): Promise<void> {
     const wanted = labelEdits(labels).map(edit => ({ target: edit.target, choice: sessionEditChoice(edit) }));
     const recorded = this.overrides.sessionOverrides(executionId).filter(record => record.origin === LABEL_ORIGIN);
@@ -719,7 +726,7 @@ export class KorDaemon {
       if (record.status === "applied" && !wanted.some(edit => edit.target === record.target && edit.choice === record.choice)) await this.revertOverride(record.id, `${LABEL_ORIGIN} (removed)`);
     }
     for (const edit of wanted) {
-      if (!recorded.some(record => record.status !== "reverted" && record.target === edit.target && record.choice === edit.choice)) await this.override({ executionId, ...edit, origin: LABEL_ORIGIN });
+      if (!recorded.some(record => record.status === "applied" && record.target === edit.target && record.choice === edit.choice)) await this.override({ executionId, ...edit, origin: LABEL_ORIGIN });
     }
   }
 
