@@ -39,6 +39,8 @@ export const skillFrontmatterSchema = z.strictObject({
   "allowed-tools": z.string().optional(),
   "disable-model-invocation": z.boolean().optional(),
   "user-invocable": z.boolean().optional(),
+  hooks: z.never().optional(),
+  context: z.never().optional(),
   metadata: z.record(z.string(), z.string()).optional(),
 });
 
@@ -126,6 +128,10 @@ export async function lintSkills(root: string, options: { private?: boolean; nam
   }
 
   function checkText(file: string, text: string, startLine = 1): void {
+    for (const match of text.matchAll(/!`[^`]+`/g)) {
+      const line = startLine + text.slice(0, match.index).split("\n").length - 1;
+      add(file, line, "error", "no-execution", "Remove shell interpolation; scripts must run through repository-approved tools.");
+    }
     let fence: string | undefined;
     let upstreamQuote = false;
     for (const [index, line] of lines(text).entries()) {

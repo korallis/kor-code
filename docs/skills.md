@@ -95,6 +95,10 @@ Errors fail the command:
   heading. A reviewer checks that its entries actually cover the document.
 - Backslash paths. Write portable forward-slash paths.
 - Routing content, as described below.
+- `hooks` or `context` frontmatter, and shell interpolation using an exclamation
+  mark followed by a backtick-delimited command. These can execute outside tool
+  permissions, so both public and private skills reject them. The interpolation
+  check also applies inside code fences and attributed quotations.
 
 Warnings identify a trigger after the first 120 description characters, estimated
 body cost above `kor.budget`, uppercase MUST/NEVER/REQUIRED/ALWAYS rules after body
@@ -162,7 +166,7 @@ Before adding a skill, review these judgment checks alongside lint:
 - State whether a bundled script should be executed or read; audit its behaviour
   and tool requirements. Prefer scripts for deterministic steps and prose for judgment.
 - Give workflows observable completion criteria and a validation loop. Plan and
-  validate before risky execution. Put invariants in code or hooks where possible.
+  validate before risky execution. Put invariants in code or repository checks.
 - Keep one default approach and a clear condition for taking an alternative.
 - Confirm public-safe content, source attribution and license rights. Third-party
   imports need a pinned source and content hash through the import workflow.
@@ -377,6 +381,11 @@ hash. It reruns lint on the selected bundles using their source tier: bundled
 public skills retain strict authoring rules, while private skills accept missing
 licenses and unrelated frontmatter, with the same authoring warnings as import.
 Routing instructions and invalid reference paths still fail private delivery.
+Skill-supplied `hooks`, forked `context` and shell interpolation also fail;
+bundled scripts can run only through the session's permitted tools. Delivery
+rechecks these restrictions even for a catalogue created before the restriction
+was introduced. Kor's own arming hook only injects validated guidance and does
+not execute bundled commands.
 Required tools must already be available under repository permissions.
 Frontmatter `allowed-tools` grants must exactly match existing
 permission entries; skill invocation cannot broaden auto-approval. Manual-only
@@ -509,6 +518,7 @@ non-Kor metadata, and do
 not impose public description wording, overlap, reference layout or body-length
 rules. Unknown routing fields still fail. By default, any invalid or conflicting
 skill leaves the destination unchanged (exit `1`); valid skills report `not-copied`.
+Hooks, forked execution and shell interpolation fail import as well as delivery.
 Add `--skip-invalid` to import valid skills while reporting invalid/conflicting
 ones as `skipped`, with their errors. It exits `0` when there is at least one valid
 skill and `1` when no valid skills remain. Combine it with `--dry-run` to preview
