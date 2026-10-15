@@ -1,17 +1,13 @@
 # Kor Code user guide
 
-This guide takes you from a fresh download to a finished run in Mission Control,
-and explains what to do when something stops. Start with the [README](../README.md)
-for the short version.
+This guide takes you from install to a pull request, in the order you meet
+things. The [README](../README.md) is the short version.
 
-Every command, output and screenshot below was run for real. The captures were
-made on Linux (Ubuntu under WSL2) in a throwaway `HOME`, against a scratch clone of
-this repository as the pilot project, real Linear issues and a live CLIProxyAPI
-gateway. In pasted output, paths under that throwaway home appear as written
-(`/tmp/kor-demo/…`, or `<sandbox>`). The command-line transcripts in
-[Install](#install), [Run an issue from the CLI](#run-an-issue-from-the-cli) and
-[Recover](#recover-from-a-restart-a-crash-or-a-block) come from an earlier sandbox
-(`/tmp/kor-t15/…`) against the same code path.
+Every command, output and screenshot here comes from running Kor for real on
+Linux (Ubuntu under WSL2): the one-line installer in a throwaway `HOME`
+(`/tmp/kor-rf/home` in the output), a scratch clone of this repository as the
+project (`/tmp/kor-rf/pilot`), throwaway Linear issues (LEE-1164 to LEE-1166,
+canceled afterwards), a live CLIProxyAPI gateway and real model calls.
 
 Contents:
 
@@ -20,232 +16,172 @@ Contents:
 3. [Credentials and the gateway](#credentials-and-the-gateway)
 4. [Configure a repository](#configure-a-repository)
 5. [Check your setup with `kor doctor`](#check-your-setup-with-kor-doctor)
-6. [Start the daemon and open Mission Control](#start-the-daemon-and-open-mission-control)
-7. [Choose a model](#choose-a-model)
+6. [Open Mission Control](#open-mission-control)
+7. [Choose models](#choose-models)
 8. [Prepare a Linear issue](#prepare-a-linear-issue)
 9. [Work in Mission Control](#work-in-mission-control)
-10. [What happens after the checks pass](#what-happens-after-the-checks-pass)
-11. [The CLI and the Claude Code status line](#the-cli-and-the-claude-code-status-line)
-12. [Recover from a restart, a crash or a block](#recover-from-a-restart-a-crash-or-a-block)
-13. [Troubleshooting](#troubleshooting)
-14. [Where Kor keeps things](#where-kor-keeps-things)
-15. [Update and uninstall](#update-and-uninstall)
+10. [Skills and your private pack](#skills-and-your-private-pack)
+11. [What happens after approval](#what-happens-after-approval)
+12. [The CLI and the Claude Code status line](#the-cli-and-the-claude-code-status-line)
+13. [Recover from a restart, a crash or a block](#recover-from-a-restart-a-crash-or-a-block)
+14. [Troubleshooting](#troubleshooting)
+15. [Where Kor keeps things](#where-kor-keeps-things)
+16. [Update and uninstall](#update-and-uninstall)
 
 ## How a run works
 
 You write a Linear issue with acceptance criteria. Kor then:
 
-1. **Queues** it (the **Start** and **Queue** buttons in Mission Control, `kor run
-   LEE-123`, or the daemon polls Linear for Todo issues with the intake label `kor`).
-2. **Plans** it. One Jev preflight judges whether the issue is ready, how complex
-   and risky it is, and which route and agent fit. Skills and playbooks are selected
-   for execution. Jev is the decision service Kor calls through the TypeSafe API. If Jev is unavailable or unsure,
-   Kor uses your configured default route and labels it `fallback`.
-3. **Works** in an isolated git worktree. It starts Claude Code there, with the
-   chosen model, through your CLIProxyAPI gateway and only the tools in your
-   `toolAllowlist`. Your own checkout is never edited.
-4. **Verifies**. Kor runs each of your repository `checks` (an exit code is
-   authoritative), then asks Jev one question per acceptance criterion. A failure
-   goes back to the session as evidence, up to two repair attempts.
-5. **Waits for you**, when the repository has `ship: approve`. A verified run
-   stops in the `waiting` state until you **Approve and ship** it, **Request
-   changes** or cancel it. With `ship: auto` (the default for a repository that
-   does not set it) it goes straight on.
-6. **Ships** a verified result: commits it on `kor/<issue key>`, runs your
-   repository's delivery gate (see [below](#what-happens-after-the-checks-pass)),
-   and opens a pull request.
-7. **Reports** to Linear throughout: comments, and the issue state moving to In
-   Progress, then In Review, then Done once *you* merge.
+1. **Queues** it: **Start** or **Queue** in Mission Control, `kor run LEE-123`,
+   or the daemon finds a Todo issue carrying the intake label `kor`.
+2. **Plans** it. Jev, the decision service Kor calls through the TypeSafe API,
+   judges whether the issue is ready, how complex and risky it is, which
+   verified model runs it, and which skills, playbook and optional tools the
+   session gets. If Jev is unavailable or unsure, Kor uses your configured
+   default route and labels it `fallback`.
+3. **Works** in its own git worktree, running Claude Code through your
+   CLIProxyAPI gateway with only the permissions in your `toolAllowlist`. Your
+   checkout is never edited.
+4. **Verifies**. Your repository `checks` run (the exit code decides), then Jev
+   judges each acceptance criterion. A failure goes back to the session as
+   evidence, for up to two repair attempts.
+5. **Waits for you** when the repository has `ship: approve`: a verified run
+   stays `waiting` until you approve it or request changes. With `ship: auto` it
+   carries straight on.
+6. **Ships**: commits the verified files on `kor/<issue key>`, runs the
+   repository's delivery gate and opens a pull request.
+7. **Reports** to Linear throughout: comments, In Progress, In Review when the
+   pull request opens, and Done once *you* merge it.
 
-Kor never merges a pull request.
-
-A run is in one of these states: `queued`, `running`, `waiting` (verified, awaiting
-your approval), `shipping`, `review`, `complete`, `failed`, `blocked` or
-`canceled`. `blocked` always carries a reason and waits for you. Mission Control
-also shows the stage the run is in: discover, preflight, context, execute,
+A run is `queued`, `running`, `waiting`, `shipping`, `review`, `complete`,
+`failed`, `blocked` or `canceled`. `blocked` always carries a reason and waits for
+you. Mission Control also shows the stage: discover, preflight, context, execute,
 supervise, verify, synchronise.
 
 ## Install
 
-You need:
-
-| Requirement | Why |
+| You need | Why |
 | --- | --- |
-| Linux, with Node 24+, pnpm and Git | Kor is a TypeScript workspace built from source. The installer's service is a systemd user unit; use `--no-systemd` where there is no user manager. |
-| [Claude Code](https://code.claude.com/docs/en/overview) 2.1.299 or newer | Kor runs it for every session; the status line is a Claude Code plugin. |
-| A web browser | Mission Control opens in your default browser (under WSL, the Windows one). |
-| A running [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) | The local gateway that holds your model-provider accounts. Kor talks to it at `http://127.0.0.1:8317` by default. |
-| A Linear personal API key | To read issues and write progress. |
-| A TypeSafe API key | For the Jev planning and acceptance judgments. |
-| For delivery: a GitHub `origin`, authenticated `gh-axi`, and a running `no-mistakes` daemon | To commit, push and open the pull request. |
+| Linux with Node 24+, Corepack and Git | Kor is built from source. Install Corepack with `npm install -g corepack` if `corepack` is missing. |
+| [Claude Code](https://code.claude.com/docs/en/overview) 2.1.299 or newer | Kor runs it for every session. |
+| A browser | Mission Control opens in your default browser (the Windows one under WSL). |
+| A running [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) | The local gateway that holds your model accounts, at `http://127.0.0.1:8317` by default. |
+| A Linear personal API key | To read issues and write progress. Kor uses only Linear's API: no webhook or Linear app to install. |
+| A TypeSafe API key | For Jev. |
+| To ship: a GitHub `origin`, Git identity, GitHub write access and a running `no-mistakes` daemon | To commit, push and open the pull request. |
 
-For a one-line installation (including the web app), see the
-[README Install section](../README.md#install). It also documents Corepack,
-custom install paths, private mirrors and updates. The manual route is:
+Install with one command:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/korallis/kor-code/main/scripts/install.sh | bash -s -- --pilot ~/code/my-project --linear-team APP
+```
+
+Without `--pilot` and `--linear-team` the script asks for them. `--pilot` is a
+standalone Git checkout of the project Kor will work on (a linked worktree is
+refused). The script checks Linux, Node, Git, Corepack, Claude Code and the
+gateway, clones Kor into `~/.local/share/kor-code`, installs its pinned pnpm,
+builds the CLI, daemon and Mission Control, then runs `kor install`. In the
+throwaway home this took 36 seconds and ended:
+
+```text
+Kor installed (scope: local)
+CLI: /tmp/kor-rf/home/.local/bin/kor
+Config: /tmp/kor-rf/home/.config/kor/config.yaml
+Service: /tmp/kor-rf/home/.config/systemd/user/kor.service (not started; systemd control skipped)
+Cockpit: kor-cockpit@kor only when Claude starts in /tmp/kor-rf/pilot (linked worktrees disabled)
+Manifest: /tmp/kor-rf/home/.local/state/kor-install/manifest.json
+CLIProxyAPI addition: existing credential retained; add its api-keys line manually if needed (value not printed).
+Confirm linearTeam (replace YOUR_TEAM_KEY if present), checks and toolAllowlist; run kor doctor before starting the service.
+Next: add the gateway api-keys line above to CLIProxyAPI and reload it.
+Configure checks and toolAllowlist in ~/.config/kor/config.yaml, then run kor doctor.
+Launch Mission Control: kor ui (or "$HOME/.local/bin/kor" ui before updating PATH).
+To update, rerun this same installer. To remove: kor uninstall --purge.
+```
+
+That home already had a gateway key in the environment, so the installer kept it
+and printed nothing. On a machine with no key it prints a new one instead:
+
+```text
+CLIProxyAPI addition: - kor-<generated-value>
+```
+
+**Add that line to the `api-keys` list in CLIProxyAPI's config file** and reload
+the proxy. The same value is stored as `KOR_GATEWAY_KEY` in
+`~/.config/kor/gateway.env` (mode `0600`). Kor never edits the proxy.
+
+What the installer writes:
+
+- `~/.local/bin/kor`, a link to the CLI in the checkout. Add `~/.local/bin` to
+  `PATH` if it is not there. Keep the checkout: the CLI and Mission Control run
+  from it.
+- `~/.config/kor/config.yaml`, a scaffold with your checkout, team key and
+  default branch ([next section](#configure-a-repository)). An existing config is
+  kept.
+- A systemd user unit, installed but not started. `--no-systemd` skips it, and a
+  machine without a user manager skips it automatically. You do not need the
+  unit: `kor ui` starts the daemon either way.
+- The `kor-cockpit` Claude Code plugin, enabled only in the pilot checkout's
+  `.claude/settings.local.json`. Your user-level Claude settings are not touched.
+  To enable it in every project, run `kor uninstall`, then
+  `node ~/.local/share/kor-code/packages/cli/dist/cli.js install --scope user`.
+- A journal of every change, so `kor uninstall` can reverse it.
+
+Options, as environment variables exported before the command:
+
+| Variable | Effect |
+| --- | --- |
+| `KOR_HOME` | Where to clone Kor (an absolute Linux path; default `~/.local/share/kor-code`). |
+| `KOR_GATEWAY_URL` | A gateway other than `http://127.0.0.1:8317`. |
+| `KOR_REPOSITORY`, `KOR_REF` | Install from a fork or another branch (default `main`). |
+
+For a private fork, authenticate with `gh auth login` and fetch the script
+through the GitHub API, replacing `korallis/kor-code` with your repository:
+
+```sh
+export KOR_REPOSITORY=https://github.com/OWNER/REPO.git
+gh api repos/OWNER/REPO/contents/scripts/install.sh -H "Accept: application/vnd.github.raw" | bash
+```
+
+To build by hand instead:
 
 ```sh
 git clone https://github.com/korallis/kor-code.git
 cd kor-code
-pnpm install --frozen-lockfile
-pnpm build
-node packages/cli/dist/cli.js install --pilot ~/code/my-project --linear-team APP
+corepack pnpm install --frozen-lockfile
+corepack pnpm -r --if-present build
+node packages/cli/dist/cli.js install --pilot ~/code/my-project --linear-team APP --no-systemd
 export PATH="$HOME/.local/bin:$PATH"
-kor --help
+kor ui
 ```
-
-`pnpm build` builds every package, including Mission Control (`packages/web/dist`).
-`--pilot` names a **standalone Git checkout** of the project you want Kor to work
-on, and the Claude Code status-line plugin activates only when Claude starts in
-that exact directory.
-Keep the `kor-code` checkout on disk: the installed `kor` command is a symlink to
-its compiled CLI, and the daemon serves Mission Control from it. Rebuild after you
-update it. The installer writes YAML with the supplied team key, empty checks and
-tool permissions, `ship: auto`, `launchProfile: lean` and a 60-second poll interval.
-See the [README scaffold](../README.md#quick-start). Manual installs without
-`--linear-team` write `YOUR_TEAM_KEY`, which must be replaced; the one-liner prompts
-for the key when creating a config. Reinstalls preserve existing configuration.
-
-On a machine with no Kor files, the installer prints a new gateway key for you to
-add to CLIProxyAPI by hand. The key below is redacted:
-
-![kor install on a fresh machine](images/install.png)
-
-```text
-$ node packages/cli/dist/cli.js install --pilot /tmp/kor-t15/fresh2-pilot --no-systemd
-Kor installed (scope: local)
-CLI: /tmp/kor-t15/fresh2/.local/bin/kor
-Config: /tmp/kor-t15/fresh2/.config/kor/config.yaml
-Service: /tmp/kor-t15/fresh2/.config/systemd/user/kor.service (not started; systemd control skipped)
-Cockpit: kor-cockpit@kor only when Claude starts in /tmp/kor-t15/fresh2-pilot (linked worktrees disabled)
-Manifest: /tmp/kor-t15/fresh2/.local/state/kor-install/manifest.json
-CLIProxyAPI addition: - kor-<generated-value>
-Stored the same new key in /tmp/kor-t15/fresh2/.config/kor/gateway.env (0600). Add the printed line to CLIProxyAPI manually.
-Configure repository mapping, checks and toolAllowlist; run kor doctor before starting the service.
-```
-
-That capture used `--no-systemd` so that it would not touch the user manager of the
-machine it ran on. Without that flag the installer also reloads your systemd user
-manager and leaves the `kor` service installed but **not started**. The service
-lifecycle on a real user manager was not exercised in these captures; the daemon
-was run with `kor serve` in a terminal instead. An earlier validation checked the
-generated unit with `systemd-analyze --user verify`.
-
-What the installer does and does not do:
-
-- It writes `~/.local/bin/kor`, a config scaffold, a private `gateway.env`, a
-  systemd user unit, and registers the `kor-cockpit@kor` Claude Code plugin from a
-  local marketplace under Kor's data directory.
-- Local scope (`--pilot`, the default) declares the plugin only in the pilot's
-  `.claude/settings.local.json`, so your user-level Claude settings stay
-  byte-identical. A linked Git worktree is refused as a pilot; use a normal clone.
-- It records every change in a journal so that `kor uninstall` can reverse it.
-- It never edits CLIProxyAPI's configuration, `~/.codex` or `~/.agents`. You add
-  the printed `api-keys` line to CLIProxyAPI yourself.
-
-**Add the key to CLIProxyAPI.** The `CLIProxyAPI addition:` line is a list item for
-the `api-keys` list in CLIProxyAPI's own configuration file. Add it, then restart
-or reload the proxy as CLIProxyAPI documents:
-
-```yaml
-api-keys:
-  - kor-<generated-value>      # the line the installer printed
-```
-
-The same value is already stored as `KOR_GATEWAY_KEY` in
-`~/.config/kor/gateway.env`, which is how Kor presents it. `kor doctor` then reports
-`PASS CLIProxyAPI with Kor key: reachable`; `HTTP 401` means the proxy does not
-know the key yet. Kor never edits the proxy's configuration.
-
-When a gateway key already exists (in `gateway.env` or the environment) the
-installer keeps it and prints `existing credential retained`, never the value.
-
-To make the status line available in every project instead of one, reinstall at user
-scope; your config and keys are reused:
-
-```sh
-kor uninstall
-node packages/cli/dist/cli.js install --scope user
-```
-
-On a machine with no config, a user-scope install scaffolds a config entry for the
-`kor-code` checkout itself; edit `repos` to name your project (see below). Real
-output of that command on a fresh home:
-
-```text
-$ node packages/cli/dist/cli.js install --scope user --no-systemd
-Kor installed (scope: user)
-CLI: /tmp/kor-t15/fresh2/.local/bin/kor
-Config: /tmp/kor-t15/fresh2/.config/kor/config.yaml
-Service: /tmp/kor-t15/fresh2/.config/systemd/user/kor.service (not started; systemd control skipped)
-Cockpit: kor-cockpit@kor
-Manifest: /tmp/kor-t15/fresh2/.local/state/kor-install/manifest.json
-CLIProxyAPI addition: - kor-<generated-value>
-Stored the same new key in /tmp/kor-t15/fresh2/.config/kor/gateway.env (0600). Add the printed line to CLIProxyAPI manually.
-Configure repository mapping, checks and toolAllowlist; run kor doctor before starting the service.
-```
-
-After verification, a repository with `ship: approve` posts its checks and
-acceptance results to Linear and waits for approval in Mission Control. Distinct
-block reasons appear as separate comments, so a later retry preserves earlier
-failures. Direct PR publication uses the run's recorded, applied Jev route to
-explain the verified change, classify its changelog, and summarize the recorded
-testing. It preserves the provider and route settings without asking a separate
-PR-writing route question. The decision audit links the PR pass to the task's
-source decision and explicitly marks the reused confidence as inherited. The
-run's own below-threshold handling is unchanged: an unapplied decision is never
-promoted for PR writing. If no reusable applied Jev decision exists, the PR uses
-issue text and recorded evidence with a `PR prose fallback` note asking you to
-review the summary and changelog. Shipping retries reuse that source decision;
-existing PR descriptions are left unchanged. Registry, completion or invalid-content
-failures still require resolving the reported problem and retrying shipping; the
-verified coding session does not run again. See [shipping](specs/shipping.md).
 
 ## Credentials and the gateway
 
 | Credential | Where Kor looks (first match wins) |
 | --- | --- |
-| Gateway key (the key your CLIProxyAPI accepts from Kor) | `KOR_GATEWAY_KEY`, or `KOR_GATEWAY_KEY` in `~/.config/kor/gateway.env` (mode `0600`) |
-| Gateway URL | `KOR_GATEWAY_URL`, or `~/.config/kor/gateway.env`; default `http://127.0.0.1:8317` |
-| Linear personal API key | `LINEAR_API_KEY`, or `LINEAR_API_KEY=…` in `~/.config/linear/env` |
-| TypeSafe API key | `TYPESAFE_API_KEY` (or `TYPESAFE_KEY`, `JEV_API_KEY`), or the same names in `~/.config/typesafe/env` |
-| CLIProxyAPI management key (optional) | `CPA_MANAGEMENT_KEY`, in `gateway.env` or the environment |
-| GitHub | `gh-axi` (or `gh`) logged in with `gh auth login`, or `GH_TOKEN` / `GITHUB_TOKEN` in the environment, or a token saved in Settings |
-| Anything you paste into Mission Control's **Settings** | `~/.local/state/kor/connections.json` (mode `0600`, write-only). A saved Linear, Jev, GitHub or gateway key wins over the rows above. |
+| Anything saved in Mission Control's **Settings** | `~/.local/state/kor/connections.json` (mode `0600`, never sent back to the browser) |
+| Gateway key | `KOR_GATEWAY_KEY`, or `KOR_GATEWAY_KEY` in `~/.config/kor/gateway.env` |
+| Gateway URL | `KOR_GATEWAY_URL`, or `gateway.env`; default `http://127.0.0.1:8317` |
+| Gateway management key (optional) | `CPA_MANAGEMENT_KEY`, in the environment or `gateway.env` |
+| Linear personal API key | `LINEAR_API_KEY`, or `~/.config/linear/env` |
+| TypeSafe API key | `TYPESAFE_API_KEY` (or `TYPESAFE_KEY`, `JEV_API_KEY`), or `~/.config/typesafe/env` |
+| GitHub | a `gh auth login --hostname github.com` login, `GH_TOKEN` / `GITHUB_TOKEN`, or a token saved in Settings |
 
-Runtime environment variables override the files for that one process. Kor never
-prints a credential and never copies one from the environment onto disk.
-
-To authorize Kor in CLIProxyAPI, add the line the installer printed to the
-`api-keys` list in CLIProxyAPI's configuration, and restart or reload the proxy as
-CLIProxyAPI documents. The same value must be `KOR_GATEWAY_KEY` for Kor. If you do
-not have a key yet, `kor doctor` generates a fresh suggestion:
-
-```text
-FAIL CLIProxyAPI with Kor key: missing; CLIProxyAPI addition: - kor-<generated-value>
-```
-
-You can instead leave the files alone and connect everything from Mission Control:
-**Settings**, **Connections**, **Connect** (see
-[Start the daemon and open Mission Control](#start-the-daemon-and-open-mission-control)).
-Either way, the page shows each connection as `connected` or `unavailable` with the
-reason, and never shows a key.
+Kor never prints a credential and never copies one from the environment to disk.
+It supplies the GitHub credential helper for shipping itself, so
+`gh auth setup-git` is unnecessary.
 
 ## Configure a repository
 
-Kor reads `~/.config/kor/config.yaml` (or `$XDG_CONFIG_HOME/kor/config.yaml`). The
-installer scaffolds it with empty `checks` and `toolAllowlist`; they are
-deliberate placeholders for your policy. The example below is the customized
-configuration used for these Mission Control captures, with a 120-second poll
-interval; the fresh scaffold uses 60 seconds and inherits the schema defaults
-for omitted settings (see the [README scaffold](../README.md#quick-start)).
+Kor reads `~/.config/kor/config.yaml`. The scaffold leaves `checks` and
+`toolAllowlist` empty on purpose: they are your policy. This is the config
+used for this guide:
 
 ```yaml
 repos:
-  kor-code:
-    path: /tmp/kor-demo/pilot
+  pilot:
+    path: /tmp/kor-rf/pilot
     linearTeam: LEE
     linearProject: 743496b4-29be-4be5-8cd6-68b3bc39dbbc
-    remote: https://github.com/korallis/kor-code.git
     defaultBranch: main
     ship: approve
     checks:
@@ -256,1143 +192,677 @@ repos:
       - Edit
       - "Bash(git status*)"
       - "Bash(git diff*)"
-      - "Bash(git log*)"
       - "Bash(ls*)"
       - "Bash(cat*)"
       - "Bash(grep*)"
-      - "Bash(test*)"
-limits: { total: 2, perRepository: 1 }
-defaultRoute: { provider: anthropic, model: claude-haiku-5-5, accountPolicy: fill-first, sessionAffinity: true, reasoningLevel: medium }
-pollIntervalSeconds: 120
+limits:
+  total: 2
+  perRepository: 1
+launchProfile: lean
+pollIntervalSeconds: 60
 intakeLabel: kor
 ```
 
-- **`path`** is a standalone clone of the repository. Kor never edits it directly;
-  every execution gets its own worktree.
-- **`linearTeam`** (the team key, for example `LEE`) or **`linearProject`** (a
-  project UUID) maps Linear issues to this repository. `linearProject` wins when
-  both match. A repository key that equals the team key also works for small
-  setups.
+- **`path`** is a standalone clone. Kor never edits it; each run gets a worktree.
+- **`linearTeam`** (the team key) or **`linearProject`** (a project ID) maps
+  issues to the repository. `linearProject` wins when both match, and it also
+  limits what Mission Control lists to that project's issues.
 - **`checks`** are shell commands run in the worktree after each attempt. A
   non-zero exit means the attempt is not verified.
-- **`toolAllowlist`** grants tool and command permissions. Unscoped `Read` also
-  pre-approves `Glob` and `Grep` for file search; scoped Read policies require
-  explicit search permissions. Sessions run in Claude Code's `dontAsk` mode:
-  calls outside the effective permissions are denied. Required work must still
-  pass verification; an optional inspection denial alone need not fail the
-  attempt. Add the commands your project's agents actually run; see
-  [Troubleshooting](#troubleshooting) for examples.
-- **`tools`** (optional) caps available tool schemas. For example,
-  `tools: [Read, Glob, Grep]` permits only inspection tools; `tools: []` exposes
-  none. Jev judges shell, browser, web and sub-agent needs before every attempt.
-  Web tools, `Agent` and configured browser tools require a probability of at
-  least 0.8 and a matching `toolAllowlist` permission. A docs task keeps the
-  lean set; a web-research task can receive `WebFetch`. Shell commands remain
-  restricted by your allowlist regardless of Jev's judgment. Without Jev or
-  during an outage, optional tools stay off. `kor doctor` shows the configured
-  ceiling; the decision audit contains the task's probabilities and policy
-  checks. See the [configuration reference](configuration.md) for details.
-- **`ship`** is `approve` or `auto` (the default when it is missing). With `approve`
-  a verified execution stops in the `waiting` state until you press **Approve and
-  ship** in Mission Control (or **Request changes**); with `auto` it goes straight
-  on to shipping. New projects added in Mission Control start as `approve`. It is
-  also the **Shipping** field of a project's repository settings.
-- **`remote`** (optional) is the GitHub URL. If set, `kor doctor` checks that
-  `origin` matches it, and delivery pushes to it.
-- **`limits`** cap concurrent executions (`total`, `perRepository`, optional
-  `perProvider`).
-- **`defaultRoute`** is the model Kor uses when Jev is unavailable or unsure, and
-  the route of the very first attempt unless Jev picks a verified model.
+- **`toolAllowlist`** is what sessions may do. Sessions run in Claude Code's
+  `dontAsk` mode, so anything outside it is denied. An unscoped `Read` also
+  allows `Glob` and `Grep`. Add the commands your project's work actually needs,
+  such as `"Bash(pnpm test*)"`.
+- **`tools`** (optional) caps the tools a session can see, for example
+  `tools: [Read, Glob, Grep]`. Within that cap Jev decides per task whether a
+  session needs shell, web, browser or sub-agent tools; web tools and `Agent`
+  need a Jev probability of at least 0.8 and a matching allowlist entry. Jev
+  never widens your command permissions.
+- **`ship`** is `approve` (verified runs wait for you) or `auto` (the default
+  when absent). Projects added in Mission Control start as `approve`.
+- **`remote`** (optional) is the GitHub URL; `kor doctor` then checks that
+  `origin` matches.
+- **`limits`** cap concurrent runs (`total`, `perRepository`, optional
+  `perProvider`). Waiting runs do not hold a slot.
+- **`defaultRoute`** is the route Kor uses when Jev is unavailable or unsure.
+- **`launchProfile: lean`** (the default) starts sessions without Claude Code's
+  Git instructions and dynamic system-prompt sections; `standard` keeps them.
 
-You can edit all of this in Mission Control (a project's **Repository settings**,
-or **Settings**); the daemon validates it, writes `config.yaml` atomically and keeps
-the previous file as `config.yaml.bak`. The full schema, including calibration
-options, is in [configuration](configuration.md).
-
-## Add your own skills
-
-Keep private guidance outside the public checkout. Preview and import it with:
-
-```sh
-kor skills init
-kor skills import --from ./my-skills --dry-run --skip-invalid
-kor skills import --from ./my-skills --skip-invalid
-kor skills doctor
-```
-
-Each skill gets a result and its own diagnostics; `--json` exposes the same report
-for scripts. Without `--skip-invalid`, an invalid skill stops the batch before
-anything is copied. With it, valid skills are copied and invalid or conflicting
-ones are reported as skipped. An all-invalid batch exits `1`. Existing destination
-skills are never overwritten; dry runs leave the destination unchanged. The
-[private pack guide](skills.md#private-pack) covers layout, visibility and privacy
-checks.
+Each repository can also carry a `skills` block (`always`, `pins`, `never`,
+`budget`). Mission Control edits all of this under a project's **Repository
+settings** and in **Settings**; the daemon validates the whole config, writes it
+atomically and keeps the previous file as `config.yaml.bak`. If you edit the file
+by hand, restart the daemon (stop it, then `kor ui`). The full schema is in
+[configuration](configuration.md).
 
 ## Check your setup with `kor doctor`
 
-`kor doctor` prints one `PASS` or `FAIL` line per check and exits non-zero if any
-fail. Kor itself writes nothing during the check (the tools it calls, such as
-`claude` or `no-mistakes`, may create their own caches). `kor doctor --json` prints
-the same checks as an object ([contract](cli-contract.md#kor-doctor---json-and-kor-plan---json)).
-This is the real output on the sandbox used for this guide, with the gateway's
-management key and `quota-axi` available:
+`kor doctor` prints one `PASS` or `FAIL` line per check and exits `1` if any fail;
+`--json` gives the same as an object. Kor writes nothing during the check, though
+tools it calls may create their own state (in the throwaway home, the
+`no-mistakes` check created `~/.no-mistakes` and `~/.codex`). In that home:
 
 ```text
 $ kor doctor
-PASS Kor config: <sandbox>/home/.config/kor/config.yaml
+PASS Kor config: /tmp/kor-rf/home/.config/kor/config.yaml
 PASS Linear key: available
 PASS TypeSafe key: available
 PASS CLIProxyAPI with Kor key: reachable
-PASS CLIProxyAPI management access: available
-PASS quota-axi: available
-PASS Claude Code: 2.1.300 (Claude Code)
-FAIL no-mistakes daemon: not running
-PASS repo kor-code: <sandbox>/pilot (main)
-PASS repo kor-code shipping target: github.com
-PASS repo kor-code git identity: user.name and user.email configured
-PASS repo kor-code push access: push dry run passed; no remote refs changed
-FAIL doctor: one or more checks failed. Hint: fix the reported checks and rerun `kor doctor`
-```
-
-Without a management key the same machine reports two more failures, and a run
-still verified:
-
-```text
 FAIL CLIProxyAPI management access: management key missing
 FAIL quota-axi: unavailable
+PASS Claude Code: 2.1.300 (Claude Code)
+FAIL no-mistakes daemon: not running
+PASS repo pilot: /tmp/kor-rf/pilot (main)
+PASS repo pilot shipping target: github.com
+PASS repo pilot git identity: user.name and user.email configured
+PASS repo pilot push access: push dry run passed; no remote refs changed
+PASS repo pilot tools: Bash, Edit, Glob, Grep, Read, Write (effective permission base names; automatic search requires unscoped Read); Jev selects optional tools per task; availability does not grant command permissions
+FAIL doctor: one or more checks failed. Hint: fix the reported checks and rerun `kor doctor`
 ```
 
 | Line | Needed for | If it fails |
 | --- | --- | --- |
 | `Kor config` | everything | Create or fix `config.yaml`. |
-| `Saved connections` (only when it fails) | the daemon and Mission Control | `~/.local/state/kor/connections.json`, written by Settings, is corrupt or unreadable, so the daemon will not start. Move it aside as the line says, reconnect in Settings, and rerun doctor. The other checks still run, using your environment. |
-| `Linear key`, `TypeSafe key` | everything | Set the key. Without TypeSafe, planning is `blocked` and every acceptance judgment stays blocked. |
-| `CLIProxyAPI with Kor key` | every model call | Start CLIProxyAPI, add Kor's key to its `api-keys`, check `KOR_GATEWAY_URL`. `HTTP 401` means the proxy does not know the key. |
+| `Saved connections` (shown only when broken) | the daemon | The file Settings writes is corrupt. Move it aside as the line says and reconnect in Settings. |
+| `Linear key`, `TypeSafe key` | everything | Set the key. Without TypeSafe, planning and acceptance stay blocked. |
+| `CLIProxyAPI with Kor key` | every model call | Start CLIProxyAPI and add Kor's key to its `api-keys`. `HTTP 401` means the proxy does not know the key; `missing` prints a new key to add. |
+| `CLIProxyAPI management access`, `quota-axi` | account slots and quota windows in Mission Control | Optional. Set `CPA_MANAGEMENT_KEY` (or add it when you connect the gateway in Settings) and install `quota-axi`. |
 | `Claude Code` | every session | Install Claude Code 2.1.299 or newer. |
-| `repo <name>` | that repository | The path must be the Git checkout root, the default branch must exist, and `origin` must equal `remote` when you set one. |
-| `no-mistakes daemon` | **shipping** | Delivery cannot pass the repository gate without it; see below. Verification does not need it. |
-| `CLIProxyAPI management access`, `quota-axi` | Mission Control's account slots, quota windows and footer | Optional. Add the management key when you connect the gateway (or set `CPA_MANAGEMENT_KEY`) and have `quota-axi` available to see the account pool and its windows. |
+| `no-mistakes daemon` | shipping | Start it. Runs still verify without it. |
+| `repo <name>` | that repository | `path` must be the checkout root, the default branch must exist, and `origin` must match `remote` if set. |
+| `repo <name> shipping target` | shipping | Set `origin` to a github.com HTTPS or SSH URL. |
+| `repo <name> git identity` | shipping | `git config user.name "Your Name"` and `git config user.email "you@example.com"` in the checkout (or with `--global`). |
+| `repo <name> push access` | shipping | Log in with `gh auth login --hostname github.com`, or set `GH_TOKEN` with write access. The check is a `git push --dry-run --no-verify` that changes nothing; it cannot predict branch protection or CI. |
+| `repo <name> tools` | sessions | The tool ceiling from `toolAllowlist` and `tools`. |
 
-Before starting work, doctor also checks each repository’s shipping prerequisites:
-
-| Line | If it fails |
-| --- | --- |
-| `repo <name> shipping target` | Set `origin` to a `https://github.com/OWNER/REPO.git` or `git@github.com:OWNER/REPO.git` URL, or configure `remote`. Local-only origins cannot ship. |
-| `repo <name> git identity` | Run `git config user.name "Your Name"` and `git config user.email "you@example.com"` in that checkout. Use `--global` to apply the identity to all repositories. |
-| `repo <name> push access` | Log in with `gh auth login --hostname github.com`, export `GH_TOKEN` / `GITHUB_TOKEN` with repository write access, or save a token in Settings. SSH origins need a GitHub SSH key. Check network and repository permissions, then rerun doctor. |
-
-The push check uses the same credential environment as shipping, including tokens
-saved in Settings, and runs `git push --dry-run --no-verify` to
-a unique `refs/heads/kor/doctor-…` probe ref. It changes no remote refs and skips
-local push hooks.
-A pass checks current push access; it cannot guarantee that a later push satisfies
-branch protection or CI requirements. Kor supplies the GitHub credential helper for
-environment tokens and `gh` logins; `gh auth setup-git` is unnecessary.
-Mission Control’s GitHub light checks API connectivity, so use doctor for the
-repository push check. Settings, doctor and the Jev client share the Jev key
-resolver: a saved key, `TYPESAFE_API_KEY` / `TYPESAFE_KEY` / `JEV_API_KEY`, then
-`~/.config/typesafe/env`.
-
-![Jev with the documented credential file, before and after the resolver fix](images/jev-credential-resolution.webp)
-
-## Start the daemon and open Mission Control
-
-Run `kor ui` to start the daemon if needed and open Mission Control. It uses the
-installed user service when available and a detached process otherwise. For a
-foreground daemon, use the command below. With the service installed that is
-`systemctl --user enable --now kor`; from a terminal in the `kor-code` checkout:
-
-```sh
-kor serve
-```
+## Open Mission Control
 
 ```text
-kor daemon listening on http://127.0.0.1:8327/status
-```
-
-The daemon binds to `127.0.0.1` only (port 8327 unless `--port` says otherwise; 8317
-is refused because it is CLIProxyAPI's) and also serves Mission Control, the web
-app built by `pnpm build` into `packages/web/dist`. `kor serve --ui-dir
-/absolute/path/to/dist` serves another build. It must run from (or, for the
-service, be installed from) the `kor-code` checkout, because it launches sessions
-with that checkout's `scripts/sandbox.sh`. `kor serve` stays in the foreground; a
-second terminal is for everything else.
-
-Open it:
-
-```sh
-kor ui
-```
-
-```text
+$ kor ui
 Opened Kor Code Mission Control in your browser.
+Mission Control: http://127.0.0.1:8327/
 ```
 
-`kor ui` reads the daemon's address, checks it answers, and opens your default
-browser at that address with a session token in the URL fragment. The page reads
-the token, clears it from the address bar and keeps it for the tab; the token is
-never printed. Under WSL it opens the Windows browser. If the daemon is not
-running, `kor ui` starts it and waits for an authenticated status response. The
-command prints the local URL. If the browser cannot open, visit that URL and
-connect using the token file below. Background output goes to
-`~/.local/state/kor/logs/serve.log`; service output goes to the user journal.
-
-A browser that has no session, for instance one you opened by typing the address,
-shows the connect screen. Paste the token from `~/.local/state/kor/ui-token`
-(mode `0600`, created by the daemon on first start and kept across restarts):
-
-![The Mission Control connect screen](images/mc-connect.webp)
-
-Connect, then open **Settings** to bring Linear, GitHub, the gateway and Jev
-online:
-
-![Settings with the gateway form open](images/mc-settings.webp)
-
-Each connection is a row with a status. **Connect** (or **Replace key**) opens its
-fields: Linear and Jev take an API key, GitHub a token, the gateway a URL, a key
-and an optional management key. **Save and test** stores them. They are
-**write-only**: the daemon keeps them in `~/.local/state/kor/connections.json`
-(private, mode `0600`) and never sends one back to the browser. A key saved here
-wins over the files and variables in [Credentials](#credentials-and-the-gateway),
-and later execution sessions use the saved gateway too. Nothing here edits
-CLIProxyAPI: the gateway key still has to be in its `api-keys` list, as
-[the installer printed](#install).
-
-The right-hand side of Settings holds the intake label, poll interval, run limits
-and the project list. **Save configuration** validates the whole config, writes
-`~/.config/kor/config.yaml` atomically with a backup, and applies it without a
-restart. The daemon refuses a config change while work or polling is active; try
-again when nothing is running.
-
-The page has a persistent frame. The top bar shows the **Ask Jev** field, a
-`LIVE` / `STALE` / `OFFLINE` / `SIGNED OUT` pill for the daemon connection and a
-bell that counts the runs that need you. The left sidebar has the screens, your
-projects and the three connection lights. The footer shows pool health per
-provider, the 5-hour and weekly quota windows, run slots in use, today's spend and
-verified runs, and a provenance chip for the status the page is reading. If the
-event stream fails, a banner says the daemon is not answering and offers
-**Reconnect**; every value on screen is then the last one Kor reported.
-
-## Choose a model
-
-Kor only routes to a model that passed its compatibility probe. A model must pass
-streaming, tool calls and structured output. Visible thinking is measured separately. Probe the ones you
-want to use: on the **Models** screen use **Probe a model** (or **Probe** on a
-row), or from a terminal. A probe costs a few cents per model, a little more for
-the largest ones. These are the real results on the sandbox gateway (the column
-header is printed once and left out of the later probes here):
+`kor ui` starts the daemon if it is not running (as the systemd service when one
+is installed, otherwise in the background, logging to
+`~/.local/state/kor/logs/serve.log`), waits for it, and opens your browser
+already signed in. The token travels in the URL fragment and is never printed.
+If no browser opens, it says so:
 
 ```text
+Browser did not open. Open http://127.0.0.1:8327/ and connect using the token in /tmp/kor-rf/home/.local/state/kor/ui-token.
+Mission Control: http://127.0.0.1:8327/
+```
+
+A browser without a session shows the connect screen; paste the token from
+`~/.local/state/kor/ui-token`:
+
+![Mission Control's connect screen](images/mc-connect.webp)
+
+The daemon listens on `127.0.0.1:8327` only. To run it in the foreground
+instead, use `kor serve` from a terminal.
+
+Open **Settings** next. Each connection (Linear, GitHub, the gateway and Jev) shows
+`connected` or the reason it is not. Keys found in the files above are already
+connected; **Connect** or **Replace key** saves a new one, write-only. A key
+saved here wins over the files and environment. The right-hand side holds the
+intake label, poll interval, run limits and projects; **Save configuration**
+applies them without a restart, once no work is running.
+
+![Settings with Linear, GitHub, the gateway and Jev connected](images/mc-settings.webp)
+
+Every screen has the same frame: **Ask Jev** and a `LIVE` / `STALE` / `OFFLINE`
+pill in the top bar, a bell counting runs that need you, the screens and your
+projects in the sidebar with the connection lights, and a footer with pool
+health, run slots, today's spend and verified runs.
+
+## Choose models
+
+Kor routes only to models that pass a short probe in a sandbox session:
+streaming, tool calls and a final JSON answer. Thinking is recorded when the
+model shows it but is not required. Preview what the gateway offers, then probe:
+
+```text
+$ kor models probe --dry-run
+models=46; estimated_cost_usd=unknown; estimated_duration=one sandbox session per model
+claude-fable-5
+claude-fable-5-1
+…
 $ kor models probe --model claude-haiku-5-5
 MODEL	STREAMING	TOOL_CALLS	THINKING	STRUCTURED_OUTPUT	COST_USD	DURATION_MS
-claude-haiku-5-5	pass	pass	pass	pass	0.00426136	5527
-
-$ kor models probe --model claude-sonnet-5-5
-claude-sonnet-5-5	pass	pass	pass	pass	0.0767121	5890
-
-$ kor models probe --model claude-opus-5-5
-claude-opus-5-5	pass	pass	pass	pass	0.15289319999999998	6956
-
-$ kor models probe --model claude-haiku-4-5-20251001
-claude-haiku-4-5-20251001	pass	pass	pass	pass	0.047562600000000003	7008
-
+claude-haiku-5-5	pass	pass	pass	pass	0.004104935	5741
 $ kor models list
-MODEL	FAMILY	PROVIDER	CAPABILITIES	COST_USD	DURATION_MS
-claude-haiku-5-5	claude	anthropic	streaming,tool_calls,thinking,structured_output	0.00426136	5527
-claude-sonnet-5-5	claude	anthropic	streaming,tool_calls,thinking,structured_output	0.0767121	5890
-claude-opus-5-5	claude	anthropic	streaming,tool_calls,thinking,structured_output	0.15289319999999998	6956
-claude-haiku-4-5-20251001	claude	anthropic	streaming,tool_calls,thinking,structured_output	0.047562600000000003	7008
+MODEL	FAMILY	PROVIDER	CAPABILITIES	COST_USD	DURATION_MS	VERIFIED	ERROR
+claude-haiku-5-5	claude	anthropic	streaming,tool_calls,thinking,structured_output	0.004104935	5741	true	-
+claude-sonnet-5-5	claude	anthropic	streaming,tool_calls,structured_output	0.0732779	5301	true	-
+gpt-6.1-sol	gpt	openai	streaming,tool_calls,structured_output	0.0712592	10044	true	-
 ```
 
-Whether a model passes depends on your gateway and its accounts. An exhausted
-quota or upstream tool restriction leaves the model unverified. With no verified
-model, `kor plan` reports `route: no-verified-route` and readiness `blocked`.
-After a probe, verified models become candidates for Jev's per-task route
-decision. Verification adds no provider preference or fallback order. The Models screen
-lists the live gateway catalogue and marks each model `verified` or `unverified`.
-Only verified models can be a route or an override. Run `kor models probe` to
-check every text model, or `--family gpt` to include GPT models and `devin/` GPT
-aliases. Known image, video and speech models are excluded. See the
-[live probe report](model-probe-results-2026-10-15.md) for per-model results.
+`kor models probe` with no flags probes every chat and coding model the gateway
+lists (image, video and speech models are skipped); `--family` narrows it.
+Probes cost a few cents each. On **Models**, **Probe a model** and each row's
+**Probe** do the same. Results are saved in `~/.local/state/kor/models.json` and
+shared by the CLI and Mission Control.
 
-![Models and accounts: account slots, verified models and the routing policy](images/mc-models.webp)
-
-`kor models probe --family claude` probes every Claude model the gateway lists
-(`--dry-run` shows the list first, without starting a session). Results are stored in `~/.local/state/kor/models.json`, which
-`KOR_MODEL_REGISTRY` can redirect, and the CLI and Mission Control share them.
+Verified models are the candidates Jev picks from for each task; verification
+adds no preference. A verified model can still fail later if its account runs
+out of quota. With no verified model, `kor plan` reports `route:
+no-verified-route` and the run blocks.
 
 ## Prepare a Linear issue
 
-Kor reads the issue description. Put the outcome and the acceptance criteria in
-it, under a heading named `Acceptance`, `Acceptance criteria` or
-`Acceptance conditions` (any heading level), as a bullet or checkbox list. This is
-the issue used for the captures:
+Kor reads the issue description. Put the outcome first and the acceptance
+criteria under a heading named `Acceptance criteria`, `Acceptance` or
+`Acceptance conditions`, as a list:
 
 ```markdown
 ## Outcome
 
-Add a `question(name)` function to `src/greeting.js`.
+Add a `Skill` entry to `docs/GLOSSARY.md`.
 
 ## Acceptance criteria
 
-- [ ] `question("Ada")` returns `How are you, Ada?`.
-- [ ] `greeting.test.js` has a test for `question` and `node --test` passes.
+- [ ] `docs/GLOSSARY.md` has a `## Skill` heading, placed in alphabetical order among the existing headings.
+- [ ] The definition is one or two sentences and says a skill is reusable guidance Kor can deliver to a session.
 ```
 
-Each bullet becomes one acceptance condition that Jev judges against the diff.
-**Everything under that heading, up to the next heading, counts: every non-empty
-line is a condition**, bullet or not. Put notes, links and "this issue is a
-disposable test" lines above the heading or under a different one. (A trailing note
-under the list is exactly what failed LEE-1127's first attempt, as a third condition
-the work could not meet.)
-Without acceptance criteria the execution blocks with a needs-input reason before
-any model session starts; [recovery](#recover-from-a-restart-a-crash-or-a-block)
-explains how to clear that block.
+**Every non-empty line under that heading, up to the next heading, is a
+criterion.** Keep notes and links above it.
 
-Linear setup:
+The Linear team needs **Todo**, **In Progress**, **In Review** and **Done**
+states. The daemon only picks up **Todo** issues that carry the intake label
+(`kor`), never Backlog; `kor run` and Mission Control queue any open issue.
 
-- Use a **personal API key** with access to the team. Agent-session mutations are
-  disabled for personal keys.
-- The team's workflow needs **Todo**, **In Progress**, **In Review** and **Done**
-  states. A missing In Review state blocks an execution before the model starts.
-- Kor only starts work you have opted in: the daemon polls **Todo** issues carrying
-  the label named by `intakeLabel` (default `kor`), and never Backlog. `kor run
-  ISSUE` queues one issue by hand without the label. Label-based
-  polling was exercised live for this guide: LEE-1126 was labelled `kor` while
-  in Todo, and the daemon queued it on its next poll.
-
-Before queueing, run the preflight yourself to see what Jev thinks. It writes one
-comment to the issue only when it needs your input:
-
-For a read-only ticket check first, use `kor linear lint LEE-123`. Add `--json`
-for scripts or use `kor linear lint --project PROJECT-ID` to check a project of
-up to 100 issues. Tickets need explicit acceptance criteria and completed blocking
-dependencies. A ticket labelled `UI` (case-insensitive) also needs a screenshot or
-mockup embedded in its description or a comment, or attached as an image file.
-Lint exits `1` with instructions when a check fails. It does not judge scope,
-check routes, download images, or write to Linear. The same screenshot check is
-included in Jev readiness for `kor plan` and daemon execution. See the
-[Linear specification](specs/linear-integration.md#issue-readiness) for formats.
-
-To add a local PNG screenshot or mockup, run:
-
-```sh
-kor linear attach-image APP-123 ./screen.png --alt "/settings — error — desktop" --json
-```
-
-This writes to Linear: it uploads the PNG, creates an attachment and embeds it
-under Screens, then verifies the ticket and downloaded image bytes. A PNG can be
-up to 20 MiB. Repeating the same image and normalized caption reuses its attachment.
-See [PNG uploads](skills.md#linear-skills-and-png-uploads) for credentials, caption
-normalization, partial-write retries and concurrent-edit limitations.
-
-Run the full preflight when those ticket checks pass:
+Check a ticket before queueing it. Lint reads only; it exits `1` with what to fix:
 
 ```text
-$ kor plan LEE-1111
-PLAN plan-d8bf415a-8ca3-4991-b2bb-d0b78959e1a4
+$ kor linear lint LEE-1165
+LEE-1165: ready; hasScreenshot=false
+$ kor linear lint LEE-1166
+LEE-1166: blocked; hasScreenshot=false
+  acceptance-criteria: Add explicit acceptance criteria to the issue.
+```
+
+`kor linear lint --project PROJECT-ID` checks up to 100 issues at once. Lint
+also blocks unfinished blocking dependencies, and an issue labelled `UI` without
+a screenshot or mockup. To attach a PNG to an issue and verify it landed:
+
+```text
+$ kor linear attach-image LEE-1166 ./connect.png --screen connect-desktop --alt "/ — signed out — desktop"
+LEE-1166: image verified (994489 bytes, sha256 d61cf0b6…)
+```
+
+`kor plan` runs the full Jev preflight without queueing anything. It comments on
+the issue only when it needs your input:
+
+```text
+$ kor plan LEE-1165
+PLAN plan-e582c437-1da7-4499-9a5b-8a289ba90217
 route: anthropic/claude-haiku-5-5 [jev]
 fallback: false
-readiness: ready (0.92); confidence=0.92; status=applied
-complexity: small bounded change (0.39); confidence=0.41; status=applied
+readiness: ready (0.91); confidence=0.91; status=applied
+complexity: small bounded change (0.00); confidence=1.00; status=applied
 risk: low operational risk (0.00); confidence=1.00; status=applied
-route: claude-haiku-5-5; confidence=0.96; status=applied
+route: claude-haiku-5-5; confidence=1.00; status=applied
 agent: generalist; confidence=1.00; status=applied
 linear: no clarification needed
 ```
 
-`kor plan` reports readiness, complexity, risk, route and agent decisions. It
-does not print a skill or playbook selection; those are made for execution.
-The values and IDs above vary by issue and Jev response.
-
-`kor plan` exits `1` while readiness is `blocked`, a decision is escalated, or a
-fallback route is in use. With no verified model, Kor reports a blocked plan
-and writes the `PLAN …` text as an issue comment. For example:
-
-```text
-$ kor plan LEE-1111
-PLAN plan-be9c64fa-e7dd-446a-bc3e-76e8b0c5fc4d
-route: anthropic/claude-sonnet-5-5 [fallback]
-fallback: false
-readiness: blocked (0.03); confidence=0.03; status=blocked
-verified-route: fail; No verified model is available; run kor models probe before retrying.
-complexity: small bounded change (0.42); confidence=0.37; status=applied
-risk: low operational risk (0.09); confidence=0.88; status=applied
-route: no-verified-route; confidence=0.96; status=blocked
-agent: generalist; confidence=1.00; status=applied
-linear: clarification comment written
-FAIL plan: preflight did not produce a ready route. Hint: resolve the reported decisions or provide a healthy Jev response, then retry
-```
+It exits `1` when readiness is `blocked`, a decision is escalated or the route is
+a fallback.
 
 ## Work in Mission Control
 
-Mission Control is the main way to use Kor. This section goes through each job, in
-the order you meet them. The screenshots are of one real session: three throwaway
-issues on a scratch clone of this repository, run with `ship: approve` on
-`claude-haiku-5-5`.
-
-The screens, from the sidebar:
-
 | Screen | What it is for |
 | --- | --- |
-| **Home** (Command Centre) | What needs you, what is ready to ship, running agents, spend, **Next up**, and the Ask Jev field. |
-| **Projects** | One page per configured repository: issues with their Kor run, progress, health, pull requests, activity and the repository settings. |
-| **Linear** | The decision workspace for one run: the issue, Jev's reasoning, the diff and the evidence, and the approve, request-changes and override controls. |
-| **Agents** | Every live run with its actual output, stages, tokens and cost; stop, retry and steer. |
-| **Models** | Account slots and their health, the verified-model table, probes and the routing policy. |
-| **Jev Brain** | The decision audit, the calibration report and what Jev learned about skills. |
-| **Terminal** (Ctrl+Backtick) | The Agents view again, opened on the live output. |
+| **Home** | What needs you, what is ready to ship, running agents, spend, **Next up**, **Jev learned** and Ask Jev. |
+| **Projects** | Each repository's issues with their runs, progress, health, pull requests, activity and repository settings. |
+| **Linear** | The decision workspace for a run: the issue, Jev's reasoning, the diff and evidence, and the approve, request-changes and override controls. |
+| **Agents** (and **Terminal**, Ctrl+Backtick) | Every run's live output, stages, tokens and cost; stop, retry and steer. |
+| **Models** | Verified models, probes, account slots and the routing policy. |
+| **Jev Brain** | The decision audit, calibration and what Jev learned about skills. |
 | **Settings** | Connections, intake label, limits and projects. |
 
-### Start or queue an issue
+### Start work
 
-There are four ways in. All of them make the same durable assignment, and Jev
-checks readiness before any model session starts.
+- **Home → Next up** lists Todo issues labelled `kor`, each with **Start**.
+- **Agents → Queue an issue** lists every open issue Kor is not running. Filter,
+  tick one or more and **Queue for Kor**; issues without criteria are marked
+  `no criteria`.
+- **Projects** rows have **Run with Kor**, or tick several and **Queue for Kor**.
+- **Label a Todo issue `kor`** in Linear and the daemon queues it on its next
+  poll. LEE-1164 was started this way and was `waiting` for approval 15 seconds
+  after the daemon picked it up.
 
-- **Home, Next up.** Lists Todo issues carrying the intake label (`kor`) with a
-  **Start** button. An issue with no acceptance criteria shows **Add** instead,
-  which opens it in Linear.
-- **Agents, Queue an issue.** Opens a dialog of every open issue Kor is not already
-  running, with a filter. Tick one or more (an amber `no criteria` pill warns you
-  when the issue has no acceptance list) and choose **Queue for Kor**.
+![The Queue an issue dialog, filtered to the two throwaway issues](images/mc-queue.webp)
 
-  ![The Queue an issue dialog](images/mc-queue.webp)
+Jev checks readiness before any session starts. Runs over `limits` stay `queued`
+until a slot frees.
 
-- **Projects, a project.** Tick rows and **Queue for Kor**, or press **Run with Kor**
-  on a row. Rows offer **Add criteria** or **Label** where the issue lacks them.
-- **Label the issue** `kor` in Linear and leave it in Todo; the daemon picks it up
-  on its next poll (every `pollIntervalSeconds`). In the capture, LEE-1126 was
-  labelled and started on its own.
+### Answer a question
 
-Queued runs wait for a slot: `limits.total` caps concurrent runs and
-`limits.perRepository` caps them per repository (the footer's **Slots** shows
-both). Over the limit a run simply stays `queued`.
+A run that cannot go on without you lands in **Needs you** on Home with Jev's
+question and an answer box. LEE-1166 had no acceptance criteria, so it blocked
+before any session started:
 
-### Ask Jev
+![Home: LEE-1166 needs an answer, two verified runs are ready to ship](images/mc-command-centre.webp)
 
-Press Ctrl+K (⌘K on a Mac), or click the Ask Jev field in the top bar or on Home. On
-a run's screen the question is about that run (`"why did LEE-1127 pick haiku-5-5?"`).
-Jev reads the daemon's live snapshot and answers with one grounded recommendation,
-its confidence, and a button for the action it suggests:
+**Send and retry** (or Ctrl+Enter) writes your answer to the Linear issue as a
+comment and runs it again. If the issue has no criteria, your answer becomes the
+criterion: LEE-1166 then verified against it in 18 seconds. An answer cannot get
+past an unfinished dependency or a readiness refusal; fix the issue instead.
 
-```text
-Jev just now · read the live snapshot
-Jev recommends: Inspect the agents and their current blockers. Confidence: 51%.
-[ Inspect the agents and their current blockers ]   [ Follow up ]
-```
-
-Jev's API returns typed choices with probabilities, not free-form chat, so Ask Jev
-selects among actions Kor knows. **It never runs the action itself:** you press the
-button (or do not). The suggested questions under the field (`What needs me right
-now?`, `What can ship today?`) are a good start. The field also has File, Issue, Command and All projects chips.
-
-### Answer a needs-input question
-
-A run that cannot continue without you, for example an issue with no acceptance
-criteria, lands in **Needs you** on Home, and the bell in the top bar counts it.
-
-![Home with a run needing input: Jev's question, the answer box, and two runs working](images/mc-needs-input.webp)
-
-The card shows Jev's question (here: `Needs input: Add a # Acceptance section with
-explicit criteria to the Linear issue, then retry this execution.`). Type your
-answer and press **Send and retry** (Ctrl+Enter also sends). Kor writes the answer
-to the Linear issue as a comment, then queues the run again. If the issue has no
-acceptance criteria at all, your answer becomes the criterion for that attempt;
-that is what happened to LEE-1128, which verified one condition on the retry. An
-answer cannot get past an unfinished dependency or a Jev readiness refusal.
-
-To give guidance without a question outstanding, use **Note for Jev** in the
-**Steer** box on the run's Agents screen. Kor stores the note and supplies it to
-the next session attempt; it does not reach a session that is already running.
+To guide a run without a question, use **Note for Jev** on its Agents screen.
+The note reaches the next session, not the one already running.
 
 ### Watch a run
 
-![Agents: a live run with its terminal output, stages, tokens and cost](images/mc-agents.webp)
+![Agents: LEE-1165's live output, stages, acceptance, tokens and cost](images/mc-agents.webp)
 
-**Agents** lists live runs on the left and the selected one on the right. The strip
-under its title is the seven stages; the tabs are **Live output** (the real
-stdout and stderr of the session, with tool calls, permission denials and the
+**Agents** lists runs on the left and the selected one on the right: the seven
+stages, then tabs for **Live output** (the session's real output, tool calls and
 checks), **Plan**, **Changes**, **Checks**, **Decisions** and **Log**. The side
-panel shows acceptance as Jev judges it, the next step, tokens, cache hit and cost
-so far. The provider reports cost when a session ends, so a live first session
-shows `costUsd at session end` until then; amounts under a cent keep two
-significant digits (`$0.0025`, not `$0.00`). The header's **Worktree** button
-copies the worktree path, **Linear** and the PR button open them.
+panel shows acceptance as Jev judges it, the next step, tokens, cache reads and
+cost. **Worktree** copies the worktree path.
 
-When a run is sampled for calibration, Kor runs the comparison sessions after the
-run verifies and before it waits for you, in separate worktrees. They write no
-output into the run's stream; each one adds a `baseline` line when it starts and
-when it ends, for example:
+**Plan** starts with **Sessions received**: for each attempt, the skills it was
+actually given, who chose each one (Jev, the repository or your override), its
+playbook and the guidance tokens per turn. Here attempt 2 of LEE-1165 received
+the `unslop` skill pinned by an override:
 
-```text
-13:23:45 baseline started on claude-sonnet-5-5: the baseline route, to measure Jev's routing. It never ships and does not change this run.
-13:23:56 baseline verified · $0.0311. This run's result is unchanged.
-13:23:56 baseline started on claude-haiku-5-5: the same route without skills, to measure skill lift. It never ships and does not change this run.
-13:24:03 baseline verified · $0.0016. This run's result is unchanged.
-```
+![Sessions received: attempt 2 includes the unslop skill pinned by an override](images/mc-sessions-received.webp)
 
-![A verified run's stream with both sampled baselines labelled and sub-cent costs](images/mc-baseline-stream.png)
+When a run is sampled for calibration (25% by default), Kor also runs comparison
+sessions after it verifies, in separate worktrees. They show in the stream only
+as labelled `baseline` lines with their cost and never ship:
 
-**Plan** starts with **Sessions received**: for every attempt, the skills it was
-actually given (tier, per-turn tokens, and whether Jev, your override or the
-repository chose it), its playbook, and the guidance tokens per turn. Kor records
-this when each session launches, so you can check afterwards that an override
-reached the session, including a session you stopped or that failed before it
-ended (its cost then stays unknown). A calibration session without skills records
-no pack.
+![A verified run's stream with both sampled baselines labelled](images/mc-baseline-stream.png)
 
-![Sessions received: attempt 1 with Jev's listed skill, attempt 2 with the skill pinned by an override](images/mc-sessions-received.png)
+### Review and approve
 
-Tool denials are visible here: the capture shows a session being refused `Bash`
-commands outside the allowlist and carrying on with the tools it had. One denial
-fails an attempt; the fix is in [Troubleshooting](#troubleshooting).
+With `ship: approve`, a verified run waits. Home shows it under **Ready to ship**;
+**Review** opens the decision workspace:
 
-**Projects** shows the same runs per repository:
+![The decision workspace for LEE-1165, verified and waiting for approval](images/mc-decision.webp)
 
-![The kor-code project workspace](images/mc-project.webp)
+The middle column has the issue, Jev's summary, the tools the session used, the
+real diff, the checks with their exit codes, and each acceptance judgement. The
+right column is Jev's decision: the chosen model with each candidate's
+probability, risk, agent, policy checks and the next step.
 
-Its tabs are **Overview**, **Issues**, **Runs**, **Pull requests**, **Documents**
-and **Repository settings** (checkout path, remote, default branch, Linear team and
-project, **Shipping**, checks and the tool allowlist). The Progress, Health and
-Pull requests cards come from Linear, your run history and GitHub; an upstream that
-cannot be read is labelled `unavailable`, never shown as empty.
-
-### Review, approve and ship
-
-With `ship: approve`, a verified run stops at `waiting`. **Home** announces it in
-**Ready to ship** with **Approve and ship** and **Review changes**; the runs also
-show as `waiting · your go-ahead` under Running agents.
-
-![The Command Centre with three runs ready to ship](images/mc-command-centre.webp)
-
-**Review changes** (or the **Linear** screen) opens the decision workspace:
-
-![The decision workspace for a verified run waiting for approval](images/mc-decision.webp)
-
-- The middle column is the issue, what Jev decided (readiness, complexity, risk,
-  route and skill), the tools the session used, **the actual diff**, the repository
-  checks (`git diff --check`, exit 0) and each acceptance condition with Jev's
-  judgement.
-- The right column is **Jev's decision**: intent, the chosen model with the
-  probability of each candidate, why, risk, skill and agent, policy checks and the
-  next step.
-- **Approve and ship** is enabled only while the run waits. It commits the
-  verified files on `kor/<issue key>`, runs the delivery gate and opens the pull
-  request. Approving releases publication; it does not merge anything. See [what
-  happens next](#what-happens-after-the-checks-pass).
-
-The original captures used an unpublished sandbox clone. A later live acceptance
-run exercised **Approve and ship** in Mission Control against a private scratch
-repository: two coding sessions each passed two checks and three acceptance
-criteria, then opened a ready PR through direct delivery. Both PRs were closed
-without merging. Linear posted the approval-wait comments and preserved two distinct
-shipping block reasons. Those earlier runs asked Jev for separate PR-writing
-routes; the generated prose and recorded command results were read back from GitHub.
-A subsequent live CLI run verified the current reuse path: three checks and four
-acceptance conditions passed, and Mission Control approval opened a ready PR with
-a `feat(greet)` title, an explanatory summary and an `Added:` changelog. The durable
-audit linked the PR pass to the task route at 0.90 inherited confidence, with no
-separate PR-route question. That scratch PR was also closed without merging.
-The initialized pipeline, CI,
-and merge cleanup still rely on the replay described in the
-[shipping specification](specs/shipping.md).
+**Approve and ship** is enabled only while the run waits. It commits the verified
+files, runs the delivery gate and opens the pull request
+([what happens next](#what-happens-after-approval)). It never merges.
 
 ### Request changes
 
-Type the feedback into the box at the bottom of the decision workspace (press `R` to
-jump to it) and **Send**. The model picker beside it chooses the model for the next
-attempt; picking a different verified model applies it as a route override first.
-Kor stores the feedback, discards the approval and the verification, and reruns the
-same issue branch through Execute and Verify. In the capture, LEE-1128 was sent
-back with `Keep each glossary definition under 25 words.`: its attempt counter went
-from 2 to 3, the run history lists attempt 3 as `verified`, and the diff in the
-screenshot is the result. The run returned to
-`waiting`. Request changes is refused while a publication is already underway.
+Type feedback in the box at the bottom of the decision workspace (`R` jumps
+there) and send. Kor writes it to the Linear issue, discards the approval and
+verification, and runs the same branch through Execute and Verify again. The
+model picker beside the box applies a route override for that attempt. LEE-1164
+went back with `Keep the Playbook definition to one sentence.` and was waiting
+again 15 seconds later.
 
-### Override a Jev decision, and undo it
+### Override Jev, and undo it
 
-Press **Explore alternatives** (or `E`):
+**Explore alternatives** (`E`) lists every decision Jev made with its other
+candidates, and the next session's skills, playbook and tools:
 
-![Explore alternatives after switching the route to claude-sonnet-5-5, with Revert available](images/mc-override.webp)
+![Explore alternatives: the route switched to another verified model, then the next session's skills, playbook and tools](images/mc-override.webp)
 
-Every decision Jev made for the run is listed (route, readiness, complexity, risk,
-skill, agent, acceptance) with its other candidates as buttons. The route can move
-to any other verified model. Pick one and the daemon checks policy: the run must
-not be finished, the model must have passed `kor models probe`, and it must differ
-from the route in force. If the checks pass the override is **applied**, from the
-next attempt (the running session keeps its model); otherwise it is **refused** and
-recorded with the reason. Either way it goes into the audit (`override_audit`,
-`kor logs`) and onto the Linear issue as a comment. **Your overrides** at the foot
-of the dialog lists them, and **Revert** puts Jev's choice back, which is also
-audited and commented. In the capture the route was switched to
-`claude-sonnet-5-5` and reverted again:
-
-```text
-2026-10-15T00:20:44.954Z override ovr_3a13daf9 applied: route -> claude-sonnet-5-5 (Applies from the next attempt; the running session keeps its model.)
-2026-10-15T00:20:57.944Z override ovr_3a13daf9 reverted
-```
-
-### Change the next session's skills, playbook and tools
-
-The same dialog has a **Next session** section: Jev's latest skills plan with your
-overrides applied, against the repository's per-turn skill budget.
-
-![The Next session section after hiding one skill, listing one and pinning one over budget](images/mc-next-session.png)
-
-- **Skills.** Each row shows the tier the next session gets (pinned, listed,
-  armed or hidden), Jev's tier when yours differs, and Jev's probability. Each
-  button is another tier with its per-turn token change, for example `listed +671`.
+- **Route.** Any other verified model. It applies from the next attempt; the
+  running session keeps its model.
+- **Skills.** Each skill shows the tier the next session gets (`pinned`,
+  `listed`, `armed` or `hidden`), Jev's tier when yours differs, and Jev's
+  probability. Each button is another tier with its per-turn token change.
   **Find a skill** searches the hidden ones.
-- **Playbook.** The procedure the session pins, with Jev's pick beside it when you
-  changed it.
-- **Tools.** `+Tool` and `-Tool` within the repository's tool policy. Jev still
-  decides the tools you do not override.
+- **Playbook.** The procedure the session pins, or none.
+- **Tools.** `+Tool` and `-Tool` within the repository's tool policy.
 
-A button the daemon would refuse is disabled, and its tooltip gives the reason
-(`Denied by repository policy.`, `Not available at this stage.`). An edit that
-would take the plan over the repository budget is amber and stays disabled until
-you tick **Accept over budget**. The edit applies from the next session: the
-next repair attempt, a retry, or **Request changes**. It goes into the audit and
-onto the Linear issue with the token change, and **Revert** under **Your
-overrides** undoes it. The repository's deny list always wins, and no override
-can widen the tool policy or choose a model.
-
-In the capture, the run on LEE-1150 had the label `kor:skill/human-written-code`
-(pinned by the label override). In Mission Control the skill was hidden,
-`principle-build-the-lever` was listed, `principle-type-system-discipline` was
-pinned over the 1,000-token budget, the playbook was switched to `fix-bug` and
-`Bash` was removed. After **Request changes**, the next session started without
-`Bash`, with `Skill` and `kor-skills:principle-build-the-lever` in its tool
-list, and with the `fix-bug` playbook recorded as `source: override`.
-**Sessions received**, below the editor and in the run's **Plan** tab, shows what
-each attempt actually got:
+Kor checks policy first: a refused override is recorded with its reason, a
+button the daemon would refuse is disabled, and an edit over the repository's
+skill budget needs **Accept over budget**. Repository denials always win, no
+override can widen the tool policy, and a skill that needs a tool you removed is
+not applied. Every override is written to the audit and as a comment on the
+Linear issue; **Revert** under **Your overrides** undoes it. Edits reach the next
+session: a repair attempt, a retry or a request for changes. The run's log shows
+the sequence on LEE-1164:
 
 ```text
-override ovr_e5a19b62 applied: skills -> skill:-human-written-code (... Selected guidance goes from 400 to 0 tokens per turn.)
-override ovr_fa7baba3 applied: skills -> skill:principle-build-the-lever=listed (... from 0 to 671 tokens per turn.)
-override ovr_d77aeeb5 applied: skills -> skill:principle-type-system-discipline=pinned (... from 671 to 1,581 tokens per turn.)
-override ovr_5b4217da applied: playbook -> fix-bug (... from 167 to 182 tokens per turn.)
-override ovr_d0a2f54a applied: tools -> tool:-Bash (Applies from the next session; the running session keeps its pack.)
-override ovr_56b511e0 rejected: tools -> tool:+WebFetch (Policy refused it: allowed by repository policy (WebFetch is outside the repository's tool policy.).)
+2026-10-15T15:56:31.147Z override ovr_dd8a51a5 applied: route -> claude-sonnet-5-5 (Applies from the next attempt; the running session keeps its model.)
+2026-10-15T15:56:39.135Z override ovr_7a3daa4b applied: skills -> skill:writing-project-docs=listed (Applies from the next session; the running session keeps its pack. Selected guidance goes from 245 to 920 tokens per turn.)
+2026-10-15T15:56:46.475Z override ovr_d1c885cf applied: tools -> tool:-Bash (Applies from the next session; the running session keeps its pack.)
+2026-10-15T15:56:59.570Z override ovr_dd8a51a5 reverted
+2026-10-15T15:57:26.471Z request-changes accepted from Mission Control
 ```
 
-Per-issue overrides can also come from Linear labels: `kor:skill/NAME`,
-`kor:skill/-NAME`, `kor:skill/NAME=TIER`, `kor:playbook/NAME`, `kor:tool/NAME`
-and `kor:tool/-NAME`. Kor records a new label as an override when the execution
-starts, and reverts it when the label is removed. Repository-wide pins, denies
-and the budget are under **Projects → Repository settings**: **Always load
-skills**, **Pinned skills**, **Never load skills** and **Skill budget**. See
-[skills](skills.md#overrides) for the full rules.
+The next session started without `Bash`. `writing-project-docs` needs `Bash`, so
+that listing was not applied.
+
+Linear labels override per issue: `kor:skill/NAME`, `kor:skill/-NAME`,
+`kor:skill/NAME=TIER`, `kor:playbook/NAME`, `kor:tool/NAME` and `kor:tool/-NAME`.
+Kor records a label as an override when the run starts and reverts it when the
+label goes. Repository-wide **Always load skills**, **Pinned skills**, **Never
+load skills** and **Skill budget** are in **Projects → Repository settings**. See
+[skills overrides](skills.md#overrides) for the full rules.
 
 ### Retry or stop a run
 
-- **Retry.** On **Agents** the **Retry** button (or **Retry the run** in the
-  decision workspace's menu) works on `failed`, `blocked` and `canceled` runs and
-  keeps the execution ID. A blocked publication resumes its stage rather than
-  rerunning the session. The log records `retry accepted from Mission Control`.
-- **Stop.** **Stop run** on Agents, **Cancel the run** in the decision workspace's
-  menu, or **Cancel run** on a Needs-you card. A running session is stopped first.
-  In the capture, stopping LEE-1126 moved it to `canceled`.
+- **Retry** on Agents (or **Retry the run** in the decision workspace's menu)
+  reruns a `failed` or `blocked` run, keeping its execution ID. A run blocked
+  during shipping resumes shipping instead of rerunning the session.
+- **Stop run** on Agents, **Cancel the run** in the decision workspace's menu or
+  **Cancel run** on a Needs-you card stops it; a running session is stopped
+  first.
 
-Neither touches Linear's workflow state: a stopped run's issue stays **In
-Progress** until you move it. Retries replay healthy preflight decisions while the
-issue and the eligible models are unchanged. Outage fallbacks are retried with Jev.
+Stopping does not move the Linear issue; move it yourself. **Cancelling a run
+that has already verified is final:** Retry and `kor run` both refuse to restart
+it.
 
-### Open the pull request
+### Projects
 
-Once shipping opens it, the pull request is linked everywhere: in the run's header
-and the decision workspace's menu, on the **Agents** header's **PR** button, in the
-project's **Pull requests** card with an **Open** button, and in Home's pull-request
-count. Linear moves to In Review and links it too. You review and merge it on
-GitHub; Kor observes the merge, moves Linear to Done and completes the run. This
-step is the part of Kor with the least live evidence; see [below](#what-happens-after-the-checks-pass).
+![The pilot project: issues with their runs, progress, health, pull requests and activity](images/mc-project.webp)
+
+A project's tabs are **Overview**, **Issues**, **Runs**, **Pull requests**,
+**Documents** and **Repository settings** (path, remote, default branch, Linear
+team and project, shipping, checks, tool allowlist and skills). Progress and
+Health come from Linear and your run history, Pull requests from GitHub; an
+upstream Kor cannot read is labelled `unavailable`, never shown as empty.
 
 ### Models and accounts
 
-The **Models** screen (screenshot [above](#choose-a-model)) has four parts:
+![Models: verified models, account slots and routing](images/mc-models.webp)
 
-- **Account slots.** Every account the gateway pool holds, as opaque slot ids (the
-  gateway's own account names never reach the page), with health (`available` or
-  `quota`), what each slot is in use by, when its window resets, and **Pause** and
-  resume buttons that change the account's real status in the gateway. **Connect
-  account** and **Connect another account** point you at the gateway connection;
-  Kor never edits CLIProxyAPI's config.
-- **Provider cards** summarise each provider's slots and quota windows when
-  `quota-axi` reports them (`no windows reported` when it does not).
-- **Verified models.** The probe results, with **Probe** per row and **Probe a
-  model** at the top.
-- **Routing.** The account policy (`fill-first`, `least-used`, `manual`), session
-  affinity, the default route and reasoning level, the run limits and the
-  calibration sample rate. **Save routing** writes them to `config.yaml`.
+**Verified models** lists the probe results with **Probe** per row; **Show all**
+lists every gateway model. **Account slots** shows each gateway account as an
+opaque ID with its health, use and quota reset, and **Pause** to take it out of
+the pool; it needs the gateway management key, which this capture did not have.
+**Routing** sets the account policy (`fill-first`, `least-used` or `manual`),
+session affinity, the default route, limits and the calibration sample rate.
 
 ### See what Jev learned
 
-![Jev Brain](images/mc-brain.png)
+![Jev Brain after the runs in this guide](images/mc-brain.webp)
 
-**Jev Brain** reads the persisted decision audit and the same calibration report as
-`kor calibrate report`: decisions made, first-pass verification rate, cost per
-verified run, Jev against the baseline route, and your overrides, over 7, 30 or 90
-days. With few finished runs it says so instead of drawing a trend: calibration
-shows `No finished runs with confidence yet` and the baseline comparison shows
-`Fewer than 20 completed pairs`. The running experiment pairs a sampled share of
-runs (25% by default) with the baseline route, in a second worktree, so routing
-claims are measured.
+**Jev Brain** shows decisions made, first-pass verification, cost per verified
+run, Jev against the baseline route and your overrides, over 7, 30 or 90 days.
+With few finished runs it says so instead of drawing trends.
 
-**Learnings** is the [skill outcome learning](skills.md#outcome-learning) Kor
-records for every run: what it changed in Jev's skill picks and why, then each
-skill version's completed runs against the 20 Jev needs, and how often it was
-loaded when offered. A change is one of:
+**Learnings** shows what skill outcome learning changed and why. A skill
+offered in 20 finished runs and never loaded is **hidden**; a skill where Jev's
+confidence ran ahead of merges gets a **stricter** bar. Below 20 runs a skill is
+`measuring` and nothing changes. Home's **Jev learned** card summarises it.
 
-- **hidden**: offered in the recent finished sessions and never loaded, so Jev
-  stops offering it unless a repository pins it;
-- **stricter**: Jev's confidence ran ahead of merge outcomes, so the skill needs a
-  higher probability to be pinned, listed or armed.
+### When Linear is behind
 
-The capture is of the recorded proof store from `scripts/skills-outcome-proof.mjs`,
-where `human-written-code` was offered 20 times and never loaded. A skill below 20
-runs is `measuring` and changes nothing; a version no longer in the catalogue is
-`old version`. Home's **Jev learned** card shows the first change, or how close
-the nearest skill is. A new install shows `Nothing learned yet` with the rule
-above, not an error.
+Every action is first saved in Kor's own database, then written to Linear. If
+Linear is unreachable, the action still applies and the Linear write is retried
+on the next poll. **Do not repeat the action.** A refusal is different: it comes
+back as an error with a hint, and nothing changed.
 
-### When Linear is behind (synchronization pending)
+## Skills and your private pack
 
-Every action above first becomes a durable change in Kor's own database, then Kor
-writes the matching comment or state to Linear. If Linear cannot be reached at that
-moment, the action is still **applied** and the write waits in a durable queue that
-the daemon retries on its next Linear poll. The daemon reports this as
-`linearSync.status: "pending"` with the number of pending writes; the page shows
-the action as done. **Do not repeat the action to force the sync.** A refusal is a
-different thing: it comes back as an error with a hint, and nothing changed. This
-case was not reproduced live for this guide (Linear was reachable throughout); the
-behaviour is the one specified in the
-[Mission Control API](mission-control-api.md#actions).
+Kor bundles skills (coding and PR standards, Linear and ticket guidance, screen
+mockups, project setup, principles) and playbooks (one procedure per session,
+such as `fix-bug`, `change-docs` or `setting-up-a-project`). Before each initial
+or repair session Jev selects skills within a per-turn budget (4,000 tokens by
+default) and at most one playbook. A skill can be **pinned** (its text is in the
+prompt), **listed** (the session can load it), **armed** (injected when a
+matching file, tool or command event happens) or hidden. If Jev is down, only the
+repository's `always` skills load.
 
-## What happens after the checks pass
+Keep your own guidance in a private pack outside any repository:
 
-After verification passes the execution moves on. With `ship: approve` it first
-waits (`waiting`) until you press **Approve and ship** in Mission Control's decision
-workspace; with `ship: auto` it goes straight to `shipping`. The daemon then:
+```text
+$ kor skills init
+/tmp/kor-rf/home/.config/kor/skills
+$ kor skills import --from ./my-skills --dry-run --skip-invalid
+team-style: would-copy; suggested visibility local-only
+PASS dry-run: 1 skills, 0 duplicates, 216 bytes; /tmp/kor-rf/home/.config/kor/skills
+$ kor skills import --from ./my-skills --skip-invalid
+team-style: copied; suggested visibility local-only
+PASS import: 1 skills, 0 duplicates, 216 bytes; /tmp/kor-rf/home/.config/kor/skills
+$ kor skills guard
+PASS skills guard: 112 public files, 1 private names or deny entries
+```
 
-1. Commits **only the verified paths** on `kor/<issue key>`. Unrelated files and
+Import copies; it never changes the source. Without `--skip-invalid` one invalid
+skill stops the batch; with it, valid skills are copied and the rest reported.
+Existing skills are never overwritten. Private skills are `local-only` by default:
+Jev sees only their name, never their content. `kor skills guard` checks that no
+private name or `deny.txt` entry appears in the public tier.
+
+| You want to | Run |
+| --- | --- |
+| See the merged catalogue and token costs | `kor skills doctor`, `kor skills list`, `kor skills show NAME` |
+| Validate public skills | `kor skills lint` |
+| See how skills performed | `kor skills report` |
+| Install a skill pinned to a commit | `kor skills add <git-url>@<commit> --skill NAME --tier public\|private` |
+| Check or apply updates to installed skills | `kor skills update --check`, `kor skills update --apply` |
+
+[Skills](skills.md) has the format, private-pack layout, selection rules and
+budgets, and [project setup](project-setup.md) covers the bundled guidance for
+starting a new project.
+
+## What happens after approval
+
+With `ship: approve`, **Approve and ship** starts shipping; with `ship: auto` it
+starts as soon as the run verifies. The daemon:
+
+1. Commits **only the verified files** on `kor/<issue key>`. Unrelated files and
    likely secrets (`.env*`, keys, credential files, agent config directories,
-   logs) stay untracked, and a secret path already staged or committed by the
-   session blocks publication.
-2. Asks `no-mistakes axi status` which gate the repository uses. An initialized
-   repository goes through the no-mistakes pipeline. Only the explicit "repository
-   not initialized" answer allows the direct `git push` and `gh-axi pr create`
-   path. An unreachable daemon, an approval gate or a failed pipeline keeps
-   delivery blocked and never bypasses the gate.
-3. Pushes the branch to `origin` and opens a pull request with redacted evidence.
-   Linear moves to **In Review** and links the pull request.
-4. Waits. When you merge, Kor observes it, moves Linear to **Done**, reports
-   `complete`, and removes only its own clean worktree.
+   logs) are left out; a secret the session staged or committed blocks shipping.
+2. Asks the `no-mistakes` daemon which delivery gate the repository uses. A
+   repository initialised for no-mistakes goes through its pipeline; only an
+   explicit "not initialized" answer allows a direct push and pull request. An
+   unreachable daemon or a failed pipeline keeps shipping blocked.
+3. Pushes the branch and opens a pull request. The title and body follow the
+   bundled [PR standard](../skills/pr-standard/SKILL.md), or the repository's own
+   PR template if it has one, written from the verified diff and the recorded
+   checks by the run's own Jev-routed model. If no Jev route can be reused, the
+   body says it fell back to the issue text. Linear moves to **In Review**.
+4. Waits. When you merge, Kor moves Linear to **Done**, marks the run `complete`
+   and removes its clean worktree.
 
-Kor does not merge, force-push, delete branches, or start or stop the shared
-no-mistakes daemon.
+Kor never merges, force-pushes or deletes branches. A shipping failure blocks the
+run with the reason; **Retry** resumes shipping without rerunning the session.
 
-**What these captures show.** In the Mission Control captures, three runs verified and
-were left at the approval gate on purpose, so no pull request was opened. In the
-earlier command-line captures the demo project had no `origin` remote, so shipping
-stopped at step 2 for every run with the message in the logs above:
-`git failed (2): error: No such remote 'origin'`. The verified work stayed in its
-worktree and the execution is `blocked` (Mission Control and Linear show the same
-reason). Delivery through no-mistakes and the pull request itself were **not**
-exercised against GitHub in these captures. They are covered by the committed
-replay (`pnpm shipping:proof`, see [development](development.md)) and the
-[shipping specification](specs/shipping.md), which is explicit about that
-boundary. Once your repository has a GitHub `origin`, a gh-axi login and a running
-no-mistakes daemon, this is the path to expect; until you have seen it work, treat
-the pull-request step as the part of Kor with the least live evidence.
+**Evidence.** The runs in this guide were left at the approval gate. Direct
+shipping (step 3) has been exercised live against a private scratch repository,
+opening ready pull requests that were closed unmerged. The no-mistakes pipeline
+path and the merge-to-Done step are covered by the recorded replay
+(`pnpm shipping:proof`) rather than a live run; see the
+[shipping specification](specs/shipping.md).
 
 ## The CLI and the Claude Code status line
 
-Mission Control is the main route. These two are secondary routes to the same
-daemon and the same queue: use them from a terminal, a script, or inside Claude Code.
-
-### Run an issue from the CLI
-
-With the daemon running (see [Start the daemon](#start-the-daemon-and-open-mission-control)),
-preview and queue an issue from a second terminal:
-
-![kor run --dry-run](images/dry-run.png)
-
-```text
-$ kor run LEE-1111 --dry-run
-{
-  "issueId": "LEE-1111",
-  "canonicalIssueId": "d8028008-c8b4-47a3-8b64-c00770784e73",
-  "title": "[throwaway] Kor README capture: add a farewell function",
-  "dryRun": true,
-  "intake": "kor",
-  "route": {
-    "provider": "anthropic",
-    "model": "claude-haiku-5-5",
-    "accountPolicy": "fill-first",
-    "sessionAffinity": true,
-    "reasoningLevel": "medium"
-  },
-  "planned": [
-    "enqueue durable assignment",
-    "run isolated session when kor serve is active"
-  ]
-}
-
-$ kor run LEE-1111
-{
-  "schemaVersion": 1,
-  "issueId": "LEE-1111",
-  "canonicalIssueId": "d8028008-c8b4-47a3-8b64-c00770784e73",
-  "executionId": "cd1e6aa4-be39-466f-8d69-eb4b8687dfaf",
-  "status": "queued",
-  "queued": true
-}
-```
-
-The daemon claims it within seconds; it then appears in Mission Control like any
-other run. Follow it from the terminal with `kor status` and `kor logs`:
-
-```sh
-kor status --json LEE-1111 | jq -c '{state: .run.state, attempts: .run.attempts}'
-kor logs cd1e6aa4-be39-466f-8d69-eb4b8687dfaf
-```
-
-![kor retry, then polling status until the run reaches shipping](images/run.png)
+Both reach the same daemon and queue as Mission Control.
 
 | You want to | Run |
 | --- | --- |
 | Open Mission Control | `kor ui` |
-| Preview Jev's plan for an issue (writes one Linear comment only when it needs your input) | `kor plan LEE-123` |
+| Run the daemon in the foreground | `kor serve` |
+| Check a ticket | `kor linear lint LEE-123` |
+| Preview Jev's plan | `kor plan LEE-123` |
 | Queue an issue, or preview it | `kor run LEE-123`, `kor run LEE-123 --dry-run` |
-| See every execution, or one | `kor status --json`, `kor status --json LEE-123` (or the execution ID) |
-| Read an execution's timeline | `kor logs EXECUTION-ID` |
-| Try a blocked, failed or canceled execution again | `kor retry LEE-123` |
-| Stop an execution | `kor cancel LEE-123` (Kor's queue only; the Linear issue is not moved) |
-| Check your setup | `kor doctor` |
-| Probe and list models | `kor models probe --model MODEL`, `kor models list` |
-| Report calibration | `kor calibrate report` |
+| See runs | `kor status --json`, `kor status --json LEE-123` |
+| Read a run's timeline | `kor logs EXECUTION-ID` |
+| Retry or stop a run | `kor retry LEE-123`, `kor cancel LEE-123` |
+| Probe and list models | `kor models probe`, `kor models list [--all]` |
+| Report routing calibration | `kor calibrate report [--context]` |
+| Check the setup | `kor doctor` |
 
-`kor retry` and `kor cancel` go through the running daemon when there is one, so
-they obey the same cancellation fencing and publication rules as the buttons in
-Mission Control. `kor plan` exits `1` while readiness is `blocked`, a decision is
-escalated, or a fallback route is in use. Full JSON for scripts, and the error
-format, are in the [CLI contract](cli-contract.md).
-
-The run log is a plain timeline. This is the same run, LEE-1117 (its first attempt
-was denied a tool, the second verified, and shipping stopped because that demo
-project had no GitHub `origin`):
+Every command takes `--json`, and every failure is one line:
+`FAIL <command>: <message>. Hint: <what to do next>`. The
+[CLI contract](cli-contract.md) defines the JSON. For example:
 
 ```text
-$ kor logs 426f3560-10cf-4ad2-86d6-98765f331b39
-2026-10-14T18:06:09.952Z execution started
-2026-10-14T18:06:37.756Z execution blocked: Session failed: 1 permission denial
-2026-10-14T18:10:24.075Z execution started
-2026-10-14T18:10:39.371Z execution shipping
-2026-10-14T18:11:21.807Z shipping blocked: git failed (2): error: No such remote 'origin'
-```
-
-A verified change sits in the execution's worktree, uncommitted until shipping
-commits it. The path is `worktree` in the status (here
-`~/.local/share/kor/worktrees/<execution id>` while it exists), and Mission Control's
-**Worktree** button copies it:
-
-```text
-$ git -C ~/.local/share/kor/worktrees/426f3560-10cf-4ad2-86d6-98765f331b39 status --short
- M greeting.test.js
- M src/greeting.js
-```
-
-### The Claude Code status line
-
-The installer registers the `kor-cockpit` Claude Code plugin (see
-[Install](#install)). Where it is active, Claude Code shows a one-line Kor status
-under the prompt, for example:
-
-```text
-[LIVE] Kor LEE-1111 · blocked 0/7 · blocked · claude-haiku-5-5 · medium
-```
-
-That line, from an earlier capture, is the current execution, its stage count, state,
-route and reasoning level. `/kor` draws the same daemon's status as a pane (views
-for the issue, project, decisions, agents, accounts, context, Linear and
-overrides) and `/kor override` and `/kor revert` send the same policy-checked
-overrides that Mission Control's **Explore alternatives** does. Every row is labelled
-`[LIVE]`, `[STALE]` (last known, with its age, read from the daemon's snapshot file)
-or `[UNAVAILABLE]`. Set `KOR_COCKPIT=off` to hide it, `KOR_STATUS_URL` to read
-another daemon (`off` reads only the snapshot) and `KOR_STATE_DIR` to read another
-state directory.
-
-The plugin is active only where it was installed: in the `--pilot` checkout, or in
-every project after a user-scope install (`kor install --scope user`). To try it
-without installing anything, in a disposable Claude configuration, run `pnpm
-cockpit` from the `kor-code` checkout while the daemon is running and type `/kor`.
-Mission Control is where you review, approve and override; nothing in this section
-is needed to use Kor.
-
-## Recover from a restart, a crash or a block
-
-Kor's queue and leases are durable (SQLite in `~/.local/state/kor/kor.db`), so
-stopping the daemon never loses an assignment. All of this was run for real. In
-Mission Control a stopped daemon shows as an `OFFLINE` pill and a banner (`The Kor
-daemon is not answering`) with every value frozen at what it last reported;
-**Reconnect** (or just starting `kor serve` again) brings it back. The CLI
-transcripts below show the same recovery from a terminal.
-
-**Stop the daemon.** `kor status --json ISSUE` reports `provenance: "stale"` at
-once and still returns the last record:
-
-```text
-$ kor status --json LEE-1111
+$ kor status --json LEE-1164
 {
   "schemaVersion": 1,
-  "provenance": "stale",
-  "observedAt": "2026-10-14T18:00:09.000Z",
-  "reason": "daemon is not running or its snapshot is unavailable or stale",
+  "provenance": "live",
+  "observedAt": "2026-10-15T16:02:08.788Z",
   "run": {
-    "executionId": "cd1e6aa4-be39-466f-8d69-eb4b8687dfaf",
-    "issueId": "d8028008-c8b4-47a3-8b64-c00770784e73",
-    "issueKey": "LEE-1111",
-    "state": "blocked",
-    "attempts": 1,
-    "cancelRequested": false,
-    "pullRequestUrl": null,
-    "needsInput": {
-      "reason": "git failed (2): error: No such remote 'origin'\n"
-    },
-    "costUsd": null
-  }
-}
-```
-
-The unselected `kor status` keeps reading `live` until the last snapshot is older
-than twice the poll interval; at 132 seconds with a 60-second poll it reported:
-
-```text
-$ kor status --json | jq '{provenance, reason, observedAt, snapshotObservedAt: .snapshot.observedAt}'
-{
-  "provenance": "stale",
-  "reason": "snapshot is 132s old",
-  "observedAt": "2026-10-14T18:02:19.311Z",
-  "snapshotObservedAt": "2026-10-14T18:00:06.883Z"
-}
-```
-
-**Crash the daemon mid-run.** The daemon was killed with `SIGKILL` while LEE-1116
-was `running`:
-
-```text
-$ kor status --json LEE-1116
-{
-  "schemaVersion": 1,
-  "provenance": "stale",
-  "observedAt": "2026-10-14T18:03:48.992Z",
-  "reason": "daemon is not running or its snapshot is unavailable or stale",
-  "run": {
-    "executionId": "5520bb1e-3b82-4063-8e92-98cdb7fc1fa2",
-    "issueId": "73248b73-2db9-4ac9-a341-ba087589a317",
-    "issueKey": "LEE-1116",
-    "state": "running",
-    "attempts": 1,
+    "executionId": "4cd620c1-a8fe-4d09-b43a-2f8f89ddb718",
+    "issueId": "c81a7c31-005e-4169-9850-ddc9b4773d0d",
+    "issueKey": "LEE-1164",
+    "state": "waiting",
+    "attempts": 2,
     "cancelRequested": false,
     "pullRequestUrl": null,
     "needsInput": null,
-    "costUsd": null
+    "costUsd": 0.00251927
   }
 }
 ```
 
-Starting `kor serve` again stopped the orphaned session, re-queued the execution
-and ran it again, with `attempts` going to 2:
+`kor run --dry-run` shows the configured default route; Jev chooses the actual
+route when the run starts.
+
+**Status line.** Where the `kor-cockpit` plugin is enabled (the pilot checkout,
+or every project after a user-scope install), Claude Code shows a one-line Kor
+status under the prompt and `/kor` opens views of the daemon's runs, decisions,
+agents, accounts and overrides. Every value is labelled `[LIVE]`, `[STALE]` or
+`[UNAVAILABLE]`; with the daemon down it reads
+`[UNAVAILABLE] Kor · daemon down: /kor for why`. `KOR_COCKPIT=off` hides it. You
+do not need it to use Kor.
+
+## Recover from a restart, a crash or a block
+
+The queue is durable (SQLite in `~/.local/state/kor/kor.db`), so stopping the
+daemon loses nothing. Mission Control shows `OFFLINE` and keeps the last values
+until the daemon is back.
+
+**A crash mid-run.** LEE-1164 was sent back with Request changes and the daemon
+was killed with `SIGKILL` six seconds into the new session. Status fell back to
+the last snapshot at once:
 
 ```text
-$ kor logs 5520bb1e-3b82-4063-8e92-98cdb7fc1fa2
-2026-10-14T18:03:44.420Z execution started
-2026-10-14T18:03:53.315Z daemon restarted; previous session stopped; re-queued
-2026-10-14T18:03:53.338Z execution started
-2026-10-14T18:04:20.106Z execution blocked: Session failed: 1 permission denial
+$ kor status --json LEE-1164
+  "provenance": "stale",
+  "reason": "daemon is not running or its snapshot is unavailable or stale",
+    "state": "running",
+    "attempts": 3,
 ```
 
-**A permission denial.** That second attempt blocked because the session tried to
-run a command that was not on the repository's `toolAllowlist`. Kor reports the
-count and the Linear comment says so:
+`kor ui` started the daemon again. It stopped the orphaned session, re-queued
+the run, and the next attempt verified:
 
 ```text
-Kor verification blocked: Session failed: 1 permission denial
-acceptance-1: pass
-acceptance-2: pass
+$ kor logs 4cd620c1-a8fe-4d09-b43a-2f8f89ddb718
+…
+2026-10-15T16:06:23.249Z request-changes accepted from Mission Control
+2026-10-15T16:06:23.273Z execution started
+2026-10-15T16:06:37.519Z daemon restarted; previous session stopped; re-queued
+2026-10-15T16:06:37.603Z execution started
+2026-10-15T16:07:08.151Z execution waiting
 ```
 
-The status does not name the tool. To find out, I re-ran the prompt of a sibling
-demo issue (LEE-1117, which was blocked the same way) by hand under the flags
-Kor uses (`claude -p … --permission-mode dontAsk --allowedTools … --output-format
-stream-json`) and read `permission_denials` from the final result line. The session
-had run `npm test`, and only `Bash(node --test*)` was on the list:
+If `kor ui` reports `A Kor daemon already owns this database` in `serve.log`,
+the previous daemon is still shutting down; run `kor ui` again a moment later.
 
-```json
-{"tool_name":"Bash","tool_input":{"command":"npm test 2>&1 | tail -15","description":"Run test suite via npm test"}}
-```
+**A block before the session.** Missing acceptance criteria, an unfinished
+blocking dependency or a readiness refusal stop the run before any model
+session. Kor comments on the Linear issue and adds `kor:blocked`. Answer in
+Mission Control, or fix the issue and retry; Kor removes the label when the run
+resumes.
 
-The fix is to add the command to the list (`"Bash(npm test*)"`), restart `kor
-serve` so it rereads `config.yaml`, then retry. The retry reuses the execution:
+**A permission denial.** `Session failed: 1 permission denial` means the session
+tried a command outside `toolAllowlist`. Add the command (for example
+`"Bash(npm test*)"`), restart the daemon so it rereads the config, and retry.
+
+**Retry and cancel from the CLI:**
 
 ```text
-$ kor retry LEE-1116
+$ kor cancel LEE-1166
 {
   "schemaVersion": 1,
-  "issueId": "LEE-1116",
-  "canonicalIssueId": "73248b73-2db9-4ac9-a341-ba087589a317",
-  "executionId": "5520bb1e-3b82-4063-8e92-98cdb7fc1fa2",
-  "command": "retry",
-  "accepted": true
-}
-$ kor logs 5520bb1e-3b82-4063-8e92-98cdb7fc1fa2
-2026-10-14T18:03:44.420Z execution started
-2026-10-14T18:03:53.315Z daemon restarted; previous session stopped; re-queued
-2026-10-14T18:03:53.338Z execution started
-2026-10-14T18:04:20.106Z execution blocked: Session failed: 1 permission denial
-2026-10-14T18:04:45.086Z execution started
-2026-10-14T18:05:01.775Z execution shipping
-2026-10-14T18:05:42.939Z shipping blocked: git failed (2): error: No such remote 'origin'
-```
-
-**A preflight block.** Missing acceptance criteria, an unfinished blocking dependency
-or a healthy Jev readiness denial stop the execution before any model session
-starts. The execution is `blocked`, Kor writes a durable clarification comment on the
-Linear issue and adds the `kor:blocked` label. Fix the issue (add the `Acceptance`
-section, finish the dependency, or state the clarified intent in the issue
-description), then run `kor retry`. When execution resumes, Kor removes
-`kor:blocked`.
-
-A retry with unchanged input replays a healthy preflight audit. An outage
-fallback is retained for inspection and retried with Jev under a new audit ID. Clarified intent, or a change to the eligible models, creates a
-fresh immutable decision revision. Earlier decisions stay in the audit. With
-calibration enabled, recorded attempt metrics show provider-reported costs when
-available; a provider cost may be unknown.
-
-**Retry and cancel.** In Mission Control these are **Retry** and **Stop run** (see
-[Retry or stop a run](#retry-or-stop-a-run)). On the command line, `kor retry
-EXECUTION-ID|ISSUE-ID` works on failed, blocked
-and canceled executions and keeps the execution ID. It does not rerun a session
-whose work already verified and reached shipping; it continues delivery. `kor
-cancel` stops a queued, running or blocked execution; a running session is stopped
-first. Cancelling an execution that is already finished is refused:
-
-```text
-$ kor cancel LEE-1111
-{
-  "schemaVersion": 1,
-  "issueId": "LEE-1111",
-  "canonicalIssueId": "d8028008-c8b4-47a3-8b64-c00770784e73",
-  "executionId": "cd1e6aa4-be39-466f-8d69-eb4b8687dfaf",
+  "issueId": "LEE-1166",
+  "canonicalIssueId": "0c48fe82-bef3-4ed3-9b2f-881bd23cb237",
+  "executionId": "83ca4db2-3268-4837-9052-a86ffdcd170c",
   "command": "cancel",
   "accepted": true
 }
-$ kor cancel LEE-1111 --json
-{"schemaVersion":1,"error":{"code":"not_accepted","message":"cancel was not accepted for execution cd1e6aa4-be39-466f-8d69-eb4b8687dfaf","hint":"cancel only queued, running, or blocked executions"}}
+$ kor retry LEE-1166
+FAIL retry: This action is not available in the execution's current state. Hint: check the execution ID or issue key, then retry
 ```
 
-**`kor cancel` only changes Kor's queue.** In these captures the Linear issue was
-still **In Progress** afterwards and no cancellation comment appeared, so move the
-issue back to Todo (or cancel it) in Linear yourself.
+LEE-1166 had already verified, so its cancellation was final. A blocked or
+failed run retries with the same execution ID. A retry reuses Jev's earlier
+decisions while the issue and the eligible models are unchanged, and asks Jev
+again after an outage.
 
 ## Troubleshooting
 
 | You see | Cause and fix |
 | --- | --- |
-| `FAIL <command>: … Hint: …` | Every failure is one line with a hint. Add `--json` for the structured object ([contract](cli-contract.md#errors)), `--debug` for a stack trace. |
-| `kor: command not found` | Add `~/.local/bin` to `PATH`, or run `bin/kor` / `pnpm kor` from the checkout. |
-| `FAIL kor: Kor is not built. Hint: run pnpm install --frozen-lockfile and pnpm build in the Kor checkout.` | Run those two commands in the `kor-code` checkout. |
-| `FAIL run: No Kor repository mapping for Linear team LEE. …` | No repository in `config.yaml` has `linearTeam` (or `linearProject`) matching the issue. Add the mapping. |
-| `FAIL Kor config: missing (…/config.yaml)` | Run `kor install`, or create the file ([configuration](configuration.md)). |
-| `FAIL CLIProxyAPI with Kor key: unreachable` | CLIProxyAPI is not running at `KOR_GATEWAY_URL` (default `http://127.0.0.1:8317`). |
-| `FAIL CLIProxyAPI with Kor key: HTTP 401` | The proxy does not have Kor's key in `api-keys`. |
-| `FAIL CLIProxyAPI with Kor key: missing; CLIProxyAPI addition: - kor-…` | No Kor key is configured; add the printed line to the proxy and the same value to `gateway.env`. |
-| `route: no-verified-route`, readiness `blocked` | No model has passed `kor models probe`. Probe one and set `defaultRoute.model` to it. |
-| `jev: unavailable (TypeSafe API key not found …)` | Set `TYPESAFE_API_KEY`. Until then routes are labelled `fallback` and acceptance stays blocked. |
-| Mission Control shows the connect screen, or the pill says `SIGNED OUT` | This browser holds no valid session. Run `kor ui`, or paste the token from `~/.local/state/kor/ui-token` (the daemon creates it on first start). |
-| `FAIL ui: Kor daemon did not become ready …` | Check the reported log or user journal, ensure port 8327 is free, then rerun `kor ui`. |
-| `OFFLINE` pill, and a banner saying the daemon is not answering | The event stream closed. Start `kor serve`, then press **Reconnect**. Values on screen are the last ones Kor reported. |
-| A sidebar light shows `connect` | That connection is missing or failing. Open **Settings**, read the reason on its row, and connect it. GitHub needs `gh auth login` or a token. |
-| **Approve and ship** is greyed out | The run is not waiting. It must be verified under `ship: approve`; a blocked or running run is not approvable. |
-| Models and Pool panels say `unavailable` or `not reported` | The gateway's management key or `quota-axi` is missing; [see `kor doctor`](#check-your-setup-with-kor-doctor). The panel never shows an upstream failure as an empty list. |
-| `acceptance-N: fail` for a condition you did not write | A line under the `Acceptance` heading that is not a criterion (a note, a link) was read as one. Move it out from under the heading, then retry. |
-| `Session failed: 1 permission denial` | The session used a tool outside `toolAllowlist`; see the [walk-through](#recover-from-a-restart-a-crash-or-a-block). |
-| `git failed (2): error: No such remote 'origin'` | Delivery needs a GitHub `origin` (or `remote` in the config). The verified work is still in the worktree; add the remote and `kor retry`. |
-| Execution `blocked` with a clarification comment and `kor:blocked` on the issue | A preflight block: missing acceptance criteria, an unfinished dependency or a Jev readiness denial. Fix the issue as the comment says, then `kor retry` ([walk-through](#recover-from-a-restart-a-crash-or-a-block)). |
+| `FAIL <command>: … Hint: …` | Every failure is one line with a hint. Add `--json` for an object or `--debug` for a stack trace. |
+| `kor: command not found` | Add `~/.local/bin` to `PATH`. |
+| `FAIL kor: Kor is not built. …` | Run `corepack pnpm install --frozen-lockfile` and `corepack pnpm -r --if-present build` in the Kor checkout, or rerun the installer. |
+| `FAIL Kor config: missing (…)` | Rerun the installer or `kor install`, or create the file. |
+| `FAIL run: No Kor repository mapping for Linear team LEE. …` | No repository's `linearTeam` or `linearProject` matches the issue. |
+| `CLIProxyAPI with Kor key: unreachable` | CLIProxyAPI is not running at `KOR_GATEWAY_URL`. |
+| `CLIProxyAPI with Kor key: HTTP 401` | The proxy's `api-keys` does not have Kor's key yet. |
+| `route: no-verified-route` | No model has passed `kor models probe`. |
+| Routes labelled `fallback`, acceptance blocked | Jev is unavailable: check the TypeSafe key. |
+| The connect screen, or `SIGNED OUT` | Run `kor ui`, or paste the token from `~/.local/state/kor/ui-token`. |
+| `FAIL ui: Kor daemon did not become ready …` | Read the log it names; port 8327 must be free. |
+| `OFFLINE` and a banner that the daemon is not answering | Run `kor ui`, then **Reconnect**. |
+| A sidebar light says `connect` | Open **Settings** and read the reason on that row. |
+| Account slots say `gateway management unreachable` | Add the gateway management key; see `kor doctor`. |
+| **Approve and ship** is greyed out | The run is not `waiting`. Only verified runs under `ship: approve` can be approved. |
+| `acceptance-N: fail` for a criterion you did not write | A note under the acceptance heading was read as a criterion. Move it above the heading and retry. |
+| `Session failed: 1 permission denial` | Add the command to `toolAllowlist`, restart the daemon, retry. |
+| `blocked` with `kor:blocked` on the issue | Missing criteria, an unfinished dependency or a readiness refusal. Fix the issue as the comment says, then retry. |
+| `git failed …: No such remote 'origin'` | Shipping needs a GitHub `origin`. Add it and retry; the verified work is still in the worktree. |
 | `Local cockpit installation requires a standalone checkout …` | `--pilot` was a linked worktree. Use a normal clone. |
-| `/kor` shows `[STALE]` or `[UNAVAILABLE]` | The daemon is down, or the status-line plugin cannot reach it. Start `kor serve`; check `KOR_STATUS_URL` and `KOR_STATE_DIR`. |
-| `FAIL status: …` | `kor status` could not read the snapshot or the execution; the hint says which. |
+| `/kor` shows `[UNAVAILABLE]` | The daemon is not running. Run `kor ui`. |
 
 ## Where Kor keeps things
 
 | Path | Contents |
 | --- | --- |
-| `~/.config/kor/config.yaml` | Repository mappings and policy. `config.yaml.bak` is the previous version, kept when Mission Control saves. |
-| `~/.config/kor/gateway.env` | Gateway key and URL (mode `0600`). |
-| `~/.local/state/kor/kor.db` | The queue, leases, decisions, overrides and calibration rows. |
-| `~/.local/state/kor/snapshots/` | `index.json` plus one file per execution. |
-| `~/.local/state/kor/ui-token` | The session token `kor ui` hands to the browser (mode `0600`, directory `0700`). |
-| `~/.local/state/kor/ui-address.json` | The daemon's address and process ID, written while it runs. |
-| `~/.local/state/kor/connections.json` | Keys you saved in Mission Control's Settings (mode `0600`, write-only). |
-| `~/.local/state/kor/logs/<execution id>.log` | What `kor logs` prints. `<execution id>.terminal.log` beside it is the session's output that Mission Control streams. |
-| `~/.local/state/kor/models.json` | The model probe results. |
-| `~/.local/share/kor/worktrees/<execution id>` | The isolated checkout for each execution. |
-| `~/.local/state/kor-install/` | The installation journal and backups used by `kor uninstall`. |
+| `~/.config/kor/config.yaml` | Your repositories and policy; `config.yaml.bak` is the previous version. |
+| `~/.config/kor/gateway.env` | The gateway key and URL (mode `0600`). |
+| `~/.config/kor/skills/` | Your private skill pack. |
+| `~/.local/state/kor/kor.db` | The queue, decisions, overrides and calibration. |
+| `~/.local/state/kor/connections.json` | Keys saved in Settings (mode `0600`). |
+| `~/.local/state/kor/ui-token` | Mission Control's session token (mode `0600`). |
+| `~/.local/state/kor/logs/` | `serve.log`, and per run the timeline `kor logs` prints and the session output Mission Control streams. |
+| `~/.local/state/kor/models.json` | Model probe results. |
+| `~/.local/share/kor/worktrees/<execution id>` | Each run's worktree. |
+| `~/.local/share/kor-code` | The Kor checkout the installer cloned. |
+| `~/.local/state/kor-install/` | The install journal and backups `kor uninstall` uses. |
 
 `XDG_CONFIG_HOME`, `XDG_STATE_HOME` and `XDG_DATA_HOME` move these roots.
 
 ## Update and uninstall
 
-To update, rerun the [one-line installer](../README.md#install), then `kor ui`.
-It only fast-forwards a clean checkout, builds Mission Control and the CLI, stops
-the previous daemon, and refreshes both installed cockpit copies. Your config,
-gateway key, state and original uninstall backups are retained. A purge after
-these updates can still restore the state from before the original installation.
-
-For a manual checkout, use the same pilot and scope as the original install:
-
-```sh
-cd kor-code
-git pull --ff-only
-corepack pnpm install --frozen-lockfile
-corepack pnpm -r --if-present build
-node packages/cli/dist/cli.js install --pilot ~/code/my-project --linear-team APP --no-systemd
-kor ui
-```
-
-Changing the pilot, scope or Claude configuration directory requires uninstalling
-first. On an interrupted refresh, the error identifies the retained rollback
-backup; save it before attempting recovery.
-
-To remove Kor, run `kor uninstall`. It stops the daemon (and disables an installed service), restores
-every file it changed from its backups, and removes the status-line plugin and
-marketplace, while keeping your config, state and the backups. `kor uninstall
---purge` also removes the config, state and data Kor created, and restores
-anything that predated the installation. Purge also removes the installer cache
-at `~/.cache/kor-code` (`$XDG_CACHE_HOME/kor-code` when set): its pnpm shim,
-Corepack downloads and pnpm store/cache. If `~/.cache` is a symlink, purge removes
-only `kor-code` inside its target. A normal uninstall retains that cache.
-From the manual checkout route, the commands look like this:
+**Update** by rerunning the install one-liner, then `kor ui`:
 
 ```text
-$ kor uninstall
-Kor uninstalled; config and state retained
-Backups: /tmp/kor-t15/fresh/.local/state/kor-install/backups/1792000537354-86e40e1d
-$ node packages/cli/dist/cli.js uninstall --purge
-Kor uninstalled (purged new Kor data; restored pre-existing data)
-Replayed /tmp/kor-t15/fresh/.local/state/kor-install/backups/1792000537354-86e40e1d
+Updating Kor Code…
+Kor updated; configuration, credentials and original uninstall backups retained.
+Daemon stopped for the update; run kor ui to launch Mission Control.
 ```
 
-A normal uninstall also removes the `kor` link, so to purge afterwards run
-`node packages/cli/dist/cli.js uninstall --purge` from the checkout. Do not remove
-Kor's key from CLIProxyAPI's `api-keys` until you are finished with it; Kor never
-edits the proxy. After the one-liner, the downloaded checkout (default `~/.local/share/kor-code`)
-and its `node_modules` and build output remain. Remove that checkout yourself once
-you no longer need the source CLI. Credentials outside Kor's config directory
-(such as Linear and TypeSafe env files), your CLIProxyAPI key entry, and other
-tools' caches/state (including shared Corepack/pnpm caches, GitHub CLI and
-no-mistakes state) remain. The installer uses only its own cache for new downloads;
-shared caches from older installations remain. Kor never touches `~/.codex` or
-`~/.agents`. More recovery detail
-(unrelated settings edits, interrupted installs) is in
-[configuration](configuration.md#install-and-uninstall).
+It fast-forwards the checkout, rebuilds and refreshes the plugin. Runs waiting
+for approval were still waiting afterwards. Local edits in the checkout stop the
+update with a message. For a manual checkout, `git pull --ff-only`, repeat the
+build commands and the same `node packages/cli/dist/cli.js install` command.
+Changing the pilot or scope needs an uninstall first.
+
+**Uninstall** with `kor uninstall`. It stops the daemon, restores every file the
+installer changed, removes the plugin and the `kor` link, and keeps your config,
+state and backups. `kor uninstall --purge` also removes the config, state and data
+Kor created, and its installer cache in `~/.cache/kor-code`. After a plain
+uninstall the `kor` link is gone, so purge from the checkout:
+
+```sh
+node ~/.local/share/kor-code/packages/cli/dist/cli.js uninstall --purge
+```
+
+Neither touches the Kor checkout itself, your Linear and TypeSafe key files, the
+gateway's `api-keys` entry or other tools' caches; remove those yourself when you
+are done. [Configuration](configuration.md#install-and-uninstall) covers
+interrupted installs and restores.
