@@ -313,6 +313,8 @@ Secondary routes to the same daemon. Every command prints JSON for scripts with
 | Check public skills for private content | `kor skills guard [DIRECTORY] [--json]` |
 | Validate public skills | `kor skills lint` (`[DIRECTORY] [--json]`) |
 | Build or inspect the skill catalogue | `kor skills index`, `list`, `show NAME`, `doctor` (`[--from DIRECTORY]... [--estimate] [--json]`) |
+| Install pinned skills | `kor skills add <git-url>@<commit> --skill NAME --tier public\|private` |
+| Preview or apply skill updates | `kor skills update --check` / `kor skills update --apply` |
 | Open Mission Control | `kor ui` |
 
 A real timeline, from the run in the screenshots above (it was blocked once, retried
@@ -359,13 +361,14 @@ the same as an object.
 
 - [Skills](docs/skills.md): bundled code and PR standards, Linear operations
   and ticket-writing guidance, authoring schema, lint, catalogue commands, private
-  and configured sources, routing guardrails and token costs. Lint runs locally
-  without credentials or a daemon, scans every bundled text file for explicit
-  model, provider and effort routing, and reports description overlap as a warning.
-  `kor skills index`
-  writes a private catalogue in Kor state; `list`, `show` and `doctor` inspect
-  sources without writing. Use repeated `--from DIRECTORY` for an explicit local
-  scan and `--estimate` for reproducible costs without a gateway.
+  and configured sources, pinned imports and updates, lockfiles, attribution,
+  uninstall, routing guardrails and token costs. Lint runs locally without
+  credentials or a daemon, scans every bundled text file for explicit model,
+  provider and effort routing, and reports description overlap as a warning.
+  `kor skills index` writes a private catalogue in Kor state; `list`, `show` and
+  `doctor` inspect sources without writing. Use repeated `--from DIRECTORY` for
+  an explicit local scan and `--estimate` for reproducible costs without a gateway.
+  `kor skills add` and `update` need no credentials or daemon.
   `kor linear attach-image` uploads a PNG, embeds it in the ticket and verifies
   the saved bytes using runtime Linear credentials. `kor skills init` creates a
   private pack; `import --from` copies local skills without changing the source

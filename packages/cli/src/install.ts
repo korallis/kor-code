@@ -8,6 +8,7 @@ import { loadKorConfig, parseDotEnv, readRuntimeEnvFile, runtimePaths } from "@k
 import { z } from "zod";
 import { checkRestore, fingerprint, mkdirRecorded, missing, pruneDirectories, readManifest, recordAfter, remember, restoreManifest, saveManifest, type InstallManifest } from "./install-journal.js";
 
+import { uninstallSkills } from "./skills-install.js";
 import { stopLocalDaemon } from "./daemon-lifecycle.js";
 
 import { addKorSettings, installedPluginSchema, PLUGIN_ID, readObject, writeObject } from "./install-json.js";
@@ -328,10 +329,11 @@ export async function installKor(options: { scope: InstallScope; pilot?: string;
 }
 
 export async function uninstallKor(options: { purge: boolean }): Promise<{ output: string }> {
+  const skillsRestored = await uninstallSkills();
   const environment = process.env;
   const manifestPath = journalPath(environment);
   const manifest = await readManifest(manifestPath);
-  if (!manifest) return { output: "Kor is not installed (no install manifest)" };
+  if (!manifest) return { output: skillsRestored ? "Imported skills uninstalled; original tier files restored." : "Kor is not installed (no install manifest)" };
   if (manifest.phase !== "restored" || options.purge) await undo(manifest, environment, options.purge);
   if (options.purge) {
     await rm(manifestPath);
