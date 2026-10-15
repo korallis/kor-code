@@ -91,7 +91,11 @@ say 'Installing dependencies and building Kor Code and Mission Control…'
 corepack pnpm install --frozen-lockfile
 # Workspace build scripts call `pnpm` too. Supply a checkout-local shim even
 # when Corepack's global pnpm shims have never been enabled.
-corepack enable pnpm --install-directory "$KOR_HOME/node_modules/.bin" || fail 'Could not create the local pnpm shim; check permissions in KOR_HOME/node_modules.'
+pnpm_bin="${XDG_CACHE_HOME:-$HOME/.cache}/kor-code/bin"
+mkdir -p "$pnpm_bin"
+corepack enable pnpm --install-directory "$pnpm_bin" || fail 'Could not create the local pnpm shim; check permissions in your cache directory.'
+PATH="$pnpm_bin:$PATH"
+export PATH
 corepack pnpm build
 # A user manager is optional (containers and some WSL installations have none).
 if [ -z "$systemd" ]; then
