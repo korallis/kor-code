@@ -37,9 +37,21 @@ Direct publication asks Jev to route a PR-writing pass among the live verified
 models. The selected model receives a bounded, redacted diff at the verified head,
 the issue, repository check results, and acceptance findings. Its structured answer
 supplies the title, plain-prose summary, user-facing changelog, and testing summary.
-A missing route, unavailable completion, or invalid answer blocks publication for
-retry; Kor does not substitute an issue-title-only description. The route decision
-is recorded under `route-pr-<execution>-<head>` and reused for that commit.
+Only applied route decisions are recorded under `route-pr-<execution>-<head>`
+and reused for that commit. A low-confidence or clarification answer is discarded,
+then Jev is asked once more with a narrower prose-only task. If the second answer
+is still unapplied, Kor creates the standard layout from issue text and recorded
+verification evidence, with a visible `PR prose fallback` note requesting review
+of the summary and changelog. Its title keeps a conventional issue title or uses
+`chore(task): <issue title>`; it does not guess the change type. No model is chosen
+by the fallback. If PR creation needs retrying, Jev can be asked again for the
+same commit; existing PR bodies are still left unchanged.
+Legacy rejected audit records are ignored; a new applied decision uses a retry
+suffix instead of replaying the rejection.
+
+An empty verified-model registry, unavailable service, failed completion, or
+invalid generated content still blocks PR creation for retry. The branch may have
+been pushed before this step.
 
 The bundled `pr-standard` layout appears in this order:
 
@@ -205,8 +217,17 @@ unchanged. The PR route decisions were present in the durable audit, and the fin
 PR preserved relative source paths in recorded check commands while redacting local
 absolute paths and secrets in the replay.
 
+The PR-route recovery replay checks low/high confidence, two uncertain answers,
+retrying the same commit, accepted-route reuse, and legacy rejected audit rows.
+A separate live run forwarded real Jev calls while fault-injecting two
+below-threshold confidences. It passed two checks and three acceptance criteria,
+then opened a ready PR with the standard fallback note; zero rejected PR-route
+rows were persisted. A later live description request for the exact same commit
+selected a route at 0.80 confidence and completed the model-written prose. That
+scratch PR was closed without merging.
+
 The initialized no-mistakes pipeline, configured GitHub CI, merge observation, and
-cleanup remain replay coverage; the live scratch repository had no CI and neither
+cleanup remain replay coverage; the live scratch repository had no CI and no
 PR was merged.
 
 Jev (`jev-1.13.0`) selected daemon-owned delivery with confidence 0.96, preserving

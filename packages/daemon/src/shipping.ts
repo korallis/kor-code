@@ -22,7 +22,7 @@ const PR_TEMPLATE_PATHS = ['.github/pull_request_template.md', '.github/PULL_REQ
 export interface ShippingCommandResult { code: number; stdout: string; stderr: string }
 export type ShippingCommand = (file: string, args: string[], cwd: string) => Promise<ShippingCommandResult>;
 export interface ShippingInput { execution: Execution; issue: LinearIssue; repository: KorRepositoryConfig }
-export type DescribePullRequest = (input: { executionId: string; head: string; prompt: string }) => Promise<string>;
+export type DescribePullRequest = (input: { executionId: string; head: string; prompt: string }) => Promise<string | null>;
 const descriptionSchema = z.object({
   title: z.string().trim().min(1).max(PR_TITLE_LIMIT).regex(/^(?:feat|fix|refactor|perf|docs|ci|chore)\([\w.-]+\): [^\r\n.][^\r\n]*[^.\r\n]$/),
   summary: z.string().trim().min(1).max(PR_FIELD_LIMIT),
@@ -336,6 +336,15 @@ export class GitHubShipping implements ShippingDriver {
       JSON.stringify({ issue: { title: input.issue.title, description: (input.issue.description ?? '').slice(0, PR_FIELD_LIMIT) }, diff: diff.slice(0, PR_DIFF_LIMIT), diffTruncated: diff.length > PR_DIFF_LIMIT, evidence }),
     ].join('\n\n'), input);
     const output = await this.describe({ executionId: input.execution.id, head, prompt });
+    if (output === null) {
+      const title = publicText(input.issue.title, input).replace(/[\r\n]+/g, ' ').trim().replace(/\.+$/, '').slice(0, PR_TITLE_LIMIT);
+      return {
+        title: (/^(?:feat|fix|refactor|perf|docs|ci|chore)\([\w.-]+\): .+/.test(title) ? title : `chore(task): ${title}`).slice(0, PR_TITLE_LIMIT).replace(/\.+$/, ''),
+        summary: `${title}\n\nPR prose fallback: Jev did not select a route with sufficient confidence after two requests. This description uses issue text and recorded evidence; review the summary and changelog before merging.`,
+        changelog: [{ kind: 'Changed', text: title }],
+        testing: 'The recorded repository checks and acceptance findings below are the verification evidence. No additional testing is claimed.',
+      };
+    }
     const json = output.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
     try {
       const parsed = descriptionSchema.parse(JSON.parse(json));

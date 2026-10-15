@@ -16,12 +16,48 @@ const { FakeLinearClient, LinearStore } = await import(pathToFileURL(join(repo, 
 const { linearIssueFixture, workflowMappingFixture } = await import(pathToFileURL(join(repo, 'packages/linear/dist/fixture.js')));
 const { JevClient, JevDecisionCore, MemoryDecisionAuditLog } = await import(pathToFileURL(join(repo, 'packages/jev/dist/index.js')));
 const { runtimePaths, parseKorConfig } = await import(pathToFileURL(join(repo, 'packages/config/dist/index.js')));
+const { createServeRouting } = await import(pathToFileURL(join(repo, 'packages/cli/dist/serve-routing.js')));
 const { encode } = await import(createRequire(new URL('../packages/daemon/package.json', import.meta.url)).resolve('@toon-format/toon'));
 const fixtureJev = () => new JevClient({ apiKey: 'fixture-only', fetch: async (_url, options) => {
   const { questions } = JSON.parse(options.body);
   assert(Object.values(questions).every(question => question.type === 'noul'));
   return Response.json({ model: 'fixture', answers: Object.fromEntries(Object.keys(questions).map(id => [id, { type: 'noul', noul: 0.99 }])) });
 } });
+const routeInput = { executionId: 'pr-recovery', head: 'verified-head', prompt: 'Write PR prose from the recorded diff and passing checks.' };
+const routeModels = [{ model: 'fixture-model', provider: 'fixture-provider', capabilities: [] }];
+function routingProof(confidences, audit = new MemoryDecisionAuditLog()) {
+  let calls = 0, completions = 0;
+  const questions = [];
+  const routing = createServeRouting({ audit, defaultRoute: { model: 'fixture-model', provider: 'fixture-provider' }, models: async () => routeModels,
+    client: { evaluate: async (_state, requested) => {
+      const [id, question] = Object.entries(requested)[0]; questions.push(question.instructions);
+      return { model: 'fixture', answers: { [id]: { type: 'choice', choice: 'fixture-model', confidence: confidences[calls++], probabilities: { 'fixture-model': 1, clarification: 0 } } } };
+    } }, complete: async () => { completions++; return '{}'; },
+  });
+  return { routing, audit, questions, counts: () => ({ calls, completions }) };
+}
+const recovering = routingProof([0.6, 0.95]);
+assert.equal(await recovering.routing.describePullRequest(routeInput), '{}');
+assert.deepEqual(recovering.counts(), { calls: 2, completions: 1 });
+assert.notEqual(recovering.questions[0], recovering.questions[1]);
+assert.equal(recovering.audit.export().length, 1);
+assert.equal(recovering.audit.export()[0].response.confidence, 0.95);
+assert.equal(await recovering.routing.describePullRequest(routeInput), '{}');
+assert.deepEqual(recovering.counts(), { calls: 2, completions: 2 });
+const uncertain = routingProof([0.6, 0.6, 0.95]);
+assert.equal(await uncertain.routing.describePullRequest(routeInput), null);
+assert.deepEqual(uncertain.counts(), { calls: 2, completions: 0 });
+assert.equal(uncertain.audit.export().length, 0);
+assert.equal(await uncertain.routing.describePullRequest(routeInput), '{}');
+assert.deepEqual(uncertain.counts(), { calls: 3, completions: 1 });
+const legacyAudit = new MemoryDecisionAuditLog();
+const accepted = recovering.audit.export()[0];
+legacyAudit.append({ ...accepted, response: { ...accepted.response, applied: false, escalated: true, confidence: 0.6 }, rawAnswer: { type: 'choice', choice: 'fixture-model', confidence: 0.6, probabilities: { 'fixture-model': 1, clarification: 0 } } });
+const legacy = routingProof([0.95], legacyAudit);
+assert.equal(await legacy.routing.describePullRequest(routeInput), '{}');
+assert.deepEqual(legacy.counts(), { calls: 1, completions: 1 });
+assert(legacy.audit.export()[1].response.decisionId.endsWith('-retry-1'));
+console.log('PR route recovery: low/high re-asks once; low/low falls back without caching; same head retries recover; accepted routes replay; legacy rejected routes are ignored');
 const exec = promisify(execFile);
 const parent = process.env.KOR_PROOF_DIR ?? tmpdir();
 await mkdir(parent, { recursive: true });
@@ -228,6 +264,16 @@ await exec('git', ['add', '--', '.github/pull_request_template.md'], { cwd: samp
 await exec('git', ['commit', '-qm', 'fixture: symlink template'], { cwd: sample.worktree });
 const symlinkBody = await renderer.body(renderInput, (await exec('git', ['rev-parse', 'HEAD'], { cwd: sample.worktree })).stdout.trim(), description);
 assert(symlinkBody.startsWith('## What does this PR do?'));
+const fallbackRenderer = new GitHubShipping(real, async () => null);
+const fallbackHead = (await exec('git', ['rev-parse', 'HEAD'], { cwd: sample.worktree })).stdout.trim();
+const fallbackDescription = await fallbackRenderer.description(renderInput, fallbackHead);
+const fallbackBody = await fallbackRenderer.body(renderInput, fallbackHead, fallbackDescription);
+assert.match(fallbackDescription.title, /^fix\(shipping\):/);
+assert(fallbackBody.includes('PR prose fallback:'));
+assert(fallbackBody.includes('after two requests'));
+assert(fallbackBody.includes('node hello.js'));
+assert(!fallbackBody.includes(secret));
+assert.deepEqual(fallbackBody.match(/^## .+$/gm), ['## What does this PR do?', '## Changelog', '## How was it tested?', '## Screenshots', '## Checklist']);
 console.log(`PR standard proof: five ordered headings; bounded evidence keeps checklist; model prose and conventional titles; committed repository template wins; plain template retains policy; screenshots linked; unresolved checks unticked; template redaction; defaultBytes=${(await readFile(join(root,'direct/pr-body.md'))).length}; templateBytes=${Buffer.byteLength(templateBody)}`);
 
 // Construct the v4 schema directly, independent of git history or a previous dist build.

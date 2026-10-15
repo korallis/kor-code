@@ -188,9 +188,15 @@ After verification, a repository with `ship: approve` posts its checks and
 acceptance results to Linear and waits for approval in Mission Control. Distinct
 block reasons appear as separate comments, so a later retry preserves earlier
 failures. Direct PR publication uses a Jev-routed model pass to explain the verified
-change, classify its changelog, and summarize the recorded testing. If routing or
-PR writing fails, resolve the reported problem and retry shipping; the verified
-coding session does not run again. See [shipping](specs/shipping.md).
+change, classify its changelog, and summarize the recorded testing. A low-confidence
+route answer is not saved for reuse: Jev gets one narrower prose-only request. If
+it remains uncertain, the PR uses issue text and recorded evidence in the standard
+layout, with a `PR prose fallback` note asking you to review the summary and
+changelog. If PR creation needs retrying, Jev can be asked again for the same
+commit. Existing PR descriptions are left unchanged. Service,
+registry, completion, or invalid-content failures still require resolving the
+reported problem and retrying shipping; the verified coding session does not run
+again. See [shipping](specs/shipping.md).
 
 ## Credentials and the gateway
 
