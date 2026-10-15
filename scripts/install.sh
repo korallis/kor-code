@@ -74,7 +74,10 @@ export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 corepack pnpm --version >/dev/null || fail 'Corepack could not prepare pnpm; check network access and update Corepack with npm install -g corepack.'
 installed=no
 if node -e 'const fs=require("node:fs"); try { process.exit(JSON.parse(fs.readFileSync(process.argv[1], "utf8")).phase === "installed" ? 0 : 1); } catch { process.exit(1); }' "${XDG_STATE_HOME:-$HOME/.local/state}/kor-install/manifest.json"; then installed=yes; fi
-if [ -z "$pilot" ] && [ "$installed" = no ]; then
+if [ -z "$pilot" ] && [ "$installed" = yes ]; then
+  pilot=$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).pilot)' "${XDG_STATE_HOME:-$HOME/.local/state}/kor-install/manifest.json")
+fi
+if [ -z "$pilot" ]; then
   printf 'Project Git checkout (absolute path): ' 2>/dev/null >/dev/tty || fail 'No terminal available; pass --pilot /path/to/project.'
   IFS= read -r pilot </dev/tty || fail 'Could not read project path; pass --pilot /path/to/project.'
   [ -n "$pilot" ] || fail 'Pass --pilot /path/to/project.'
