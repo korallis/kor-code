@@ -31,7 +31,8 @@
     "shipping:proof": "node scripts/shipping-proof.mjs",
     "calibration:proof": "tsx --tsconfig scripts/tsconfig.json scripts/calibration-proof.ts",
     "context:proof": "tsx --tsconfig scripts/tsconfig.json scripts/context-proof.ts",
-    "context:bench": "tsx --tsconfig scripts/tsconfig.json scripts/context-bench.ts"
+    "context:bench": "tsx --tsconfig scripts/tsconfig.json scripts/context-bench.ts",
+    "skills:fixture": "tsx --tsconfig scripts/tsconfig.json scripts/skills-fixture.ts"
   },
   "devDependencies": {
     "@types/node": "^24.8.0",

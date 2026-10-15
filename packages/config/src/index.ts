@@ -15,6 +15,12 @@ export const repositorySchema = z.strictObject({
   checks: z.array(nonempty).default([]),
   toolAllowlist: z.array(nonempty).default([]),
   tools: z.array(z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/)).optional(),
+  skills: z.strictObject({
+    always: z.array(nonempty).default([]),
+    pins: z.array(nonempty).default([]),
+    never: z.array(nonempty).default([]),
+    budget: positiveInteger.default(4_000),
+  }).optional(),
   /** Existing repositories retain automatic publication; Mission Control can gate it. */
   ship: z.enum(["approve", "auto"]).default("auto"),
 });
