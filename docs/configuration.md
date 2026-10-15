@@ -37,9 +37,11 @@ inside them reads this daemon.
 The route handoff retains Jev's provider, model, label and `decisionId`; controller
 metrics and terminal observations refer to that preflight audit. Retry replays the
 same healthy decision while issue intent, blocking dependencies and eligible models are
-unchanged, and rechecks that its model is eligible. Outage fallbacks are retried
-under a fresh audit ID. Changed inputs create a fresh
-immutable preflight revision while retaining earlier decisions. With calibration
+unchanged, and rechecks that its model is eligible. Once readiness passes,
+operator guidance from Request changes and answers retains that decision, including
+one reached after an earlier refusal. Before readiness passes, an operator answer
+creates a fresh preflight revision. Outage fallbacks are retried under a fresh
+audit ID. Changed inputs create a fresh immutable preflight revision while retaining earlier decisions. With calibration
 enabled, recorded attempt metrics retain provider-reported costs, which may be unknown.
 `--jev` filters candidates against the live gateway catalogue at startup; plain
 `serve` reads the verified registry. Both modes use Jev for acceptance judgments,
@@ -265,7 +267,7 @@ The optional `skills` block configures catalogue sources and warning budgets:
 skills:
   privatePath: ~/private-guidance
   packs: [~/skill-packs/frontend]
-  jev: names-only
+  jev: full                # default; descriptions and selection hints only
   listingBudget: 8000
   bodyBudget: 2000
 ```
@@ -273,8 +275,10 @@ skills:
 Without it, Kor reads its bundled skills and the optional
 `XDG_CONFIG_HOME/kor/skills/` private directory. Extra pack paths and an explicit
 private path must exist. Relative paths resolve from `config.yaml`; `~` means
-the current Kor home. Private descriptions stay out of the selection view unless
-`jev: full`; a skill marked `local-only` remains restricted. `kor skills index`
+the current Kor home. By default (`jev: full`, even without a `skills` section),
+private descriptions and selection hints go to Jev through TypeSafe. Bodies and
+references stay local. Set `jev: names-only` to opt out; a skill marked
+`local-only` always remains restricted. `kor skills index`
 writes the merged catalogue under `XDG_STATE_HOME/kor/skills/catalogue.json`.
 See [the catalogue contract](skills.md#catalogue) for counting, deduplication,
 name collisions, visibility and the read-only `--from` scan.

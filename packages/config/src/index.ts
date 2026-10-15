@@ -38,7 +38,7 @@ export const calibrationSchema = z.strictObject({
 export const skillsConfigSchema = z.strictObject({
   privatePath: nonempty.optional(),
   packs: z.array(nonempty).default([]),
-  jev: z.enum(["names-only", "full"]).default("names-only"),
+  jev: z.enum(["names-only", "full"]).default("full"),
   listingBudget: positiveInteger.default(8_000),
   bodyBudget: positiveInteger.default(2_000),
 });

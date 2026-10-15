@@ -62,7 +62,7 @@ export interface DaemonOptions {
    * error leaves the configured default standing, labelled `fallback`; it never
    * fails the run.
    */
-  chooseRoute?: (input: { executionId: string; issue: LinearIssue }) => Promise<RouteChoice>;
+  chooseRoute?: (input: { executionId: string; issue: LinearIssue; previousDecisionId?: string }) => Promise<RouteChoice>;
   /** Built web assets. The CLI defaults to packages/web/dist. */
   webRoot?: string;
   missionServices?: MissionServices;
@@ -944,7 +944,8 @@ export class KorDaemon {
     if (this.options.chooseRoute) {
       // The planner replays its durable audit on retry, preserving provider,
       // provenance and decision id instead of reconstructing only a model.
-      try { return (await this.options.chooseRoute({ executionId, issue })).route; }
+      const previousDecisionId = this.store.findAssignment(executionId)?.manifest?.route?.decisionId;
+      try { return (await this.options.chooseRoute({ executionId, issue, ...(previousDecisionId ? { previousDecisionId } : {}) })).route; }
       catch (error) {
         if (error instanceof NeedsInputError) throw error;
         await this.log(executionId, `route preflight unavailable; default route stands: ${safeMessage(error)}`);

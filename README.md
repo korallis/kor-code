@@ -196,6 +196,13 @@ label a Todo issue `kor` and let the daemon pick it up on its next poll.
 
 ![The Queue an issue dialog](docs/images/mc-queue.webp)
 
+A confidence-only readiness refusal is reported as `uncertain`, with Jev's score
+and the required threshold. All deterministic checks pass in that case; review
+the acceptance criteria in Linear, add any missing detail, then retry, or answer
+in Mission Control to ask Jev again. Once an execution is ready, **Request changes**
+and operator answers keep that verdict while the issue and eligible models stay
+unchanged.
+
 ### Work in Mission Control
 
 **Home** shows what needs you, what is ready to ship, running agents, spend and
@@ -244,9 +251,12 @@ kor skills import --from ./my-skills --skip-invalid
 kor skills doctor                                       # the merged catalogue and its token costs
 ```
 
-Private skills are `local-only` by default: Jev sees only their names, never
-their content. Imported skills can reach sessions without adding a license or
-removing unrelated frontmatter. Hooks, forked execution and shell interpolation
+By default (`skills.jev: full`), Jev sees private skill descriptions and selection
+hints through TypeSafe so it can choose your skills automatically; bodies and
+references stay local. Opt out in `config.yaml` with `skills: { jev: names-only }`,
+or mark an individual skill `metadata.kor.visibility: local-only`. You can still
+pin private skills per repository with `skills.pins`. Imported skills can reach
+sessions without adding a license or removing unrelated frontmatter. Hooks, forked execution and shell interpolation
 are refused; bundled scripts must use the session's permitted tools. The inline
 interpolation marker must start a line or follow whitespace; ordinary Markdown
 non-null assertions and template literals ending in `!` pass. Fenced commands

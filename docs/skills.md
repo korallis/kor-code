@@ -213,16 +213,18 @@ skills:
   privatePath: ~/private-guidance
   packs:
     - ~/skill-packs/frontend
-  jev: names-only
+  jev: full                # default; descriptions and selection hints only
   listingBudget: 8000
   bodyBudget: 2000
 ```
 
 Paths support `~` and resolve relative to `config.yaml`. `privatePath` replaces
 the default private directory; a missing explicit source is an error. `jev`
-defaults to `names-only` for private guidance; `full` permits its description and
-selection hints in the catalogue. `metadata.kor.visibility: local-only` always
-reduces the row to its name and a fixed summary label, with triggers and
+defaults to `full` for private guidance, including when the `skills` section is
+omitted. Jev receives descriptions and selection hints through TypeSafe to choose
+your private skills automatically. Bodies and references stay local, including
+for token estimates. Set `jev: names-only` to opt out for all private skills.
+`metadata.kor.visibility: local-only` always reduces the row to its name and a fixed summary label, with triggers and
 anti-triggers omitted. Explicit `--from` scans also use that restricted view.
 Origins, tool requirements and hashes remain local catalogue facts; consumers
 must respect `jevVisible` when constructing selection requests.
@@ -536,8 +538,11 @@ metadata:
 ```
 
 Import preserves source bytes, so it suggests this metadata rather than adding
-it. Private guidance defaults to `skills.jev: names-only` even without the field.
-An explicit `local-only` remains restricted when `skills.jev: full` is configured.
+it. Private descriptions and selection hints are visible to Jev by default
+(`skills.jev: full`); bodies and references are never sent to Jev. Set
+`skills: { jev: names-only }` in `config.yaml` to opt out globally, or use the
+metadata above for an individual skill. An explicit `local-only` remains
+restricted with the default `full` setting.
 Restricted catalogue rows record effective `visibility: local-only` and
 `jevVisible: names-only`, use
 `Private guidance (local-only).` as the summary, omit triggers and anti-triggers,

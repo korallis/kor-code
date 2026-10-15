@@ -393,7 +393,7 @@ $ kor doctor --json
 ```
 
 `plan --json` prints the preflight and exits `1` when `ready` is `false` (readiness
-is blocked, a decision is escalated, or the route is a fallback):
+is blocked or uncertain, a decision is escalated, or the route is a fallback):
 
 ```text
 $ kor plan LEE-1117 --json
@@ -401,7 +401,10 @@ $ kor plan LEE-1117 --json
 ```
 
 `outage` (a string) is present when Jev was unavailable, and `commentWritten` says
-whether a clarification comment was posted to the issue.
+whether a preflight report was posted to the issue. Confidence-only readiness
+refusals have `choice: "uncertain"`, `applied: false` and `escalated: true`; their
+reason includes the score, threshold and next step. They do not write a Linear
+comment unless another decision needs input. Policy failures remain `blocked`.
 
 Each decision in `plan --json` also includes `policyChecks` and `reasons`.
 Checks have `name`, `result` (`pass`, `fail` or `unresolved`) and an optional
