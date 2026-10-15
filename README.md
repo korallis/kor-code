@@ -86,10 +86,11 @@ curl -fsSL https://raw.githubusercontent.com/korallis/kor-code/main/scripts/inst
 ```
 
 The script asks for a standalone Git checkout of the project you want Kor to
-work on. To supply it directly (or on a machine without a terminal):
+work on and its Linear team key (for example `APP`). To supply both directly
+(or on a machine without a terminal):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/korallis/kor-code/main/scripts/install.sh | bash -s -- --pilot ~/code/my-project
+curl -fsSL https://raw.githubusercontent.com/korallis/kor-code/main/scripts/install.sh | bash -s -- --pilot ~/code/my-project --linear-team APP
 ```
 
 It checks Linux, Node 24+, Git, Corepack, Claude Code 2.1.299+ and a reachable
@@ -115,7 +116,10 @@ Rerun the same one-liner to update; it preserves your configuration, credentials
 and uninstall backups, refreshes the cockpit plugin and stops the old daemon.
 Run `kor ui` afterwards. Local checkout edits or divergent commits stop the update
 with a fix-it message. `kor uninstall` removes the integration; `kor uninstall
---purge` also removes Kor's own data. The downloaded checkout is kept.
+--purge` also removes Kor's own data and `~/.cache/kor-code` (or
+`$XDG_CACHE_HOME/kor-code`), including the installer's pnpm shim, Corepack downloads
+and pnpm store/cache. The downloaded checkout, its dependencies/builds, external
+credentials, proxy key entry and caches/state owned by other tools remain.
 
 For a private fork or mirror, authenticate with `gh auth login`, then use the
 GitHub API route:
@@ -149,27 +153,34 @@ use and the distinction between documentation, mockups and published tickets.
 Validate the bundled guidance with `kor skills lint`.
 
 **1. Describe your project** in `~/.config/kor/config.yaml`. The installer scaffolds
-it with empty `checks` and `toolAllowlist`, which are yours to fill in. The file
-used for the screenshots below (a scratch clone of this repository):
+it as YAML with your checkout path, detected default branch and Linear team key.
+For `--pilot ~/code/my-project --linear-team APP` on a `main` branch, the scaffold is:
 
 ```yaml
 repos:
-  kor-code:
-    path: /tmp/kor-demo/pilot
-    linearTeam: LEE
-    linearProject: 743496b4-29be-4be5-8cd6-68b3bc39dbbc
-    remote: https://github.com/korallis/kor-code.git
+  my-project:
+    path: /absolute/path/to/my-project
+    linearTeam: APP
     defaultBranch: main
-    ship: approve        # a verified run waits for your approval; "auto" (the default) ships by itself
-    checks:
-      - git diff --check
-    toolAllowlist: [Read, Write, Edit, "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)", "Bash(ls*)", "Bash(cat*)", "Bash(grep*)", "Bash(test*)"]
-limits: { total: 2, perRepository: 1 }
-defaultRoute: { provider: anthropic, model: claude-haiku-5-5, accountPolicy: fill-first, sessionAffinity: true, reasoningLevel: medium }
-launchProfile: lean       # default; select "standard" for the base settings
-pollIntervalSeconds: 120
+    ship: auto
+    checks: []
+    toolAllowlist: []
+limits:
+  total: 2
+  perRepository: 1
+launchProfile: lean
+pollIntervalSeconds: 60
 intakeLabel: kor
 ```
+
+Fill `checks` and `toolAllowlist` with your repository policy before running work.
+Set `ship: approve` if verified runs should wait for your approval. Add
+`linearProject` for a project-specific mapping or `remote` to validate the origin.
+A manual install without `--linear-team` writes `YOUR_TEAM_KEY`; replace it before
+running `kor doctor` or planning an issue. Existing configuration is retained on
+reinstall. Omitted settings, including the fallback `defaultRoute`, use the
+[configuration defaults](docs/configuration.md). Jev owns each task's
+route decision; probe the available models before planning.
 
 `checks` decide whether a result is accepted. `toolAllowlist` grants tool and
 command permissions; unscoped `Read` also enables `Glob` and `Grep` for file
@@ -380,7 +391,7 @@ Secondary routes to the same daemon. Every command prints JSON for scripts with
 | Preview Jev's plan | `kor plan LEE-123` |
 | Check your setup | `kor doctor` |
 | Attach and verify a ticket screenshot | `kor linear attach-image APP-123 ./screen.png --screen settings-error-desktop --alt "/settings — error — desktop" [--json]` |
-| Create or import a private skill pack | `kor skills init`, `kor skills import --from DIRECTORY [--dry-run] [--json]` |
+| Create or import a private skill pack | `kor skills init`, `kor skills import --from DIRECTORY [--dry-run] [--skip-invalid] [--json]` |
 | Check public skills for private content | `kor skills guard [DIRECTORY] [--json]` |
 | Validate public skills | `kor skills lint` (`[DIRECTORY] [--json]`) |
 | Build or inspect the skill catalogue | `kor skills index`, `list`, `show NAME`, `doctor` (`[--from DIRECTORY]... [--estimate] [--json]`) |
@@ -458,7 +469,8 @@ the same as an object.
   `kor linear attach-image --screen ID` uploads a PNG, replaces that screen in
   place and verifies the saved bytes using runtime Linear credentials. `kor skills init` creates a
   private pack; `import --from` copies local skills without changing the source
-  (`--dry-run` previews). `kor skills guard` checks the public tier against private
+  (`--dry-run` previews; `--skip-invalid` imports valid skills and reports those
+  skipped). Every skill gets its own result. `kor skills guard` checks the public tier against private
   skill names and the local `deny.txt`. `local-only` entries expose only a name
   and fixed label to Jev. The launcher accepts a selected skill pack, exposes only
   listed skills, prefixes pinned guidance to the task, and injects armed guidance
@@ -536,7 +548,7 @@ git clone https://github.com/korallis/kor-code.git
 cd kor-code
 corepack pnpm install --frozen-lockfile
 corepack pnpm -r --if-present build
-node packages/cli/dist/cli.js install --pilot ~/code/my-project --no-systemd
+node packages/cli/dist/cli.js install --pilot ~/code/my-project --linear-team APP --no-systemd
 export PATH="$HOME/.local/bin:$PATH"
 kor ui
 ```

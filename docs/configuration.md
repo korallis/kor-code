@@ -140,7 +140,10 @@ plugin loads have no pilot restriction.
 After pilot acceptance, run `kor uninstall` and then
 `node packages/cli/dist/cli.js install --scope user`. Existing config and keys
 are reused; `--pilot` is optional at user scope and defaults to the source
-checkout for a new config scaffold. Configure `linearTeam` or `linearProject`,
+checkout for a new config scaffold. Supply `--linear-team APP` to write the team
+mapping; without it the YAML contains `linearTeam: YOUR_TEAM_KEY`, which you must
+replace. The one-liner prompts for the key on a fresh config. Reinstall preserves
+existing config. Configure `linearTeam` or `linearProject`,
 checks, and `toolAllowlist` before enabling the service. Empty scaffold checks
 and allowlists are deliberate placeholders for repository policy.
 
@@ -366,7 +369,11 @@ a sample can add two sessions when guidance was offered.
 Installer `KOR_REF` accepts a branch or exact tag. Rerunning with the same tag
 supports the update path; use the same ref and save local edits first. Git errors
 retain their diagnostic text. Uninstall leaves the downloaded checkout and
-Corepack/pnpm caches, including the local `kor-code/bin` cache shim.
+installer cache. `uninstall --purge` removes `$XDG_CACHE_HOME/kor-code` (default
+`~/.cache/kor-code`), including the local pnpm shim, Corepack downloads and pnpm
+store/cache. This directory is reserved for Kor's installer. The checkout,
+its dependencies/builds, external credentials and other tools' shared caches/state
+remain; see [update and uninstall](user-guide.md#update-and-uninstall).
 
 Mission Control verifies the saved daemon process identity before sending its
 persistent local token. Legacy loopback `/status` remains unauthenticated.

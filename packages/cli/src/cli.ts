@@ -67,10 +67,10 @@ function validateInstallArgs(args: readonly string[]): void {
   const seen = new Set<string>();
   for (let index = 0; index < args.length; index++) {
     const flag = args[index];
-    if (!flag || seen.has(flag)) usageFailure("kor install --pilot CHECKOUT [--scope local|user] [--no-systemd] [--json]");
+    if (!flag || seen.has(flag)) usageFailure("kor install --pilot CHECKOUT [--scope local|user] [--linear-team KEY] [--no-systemd] [--json]");
     seen.add(flag);
     if (flag === "--no-systemd" || flag === "--json") continue;
-    if (flag !== "--pilot" && flag !== "--scope") throw new CliFailure("invalid_arguments", `unknown install option: ${flag}`, "run `kor install --help`", 2);
+    if (flag !== "--pilot" && flag !== "--scope" && flag !== "--linear-team") throw new CliFailure("invalid_arguments", `unknown install option: ${flag}`, "run `kor install --help`", 2);
     const value = args[++index];
     if (!value || value.startsWith("--")) throw new CliFailure("invalid_arguments", `${flag} needs a value`, "run `kor install --help`", 2);
   }
@@ -328,16 +328,18 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
         } finally { store.close(); }
       }
       if (action === "init" || action === "import" || action === "guard") {
-        const usage = action === "import" ? "kor skills import --from DIRECTORY [--dry-run] [--json]"
+        const usage = action === "import" ? "kor skills import --from DIRECTORY [--dry-run] [--skip-invalid] [--json]"
           : `kor skills ${action}${action === "guard" ? " [DIRECTORY]" : ""} [--json]`;
         if (skillArgs.includes("--help") || skillArgs.includes("-h")) { print(`Usage: ${usage}`, false); return 0; }
         let from: string | undefined;
         let directory: string | undefined;
         let dryRun = false;
+        let skipInvalid = false;
         for (let index = 1; index < skillArgs.length; index++) {
           const arg = skillArgs[index];
           if (arg === "--json") continue;
           if (action === "import" && arg === "--dry-run" && !dryRun) { dryRun = true; continue; }
+          if (action === "import" && arg === "--skip-invalid" && !skipInvalid) { skipInvalid = true; continue; }
           if (action === "import" && arg === "--from" && from === undefined) {
             from = skillArgs[++index];
             if (!from || from.startsWith("-")) usageFailure(usage);
@@ -354,7 +356,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
         }
         if (action === "import") {
           if (!from) usageFailure(usage);
-          const report = await importPrivateSkills({ config, paths, from, dryRun });
+          const report = await importPrivateSkills({ config, paths, from, dryRun, skipInvalid });
           print(jsonFlag(skillArgs) ? report : [
             ...report.skills.map(skill => `${skill.name}: ${skill.status}; suggested visibility ${skill.suggestedVisibility}`),
             ...report.diagnostics.map(item => `${item.severity.toUpperCase()} [${item.rule}] ${item.message}`),
@@ -400,7 +402,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
         }
         return catalogue.ok ? 0 : 1;
       }
-      const usage = `kor skills report [--since ISO-8601] [--json] | kor skills init [--json] | kor skills import --from DIRECTORY [--dry-run] [--json] | kor skills guard [DIRECTORY] [--json] | kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json] | ${SKILLS_INSTALL_USAGE}`;
+      const usage = `kor skills report [--since ISO-8601] [--json] | kor skills init [--json] | kor skills import --from DIRECTORY [--dry-run] [--skip-invalid] [--json] | kor skills guard [DIRECTORY] [--json] | kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json] | ${SKILLS_INSTALL_USAGE}`;
       if (skillArgs[0] === "--help" || skillArgs[0] === "-h" || ["lint", "add", "update"].includes(skillArgs[0] ?? "") && (skillArgs.includes("--help") || skillArgs.includes("-h"))) {
         print(`Usage: ${usage}\nLint checks the public tier. Catalogue commands merge bundled, private and configured skills; show requires NAME. --from replaces those sources for a read-only scan. add requires a pinned commit; update defaults to --check across both tiers. No daemon required.`, false);
         return 0;
@@ -458,15 +460,16 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     if (command === "ui") return await openUi(cleanArgs.slice(1));
     if (command === "models") return await runModels(cleanArgs.slice(1));
     if ((command === "install" || command === "uninstall") && cleanArgs.slice(1).some(arg => arg === "--help" || arg === "-h")) {
-      process.stdout.write(command === "install" ? "Usage: kor install --pilot CHECKOUT [--scope local|user] [--no-systemd] [--json]\nLocal scope requires a standalone checkout. User scope defaults --pilot to the source checkout. Build first; configure credentials and repository policy before starting the installed unit.\n" : "Usage: kor uninstall [--purge] [--json]\nRestore the installation manifest. Without --purge, retain Kor data and recovery backups. Run through the source CLI to purge after the link has been removed.\n");
+      process.stdout.write(command === "install" ? "Usage: kor install --pilot CHECKOUT [--scope local|user] [--linear-team KEY] [--no-systemd] [--json]\nLocal scope requires a standalone checkout. User scope defaults --pilot to the source checkout. Build first; configure credentials and repository policy before starting the installed unit.\n" : "Usage: kor uninstall [--purge] [--json]\nRestore the installation manifest. Without --purge, retain Kor data and recovery backups. Run through the source CLI to purge after the link has been removed.\n");
       return 0;
     }
     if (command === "install") {
       validateInstallArgs(cleanArgs.slice(1));
       const pilot = valueAfter(cleanArgs.slice(1), "--pilot");
       const scope = installScope(cleanArgs.slice(1));
-      if (scope === "local" && !pilot) usageFailure("kor install --pilot CHECKOUT [--scope local|user] [--no-systemd]");
-      const result = await installKor({ scope, ...(pilot ? { pilot } : {}), systemd: !cleanArgs.includes("--no-systemd") });
+      if (scope === "local" && !pilot) usageFailure("kor install --pilot CHECKOUT [--scope local|user] [--linear-team KEY] [--no-systemd]");
+      const linearTeam = valueAfter(cleanArgs, "--linear-team");
+      const result = await installKor({ scope, ...(linearTeam ? { linearTeam } : {}), ...(pilot ? { pilot } : {}), systemd: !cleanArgs.includes("--no-systemd") });
       print(jsonFlag(cleanArgs) ? result : result.output, jsonFlag(cleanArgs));
       return 0;
     }
@@ -487,7 +490,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     if (debug && error instanceof Error && error.stack) process.stderr.write(`${error.stack}\n`);
     return failure instanceof CliFailure ? failure.exitCode : 1;
   }
-  process.stdout.write("Usage: kor linear attach-image ISSUE FILE --alt CAPTION [--screen ID] [--json] | kor skills report [--since ISO-8601] [--json] | kor skills init [--json] | kor skills import --from DIRECTORY [--dry-run] [--json] | kor skills guard [DIRECTORY] [--json] | kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json] | kor skills add|update --help | kor ui | kor serve [--ui-dir DIST] [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--context] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor linear lint ISSUE-ID [--json] | kor linear lint --project PROJECT-ID [--json] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list [--all] | kor models probe [--family family] [--model model]\n");
+  process.stdout.write("Usage: kor linear attach-image ISSUE FILE --alt CAPTION [--screen ID] [--json] | kor skills report [--since ISO-8601] [--json] | kor skills init [--json] | kor skills import --from DIRECTORY [--dry-run] [--skip-invalid] [--json] | kor skills guard [DIRECTORY] [--json] | kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json] | kor skills add|update --help | kor ui | kor serve [--ui-dir DIST] [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--context] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor linear lint ISSUE-ID [--json] | kor linear lint --project PROJECT-ID [--json] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--linear-team KEY] [--no-systemd] | kor uninstall [--purge] | kor models list [--all] | kor models probe [--family family] [--model model] [--dry-run]\n");
   return 0;
 }
 

@@ -456,7 +456,7 @@ Create the pack, preview an explicit source, then copy it:
 ```sh
 kor skills init
 kor skills import --from ./existing-skills --dry-run
-kor skills import --from ./existing-skills
+kor skills import --from ./existing-skills --skip-invalid
 kor skills doctor --estimate
 kor skills guard
 ```
@@ -478,7 +478,11 @@ bundles fail. `.git` and `node_modules` are excluded. New directories have mode
 `0700`; files have `0600`, or `0700` when the source has owner execute permission.
 Existing destination names fail rather than being replaced. Exact duplicates in
 the source are copied once. The report includes duplicate count, byte count,
-conflicts, lint findings and a `local-only` suggestion for each imported skill.
+conflicts, lint findings and a `local-only` suggestion for each discovered skill.
+Each text/JSON result has its own diagnostics and status: `copied`, `would-copy`,
+`duplicate`, `invalid`, `conflict`, `skipped` or `not-copied`. Malformed frontmatter
+is reported under the source directory name. Exact duplicates are copied once;
+different bundles with the same name are conflicts.
 
 `--dry-run` performs discovery, stages copies and runs validation in Kor state;
 it leaves the source and destination unchanged and deletes the staging directory.
@@ -486,9 +490,13 @@ Import validates format, local references and the same no-routing rules as publi
 lint. Private imports accept missing licenses, extra top-level fields and non-string
 non-Kor metadata, and do
 not impose public description wording, overlap, reference layout or body-length
-rules. Unknown routing fields still fail. Invalid imports leave the destination
-unchanged; a filesystem failure during final copying may leave a partial new
-bundle. Remove that incomplete bundle before retrying. No existing bundle is
+rules. Unknown routing fields still fail. By default, any invalid or conflicting
+skill leaves the destination unchanged (exit `1`); valid skills report `not-copied`.
+Add `--skip-invalid` to import valid skills while reporting invalid/conflicting
+ones as `skipped`, with their errors. It exits `0` when there is at least one valid
+skill and `1` when no valid skills remain. Combine it with `--dry-run` to preview
+that selection without writing the pack. A filesystem failure during final copying
+may leave a partial new bundle. Remove that incomplete bundle before retrying. No existing bundle is
 replaced. Private content remains subject to repository permissions when delivered.
 
 Set the visibility on guidance that must stay out of Jev's request:

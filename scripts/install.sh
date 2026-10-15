@@ -6,12 +6,14 @@ say() { printf '%s\n' "$*"; }
 
 main() {
 pilot=
+linear_team=
 systemd=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --pilot) [ "$#" -ge 2 ] && [ -n "$2" ] || fail '--pilot needs a Git checkout path'; pilot=$2; shift 2 ;;
+    --linear-team) [ "$#" -ge 2 ] && [ -n "$2" ] || fail '--linear-team needs a Linear team key'; linear_team=$2; shift 2 ;;
     --no-systemd) systemd=no; shift ;;
-    --help|-h) say 'Usage: install.sh [--pilot CHECKOUT] [--no-systemd]'; say 'Environment: KOR_HOME, KOR_GATEWAY_URL, KOR_REPOSITORY, KOR_REF'; exit 0 ;;
+    --help|-h) say 'Usage: install.sh [--pilot CHECKOUT] [--linear-team KEY] [--no-systemd]'; say 'Environment: KOR_HOME, KOR_GATEWAY_URL, KOR_REPOSITORY, KOR_REF'; exit 0 ;;
     *) fail "Unknown option: $1 (use --help)" ;;
   esac
 done
@@ -72,7 +74,10 @@ fi
 cd "$KOR_HOME"
 # Corepack uses the exact pnpm version declared by the checkout, without changing global shims.
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-corepack pnpm --version >/dev/null || fail 'Corepack could not prepare pnpm; check network access and update Corepack with npm install -g corepack.'
+installer_cache="${XDG_CACHE_HOME:-$HOME/.cache}/kor-code"
+export COREPACK_HOME="$installer_cache/corepack"
+export PNPM_HOME="$installer_cache/pnpm"
+XDG_CACHE_HOME="$installer_cache" corepack pnpm --version >/dev/null || fail 'Corepack could not prepare pnpm; check network access and update Corepack with npm install -g corepack.'
 installed=no
 if node -e 'const fs=require("node:fs"); try { process.exit(JSON.parse(fs.readFileSync(process.argv[1], "utf8")).phase === "installed" ? 0 : 1); } catch { process.exit(1); }' "${XDG_STATE_HOME:-$HOME/.local/state}/kor-install/manifest.json"; then installed=yes; fi
 if [ -z "$pilot" ] && [ "$installed" = yes ]; then
@@ -88,22 +93,28 @@ if [ -n "$pilot" ]; then
   pilot=$(cd "$pilot" 2>/dev/null && pwd -P) || fail 'The --pilot directory does not exist.'
   [ "$(git -C "$pilot" rev-parse --show-toplevel 2>/dev/null)" = "$pilot" ] || fail '--pilot must be a Git checkout root.'
 fi
+if [ ! -f "${XDG_CONFIG_HOME:-$HOME/.config}/kor/config.yaml" ] && [ -z "$linear_team" ]; then
+  printf 'Linear team key (for example APP): ' 2>/dev/null >/dev/tty || fail 'No terminal available; pass --linear-team KEY.'
+  IFS= read -r linear_team </dev/tty || fail 'Could not read Linear team key; pass --linear-team KEY.'
+  [ -n "$linear_team" ] || fail 'Pass --linear-team KEY.'
+fi
 say 'Installing dependencies and building Kor Code and Mission Control…'
-corepack pnpm install --frozen-lockfile
+XDG_CACHE_HOME="$installer_cache" corepack pnpm install --frozen-lockfile --store-dir "$installer_cache/pnpm/store" --state-dir "$installer_cache/pnpm/state"
 # Workspace build scripts call `pnpm` too. Supply a user-local shim even
 # when Corepack's global pnpm shims have never been enabled.
-pnpm_bin="${XDG_CACHE_HOME:-$HOME/.cache}/kor-code/bin"
+pnpm_bin="$installer_cache/bin"
 mkdir -p "$pnpm_bin"
 corepack enable pnpm --install-directory "$pnpm_bin" || fail 'Could not create the local pnpm shim; check permissions in your cache directory.'
 PATH="$pnpm_bin:$PATH"
 export PATH
-corepack pnpm build
+XDG_CACHE_HOME="$installer_cache" corepack pnpm build
 # A user manager is optional (containers and some WSL installations have none).
 if [ -z "$systemd" ]; then
   if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then systemd=yes; else systemd=no; fi
 fi
 set -- install
 [ -z "$pilot" ] || set -- "$@" --pilot "$pilot"
+[ -z "$linear_team" ] || set -- "$@" --linear-team "$linear_team"
 [ "$systemd" = yes ] || set -- "$@" --no-systemd
 node packages/cli/dist/cli.js "$@"
 case ":$PATH:" in
