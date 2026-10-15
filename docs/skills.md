@@ -6,9 +6,13 @@ standards cover code style (`human-written-code`) and pull requests (`pr-standar
 The `using-linear` skill covers tracker operations and image handling;
 `writing-linear-tickets` covers scope, acceptance, dependencies and screen evidence.
 Screen workflows cover complete mockup inventories (`designing-screen-mockups`)
-and verified Linear images (`attaching-screens-to-tickets`). Repository policy
-takes precedence over the bundled guidance. Shipping this tier does not yet load it into execution sessions;
-catalogue selection and delivery are separate work.
+and verified Linear images (`attaching-screens-to-tickets`).
+Project guidance covers setup (`setting-up-a-project`, a playbook) and documentation
+(`writing-project-docs`, with one template per document). See
+[project setup](project-setup.md) for the workflow and manual use.
+Repository policy takes precedence over the bundled guidance. Shipping this tier
+does not yet load it into execution sessions; catalogue selection and delivery
+are separate work.
 
 The direct shipping path also enforces the PR layout in code, without loading a
 skill into the session. It uses the five sections from `pr-standard`, maps
