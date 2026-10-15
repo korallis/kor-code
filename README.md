@@ -374,3 +374,7 @@ Omit `--no-systemd` to install a systemd user unit when a user manager is availa
 For a manual update, pull, repeat the install/build commands and run the same
 `node … install` command. Reinstalling with the same pilot refreshes the plugin
 and keeps the original uninstall backups. To change pilot or scope, uninstall first.
+
+## License
+
+[MIT License](LICENSE).
