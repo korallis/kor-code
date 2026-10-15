@@ -105,8 +105,31 @@ also permits equivalent direct invocations of explicitly allowed `bash`/`sh`
 scripts when they are executable, use the same shebang interpreter, and resolve
 inside the isolated execution worktree. These aliases preserve the configured
 script and argument scope; they do not enable general shell or network commands.
-The session prompt lists its effective permissions. Denied calls and their actual
-tool output are recorded for Jev to distinguish missing required work from an
+By default Kor passes `--tools` with the deduplicated, sorted base tool names
+from these effective permissions plus `Glob` and `Grep`. For example,
+`Bash(git diff*)` contributes `Bash`, while its command restriction stays in
+`--allowedTools`. File search is also pre-approved, so repositories do not need
+to list `Glob` and `Grep` themselves. An empty allowlist still permits file search;
+it does not enable file edits or general shell access.
+
+Set `tools:` within a repository to replace the available tool set:
+
+```yaml
+tools: [Read, Write, Edit, Bash, Glob, Grep]
+```
+
+Values must be base tool names, not permission patterns (`Bash`, not
+`Bash(git diff*)`). An omitted `tools` derives the default set; `tools: []`
+exposes no tools. An override can deliberately omit search. Adding `Bash` or
+another tool here exposes its schema without granting permission to use it;
+command permissions still come from `toolAllowlist` and exact simple checks.
+Only available search tools receive automatic search permission. The override
+applies to initial and repair attempts. `kor doctor` prints each repository's
+effective set and whether it came from an override. Executable-script aliases
+are resolved again in the actual execution worktree.
+
+The session prompt lists its available tools and effective permissions. Denied
+calls and their actual tool output are recorded for Jev to distinguish missing required work from an
 optional inspection that was denied.
 
 When no file or runtime credential is present, install writes a new
@@ -218,7 +241,7 @@ calibration:
     reasoningLevel: medium
 ```
 
-`defaultBranch` defaults to `main`, `checks` and `toolAllowlist` default to empty lists, and the default route is `anthropic / claude-sonnet-5-5` with fill-first account selection. Unknown fields and invalid values fail before a configuration reaches the controller.
+`defaultBranch` defaults to `main`, `checks` and `toolAllowlist` default to empty lists, `tools` is derived when omitted, and the default route is `anthropic / claude-sonnet-5-5` with fill-first account selection. Unknown fields and invalid values fail before a configuration reaches the controller.
 
 `linearTeam` and `linearProject` map a Linear issue to this repository. `linearProject` wins when both match; otherwise Kor uses the team mapping. A repository key that exactly matches the issue's team key or project ID is also accepted for small pilots.
 

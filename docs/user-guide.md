@@ -253,11 +253,18 @@ intakeLabel: kor
   setups.
 - **`checks`** are shell commands run in the worktree after each attempt. A
   non-zero exit means the attempt is not verified.
-- **`toolAllowlist`** is the complete list of tools a session may use. Sessions run
-  in Claude Code's `dontAsk` mode: anything not on the list is denied, and **a
-  single denial fails the attempt**. Add the commands your project's agents
+- **`toolAllowlist`** grants tool and command permissions. Kor also pre-approves
+  `Glob` and `Grep` for file search. Sessions run in Claude Code's `dontAsk` mode:
+  commands outside the effective permissions are denied, and **a single denial
+  fails the attempt**. Add the commands your project's agents
   actually run; see [Troubleshooting](#troubleshooting) for the denial this
   captured.
+- **`tools`** (optional) replaces the available tool set. By default Kor loads
+  only the base names in the effective permissions plus `Glob` and `Grep`,
+  reducing startup context. For example, `tools: [Read, Glob, Grep]` exposes only
+  inspection tools; `tools: []` exposes none. Availability does not grant command
+  permission. `kor doctor` shows the effective set; see the
+  [configuration reference](configuration.md) for details.
 - **`ship`** is `approve` or `auto` (the default when it is missing). With `approve`
   a verified execution stops in the `waiting` state until you press **Approve and
   ship** in Mission Control (or **Request changes**); with `auto` it goes straight

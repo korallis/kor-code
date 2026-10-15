@@ -325,7 +325,9 @@ error in `kor status` is the ordinary bare error object.
 ### `kor doctor --json` and `kor plan --json`
 
 `doctor --json` prints the checks as one object and exits `1` when any check
-failed. A failed check is not a command error, so there is no `error` object and
+failed. Each reachable repository also has a `repo <key> tools` check describing
+the effective available tool set and its source (derived or overridden).
+A failed check is not a command error, so there is no `error` object and
 no stderr line:
 
 ```text

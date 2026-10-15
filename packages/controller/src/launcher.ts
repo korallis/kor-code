@@ -5,9 +5,9 @@ import type { SessionTurn, SessionLoadEvent } from "@kor-code/calibration";
 import type { Execution, Route } from "@kor-code/core";
 import { EventCollector, type SessionEvent } from "./events.js";
 import { redact } from "@kor-code/jev";
-import { permissionGuidance, sessionPermissions } from "./session-permissions.js";
+import { DEFAULT_ALLOWED_TOOLS, permissionGuidance, sessionPermissions, sessionTools } from "./session-permissions.js";
 
-export interface SessionLaunch { execution: Execution; repositoryPath: string; worktreePath: string; prompt: string; route?: Route; allowedTools?: readonly string[]; checks?: readonly string[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }
+export interface SessionLaunch { execution: Execution; repositoryPath: string; worktreePath: string; prompt: string; route?: Route; allowedTools?: readonly string[]; tools?: readonly string[]; checks?: readonly string[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }
 export interface PermissionDenial { toolName: string; toolUseId: string; input: string }
 export interface ToolResult { toolName: string; toolUseId: string; input: string; output: string; isError: boolean }
 export interface SessionTelemetry {
@@ -39,7 +39,7 @@ export interface SessionResult {
 }
 export interface SessionLauncherLike { launch(input: SessionLaunch): Promise<SessionResult> }
 export interface SessionLauncherOptions {
-  repoRoot?: string; command?: string; args?: string[]; env?: NodeJS.ProcessEnv; gatewayKey?: string; sandboxScript?: string; allowedTools?: readonly string[];
+  repoRoot?: string; command?: string; args?: string[]; env?: NodeJS.ProcessEnv; gatewayKey?: string; sandboxScript?: string; allowedTools?: readonly string[]; tools?: readonly string[];
   /** Where the daemon publishes status, so the cockpit inside the session reads it rather than the session's own sandbox home. */
   cockpit?: { statusUrl: string; stateDir: string };
   onOutput?: (executionId: string, channel: "stdout" | "stderr", text: string) => void;
@@ -47,8 +47,6 @@ export interface SessionLauncherOptions {
   sandboxRoot?: string;
 }
 
-// Repository policy supplies capabilities; absent policy defaults to inspection.
-const DEFAULT_ALLOWED_TOOLS = ["Read"] as const;
 const CONTEXT_SETTINGS = { claudeMdExcludes: ["**"], autoMemoryEnabled: false };
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -216,13 +214,15 @@ export class SessionLauncher implements SessionLauncherLike {
     const collector = new EventCollector();
     const script = this.options.sandboxScript ?? resolve(this.repoRoot, "scripts/sandbox.sh");
     const checks = input.checks ?? [];
-    const allowedTools = await sessionPermissions({ worktree: input.worktreePath, allowedTools: input.allowedTools ?? this.options.allowedTools ?? DEFAULT_ALLOWED_TOOLS, checks });
+    const override = input.tools ?? this.options.tools;
+    const allowedTools = await sessionPermissions({ worktree: input.worktreePath, allowedTools: input.allowedTools ?? this.options.allowedTools ?? DEFAULT_ALLOWED_TOOLS, checks, ...(override ? { tools: override } : {}) });
+    const tools = sessionTools(allowedTools, override);
     const toolArgs = allowedTools.length > 0 ? [...allowedTools] : [""];
     const routeArgs = [
       ...(input.route?.model ? ["--model", input.route.model] : []),
       ...(input.route?.reasoningLevel ? ["--effort", input.route.reasoningLevel] : []),
     ];
-    const commandArgs = this.options.args ?? ["claude", "-p", input.prompt + permissionGuidance(allowedTools, checks), ...routeArgs, "--plugin-dir", resolve(this.repoRoot, "packages/claude-plugin"), "--no-session-persistence", "--permission-mode", "dontAsk", "--allowedTools", ...toolArgs, "--output-format", "stream-json", "--verbose", "--setting-sources", "", "--settings", JSON.stringify(CONTEXT_SETTINGS)];
+    const commandArgs = this.options.args ?? ["claude", "-p", input.prompt + permissionGuidance(allowedTools, checks, tools), ...routeArgs, "--plugin-dir", resolve(this.repoRoot, "packages/claude-plugin"), "--no-session-persistence", "--permission-mode", "dontAsk", "--tools", tools.join(","), "--allowedTools", ...toolArgs, "--output-format", "stream-json", "--verbose", "--setting-sources", "", "--settings", JSON.stringify(CONTEXT_SETTINGS)];
     const args = ["--run", ...commandArgs];
     const tool = commandArgs[0] ?? "claude";
     const toolDir = tool.includes("/") ? dirname(tool) : this.findToolDir(tool);
