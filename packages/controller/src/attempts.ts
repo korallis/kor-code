@@ -5,6 +5,8 @@ import { metricFromSession, type CalibrationStore } from "@kor-code/calibration"
 import type { Repository } from "./repository.js";
 import type { SessionLauncherLike, SessionResult } from "./launcher.js";
 import { repairPrompt, verifyAttempt, verificationSettings } from "./verification.js";
+import { DEFAULT_ALLOWED_TOOLS, sessionPermissions } from "./session-permissions.js";
+import { planSessionTools } from "./tool-plan.js";
 
 /** Both arms use the same checks, acceptance judge, prompt and repair budget. */
 export async function runVerifiedSessions(input: {
@@ -37,9 +39,14 @@ export async function runVerifiedSessions(input: {
     let session: SessionResult;
     try {
       input.onStage?.(execution.id, "execute");
+      const prompt = previous ? repairPrompt(input.initialPrompt, previous) : input.initialPrompt;
+      const permissions = await race(sessionPermissions({ worktree: execution.worktree, allowedTools: repository.allowedTools ?? DEFAULT_ALLOWED_TOOLS,
+        checks: repository.checks ?? [], ...(repository.tools ? { tools: repository.tools } : {}) }));
+      const toolPlan = await race(planSessionTools({ executionId: execution.id, task: prompt, permissions,
+        ...(repository.tools ? { tools: repository.tools } : {}), ...(input.jev ? { jev: input.jev } : {}) }));
       session = await race(input.launcher.launch({ execution, repositoryPath: repository.path, worktreePath: execution.worktree,
-        prompt: previous ? repairPrompt(input.initialPrompt, previous) : input.initialPrompt,
-        ...(execution.route ? { route: execution.route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}), ...(repository.tools ? { tools: repository.tools } : {}), ...(repository.checks ? { checks: repository.checks } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}), ...(input.signal ? { signal: input.signal } : {}) }));
+        prompt, tools: toolPlan.tools,
+        ...(execution.route ? { route: execution.route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}), ...(repository.checks ? { checks: repository.checks } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}), ...(input.signal ? { signal: input.signal } : {}) }));
     } catch (error) {
       // Preserve the attempt and elapsed time even when the provider never emits a result.
       if (input.calibration && execution.route) input.calibration.recordAttempt(metricFromSession({ executionId: execution.id, attempt: attemptNumber, attemptId, ...(input.decisionId ? { decisionId: input.decisionId } : {}), route: execution.route, startedAt, finishedAt: new Date().toISOString(), session: {}, verified: false, verificationFailures: 0 }));

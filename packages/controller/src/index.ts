@@ -21,6 +21,7 @@ export * from "./limiter.js";
 export * from "./events.js";
 export * from "./launcher.js";
 export * from "./session-permissions.js";
+export * from "./tool-plan.js";
 export * from "./reconcile.js";
 export * from "./verification.js";
 

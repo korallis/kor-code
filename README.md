@@ -165,11 +165,16 @@ intakeLabel: kor
 `checks` decide whether a result is accepted. `toolAllowlist` grants tool and
 command permissions; unscoped `Read` also enables `Glob` and `Grep` for file
 search. Scoped Read policies require explicit search permissions. Sessions
-load only the effective permissions' base tool names, reducing
-startup context. Optional per-repository `tools: [Read, Edit, Write, Bash, Glob, Grep]`
-replaces that available set without granting shell permissions. `kor doctor`
-prints the effective set. Every field is explained in the
-[user guide](docs/user-guide.md#configure-a-repository).
+start with a lean set from effective permissions, typically
+`Read, Write, Edit, Bash, Glob, Grep`. Before each session, Jev judges shell,
+browser, web and sub-agent needs in one request. Web tools, `Agent` and
+policy-named browser tools require a probability of at least 0.8 and repository
+permission. A docs task stays lean; web research can receive `WebFetch` when
+it is in `toolAllowlist`. Optional per-repository `tools:` caps the available set;
+Jev cannot add a tool outside that cap or grant shell commands. Without Jev,
+or during an outage, optional tools stay off. `kor doctor` prints the configured
+ceiling; the decision audit records the per-task probabilities. Every field is
+explained in the [user guide](docs/user-guide.md#configure-a-repository).
 
 Before queueing a ticket, run `kor linear lint LEE-123` (or add `--json` for
 scripts). This read-only check requires acceptance criteria, completed blocking

@@ -114,22 +114,43 @@ allowlist does not receive automatic search tools or search permissions. To
 permit search with a scoped policy, configure explicit scoped `Glob(...)` and
 `Grep(...)` permissions in `toolAllowlist`.
 
-Set `tools:` within a repository to replace the available tool set:
+Set `tools:` within a repository to cap the available tool set:
 
 ```yaml
 tools: [Read, Write, Edit, Bash, Glob, Grep]
 ```
 
 Values must be base tool names, not permission patterns (`Bash`, not
-`Bash(git diff*)`). An omitted `tools` derives the default set; `tools: []`
-exposes no tools. An override can deliberately omit search. Adding `Bash` or
-another tool here exposes its schema without granting permission to use it;
-command permissions still come from `toolAllowlist` and exact simple checks.
+`Bash(git diff*)`). An omitted `tools` derives the ceiling from effective
+permissions; `tools: []` exposes no tools. An override can deliberately omit
+search. For controller sessions the ceiling is intersected with permission base
+names, so a `tools` entry alone cannot make a policy-denied tool available.
+Command permissions still come from `toolAllowlist` and exact simple checks.
 Automatic search permission still requires unscoped `Read` and an available
-search tool; a `tools` override alone never grants search permission. The override
-applies to initial and repair attempts. `kor doctor` prints each repository's
-effective set and whether it came from an override. Executable-script aliases
-are resolved again in the actual execution worktree.
+search tool. Executable-script aliases are resolved in the actual worktree.
+
+Before each initial or repair session, Jev answers four independent Nouls in
+one request: shell beyond read-only git, live browser, external web evidence,
+and sub-agents. Ordinary tools remain available within the ceiling, typically
+`Read, Write, Edit, Bash, Glob, Grep`. The shell answer is recorded without
+removing `Bash`, because even a docs task may need permitted git inspection.
+It never expands command permissions.
+
+`WebFetch`, `WebSearch`, `Agent` and browser tool names under
+`mcp__chrome_devtools__`, `mcp__playwright__` or `mcp__browser__` are optional.
+They require a yes probability of at least **0.8** and a matching permission
+base name. For example, add `WebFetch` to `toolAllowlist` (and to `tools` if
+configured) to make it eligible for research tasks. A docs task does not pay
+for that schema. Browser judgments select only policy-named tools; this does
+not configure an MCP server or install browser tooling.
+
+Missing Jev, low probabilities or an outage leave optional tools off. Outages
+are labelled in the decision audit. Tool decisions use immutable IDs keyed by
+execution, task and effective policy; unchanged retries replay them without an
+API call, while repair prompts or policy changes produce new decisions.
+`kor doctor` shows the configured ceiling, before task selection. The session's
+actual tool list and the `tools` decisions show what was selected. Routing
+remains Jev's separate per-task decision.
 
 The session prompt lists its available tools and effective permissions. Denied
 calls and their actual tool output are recorded for Jev to distinguish missing required work from an

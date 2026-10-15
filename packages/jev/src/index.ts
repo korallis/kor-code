@@ -9,7 +9,7 @@ import { answerSchema, type JevAnswer, type JevJsonValue, type JevQuestion, type
 import type { JevClient } from "./client.js";
 import { redact } from "./redact.js";
 
-export type DecisionKind = "route" | "skill" | "agent" | "context" | "readiness" | "complexity" | "risk" | "acceptance";
+export type DecisionKind = "route" | "skill" | "agent" | "context" | "readiness" | "complexity" | "risk" | "acceptance" | "tools";
 export type DecisionAnswerType = "choice" | "noul" | "score";
 export interface AcceptanceJudgmentRequest {
   executionId: string;
@@ -33,12 +33,12 @@ export interface DecisionAuditPersistence { read(decisionId: string): string | u
 const jsonValue = z.json();
 const policyCheckSchema = z.object({ name: z.string(), result: z.enum(["pass", "fail", "unresolved"]), reason: z.string().optional() });
 const decisionRequestSchema = z.object({
-  decisionId: z.string(), executionId: z.string(), kind: z.enum(["route", "skill", "agent", "context", "readiness", "complexity", "risk", "acceptance"]), question: z.string(), state: jsonValue,
+  decisionId: z.string(), executionId: z.string(), kind: z.enum(["route", "skill", "agent", "context", "readiness", "complexity", "risk", "acceptance", "tools"]), question: z.string(), state: jsonValue,
   inputs: z.array(z.object({ name: z.string(), value: jsonValue, source: z.string().optional() })), candidates: z.array(z.string()), criteria: z.record(z.string(), jsonValue).optional(), nonApplyingCandidates: z.array(z.string()).optional(), answerType: z.enum(["choice", "noul", "score"]).optional(), evidenceRefs: z.array(z.string()).optional(),
   policyChecks: z.array(policyCheckSchema).optional(), threshold: z.number().optional(), overrides: jsonValue.optional(),
 });
 const appliedDecisionSchema = z.object({
-  decisionId: z.string(), executionId: z.string(), question: z.string(), inputs: z.array(z.object({ name: z.string(), value: jsonValue, source: z.string().optional() })), choice: z.string(), candidates: z.array(z.string()), confidence: z.number(), reasons: z.array(z.string()), evidenceRefs: z.array(z.string()), policyChecks: z.array(policyCheckSchema), kind: z.enum(["route", "skill", "agent", "context", "readiness", "complexity", "risk", "acceptance"]), applied: z.boolean(), escalated: z.boolean(), answerType: z.enum(["choice", "noul", "score"]).optional(), model: z.string().optional(), probabilities: z.record(z.string(), z.number()).optional(), noul: z.number().optional(), score: z.number().optional(), overrides: jsonValue.optional(), observedOutcome: jsonValue.optional(),
+  decisionId: z.string(), executionId: z.string(), question: z.string(), inputs: z.array(z.object({ name: z.string(), value: jsonValue, source: z.string().optional() })), choice: z.string(), candidates: z.array(z.string()), confidence: z.number(), reasons: z.array(z.string()), evidenceRefs: z.array(z.string()), policyChecks: z.array(policyCheckSchema), kind: z.enum(["route", "skill", "agent", "context", "readiness", "complexity", "risk", "acceptance", "tools"]), applied: z.boolean(), escalated: z.boolean(), answerType: z.enum(["choice", "noul", "score"]).optional(), model: z.string().optional(), probabilities: z.record(z.string(), z.number()).optional(), noul: z.number().optional(), score: z.number().optional(), overrides: jsonValue.optional(), observedOutcome: jsonValue.optional(),
 });
 const auditRecordSchema = z.object({ request: decisionRequestSchema, response: appliedDecisionSchema, recordedAt: z.string(), rawAnswer: answerSchema.optional(), overrides: jsonValue.optional(), observedOutcome: jsonValue.optional() });
 function applyDecision(request: DecisionRequest, answer: JevAnswer | undefined, model?: string): AppliedDecision {
