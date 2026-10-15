@@ -729,11 +729,15 @@ when it ends, for example:
 13:24:03 baseline verified · $0.0016. This run's result is unchanged.
 ```
 
+![A verified run's stream with both sampled baselines labelled and sub-cent costs](images/mc-baseline-stream.png)
+
 **Plan** starts with **Sessions received**: for every attempt, the skills it was
 actually given (tier, per-turn tokens, and whether Jev, your override or the
 repository chose it), its playbook, and the guidance tokens per turn. Kor records
 this when each session launches, so you can check afterwards that an override
 reached the session. A calibration session without skills records no pack.
+
+![Sessions received: attempt 1 with Jev's listed skill, attempt 2 with the skill pinned by an override](images/mc-sessions-received.png)
 
 Tool denials are visible here: the capture shows a session being refused `Bash`
 commands outside the allowlist and carrying on with the tools it had. One denial
