@@ -11,8 +11,8 @@ Project guidance covers setup (`setting-up-a-project`, a playbook) and documenta
 (`writing-project-docs`, with one template per document). See
 [project setup](project-setup.md) for the workflow and manual use.
 Repository policy takes precedence over the bundled guidance. Indexing does not
-select skills. Execution delivery consumes an explicit plan; automatic Jev
-selection is a separate integration.
+select skills. Execution delivery consumes the plan selected by Jev before
+each initial or repair session.
 
 The direct shipping path also enforces the PR layout in code, without loading a
 skill into the session. It uses the five sections from `pr-standard`, maps
@@ -349,10 +349,10 @@ throughout a session; re-index after editing them.
 Pinned entries contribute only their Markdown bodies, sorted by name and
 prefaced with `Selected guidance: NAME`, at the start of the first user message.
 They do not enter the plugin listing. Hidden entries contribute nothing. Armed
-entries produce a private `armed.json` containing names, source paths, hashes
-and triggers, without listing or injecting bodies. Hook execution and firing
-records belong to the separate mid-run arming integration; this delivery layer
-does not install a hook.
+entries produce a private `armed.json` containing names, source paths, bundle
+hashes, triggers and validated body snapshots. These bodies enter context only
+after a matching `PostToolUse` event; they are absent from the initial prompt
+and skill listing. Armed-only packs do not enable the `Skill` tool.
 
 Before writing a pack, delivery verifies the catalogue hash, rejects duplicate
 or unknown plan entries, rereads every selected bundle and checks its content
@@ -377,19 +377,67 @@ pinned-only plans expose no `Skill` tool and no plugin listing; preparing them
 also removes any stale pack from a previous attempt. Skill order, manifest and
 pinned prefix are deterministic for stable prompt caching.
 
+### Mid-run arming
+
+An armed pack includes `armed-hook.mjs` and `hooks/hooks.json`. The hook runs
+locally without network calls or shell evaluation of event data. It matches
+only the tool name and structured tool input, never tool output, file contents
+or a free-text instruction. Use these explicit forms in `kor.triggers`, separated
+by semicolons or commas:
+
+| Trigger | Matches |
+| --- | --- |
+| `file:src/**/*.tsx` | A repository-relative file glob against `file_path` for Read, Write or Edit, or `path` for Glob or Grep. Paths outside the hook event's working directory do not match. Search result paths are not inspected. |
+| `tool:Edit` | The exact, case-sensitive tool name. |
+| `command:git diff` | A Bash command starting with this literal prefix, followed by a space or the end of the command. Leading whitespace is ignored. |
+
+Natural-language triggers remain selection hints; they cannot fire a hook.
+For example, `kor.triggers: 'edit components; file:src/**/*.tsx; tool:Edit'`
+provides one selection hint and two executable triggers. The hook does not
+choose which skills to arm or change Jev's route.
+
+Each event injects at most one matching skill, in skill-name order. Each skill
+fires once and each pack allows at most **two injections**. Delivery rejects
+armed bodies over **1,500 tokens**, using the greater of the catalogue count
+and the character estimate. It snapshots the linted body and checks its hash
+when firing, so later source edits cannot change injected guidance. The factual
+prefix identifies the selected convention and source directory; it contains
+no instructions copied from the triggering event.
+
+`armed-firings.json` records the name, bundle hash, trigger, tool-use ID and
+timestamp. The hook serializes concurrent events and writes state before
+emitting context. The launcher joins firings to the corresponding tool turn
+in `telemetry.loadEvents` with `source: "armed"`; existing calibration storage
+retains these records for outcome learning. A firing records delivery, not
+evidence that the session followed the guidance. Hook failures emit a diagnostic
+and no guidance. A lock left by an interrupted hook prevents further injections
+in that pack; preparing a fresh pack clears it.
+
+The `prepareSkills` callback runs again for each repair session. Rebuild from
+the selector's current plan there: the new pack resets firing state and removes
+old armed bodies and hooks. `kor serve` reruns Jev selection through this
+callback with the repair evidence.
+
 After `pnpm build`, run the live proof using an existing Jev route object
 (`label: "jev"`, with its `decisionId`) and an output directory outside the
 checkout:
 
 ```sh
 node scripts/skills-pack-proof.mjs /tmp/jev-route.json /tmp/kor-skills-proof
+# Repeat only mid-run arming after a hook change:
+node scripts/skills-pack-proof.mjs /tmp/jev-route.json /tmp/kor-arming-proof --arming-only
 ```
 
 The proof reads gateway credentials at runtime, invokes the real catalogue CLI
 and launcher against temporary bundles, and captures request bodies without
 headers. It checks exact init listings for 0, 3 and 20 skills, absence of a body
 sentinel before invocation, body arrival and context growth after invocation,
-ambient skill isolation and pinned prefixes. Captures, streams and measured
+ambient skill isolation, pinned prefixes and armed body arrival only after a
+matching tool result. The armed runs check
+nonmatching and repeated reads, the two-injection cap, command triggers, factual
+framing, firing records in calibration storage and fresh state on a subsequent
+session. Eight concurrent matching hook processes also check one-time delivery.
+Captures, streams and measured
 context counts remain in the output directory. No real harness configuration
 is modified.
 
@@ -648,8 +696,8 @@ explicit repository guidance remains eligible. The following rules then apply:
 | Hidden | Filtered, below thresholds or over a budget | No context cost |
 
 An oversized high-probability body can be listed instead. Armed entries are
-recorded in `armed.json`; automatic injection is the separate mid-run hook work.
-No armed body enters session context yet. A tier that exceeds its count or token
+recorded in `armed.json`; the mid-run hook injects the body after a matching
+tool event, within the limits described above. A tier that exceeds its count or token
 cap stays hidden, with the reason retained in the plan.
 
 Configure repository guidance under an existing mapping:

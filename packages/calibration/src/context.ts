@@ -16,5 +16,9 @@ export const loadEventSchema = z.object({
   toolUseId: z.string(),
   turn: tokens.positive(),
   status: z.enum(["requested", "succeeded", "failed"]),
+  source: z.literal("armed").optional(),
+  hash: z.string().optional(),
+  trigger: z.string().optional(),
+  firedAt: z.iso.datetime().optional(),
 });
 export type SessionLoadEvent = z.infer<typeof loadEventSchema>;
