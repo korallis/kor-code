@@ -203,6 +203,9 @@ label a Todo issue `kor` and let the daemon pick it up on its next poll.
 and **Send and retry** writes it to the Linear issue and runs again. Ctrl+K (⌘K)
 opens **Ask Jev** anywhere. Execution failures also appear in **Needs you** with
 **Retry**, and Kor posts the reason and a `kor:blocked` label to Linear.
+**Cancel run** dismisses a failed run from **Needs you**. Retrying reuses the
+recorded route while task inputs and eligible models are unchanged; Kor's
+failure label does not trigger another route decision.
 Ask Jev accepts questions up to 2,000 characters and uses a bounded run summary,
 so growing decision history does not fill its request.
 

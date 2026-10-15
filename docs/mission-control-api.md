@@ -74,12 +74,12 @@ and there is no learned-memory store in the current foundation.
 | Write | Behaviour |
 | --- | --- |
 | `POST /api/runs` | Resolve and validate all Linear issues before adding any durable assignments; returns 202 |
-| `POST /api/runs/:id/cancel` | Request cancellation through the durable queue and abort the owned active session |
+| `POST /api/runs/:id/cancel` | Request cancellation through the durable queue, abort the owned active session, or dismiss a failed run from Needs you |
 | `POST /api/runs/:id/retry` | Retry failed, canceled or blocked execution; blocked publication resumes its existing stage |
 | `POST /api/runs/:id/answer` | Persist the answer and Linear comment, then retry a needs-input run |
 | `POST /api/runs/:id/note` | Persist guidance and an issue comment; guidance is supplied to the next session attempt |
 | `POST /api/runs/:id/approve` | Release a verified execution waiting at the publication gate |
-| `POST /api/runs/:id/request-changes` | Persist feedback, discard approval and verification, and rerun the same issue branch |
+| `POST /api/runs/:id/request-changes` | Persist feedback, invalidate approval and verification, retain verification history, and rerun the same issue branch |
 | `POST /api/overrides`, `POST /api/overrides/:id/revert` | Override policy, durable audit and Linear comments. `target` is `route`, `skills`, `playbook`, `tools` or a decision ID; `overBudget: true` accepts a skill plan above the repository budget. A refused override is a 409 carrying its audited record; skill and playbook edits also return `tokens: { before, after }` |
 | `POST /api/ask` | Jev selects a grounded recommendation over bounded live run summaries; the user invokes its typed action separately |
 | `PUT /api/config`, `PUT /api/projects/:project` | Parse the config schema, write an atomic private backup and replacement, then reload the idle controller |

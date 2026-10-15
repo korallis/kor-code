@@ -4,6 +4,8 @@ import type { CatalogueModel, Route } from "@kor-code/core";
 import { NeedsInputError, type DaemonOptions, type DescribePullRequest } from "@kor-code/daemon";
 import { JevClient, JevDecisionCore, JevUnavailableError, redact, planPreflight, preflightRequests, routeFromDecision, type DecisionAuditLog } from "@kor-code/jev";
 
+const routingLabels = (labels: readonly string[]) => labels.filter(label => label !== "kor:blocked").sort();
+
 /** One persistent decision core for serve's preflight and acceptance judgments. */
 export function createServeRouting(options: {
   audit: DecisionAuditLog;
@@ -20,12 +22,12 @@ export function createServeRouting(options: {
     try { models = [...await options.models()].sort((a, b) => a.model.localeCompare(b.model)); }
     catch (cause) { catalogueFailure = new JevUnavailableError("Model catalogue unavailable; check the registry and gateway before retrying.", { cause }); }
     const input = { executionId,
-      issue: { id: issue.id, title: issue.title, ...(issue.description !== undefined ? { description: issue.description } : {}), acceptanceCriteria: issue.acceptanceCriteria, labels: issue.labels, hasScreenshot: hasScreenshot(issue), dependencies: issue.dependencies.map(dependency => ({ id: dependency.id, state: dependency.stateType })).sort((a, b) => a.id.localeCompare(b.id)) },
+      issue: { id: issue.id, title: issue.title, ...(issue.description !== undefined ? { description: issue.description } : {}), acceptanceCriteria: issue.acceptanceCriteria, labels: routingLabels(issue.labels), hasScreenshot: hasScreenshot(issue), dependencies: issue.dependencies.map(dependency => ({ id: dependency.id, state: dependency.stateType })).sort((a, b) => a.id.localeCompare(b.id)) },
       verifiedModels: models, defaultRoute: options.defaultRoute,
     };
     const state = preflightRequests(input)[0]?.state;
     const original = options.audit.get(`route-${executionId}`);
-    const fingerprint = (value: unknown) => createHash('sha256').update(JSON.stringify(redact(value)) ?? 'null').digest('hex').slice(0, 16);
+    const fingerprint = (value: unknown) => createHash('sha256').update(JSON.stringify(redact(value), (key, field: unknown) => key === 'labels' && Array.isArray(field) ? routingLabels(field) : field) ?? 'null').digest('hex').slice(0, 16);
     let decisionRevision = original && fingerprint(original.request.state) !== fingerprint(state) ? fingerprint(state) : undefined;
     const baseRevision = decisionRevision;
     for (let retry = 1; ; retry++) {

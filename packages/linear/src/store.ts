@@ -355,7 +355,7 @@ export class LinearStore {
   requestCancel(issueId: string): boolean {
     return this.transaction(() => {
       const row = this.db.prepare('SELECT status FROM assignments WHERE issue_id=?').get(issueId) as { status?: unknown } | undefined;
-      if (!row || !['queued', 'running', 'blocked', 'waiting', 'shipping', 'review'].includes(String(row.status))) return false;
+      if (!row || !['queued', 'running', 'failed', 'blocked', 'waiting', 'shipping', 'review'].includes(String(row.status))) return false;
       if (row.status !== 'running') return this.db.prepare("UPDATE assignments SET status='canceled',cancel_requested=0,token=NULL,owner=NULL,expires_at=NULL WHERE issue_id=?").run(issueId).changes === 1;
       return this.db.prepare('UPDATE assignments SET cancel_requested=1 WHERE issue_id=?').run(issueId).changes === 1;
     });
@@ -386,7 +386,7 @@ export class LinearStore {
   operatorMessages(executionId: string): Array<{ kind: string; message: string }> {
     return this.db.prepare('SELECT kind,message FROM run_messages WHERE execution_id=? ORDER BY rowid').all(executionId).flatMap(row => typeof row.kind === 'string' && typeof row.message === 'string' ? [{ kind: row.kind, message: row.message }] : []);
   }
-  /** Discard approval and verification before rerunning changes on the same issue branch. */
+  /** Invalidate approval and verification before rerunning changes on the same issue branch. */
   requestChanges(executionId: string): boolean {
     const assignment = this.findAssignment(executionId);
     if (!assignment?.manifest || !['waiting', 'review', 'blocked'].includes(assignment.status) || assignment.expiresAt !== undefined) return false;

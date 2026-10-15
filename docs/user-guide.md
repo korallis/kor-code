@@ -516,9 +516,10 @@ files, runs the delivery gate and opens the pull request
 ### Request changes
 
 Type feedback in the box at the bottom of the decision workspace (`R` jumps
-there) and send. Kor writes it to the Linear issue, discards the approval and
-verification, and runs the same branch through Execute and Verify again. The
-model picker beside the box applies a route override for that attempt. LEE-1164
+there) and send. Kor writes it to the Linear issue, invalidates the approval and
+verification, and runs the same branch through Execute and Verify again. Earlier
+verification stays visible as history. The model picker beside the box applies
+a route override for that attempt. LEE-1164
 went back with `Keep the Playbook definition to one sentence.` and was waiting
 again 15 seconds later.
 
@@ -574,7 +575,7 @@ load skills** and **Skill budget** are in **Projects → Repository settings**. 
   during shipping resumes shipping instead of rerunning the session.
 - **Stop run** on Agents, **Cancel the run** in the decision workspace's menu or
   **Cancel run** on a Needs-you card stops it; a running session is stopped
-  first.
+  first. **Cancel run** also dismisses a failed run from **Needs you**.
 
 Stopping does not move the Linear issue; move it yourself. **Cancelling a run
 that has already verified is final:** Retry and `kor run` both refuse to restart
@@ -826,7 +827,9 @@ FAIL retry: This action is not available in the execution's current state. Hint:
 LEE-1166 had already verified, so its cancellation was final. A blocked or
 failed run retries with the same execution ID. A retry reuses Jev's earlier
 decisions while the issue and the eligible models are unchanged, and asks Jev
-again after an outage.
+again after an outage. Kor's `kor:blocked` label and label ordering do not
+change the route fingerprint; task labels, including skill and tool overrides,
+still count as inputs.
 
 ## Troubleshooting
 
