@@ -3,7 +3,8 @@ import { join, resolve } from "node:path";
 import { z } from "zod";
 import type { KorConfig, KorPaths } from "@kor-code/config";
 import type { SessionLaunch, SessionSkillPack } from "@kor-code/controller";
-import type { JevDecisionCore } from "@kor-code/jev";
+import { buildSkillsReport, type CalibrationStore } from "@kor-code/calibration";
+import { MIN_SKILL_SAMPLES, type SkillLearning, type JevDecisionCore } from "@kor-code/jev";
 import { buildSkillsCatalogue } from "./skills-catalogue.js";
 import { buildSkillsPack, type SkillDeliveryPlan } from "./skills-pack.js";
 
@@ -13,6 +14,7 @@ export async function prepareSessionSkills(options: {
   config: KorConfig;
   paths: KorPaths;
   jev: JevDecisionCore;
+  calibration?: CalibrationStore;
 }): Promise<SessionSkillPack> {
   const { input, config, paths, jev } = options;
   const repository = Object.values(config.repos).find(repository => resolve(repository.path) === resolve(input.repositoryPath));
@@ -25,9 +27,18 @@ export async function prepareSessionSkills(options: {
   } catch (error) {
     if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
   }
+  const learning: Record<string, SkillLearning> = {};
+  if (options.calibration) {
+    const report = buildSkillsReport(options.calibration, { excludeExecutionId: input.execution.id });
+    for (const stats of report.skills) {
+      if (stats.samples < MIN_SKILL_SAMPLES || !catalogue.skills.some(skill => skill.name === stats.name && skill.hash === stats.hash)) continue;
+      learning[stats.name] = { samples: stats.samples, offered: stats.offered, loaded: stats.loaded, used: stats.used,
+        passRate: stats.passRate, lift: stats.pairs >= MIN_SKILL_SAMPLES ? stats.lift : null, demoted: stats.demoted, thresholds: stats.thresholds };
+    }
+  }
   const [decision, playbook] = await Promise.all([jev.selectSkills({ executionId: input.execution.id, task: input.prompt,
     stage: input.skillStage ?? "execute",
-    catalogue, allowedTools: input.allowedTools, stackTags, ...repository?.skills,
+    catalogue, allowedTools: input.allowedTools, stackTags, learning, ...repository?.skills,
     ...(config.skills ? { listingBudget: config.skills.listingBudget, bodyBudget: config.skills.bodyBudget } : {}),
   }), jev.selectPlaybook({ executionId: input.execution.id, task: input.prompt,
     stage: input.skillStage ?? "execute", catalogue, allowedTools: input.allowedTools, stackTags,
@@ -39,5 +50,6 @@ export async function prepareSessionSkills(options: {
   const selected = playbook.playbookPlan.selected;
   const plan: SkillDeliveryPlan = { catalogueHash: catalogue.hash, skills: decision.plan.skills.map(skill => ({ name: skill.name,
     tier: skill.name === selected ? "pinned" : skill.tier })) };
-  return buildSkillsPack({ sessionsDir: paths.sessionsDir, executionId: input.execution.id, catalogue, plan, allowedTools: input.allowedTools });
+  const pack = await buildSkillsPack({ sessionsDir: paths.sessionsDir, executionId: input.execution.id, catalogue, plan, allowedTools: input.allowedTools });
+  return { ...pack, decisionId: decision.decisionId };
 }

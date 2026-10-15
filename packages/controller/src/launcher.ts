@@ -9,7 +9,7 @@ import { EventCollector, type SessionEvent } from "./events.js";
 import { redact } from "@kor-code/jev";
 import { DEFAULT_ALLOWED_TOOLS, permissionGuidance, sessionPermissions, sessionTools } from "./session-permissions.js";
 
-export interface SessionLaunch { attemptId?: string; playbookFailure?: { classes: string[]; blockers: string[] }; playbookOverride?: string; skillStage?: "execute" | "repair"; execution: Execution; repositoryPath: string; worktreePath: string; prompt: string; route?: Route; allowedTools?: readonly string[]; tools?: readonly string[]; checks?: readonly string[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }
+export interface SessionLaunch { skillsDisabled?: boolean; attemptId?: string; playbookFailure?: { classes: string[]; blockers: string[] }; playbookOverride?: string; skillStage?: "execute" | "repair"; execution: Execution; repositoryPath: string; worktreePath: string; prompt: string; route?: Route; allowedTools?: readonly string[]; tools?: readonly string[]; checks?: readonly string[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }
 export interface PermissionDenial { toolName: string; toolUseId: string; input: string }
 export interface ToolResult { toolName: string; toolUseId: string; input: string; output: string; isError: boolean }
 export interface SessionTelemetry {
@@ -30,6 +30,8 @@ export interface SessionTelemetry {
   usage?: Readonly<Record<string, number>>;
 }
 export interface SessionResult {
+  skillDecisionId?: string;
+  tools?: readonly string[];
   exitCode: number;
   signal?: NodeJS.Signals;
   events: SessionEvent[];
@@ -40,7 +42,7 @@ export interface SessionResult {
   failureReasons?: readonly string[];
 }
 export interface SessionLauncherLike { launch(input: SessionLaunch): Promise<SessionResult> }
-export interface SessionSkillPack { pluginDir?: string; listedSkills: readonly string[]; pinnedGuidance: string }
+export interface SessionSkillPack { decisionId?: string; pluginDir?: string; listedSkills: readonly string[]; pinnedGuidance: string }
 export interface SessionLauncherOptions {
   repoRoot?: string; command?: string; args?: string[]; env?: NodeJS.ProcessEnv; gatewayKey?: string; sandboxScript?: string; allowedTools?: readonly string[]; tools?: readonly string[];
   /** Where the daemon publishes status, so the cockpit inside the session reads it rather than the session's own sandbox home. */
@@ -228,7 +230,7 @@ export class SessionLauncher implements SessionLauncherLike {
     const permissions = await sessionPermissions({ worktree: input.worktreePath, allowedTools: input.allowedTools ?? this.options.allowedTools ?? DEFAULT_ALLOWED_TOOLS, checks, ...(override ? { tools: override } : {}) });
     const allowedTools = permissions.filter(tool => tool.split("(")[0] !== "Skill");
     const availableTools = sessionTools(allowedTools, override).filter(tool => tool !== "Skill");
-    const skills = await this.options.prepareSkills?.({ ...input, tools: availableTools, allowedTools: allowedTools.filter(tool => availableTools.includes(tool.split("(")[0] ?? tool)) });
+    const skills = input.skillsDisabled ? undefined : await this.options.prepareSkills?.({ ...input, tools: availableTools, allowedTools: allowedTools.filter(tool => availableTools.includes(tool.split("(")[0] ?? tool)) });
     const listedSkills = [...(skills?.listedSkills ?? [])].sort();
     allowedTools.push(...listedSkills.map(name => `Skill(kor-skills:${name})`));
     const tools = [...availableTools, ...(listedSkills.length ? ["Skill"] : [])].sort();
@@ -275,7 +277,7 @@ export class SessionLauncher implements SessionLauncherLike {
         const actualExitCode = exitCode ?? 1;
         const telemetry = parseResultEvent(collector.events);
         const reasons = failureReasons(actualExitCode, telemetry, collector.events.some(event => event.kind === "json" && record(event.value)?.type === "result"));
-        resolvePromise({ exitCode: actualExitCode, ...(signal ? { signal } : {}), events: collector.events, stdout, stderr, ...(telemetry ? { telemetry } : {}), failed: reasons.length > 0, ...(reasons.length > 0 ? { failureReasons: reasons } : {}) });
+        resolvePromise({ tools: availableTools, ...(skills?.decisionId ? { skillDecisionId: skills.decisionId } : {}), exitCode: actualExitCode, ...(signal ? { signal } : {}), events: collector.events, stdout, stderr, ...(telemetry ? { telemetry } : {}), failed: reasons.length > 0, ...(reasons.length > 0 ? { failureReasons: reasons } : {}) });
       });
     });
     if (skills?.pluginDir && result.telemetry) {

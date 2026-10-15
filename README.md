@@ -352,6 +352,7 @@ Secondary routes to the same daemon. Every command prints JSON for scripts with
 | Check public skills for private content | `kor skills guard [DIRECTORY] [--json]` |
 | Validate public skills | `kor skills lint` (`[DIRECTORY] [--json]`) |
 | Build or inspect the skill catalogue | `kor skills index`, `list`, `show NAME`, `doctor` (`[--from DIRECTORY]... [--estimate] [--json]`) |
+| Inspect skill outcomes and demotions | `kor skills report [--since ISO-8601] [--json]` |
 | Install pinned skills | `kor skills add <git-url>@<commit> --skill NAME --tier public\|private` |
 | Preview or apply skill updates | `kor skills update --check` / `kor skills update --apply` |
 | Open Mission Control | `kor ui` |
@@ -428,6 +429,14 @@ the same as an object.
   Repository `skills.always`, `pins` and `never` configure guidance; outages load
   only permitted `always` skills and label the plan `fallback`. See
   [selection and budgets](docs/skills.md#jev-selection-and-context-budgets).
+  With calibration enabled, `kor skills report` shows offers, actual loads,
+  verification pass rate, paired no-skills lift, reliability and demotions by
+  content version. Learning starts at 20 completed samples per skill; unused
+  skills can become hidden after 10 observed offers within 30 days. Explicit
+  repository pins still apply. Sampled Jev runs also execute a no-skills arm on
+  the task's existing route and tool profile, alongside the routing baseline;
+  this adds session cost. `--calibration-rate 0` disables both sampled baselines,
+  and `--no-calibration` disables outcome learning. See [outcome learning](docs/skills.md#outcome-learning).
   Run `pnpm skills:fixture` for the recorded 23-task proof, or add `--live-jev`
   to compare against live TypeSafe answers.
   Jev also records a separate `playbook` Choice before each session. At most one

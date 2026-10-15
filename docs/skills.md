@@ -807,3 +807,103 @@ synthetic public corpus is distinct from the earlier 98-skill research experimen
 it does not establish accuracy across arbitrary private or imported libraries.
 `--record` refreshes the checked-in responses against that fixed snapshot; review
 the resulting data diff before committing.
+
+
+## Outcome learning
+
+```sh
+kor skills report
+kor skills report --since 2026-10-01T00:00:00Z --json
+```
+
+The report reads Kor's existing calibration database, requires no credentials
+or running daemon, and groups statistics by skill name and content hash.
+A changed bundle starts a new learning history. Old decisions without a content
+hash remain reportable but cannot affect current bundles. `--since` filters the
+report; it does not change the runtime learning window. Invalid arguments exit 2.
+
+An offer means a non-hidden tier in a recorded Jev plan that reached a recorded
+session attempt. Counts are distinct executions, including repair sessions only
+once. `samples` counts completed executions (verified or failed); interrupted and
+escalated runs remain visible as offers but do not qualify for learning. Pinned
+bodies count as loaded when delivered. Successful `Skill` invocations or direct
+reads of that skill's `SKILL.md` count as loaded and used; denied or failed calls
+do not. `used` records observed access, not evidence that the guidance caused a
+change. Missing load telemetry remains unknown and does not justify demotion.
+Armed guidance counts only when a successful load event is recorded; merely
+arming a trigger does not count as loading. The JSON also exposes load observation
+counts, terminal merge counts, override counts and reliability bins.
+
+Before 20 completed samples for the same content hash, all statistics are
+**display-only**: no history goes to Jev, no threshold changes and no demotion.
+After that gate:
+
+- Up to eight eligible candidate histories enter Jev's `state.history`. The
+  selection question stays unchanged; bodies, source paths and private
+  descriptions are excluded. History contains counts and aggregate rates only.
+- Reliability uses five probability bins against terminal human merge outcomes,
+  matching calibration's outcome-proxy convention. A bin needs 20 terminal
+  observations before it can move thresholds. The largest observed
+  overconfidence (`mean probability - merge rate`, floored at zero) raises all
+  three tier thresholds, capped at 1. It never relaxes a threshold. Verification
+  success alone does not supply a human label. These correlations do not prove
+  that a skill caused a merge or a rejection.
+- A skill with at least 10 completed, observed offers in the last 30 days and no
+  loads across those executions is hidden by default. The report marks it
+  `demoted`; new packs omit it. This window moves over time. Explicit repository
+  `always` and `pins` bypass demotion while existing denies, stage/tool checks
+  and hard budgets still apply.
+
+History, thresholds, content hashes and demotion reasons participate in the
+immutable decision revision. Runtime history excludes the current execution,
+so a repair cannot learn from its own partially completed run. With
+`--no-calibration`, skill selection continues with the original thresholds.
+Model, provider, harness and effort routing remain Jev's separate task decision.
+
+### Paired no-skills baseline
+
+For sampled Jev-routed executions, Kor retains the existing route baseline and
+also runs a separate `skills` baseline from the same base revision, with the
+primary's route, initial task prompt, recorded tool profiles, checks, acceptance
+gate and repair budget. The launcher bypasses skill preparation entirely: no
+pinned bodies, skill plugin, armed entries or `Skill` tool. Repairs reuse the
+corresponding primary tool profile, or its last profile for an extra repair.
+The baseline never ships changes. Failed baseline infrastructure is recorded as
+interrupted, and excluded from lift; it does not change the primary result.
+
+`lift` is verification pass rate with guidance minus the no-skills arm's pass
+rate. `costDeltaUsd` is total primary session cost minus baseline session cost,
+including repairs; a positive value means guidance cost more. Missing costs stay
+unavailable. Only completed pairs with the same route, base revision and recorded
+tool profiles contribute. Baselines are excluded from offers and learning;
+the separate routing report excludes these skill baseline rows. Fewer than 20
+completed pairs is directional, and lift stays out of Jev history until that gate.
+Multiple offered skills share an execution's result, so these are associations,
+not independent causal estimates per skill.
+
+Sampling uses the existing `calibration.sampleRate` (default 0.25), or
+`kor serve --calibration-rate RATE`. Each sampled run can now incur **two** extra
+baseline sessions, plus their repairs. Set the rate to 0 to stop baseline
+sampling while continuing to collect normal outcomes. `--no-calibration` disables
+collection, baselines and learned selection behavior. No new credential or
+configuration key is needed.
+
+### Replay the acceptance proof
+
+After building, supply a route JSON already chosen by Jev and an output directory
+outside the checkout:
+
+```sh
+pnpm build
+node scripts/skills-outcome-proof.mjs /tmp/jev-route.json /tmp/kor-skills-outcomes
+```
+
+This small runnable proof replays the existing 23-task Jev responses through the
+real selector and calibration store, then reads the real `kor skills report`
+CLI. It demonstrates identical decision identity and tiers at 19 samples,
+recalibration at 20 terminal labels, a demoted skill disappearing from an actual
+pack, and an explicit pin retaining it with history in state. Its telemetry,
+verification outcomes and costs are explicitly synthetic replay observations;
+it is not a live quality or savings benchmark. Output databases and reports stay
+in the supplied directory. A live comparison must additionally run actual
+isolated launcher sessions and report their measured usage and verification.

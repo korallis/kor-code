@@ -227,17 +227,20 @@ class ExecutionController implements Controller {
     const run = calibration?.store.run(input.execution.id);
     if (!calibration || run?.arm !== "jev" || !run.sampled) return;
     await this.runBaseline({ ...input, calibration });
+    await this.runBaseline({ ...input, calibration, purpose: "skills" });
   }
-  private async runBaseline(input: { execution: Execution; issue: LinearIssue; repository: Repository; baseRevision: string; initialPrompt: string; settings: ReturnType<typeof verificationSettings>; calibration: NonNullable<ControllerOptions["calibration"]>; leaseFailure?: Promise<never>; onSpawn?: (pid: number) => void }): Promise<void> {
+  private async runBaseline(input: { purpose?: "skills"; execution: Execution; issue: LinearIssue; repository: Repository; baseRevision: string; initialPrompt: string; settings: ReturnType<typeof verificationSettings>; calibration: NonNullable<ControllerOptions["calibration"]>; leaseFailure?: Promise<never>; onSpawn?: (pid: number) => void }): Promise<void> {
     const { execution, issue, repository, baseRevision, initialPrompt, settings, calibration } = input;
-    if (!calibration.baselineRoute || !baseRevision) return;
-    const id = `${execution.id}-baseline`;
-    if (!calibration.store.beginRun({ executionId: id, pairId: execution.id, issueId: issue.id, arm: "baseline", baseRevision, route: calibration.baselineRoute, sampled: true, startedAt: new Date().toISOString(), status: "running" })) return;
+    const skillsBaseline = input.purpose === "skills";
+    const route = skillsBaseline ? execution.route : calibration.baselineRoute;
+    if (!route || !baseRevision) return;
+    const id = `${execution.id}-${skillsBaseline ? "skills-baseline" : "baseline"}`;
+    if (!calibration.store.beginRun({ executionId: id, pairId: skillsBaseline ? `${execution.id}-skills` : execution.id, ...(skillsBaseline ? { purpose: "skills" } : {}), issueId: issue.id, arm: "baseline", baseRevision, route, sampled: true, startedAt: new Date().toISOString(), status: "running" })) return;
     let worktree: Worktree | undefined;
     try {
       worktree = await this.options.worktrees.create({ executionId: id, issueId: issue.id, repository, branch: `kor/calibration/${id}`, baseRevision, detached: true });
-      const baseline: Execution = { id, issueId: issue.id, repository: repository.key, route: calibration.baselineRoute, worktree: worktree.path, branch: worktree.branch, status: "running", manifest: { executionId: id, issueId: issue.id, repository: repository.key, worktree: worktree.path, branch: worktree.branch, agents: [], acceptance: acceptance(issue) } };
-      const result = await runVerifiedSessions({ execution: baseline, repository, initialPrompt, baseRevision, launcher: this.options.launcher, settings, reserveAttempt: this.reserveAttempt,
+      const baseline: Execution = { id, issueId: issue.id, repository: repository.key, route, worktree: worktree.path, branch: worktree.branch, status: "running", manifest: { executionId: id, issueId: issue.id, repository: repository.key, worktree: worktree.path, branch: worktree.branch, agents: [], acceptance: acceptance(issue) } };
+      const result = await runVerifiedSessions({ execution: baseline, repository, initialPrompt, baseRevision, ...(skillsBaseline ? { skillsDisabled: true, pairedTools: calibration.store.metrics().filter(metric => metric.executionId === execution.id).map(metric => metric.tools) } : {}), launcher: this.options.launcher, settings, reserveAttempt: this.reserveAttempt,
         ...(this.options.onSpend ? { onSpend: this.options.onSpend } : {}),
         ...(this.options.jev ? { jev: this.options.jev } : {}), calibration: calibration.store,
         ...(input.leaseFailure ? { leaseFailure: input.leaseFailure } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}) });
