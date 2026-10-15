@@ -260,12 +260,16 @@ intakeLabel: kor
   pass verification; an optional inspection denial alone need not fail the
   attempt. Add the commands your project's agents actually run; see
   [Troubleshooting](#troubleshooting) for examples.
-- **`tools`** (optional) replaces the available tool set. By default Kor loads
-  only the base names in the effective permissions,
-  reducing startup context. For example, `tools: [Read, Glob, Grep]` exposes only
-  inspection tools; `tools: []` exposes none. Availability does not grant command
-  permission. `kor doctor` shows the effective set; see the
-  [configuration reference](configuration.md) for details.
+- **`tools`** (optional) caps available tool schemas. For example,
+  `tools: [Read, Glob, Grep]` permits only inspection tools; `tools: []` exposes
+  none. Jev judges shell, browser, web and sub-agent needs before every attempt.
+  Web tools, `Agent` and configured browser tools require a probability of at
+  least 0.8 and a matching `toolAllowlist` permission. A docs task keeps the
+  lean set; a web-research task can receive `WebFetch`. Shell commands remain
+  restricted by your allowlist regardless of Jev's judgment. Without Jev or
+  during an outage, optional tools stay off. `kor doctor` shows the configured
+  ceiling; the decision audit contains the task's probabilities and policy
+  checks. See the [configuration reference](configuration.md) for details.
 - **`ship`** is `approve` or `auto` (the default when it is missing). With `approve`
   a verified execution stops in the `waiting` state until you press **Approve and
   ship** in Mission Control (or **Request changes**); with `auto` it goes straight
