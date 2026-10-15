@@ -253,15 +253,16 @@ excluded. `--family gpt` also selects prefixed GPT models; `--model` uses the
 gateway's exact id.
 
 Kor offers a model after its sandbox probe passes streaming, tool calls and a
-final JSON response. Thinking is measured separately, so models without visible
-reasoning can qualify. Run `kor models list` to see verified models and their
+final JSON response. Observed thinking is recorded as supported; no visible
+thinking means unknown, so models without visible reasoning can qualify. Run `kor models list` to see verified models and their
 providers. Verified models become candidates for Jev, which chooses the model for
 each task. Verification adds no model preference or fallback order.
 A listed model can still fail because its upstream account has no quota or lacks
 access. The live catalogue refreshes every minute in Mission Control and on each CLI
 list or routing decision. Models removed during an upstream cooldown stop being
 offered. When a verified model reappears, Kor offers it again without losing its
-probe result. An empty registry offers no models until you probe them. See
+probe result. During a catalogue outage, saved verified models remain candidates;
+`kor models list` warns that it is using the saved registry. An empty registry offers no models until you probe them. See
 [model compatibility](docs/model-compatibility.md) for isolated probe commands and
 the [live gateway results](docs/model-probe-results-2026-10-15.md).
 

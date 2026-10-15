@@ -14,7 +14,7 @@ import { ensureRuntimeDirectories, loadGatewayEnvironment, loadKorConfig, reposi
 import { HttpLinearClient, LinearStore, attachLinearImage } from "@kor-code/linear";
 import { GitHubShipping, KorDaemon, MissionServices, processMatches, readExecutionStatus, readStatus, type DaemonOptions } from "@kor-code/daemon";
 import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController, type Controller } from "@kor-code/controller";
-import { availableVerifiedModels, modelProvider, readModelRegistry, writeModelRegistry } from "@kor-code/gateway-adapter";
+import { loadAvailableVerifiedModels, modelProvider, readModelRegistry, writeModelRegistry } from "@kor-code/gateway-adapter";
 import { PersistentDecisionAuditLog } from "@kor-code/jev";
 import { CalibrationStore, buildReport, formatReport } from "@kor-code/calibration";
 import type { KorCliError } from "@kor-code/core";
@@ -204,7 +204,7 @@ async function serve(args: readonly string[]): Promise<number> {
   const calibration = calibrationEnabled ? new CalibrationStore(paths.databaseFile) : undefined;
   if (jevEnabled) {
     const gatewayAdapter = await mission.gateway();
-    const models = await gatewayAdapter.catalogue({ capabilities: ["streaming", "tool_calls"] });
+    const models = (await loadAvailableVerifiedModels(await readModelRegistry(paths.modelsFile), () => gatewayAdapter.listModels())).filter(model => model.capabilities.streaming && model.capabilities.tool_calls);
     if (models.length === 0) throw new Error("--jev requires at least one verified gateway model");
   }
   const store = new LinearStore(paths.databaseFile);
@@ -213,8 +213,7 @@ async function serve(args: readonly string[]): Promise<number> {
     const repositories = new RepositoryRegistry(Object.entries(config.repos).map(([key, repository]) => ({ key, path: repository.path, defaultBranch: repository.defaultBranch, allowedTools: repository.toolAllowlist, checks: repository.checks, ...(repository.tools ? { tools: repository.tools } : {}) })));
     const routing = createServeRouting({ audit, defaultRoute: config.defaultRoute, client: { evaluate: (state, questions) => mission.jev().evaluate(state, questions) }, models: async () => {
       const registry = await readModelRegistry(paths.modelsFile);
-      const catalogue = await (await mission.gateway()).listModels();
-      return availableVerifiedModels(registry, catalogue).map(result => ({ provider: modelProvider(result.model, result.provider), model: result.model, capabilities: Object.entries(result.capabilities).map(([name, supported]) => ({ name, supported: supported === true })), ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) }));
+      return (await loadAvailableVerifiedModels(registry, async () => (await mission.gateway()).listModels())).map(result => ({ provider: modelProvider(result.model, result.provider), model: result.model, capabilities: Object.entries(result.capabilities).map(([name, supported]) => ({ name, supported: supported === true })), ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) }));
     } });
     const controller = createController({
       repositories,
@@ -232,7 +231,7 @@ async function serve(args: readonly string[]): Promise<number> {
   };
   const initial = runtime({ ...loaded.config, calibration: calibrationConfig });
   const gateway = await mission.gateway();
-  const verifiedModels = async () => availableVerifiedModels(await readModelRegistry(paths.modelsFile), await (await mission.gateway()).listModels()).map(model => model.model);
+  const verifiedModels = async () => (await loadAvailableVerifiedModels(await readModelRegistry(paths.modelsFile), async () => (await mission.gateway()).listModels())).map(model => model.model);
   const webRoot = valueAfter(args, "--ui-dir") ?? fileURLToPath(new URL("../../web/dist", import.meta.url));
   const daemon = new KorDaemon({ paths, config: loaded.config, store, linear: mission.linear(), ...initial, shipping: new GitHubShipping((file, args, cwd) => mission.shippingCommand(file, args, cwd)), port, gateway, verifiedModels, webRoot, missionServices: mission, reconfigure: runtime });
   const handle = await daemon.start();

@@ -50,7 +50,6 @@
       "capabilities": {
         "streaming": true,
         "tool_calls": true,
-        "thinking": false,
         "structured_output": true
       },
       "costUsd": 0.37977475,
@@ -98,7 +97,6 @@
       "capabilities": {
         "streaming": true,
         "tool_calls": true,
-        "thinking": false,
         "structured_output": true
       },
       "costUsd": 0.146595,
@@ -114,7 +112,6 @@
       "capabilities": {
         "streaming": true,
         "tool_calls": true,
-        "thinking": false,
         "structured_output": true
       },
       "costUsd": 0.14652880000000001,
@@ -162,7 +159,6 @@
       "capabilities": {
         "streaming": true,
         "tool_calls": true,
-        "thinking": false,
         "structured_output": true
       },
       "costUsd": 0.31783825,
@@ -178,7 +174,6 @@
       "capabilities": {
         "streaming": true,
         "tool_calls": true,
-        "thinking": false,
         "structured_output": true
       },
       "costUsd": 0.19695524999999997,
@@ -194,7 +189,6 @@
       "capabilities": {
         "streaming": true,
         "tool_calls": true,
-        "thinking": false,
         "structured_output": true
       },
       "costUsd": 0.202987,
@@ -210,12 +204,11 @@
       "capabilities": {
         "streaming": true,
         "tool_calls": true,
-        "thinking": false,
         "structured_output": true
       },
-      "costUsd": 0.0466686,
-      "durationMs": 5880,
-      "observedAt": "2026-10-15T06:12:48.674Z",
+      "costUsd": 0.146595,
+      "durationMs": 6680,
+      "observedAt": "2026-10-15T09:15:21.951Z",
       "currentlyServed": true
     },
     {
@@ -285,7 +278,6 @@
       "capabilities": {
         "streaming": true,
         "tool_calls": true,
-        "thinking": false,
         "structured_output": true
       },
       "costUsd": 0.07328330000000001,
@@ -1014,7 +1006,6 @@
       "capabilities": {
         "streaming": true,
         "tool_calls": true,
-        "thinking": false,
         "structured_output": true
       },
       "costUsd": 0.07124720000000001,
@@ -1030,7 +1021,6 @@
       "capabilities": {
         "streaming": true,
         "tool_calls": true,
-        "thinking": false,
         "structured_output": true
       },
       "costUsd": 0.0739552,
@@ -1046,7 +1036,6 @@
       "capabilities": {
         "streaming": true,
         "tool_calls": true,
-        "thinking": false,
         "structured_output": true
       },
       "costUsd": 0.026882399999999997,
@@ -1062,7 +1051,6 @@
       "capabilities": {
         "streaming": true,
         "tool_calls": true,
-        "thinking": false,
         "structured_output": true
       },
       "costUsd": 0.07127119999999999,
@@ -1105,12 +1093,11 @@
       "capabilities": {
         "streaming": true,
         "tool_calls": true,
-        "thinking": false,
         "structured_output": true
       },
-      "costUsd": 0.0765104,
-      "durationMs": 4882,
-      "observedAt": "2026-10-15T06:13:32.562Z",
+      "costUsd": 0.0725392,
+      "durationMs": 7197,
+      "observedAt": "2026-10-15T09:15:43.073Z",
       "currentlyServed": true
     },
     {
@@ -1261,7 +1248,7 @@
       "observedAt": "2026-10-15T09:02:16.220Z",
       "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
       "provider": "moonshot",
-      "currentlyServed": true
+      "currentlyServed": false
     },
     {
       "model": "kimi-k2-thinking",
@@ -1272,7 +1259,7 @@
       "observedAt": "2026-10-15T09:02:16.169Z",
       "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
       "provider": "moonshot",
-      "currentlyServed": true
+      "currentlyServed": false
     },
     {
       "model": "kimi-k2.5",
@@ -1283,7 +1270,7 @@
       "observedAt": "2026-10-15T09:02:16.210Z",
       "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
       "provider": "moonshot",
-      "currentlyServed": true
+      "currentlyServed": false
     },
     {
       "model": "kimi-k2.6",
@@ -1294,7 +1281,7 @@
       "observedAt": "2026-10-15T09:02:16.210Z",
       "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
       "provider": "moonshot",
-      "currentlyServed": true
+      "currentlyServed": false
     },
     {
       "model": "kimi-k2.7-code",
@@ -1305,7 +1292,7 @@
       "observedAt": "2026-10-15T09:02:18.221Z",
       "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
       "provider": "moonshot",
-      "currentlyServed": true
+      "currentlyServed": false
     },
     {
       "model": "kimi-k2.7-code-highspeed",
@@ -1316,7 +1303,7 @@
       "observedAt": "2026-10-15T09:02:18.168Z",
       "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
       "provider": "moonshot",
-      "currentlyServed": true
+      "currentlyServed": false
     },
     {
       "model": "kimi-k2.8",
@@ -1327,7 +1314,7 @@
       "observedAt": "2026-10-15T09:02:18.238Z",
       "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
       "provider": "moonshot",
-      "currentlyServed": true
+      "currentlyServed": false
     },
     {
       "model": "kimi-k2.8-code",
@@ -1338,7 +1325,7 @@
       "observedAt": "2026-10-15T09:02:18.218Z",
       "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
       "provider": "moonshot",
-      "currentlyServed": true
+      "currentlyServed": false
     },
     {
       "model": "kimi-k3",
@@ -1349,7 +1336,7 @@
       "observedAt": "2026-10-15T09:02:20.173Z",
       "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
       "provider": "moonshot",
-      "currentlyServed": true
+      "currentlyServed": false
     },
     {
       "model": "kimi-k3-256k",
@@ -1360,11 +1347,12 @@
       "observedAt": "2026-10-15T09:02:20.236Z",
       "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
       "provider": "moonshot",
-      "currentlyServed": true
+      "currentlyServed": false
     }
   ],
-  "finalCatalogueObservedAt": "2026-10-15T09:01:59Z",
-  "finalCatalogueCount": 59,
-  "finalTextModelCount": 46,
-  "currentlyNotServed": 62
+  "finalCatalogueObservedAt": "2026-10-15T09:16:05Z",
+  "finalCatalogueCount": 49,
+  "finalTextModelCount": 36,
+  "currentlyNotServed": 72,
+  "thinkingEvidence": "Only observed thinking blocks prove support. Missing blocks in the neutral prompt are unknown; former false observations are omitted."
 }

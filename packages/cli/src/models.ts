@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { loadGatewayEnvironment } from "@kor-code/config";
-import { GatewayAdapter, MODEL_CAPABILITIES, availableVerifiedModels, isTextModel, modelFamily, modelProvider, readModelRegistry, writeModelRegistry, type ModelProbeResult } from "@kor-code/gateway-adapter";
+import { GatewayAdapter, MODEL_CAPABILITIES, loadAvailableVerifiedModels, isTextModel, modelFamily, modelProvider, readModelRegistry, writeModelRegistry, type ModelProbeResult } from "@kor-code/gateway-adapter";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 const sandbox = join(root, "scripts", "sandbox.sh");
@@ -43,12 +43,31 @@ const resultSchema = z.object({ type: z.literal("result"), result: z.string(), i
       const child = spawn("bash", args, { stdio: ["ignore", "pipe", "pipe"], env, cwd, detached: true });
       let stdout = "";
       let stderr = "";
-      const timeout = setTimeout(() => { if (child.pid) process.kill(-child.pid, "SIGTERM"); reject(new Error(`probe timed out after ${timeoutMs}ms`)); }, timeoutMs);
+      const killGroup = (signal: NodeJS.Signals) => {
+        if (!child.pid) return;
+        try { process.kill(-child.pid, signal); }
+        catch (error) { if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error; }
+      };
+      const onInterrupt = () => forwardSignal("SIGINT");
+      const onTerminate = () => forwardSignal("SIGTERM");
+      const cleanup = () => {
+        clearTimeout(timeout);
+        process.removeListener("SIGINT", onInterrupt);
+        process.removeListener("SIGTERM", onTerminate);
+      };
+      const forwardSignal = (signal: NodeJS.Signals) => {
+        killGroup(signal);
+        cleanup();
+        process.kill(process.pid, signal);
+      };
+      const timeout = setTimeout(() => { killGroup("SIGTERM"); reject(new Error(`probe timed out after ${timeoutMs}ms`)); }, timeoutMs);
+      process.once("SIGINT", onInterrupt);
+      process.once("SIGTERM", onTerminate);
       child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
       child.stdout.on("data", chunk => { stdout += chunk; });
       child.stderr.on("data", chunk => { stderr += chunk; });
-      child.on("error", error => { clearTimeout(timeout); reject(error); });
-      child.on("close", code => { clearTimeout(timeout); if (code === 0) resolve({ stdout, stderr }); else reject(new Error(`probe exited ${code}: ${resultLine(stdout) ?? stderr.slice(0, 500)}`)); });
+      child.on("error", error => { cleanup(); reject(error); });
+      child.on("close", code => { cleanup(); if (code === 0) resolve({ stdout, stderr }); else reject(new Error(`probe exited ${code}: ${resultLine(stdout) ?? stderr.slice(0, 500)}`)); });
     });
   }
 
@@ -73,7 +92,8 @@ export async function probeModel(model: string, options: { gateway?: { baseUrl: 
       const capabilities = {
         streaming: hasResult && /"type"\s*:\s*"stream_event"/.test(stream),
         tool_calls: wroteMarker && /"name"\s*:\s*"Write"/.test(stream) && /"name"\s*:\s*"Bash"/.test(stream),
-        thinking: /content_block_start.*thinking|"type"\s*:\s*"thinking"/.test(stream),
+        // The neutral prompt does not test a lack of thinking; only positive evidence counts.
+        ...(/content_block_start.*thinking|"type"\s*:\s*"thinking"/.test(stream) ? { thinking: true } : {}),
         structured_output: readyResult(decodedResult),
       };
       const verified = hasResult && capabilities.streaming && capabilities.tool_calls && capabilities.structured_output;
@@ -93,12 +113,12 @@ export async function runModels(args: readonly string[]): Promise<number> {
   const requested = value("--model");
 
   function candidates(models: readonly { id: string }[]): string[] {
-    return models.map(item => item.id).filter(id => isTextModel(id) && (!family || modelFamily(id) === family.toLowerCase()) && (!requested || id === requested));
+    return models.map(item => item.id).filter(id => isTextModel(id) && (!family || (modelFamily(id) === family.toLowerCase() || (id.split("/").at(-1) ?? id).toLowerCase().startsWith(family.toLowerCase()))) && (!requested || id === requested));
   }
 
   if (command === "list") {
     const registry = await readModelRegistry();
-    const verified = availableVerifiedModels(registry, await new GatewayAdapter().listModels());
+    const verified = await loadAvailableVerifiedModels(registry, () => new GatewayAdapter().listModels(), () => console.error("Warning: gateway catalogue unavailable; using saved verified model registry."));
     console.log("MODEL\tFAMILY\tPROVIDER\tCAPABILITIES\tCOST_USD\tDURATION_MS");
     for (const item of verified) console.log(`${item.model}\t${modelFamily(item.model)}\t${item.provider}\t${MODEL_CAPABILITIES.filter(capability => item.capabilities[capability]).join(",")}\t${item.costUsd ?? "-"}\t${item.durationMs ?? "-"}`);
     return 0;

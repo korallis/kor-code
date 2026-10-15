@@ -8,12 +8,12 @@ Run a probe against the live `/v1/models` catalogue:
 kor models probe --dry-run
 kor models probe
 kor models probe --family gpt
-kor models probe --model devin/gemini-3-8-flash
+kor models probe --model gpt-6.1-sol
 ```
 
 Kor selects text models from every provider. Family matching ignores route prefixes and accepts dotted or hyphenated versions. Requests retain the gateway's exact model id. Known image, video and speech generation models are excluded.
 
-Each selected model runs one built-in prompt in a fresh sandbox HOME, config and working directory. The prompt requests a Write tool call, an independent Bash read and a final JSON object. The table reports `pass`, `fail`, or `absent` for streaming, tool calls, thinking and structured output. Routing requires streaming, tools and JSON. Thinking remains an observed capability that a route can request explicitly. A model without visible thinking can qualify for coding.
+Each selected model runs one built-in prompt in a fresh sandbox HOME, config and working directory. The prompt requests a Write tool call, an independent Bash read and a final JSON object. The table reports `pass`, `fail`, or `absent` for streaming, tool calls, thinking and structured output. Routing requires streaming, tools and JSON. Thinking is recorded as `pass` only when a thinking block is observed. Without one it is `absent` (unknown), never `fail`: this neutral prompt cannot disprove thinking support. Older saved `thinking: false` observations are also read as unknown. A route can request positively observed thinking explicitly. A model without visible thinking can qualify for coding.
 
 Failures print to stderr and remain in the registry's `error` field. Kor saves each completed result, so interrupting a long sweep preserves completed probes. Quota, account access and upstream tool restrictions can prevent an advertised model from passing.
 
@@ -25,7 +25,7 @@ kor models list
 
 `GatewayAdapter.catalogue()` reads the same registry and filters the live catalogue to verified models. Explicit `modelCapabilities` supplied by an adapter caller remain routable for fixtures and one-off proofs. An empty registry leaves live models unroutable until a probe records them.
 
-`kor models list`, planning and routing intersect saved probe results with a fresh live catalogue. Missing models keep their probe history and become eligible again when the gateway advertises them. Mission Control refreshes models every minute, marks verified models and offers them in the default-model picker. Saving a selection also saves its catalogue provider. The CLI records `owned_by` as the provider rather than treating a route prefix such as `devin/` as the model vendor.
+`kor models list`, planning and routing intersect saved probe results with a fresh live catalogue. If the catalogue cannot be fetched, they retain the saved verified registry as candidates; `kor models list` warns on stderr. A successful empty catalogue still offers no models. Missing models keep their probe history and become eligible again when the gateway advertises them. Mission Control refreshes models every minute, marks verified models and offers them in the default-model picker. Saving a selection also saves its catalogue provider. The CLI records `owned_by` as the provider rather than treating a route prefix such as `devin/` as the model vendor.
 
 To keep the registry separate, run:
 
