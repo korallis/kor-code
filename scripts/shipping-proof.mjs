@@ -23,41 +23,38 @@ const fixtureJev = () => new JevClient({ apiKey: 'fixture-only', fetch: async (_
   assert(Object.values(questions).every(question => question.type === 'noul'));
   return Response.json({ model: 'fixture', answers: Object.fromEntries(Object.keys(questions).map(id => [id, { type: 'noul', noul: 0.99 }])) });
 } });
-const routeInput = { executionId: 'pr-recovery', head: 'verified-head', prompt: 'Write PR prose from the recorded diff and passing checks.' };
-const routeModels = [{ model: 'fixture-model', provider: 'fixture-provider', capabilities: [] }];
-function routingProof(confidences, audit = new MemoryDecisionAuditLog()) {
-  let calls = 0, completions = 0;
-  const questions = [];
-  const routing = createServeRouting({ audit, defaultRoute: { model: 'fixture-model', provider: 'fixture-provider' }, models: async () => routeModels,
-    client: { evaluate: async (_state, requested) => {
-      const [id, question] = Object.entries(requested)[0]; questions.push(question.instructions);
-      return { model: 'fixture', answers: { [id]: { type: 'choice', choice: 'fixture-model', confidence: confidences[calls++], probabilities: { 'fixture-model': 1, clarification: 0 } } } };
-    } }, complete: async () => { completions++; return '{}'; },
-  });
-  return { routing, audit, questions, counts: () => ({ calls, completions }) };
-}
-const recovering = routingProof([0.6, 0.95]);
-assert.equal(await recovering.routing.describePullRequest(routeInput), '{}');
-assert.deepEqual(recovering.counts(), { calls: 2, completions: 1 });
-assert.notEqual(recovering.questions[0], recovering.questions[1]);
-assert.equal(recovering.audit.export().length, 1);
-assert.equal(recovering.audit.export()[0].response.confidence, 0.95);
-assert.equal(await recovering.routing.describePullRequest(routeInput), '{}');
-assert.deepEqual(recovering.counts(), { calls: 2, completions: 2 });
-const uncertain = routingProof([0.6, 0.6, 0.95]);
-assert.equal(await uncertain.routing.describePullRequest(routeInput), null);
-assert.deepEqual(uncertain.counts(), { calls: 2, completions: 0 });
-assert.equal(uncertain.audit.export().length, 0);
-assert.equal(await uncertain.routing.describePullRequest(routeInput), '{}');
-assert.deepEqual(uncertain.counts(), { calls: 3, completions: 1 });
-const legacyAudit = new MemoryDecisionAuditLog();
-const accepted = recovering.audit.export()[0];
-legacyAudit.append({ ...accepted, response: { ...accepted.response, applied: false, escalated: true, confidence: 0.6 }, rawAnswer: { type: 'choice', choice: 'fixture-model', confidence: 0.6, probabilities: { 'fixture-model': 1, clarification: 0 } } });
-const legacy = routingProof([0.95], legacyAudit);
-assert.equal(await legacy.routing.describePullRequest(routeInput), '{}');
-assert.deepEqual(legacy.counts(), { calls: 1, completions: 1 });
-assert(legacy.audit.export()[1].response.decisionId.endsWith('-retry-1'));
-console.log('PR route recovery: low/high re-asks once; low/low falls back without caching; same head retries recover; accepted routes replay; legacy rejected routes are ignored');
+const taskRoute = { model: 'fixture-model', provider: 'fixture-provider', accountPolicy: 'manual', sessionAffinity: false, reasoningLevel: 'high', label: 'jev', decisionId: 'route-pr-reuse-revision' };
+const routeInput = { executionId: 'pr-reuse', head: 'verified-head', prompt: 'Write PR prose from the recorded diff and passing checks.', route: taskRoute };
+const routeModels = [{ model: taskRoute.model, provider: taskRoute.provider, capabilities: [] }];
+const routeAudit = new MemoryDecisionAuditLog();
+const routeCore = new JevDecisionCore({ evaluate: async () => { throw new Error('Unexpected Jev request'); } }, routeAudit);
+const recordTaskRoute = (decisionId, confidence) => routeCore.apply({ decisionId, executionId: routeInput.executionId, kind: 'route', question: 'Choose the task route.', state: {}, inputs: [], candidates: [taskRoute.model, 'clarification'] }, { type: 'choice', choice: taskRoute.model, confidence, probabilities: { [taskRoute.model]: confidence, clarification: 1 - confidence } }, 'fixture');
+recordTaskRoute(taskRoute.decisionId, 0.95);
+const completedRoutes = [];
+const routing = createServeRouting({ audit: routeAudit, defaultRoute: taskRoute, models: async () => routeModels,
+  client: { evaluate: async () => { throw new Error('PR writing must reuse the task decision without asking Jev'); } },
+  complete: async (_prompt, route) => { completedRoutes.push(route); return '{}'; },
+});
+assert.equal(await routing.describePullRequest(routeInput), '{}');
+assert.equal(await routing.describePullRequest(routeInput), '{}');
+assert.equal(routeAudit.export().length, 2);
+const reused = routeAudit.export()[1];
+assert.equal(reused.request.state.sourceDecisionId, taskRoute.decisionId);
+assert.equal(reused.response.confidence, 0.95);
+assert(reused.response.reasons[0].includes('Reused task route decision'));
+assert.equal(routeAudit.replay(reused.response.decisionId).reasons[0], reused.response.reasons[0]);
+assert.deepEqual(completedRoutes, [0, 1].map(() => ({ ...taskRoute, decisionId: reused.response.decisionId })));
+const uncertainDecision = recordTaskRoute('route-pr-reuse-uncertain', 0.6);
+assert.equal(uncertainDecision.applied, false);
+assert.equal(await routing.describePullRequest({ ...routeInput, route: { ...taskRoute, decisionId: uncertainDecision.decisionId } }), null);
+assert.equal(await routing.describePullRequest({ ...routeInput, route: { ...taskRoute, label: 'fallback' } }), null);
+assert.equal(await routing.describePullRequest({ ...routeInput, route: undefined }), null);
+assert.equal(await routing.describePullRequest({ ...routeInput, executionId: 'other-run' }), null);
+assert.equal(completedRoutes.length, 2);
+routeModels[0].available = false;
+await assert.rejects(routing.describePullRequest(routeInput), /no longer verified and available/);
+routeModels[0].available = true;
+console.log('PR route reuse: zero new Jev questions; inherited confidence and source persisted; retries reuse one audit row; provider, effort and account settings preserved; uncertain, fallback, missing and mismatched task decisions never promoted; unavailable model blocks');
 const exec = promisify(execFile);
 const parent = process.env.KOR_PROOF_DIR ?? tmpdir();
 await mkdir(parent, { recursive: true });
@@ -270,7 +267,7 @@ const fallbackDescription = await fallbackRenderer.description(renderInput, fall
 const fallbackBody = await fallbackRenderer.body(renderInput, fallbackHead, fallbackDescription);
 assert.match(fallbackDescription.title, /^fix\(shipping\):/);
 assert(fallbackBody.includes('PR prose fallback:'));
-assert(fallbackBody.includes('after two requests'));
+assert(fallbackBody.includes('no reusable applied Jev route decision'));
 assert(fallbackBody.includes('node hello.js'));
 assert(!fallbackBody.includes(secret));
 assert.deepEqual(fallbackBody.match(/^## .+$/gm), ['## What does this PR do?', '## Changelog', '## How was it tested?', '## Screenshots', '## Checklist']);
