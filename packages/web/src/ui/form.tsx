@@ -89,11 +89,11 @@ export function Checkbox({ checked, onChange, label }: { checked: boolean; onCha
   );
 }
 
-export function Select<T extends string>({ value, options, onChange, label, style }: { value: T; options: readonly { value: T; label: string }[]; onChange: (value: T) => void; label: string; style?: stylex.StyleXStyles }) {
+export function Select<T extends string>({ value, options, onChange, label, style }: { value: T; options: readonly { value: T; label: string; disabled?: boolean }[]; onChange: (value: T) => void; label: string; style?: stylex.StyleXStyles }) {
   return (
     <label {...stylex.props(styles.field, style)}>
       <select aria-label={label} value={value} onChange={event => onChange(event.target.value as T)} {...stylex.props(styles.select)}>
-        {options.map(option => <option key={option.value} value={option.value} {...stylex.props(styles.option)}>{option.label}</option>)}
+        {options.map(option => <option key={option.value} value={option.value} disabled={option.disabled} {...stylex.props(styles.option)}>{option.label}</option>)}
       </select>
     </label>
   );

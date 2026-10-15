@@ -19,7 +19,7 @@ export const useRun = (id: string | undefined) => useQuery({ queryKey: ['run', i
 export const useTerminal = (id: string | undefined) => useQuery({ queryKey: ['terminal', id], enabled: id !== undefined, staleTime: Infinity, queryFn: () => get('GET /api/runs/:id/terminal', path('GET /api/runs/:id/terminal', '/api/runs/:id/terminal', { id: id ?? '' })) });
 export const useIssues = (project: string | undefined) => useQuery({ queryKey: ['issues', project], enabled: project !== undefined, staleTime: 60_000, queryFn: () => get('GET /api/linear/issues', path('GET /api/linear/issues', '/api/linear/issues', {}, { project: project ?? '' })) });
 export const usePulls = (repo: string | undefined) => useQuery({ queryKey: ['pulls', repo], enabled: repo !== undefined, staleTime: 60_000, queryFn: () => get('GET /api/github/pulls', path('GET /api/github/pulls', '/api/github/pulls', {}, { repo: repo ?? '' })) });
-export const useModels = () => useQuery({ queryKey: ['models'], staleTime: 60_000, queryFn: () => get('GET /api/models', path('GET /api/models', '/api/models')) });
+export const useModels = () => useQuery({ queryKey: ['models'], staleTime: 60_000, refetchInterval: 60_000, queryFn: () => get('GET /api/models', path('GET /api/models', '/api/models')) });
 export const usePool = () => useQuery({ queryKey: ['pool'], refetchInterval: 60_000, queryFn: () => get('GET /api/pool', path('GET /api/pool', '/api/pool')) });
 export const useBrain = () => useQuery({ queryKey: ['brain'], staleTime: 60_000, queryFn: () => get('GET /api/brain', path('GET /api/brain', '/api/brain')) });
 export const useConfig = () => useQuery({ queryKey: ['config'], queryFn: () => get('GET /api/config', path('GET /api/config', '/api/config')) });

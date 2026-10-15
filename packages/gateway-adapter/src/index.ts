@@ -5,8 +5,10 @@ import type { AccountHealthStatus, GatewayAccountHealth, GatewayCapability, Gate
 import { consumeStream } from "./stream.js";
 import { GatewayError, json, publicJson, readJson, record, runtimeConfig, text, type RuntimeConfig } from "./transport.js";
 import { readModelRegistry, registryCapabilities } from "./registry.js";
+import { modelProvider } from "./models.js";
 
 export * from "./registry.js";
+export * from "./models.js";
 
 const execFileAsync = promisify(execFile);
 const MANAGEMENT_PATHS = ["/v0/management/auth-files", "/v0/management/config", "/v0/management/usage", "/v0/management/api-key-usage"] as const;
@@ -38,7 +40,6 @@ function booleanMap(value: unknown): Partial<Record<GatewayCapability, boolean>>
   }
   return result;
 }
-function providerFor(model: string): string { return model.split("/")[0] ?? "unknown"; }
 function headers(apiKey?: string, sessionId?: string): Record<string, string> {
   const result: Record<string, string> = {};
   if (apiKey) result.authorization = `Bearer ${apiKey}`;
@@ -97,7 +98,7 @@ export function eligibleModels(catalogue: ModelCatalogue, requirements: Capabili
   return (catalogue.data ?? []).map((model): GatewayModel => {
     const capabilities = { streaming: true, ...configured[model.id], ...model.capabilities };
     const compatibility = required.some((capability) => capabilities[capability] !== true) ? "incompatible" : "verified";
-    return { id: model.id, provider: model.owned_by ?? providerFor(model.id), capabilities, compatibility };
+    return { id: model.id, provider: modelProvider(model.id, model.owned_by), capabilities, compatibility };
   }).filter((model) => model.compatibility === "verified");
 }
 /** Health-view preference only. CLIProxyAPI owns real account selection. */
@@ -163,7 +164,7 @@ export class GatewayAdapter {
     const accounts = await this.accountHealth();
     const selected = selectFillFirstAccount(accounts, request.sessionId ? this.affinity.get(request.sessionId) : undefined);
     if (request.sessionId && selected) this.affinity.set(request.sessionId, selected.id);
-    return { model: model.id, provider: request.provider ?? model.provider ?? providerFor(model.id), accountSlot: selected?.id, compatibility: model.compatibility, requiredCapabilities: required };
+    return { model: model.id, provider: request.provider ?? model.provider ?? modelProvider(model.id), accountSlot: selected?.id, compatibility: model.compatibility, requiredCapabilities: required };
   }
   async streamCompletion(prompt = "Reply with exactly one word: ready", model = process.env.KOR_GATEWAY_MODEL ?? "", options: Omit<RouteRequest, "prompt" | "model"> = {}): Promise<string> {
     const request: RouteRequest = { ...options, prompt };

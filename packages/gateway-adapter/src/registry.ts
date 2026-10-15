@@ -1,10 +1,13 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { GatewayCapability } from "@kor-code/core";
+import type { ModelCatalogue } from "./index.js";
+import { modelProvider } from "./models.js";
 
 export interface ModelProbeResult {
   model: string;
   family: string;
+  provider?: string;
   verified: boolean;
   capabilities: Partial<Record<GatewayCapability, boolean>>;
   costUsd?: number;
@@ -26,7 +29,13 @@ export async function readModelRegistry(path = modelRegistryPath()): Promise<Mod
   try {
     const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
     if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { models?: unknown }).models)) return { version: 1, models: [] };
-    return { version: 1, models: (parsed as { models: ModelProbeResult[] }).models.filter(item => typeof item?.model === "string" && typeof item.verified === "boolean") };
+    return { version: 1, models: (parsed as { models: ModelProbeResult[] }).models.filter(item => typeof item?.model === "string" && typeof item.verified === "boolean").map(item => {
+      // Older probes marked missing thinking output false; that evidence means unknown.
+      if (item.capabilities?.thinking !== false) return item;
+      const capabilities = { ...item.capabilities };
+      delete capabilities.thinking;
+      return { ...item, capabilities };
+    }) };
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return { version: 1, models: [] };
     throw new Error(`Cannot read model registry at ${path}`);
@@ -42,4 +51,22 @@ export async function writeModelRegistry(results: readonly ModelProbeResult[], p
 
 export function registryCapabilities(registry: ModelRegistry): Record<string, Partial<Record<GatewayCapability, boolean>>> {
   return Object.fromEntries(registry.models.filter(item => item.verified).map(item => [item.model, item.capabilities]));
+}
+
+export function availableVerifiedModels(registry: ModelRegistry, catalogue: ModelCatalogue): ModelProbeResult[] {
+  const models = new Map((catalogue.data ?? []).map(model => [model.id, model]));
+  return registry.models.filter(result => result.verified && models.has(result.model))
+    .map(result => ({ ...result, provider: modelProvider(result.model, models.get(result.model)?.owned_by ?? result.provider) }));
+}
+
+/** A catalogue outage must not discard saved verification evidence. */
+export async function loadAvailableVerifiedModels(registry: ModelRegistry, loadCatalogue: () => Promise<ModelCatalogue>, onUnavailable?: () => void): Promise<ModelProbeResult[]> {
+  let catalogue: ModelCatalogue;
+  try { catalogue = await loadCatalogue(); }
+  catch {
+    onUnavailable?.();
+    return registry.models.filter(result => result.verified)
+      .map(result => ({ ...result, provider: modelProvider(result.model, result.provider) }));
+  }
+  return availableVerifiedModels(registry, catalogue);
 }
