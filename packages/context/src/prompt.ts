@@ -34,7 +34,7 @@ export function contextPrompt(manifest: ContextManifest): string {
   const rules = manifest.sources.filter(source => source.purpose !== "file" && source.purpose !== "image" && source.purpose !== "issue");
   const files = manifest.sources.filter(source => source.purpose === "file").slice(0, 5);
   const images = manifest.sources.filter(source => source.purpose === "image").slice(0, 3);
-  const prompt = section("Selected repository guidance (ranked excerpts):", rules, GUIDANCE_BYTES)
+  const prompt = section("Selected repository guidance (opening excerpts; Read each source for all rules):", rules, GUIDANCE_BYTES)
     + section("Suggested files (ranked hints):", files, FILE_HINT_BYTES)
     + section("Ticket screens (use Read to view):", images, SCREEN_HINT_BYTES);
   return truncate(prompt, MAX_CONTEXT_BYTES);

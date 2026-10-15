@@ -1,4 +1,6 @@
-import type { CatalogueModel, Evidence, Execution, Route, SessionSpend } from "@kor-code/core";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { cp, mkdir } from "node:fs/promises";
+import type { CatalogueModel, ContextManifest, Evidence, Execution, Route, SessionSpend } from "@kor-code/core";
 import { JevDecisionCore, redact, routeFromDecision, type SessionOverrides } from "@kor-code/jev";
 import type { LinearClient, LinearIssue, WorkflowMapping, ExecutionClaim } from "@kor-code/linear";
 import { AgentSessionWriter, DurableQueue, ExecutionLease, LinearStore, SnapshotReader } from "@kor-code/linear";
@@ -130,6 +132,8 @@ class ExecutionController implements Controller {
     let worktree: Worktree | undefined;
     let claim: ExecutionClaim | undefined;
     let heartbeat: { failed: Promise<never>; stop: () => void } | undefined;
+    const leaseAbort = new AbortController();
+    const signal = input.signal ? AbortSignal.any([input.signal, leaseAbort.signal]) : leaseAbort.signal;
     try {
       if (this.lease && this.writer) {
         claim = input.claim ?? this.lease.claim(this.owner, this.leaseTtlMs, input.issueId);
@@ -146,6 +150,7 @@ class ExecutionController implements Controller {
         await this.writer.flush();
       }
       heartbeat = claim && this.lease ? this.startHeartbeat(claim) : undefined;
+      heartbeat?.failed.catch(error => leaseAbort.abort(error));
       const baseRevision = this.options.calibration?.store.run(input.id)?.baseRevision ?? await verificationBase(worktree.path);
       const calibrationStartedAt = new Date().toISOString();
       if (this.options.calibration && calibrationRoute) {
@@ -169,7 +174,7 @@ class ExecutionController implements Controller {
         launcher: this.options.launcher, settings, reserveAttempt: this.reserveAttempt, ...(sessionOverrides ? { overrides: () => sessionOverrides(input.id) } : {}), ...(this.options.onStage ? { onStage: this.options.onStage } : {}), ...(this.options.onSpend ? { onSpend: this.options.onSpend } : {}), ...(this.options.jev ? { jev: this.options.jev } : {}),
         ...(this.options.calibration && calibrationRoute ? { calibration: this.options.calibration.store } : {}),
         ...(decisionId ? { decisionId } : {}),
-        ...(heartbeat ? { leaseFailure: heartbeat.failed } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}), ...(input.signal ? { signal: input.signal } : {}) });
+        ...(heartbeat ? { leaseFailure: heartbeat.failed } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}), signal });
       const completedExecution = { ...execution, status: "complete" as const, verification: verificationReport };
       if (this.writer && claim) {
         try {
@@ -184,7 +189,7 @@ class ExecutionController implements Controller {
           await this.writer.recordVerificationBlock(claim, { ...execution, status: "blocked", verification: verificationReport }, failure.findings, latest.blockers);
           await this.writer.flush();
           this.finishCalibration(input.id, "failed", "controller.verification-block");
-          if (this.options.calibration) await this.runBaselineIfSampled({ execution, issue, repository, baseRevision, initialPrompt, settings, calibration: this.options.calibration });
+          if (this.options.calibration) await this.runBaselineIfSampled({ execution, issue, repository, baseRevision, initialPrompt, context, settings, calibration: this.options.calibration });
           throw failure;
         }
         await this.writer.complete(claim, { summary: `Execution ${input.id} completed`, evidence: verification?.evidence() ?? [] });
@@ -192,11 +197,11 @@ class ExecutionController implements Controller {
       }
       if (latest.blockers.length > 0) {
         this.finishCalibration(input.id, "failed", "controller.verification-block");
-        if (this.options.calibration) await this.runBaselineIfSampled({ execution, issue, repository, baseRevision, initialPrompt, settings, calibration: this.options.calibration });
+        if (this.options.calibration) await this.runBaselineIfSampled({ execution, issue, repository, baseRevision, initialPrompt, context, settings, calibration: this.options.calibration });
         throw new ExecutionVerificationError(verificationReport);
       }
       this.finishCalibration(input.id, "verified", "controller.completed");
-      if (this.options.calibration) await this.runBaselineIfSampled({ execution, issue, repository, baseRevision, initialPrompt, settings, calibration: this.options.calibration, ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}) });
+      if (this.options.calibration) await this.runBaselineIfSampled({ execution, issue, repository, baseRevision, initialPrompt, context, settings, calibration: this.options.calibration, ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}) });
       return { execution: completedExecution, issue, repository, worktree, session, ...(claim ? { claim } : {}) };
     } catch (error) {
       const run = this.options.calibration?.store.run(input.id);
@@ -225,14 +230,15 @@ class ExecutionController implements Controller {
     if (run.status !== status) calibration.store.finishRun(executionId, status);
     calibration.store.recordExecutionOutcome(executionId, outcome);
   }
-  private async runBaselineIfSampled(input: { execution: Execution; issue: LinearIssue; repository: Repository; baseRevision: string; initialPrompt: string; settings: ReturnType<typeof verificationSettings>; calibration?: NonNullable<ControllerOptions["calibration"]>; onSpawn?: (pid: number) => void }): Promise<void> {
+  private async runBaselineIfSampled(input: { execution: Execution; issue: LinearIssue; repository: Repository; baseRevision: string; initialPrompt: string; context: ContextManifest; settings: ReturnType<typeof verificationSettings>; calibration?: NonNullable<ControllerOptions["calibration"]>; onSpawn?: (pid: number) => void }): Promise<void> {
     const calibration = input.calibration;
     const run = calibration?.store.run(input.execution.id);
     if (!calibration || run?.arm !== "jev" || !run.sampled) return;
     await this.runBaseline({ ...input, calibration });
-    await this.runBaseline({ ...input, calibration, purpose: "skills" });
+    const offered = calibration.store.decisions("skills").some(record => record.request.executionId === input.execution.id && record.response.plan?.skills.some(skill => skill.tier !== "hidden"));
+    if (offered) await this.runBaseline({ ...input, calibration, purpose: "skills" });
   }
-  private async runBaseline(input: { purpose?: "skills"; execution: Execution; issue: LinearIssue; repository: Repository; baseRevision: string; initialPrompt: string; settings: ReturnType<typeof verificationSettings>; calibration: NonNullable<ControllerOptions["calibration"]>; leaseFailure?: Promise<never>; onSpawn?: (pid: number) => void }): Promise<void> {
+  private async runBaseline(input: { purpose?: "skills"; execution: Execution; issue: LinearIssue; repository: Repository; baseRevision: string; initialPrompt: string; context: ContextManifest; settings: ReturnType<typeof verificationSettings>; calibration: NonNullable<ControllerOptions["calibration"]>; leaseFailure?: Promise<never>; onSpawn?: (pid: number) => void }): Promise<void> {
     const { execution, issue, repository, baseRevision, initialPrompt, settings, calibration } = input;
     const skillsBaseline = input.purpose === "skills";
     const route = skillsBaseline ? execution.route : calibration.baselineRoute;
@@ -242,8 +248,16 @@ class ExecutionController implements Controller {
     let worktree: Worktree | undefined;
     try {
       worktree = await this.options.worktrees.create({ executionId: id, issueId: issue.id, repository, branch: `kor/calibration/${id}`, baseRevision, detached: true });
+      for (const source of input.context.sources) {
+        if (source.purpose !== "image" || source.path === "ticket") continue;
+        const destination = resolve(worktree.path, source.path);
+        const local = relative(worktree.path, destination);
+        if (local.startsWith("..") || isAbsolute(local)) throw new Error("Baseline image path escapes worktree");
+        await mkdir(dirname(destination), { recursive: true });
+        await cp(resolve(execution.worktree, source.path), destination);
+      }
       const baseline: Execution = { id, issueId: issue.id, repository: repository.key, route, worktree: worktree.path, branch: worktree.branch, status: "running", manifest: { executionId: id, issueId: issue.id, repository: repository.key, worktree: worktree.path, branch: worktree.branch, agents: [], acceptance: acceptance(issue) } };
-      const result = await runVerifiedSessions({ execution: baseline, repository, initialPrompt, baseRevision, ...(skillsBaseline ? { skillsDisabled: true, pairedTools: calibration.store.metrics().filter(metric => metric.executionId === execution.id).map(metric => metric.tools) } : {}), launcher: this.options.launcher, settings, reserveAttempt: this.reserveAttempt,
+      const result = await runVerifiedSessions({ signal: AbortSignal.timeout(settings.checkTimeoutMs), execution: baseline, repository, initialPrompt, baseRevision, ...(skillsBaseline ? { skillsDisabled: true, pairedTools: calibration.store.metrics().filter(metric => metric.executionId === execution.id).map(metric => metric.tools) } : {}), launcher: this.options.launcher, settings, reserveAttempt: this.reserveAttempt,
         ...(this.options.onSpend ? { onSpend: this.options.onSpend } : {}),
         ...(this.options.jev ? { jev: this.options.jev } : {}), calibration: calibration.store,
         ...(input.leaseFailure ? { leaseFailure: input.leaseFailure } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}) });
@@ -272,14 +286,14 @@ class ExecutionController implements Controller {
     const issue = (await this.snapshots.read(issueId)).issue;
     const assignment = this.options.linear?.store.getAssignment(issueId);
     if (!assignment) throw new Error(`Linear assignment missing for ${issueId}`);
-    return this.dispatch({ id: assignment.executionId, issueId, repository: issue.repository ?? issue.teamKey, worktree: "", branch: `kor/${issueId}`, status: "queued", issue, evidence });
+    return this.dispatch({ id: assignment.executionId, issueId, repository: issue.repository ?? issue.teamKey, worktree: "", branch: `kor/${issue.identifier}`, status: "queued", issue, evidence });
   }
   async runNext(): Promise<ControllerRunResult | undefined> {
     if (!this.lease || !this.snapshots) throw new Error("runNext requires a Linear runtime");
     const claim = this.lease.claim(this.owner, this.leaseTtlMs);
     if (!claim) return undefined;
     const issue = (await this.snapshots.read(claim.assignment.issueId)).issue;
-    return this.dispatch({ id: claim.assignment.executionId, issueId: issue.id, repository: issue.repository ?? issue.teamKey, worktree: "", branch: `kor/${issue.id}`, status: "queued", issue, claim });
+    return this.dispatch({ id: claim.assignment.executionId, issueId: issue.id, repository: issue.repository ?? issue.teamKey, worktree: "", branch: `kor/${issue.identifier}`, status: "queued", issue, claim });
   }
   async reconcile(): Promise<ReconciliationReport> { return this.reconciler?.reconcile() ?? { assignments: [], expiredLeases: [], resumable: [], missingWorktrees: [], orphanedWorktrees: [] }; }
 }

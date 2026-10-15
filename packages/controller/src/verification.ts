@@ -150,6 +150,7 @@ export async function verifyAttempt(input: {
   const blockers: string[] = [];
   const denials = session.telemetry?.permissionDenialDetails ?? [];
   const unknownDenials = (session.telemetry?.permissionDenials ?? 0) !== denials.length;
+  if (!input.enforceSemantic && denials.length) blockers.push("Permission denials require semantic verification before completion");
   if (session.exitCode !== 0 || session.failed || session.telemetry?.isError || unknownDenials) blockers.push(`Session failed: ${session.failureReasons?.join(", ") || (unknownDenials ? "unrecognized permission denial records" : `exit ${session.exitCode}`)}`);
   const checks: RepositoryCheckResult[] = [];
   for (const command of input.checks) checks.push(await runCheck(command, execution.worktree, settings.checkTimeoutMs));
@@ -193,7 +194,17 @@ export async function verifyAttempt(input: {
     const diffBudget = Math.min(maxDiffTokens, maxAcceptanceTokens - estimatedTokens({ ...state, diff: "" }) - questionTokens);
     if (diffBudget < estimatedTokens(truncationMarker)) throw new Error("Acceptance metadata exceeds the question budget; narrow the criteria or checks");
     state.diff = boundedText(diff, Math.floor(diffBudget * estimatedBytesPerToken));
-    judgments = await input.jev.judgeAcceptance({ executionId: execution.id, attempt: input.attempt, attemptId, state, criteria: acceptance, threshold: settings.acceptanceThreshold });
+    const jev = input.jev;
+    const judge = () => jev.judgeAcceptance({ executionId: execution.id, attempt: input.attempt, attemptId, state, criteria: acceptance, threshold: settings.acceptanceThreshold });
+    try { judgments = await judge(); }
+    catch (error) {
+      if (!failureText(error).includes("max_tokens_exceeded")) throw error;
+      const detailBytes = serializedBytes({ ...state, diff: "" }) + serializedBytes(acceptance);
+      const retryBudget = maxAcceptanceTokens - detailBytes;
+      if (retryBudget < serializedBytes(truncationMarker)) throw error;
+      state.diff = boundedText(state.diff, Math.min(retryBudget, Math.floor(serializedBytes(state.diff) / 2)));
+      judgments = await judge();
+    }
   } catch (error) {
     if (input.enforceSemantic) { judgmentError = `Jev acceptance unavailable: ${failureText(error)}`; blockers.push(judgmentError); }
   }

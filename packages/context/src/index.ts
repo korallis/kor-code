@@ -121,7 +121,7 @@ export async function buildContextManifest(options: ContextBuildOptions): Promis
   if (options.includeFiles) {
     let files: string[] = [];
     try { files = (await execFile("git", ["-C", root, "ls-files", "-z"], { maxBuffer: 4 * 1024 * 1024 })).stdout.split("\0").filter(Boolean); }
-    catch (error) { if (!(error instanceof Error && "code" in error && typeof error.code === "number")) throw error; }
+    catch (error) { if (!(error instanceof Error && "code" in error && (typeof error.code === "number" || error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"))) throw error; }
     const terms = new Set((options.task ?? options.issue ?? "").toLowerCase().match(/[a-z][a-z0-9_-]{2,}/g) ?? []);
     const score = (path: string) => (path.toLowerCase().match(/[a-z][a-z0-9_-]{2,}/g) ?? []).filter(word => terms.has(word)).length;
     const hints = files.filter(path => !isRuleFile(root, resolve(root, path)) && !path.startsWith(".kor/") && inside(root, resolve(root, path)))

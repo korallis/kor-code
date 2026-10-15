@@ -5,7 +5,7 @@ function processInfo(pid: number): { state: string; group: number; startTicks: s
   let text: string;
   try { text = readFileSync(`/proc/${pid}/stat`, "utf8"); }
   catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
+    if (error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ESRCH")) return undefined;
     throw new Error("Cannot inspect session process identity");
   }
   const fields = text.slice(text.lastIndexOf(")") + 2).trim().split(/\s+/);
@@ -44,10 +44,23 @@ export async function stopSession(identity: SessionProcessIdentity): Promise<voi
   const info = processInfo(identity.pid);
   const bootMatches = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim() === identity.bootId;
   const identityMatches = Boolean(info && info.startTicks === identity.startTicks);
-  // A live process with a different start tick is a recycled PID. The old
-  // group cannot still contain members while its leader PID is occupied by a
-  // different process, so never use that process's group as a fallback.
-  if (info && info.state !== "Z" && !identityMatches) return;
+  if (!bootMatches || info && !identityMatches) return;
+  if (!info) {
+    if (!identity.executionId) return;
+    const members = readdirSync("/proc").filter(name => /^\d+$/.test(name)).filter(name => {
+      const member = processInfo(Number(name));
+      return member?.group === pgid && member.state !== "Z";
+    });
+    for (const member of members) {
+      try {
+        const environment = readFileSync(`/proc/${member}/environ`, "utf8").split("\0");
+        if (!environment.includes(`KOR_EXECUTION_ID=${identity.executionId}`)) return;
+      } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") continue;
+        return;
+      }
+    }
+  }
   const daemonGroup = processInfo(process.pid)?.group;
   if (pgid === daemonGroup) throw new Error("Refusing to signal the daemon process group");
   const groupAlive = bootMatches && livingGroup(pgid);
