@@ -30,8 +30,9 @@ Each repetition uses a fresh local clone at the specified commit, the selected l
 
 To compare settings alone, run the same command twice with
 `--launch-profile standard` and `--launch-profile lean`, keeping the tools and
-route file constant. `standard` uses the P1-1 settings, not the original full
-tool set. Both profiles keep the cockpit plugin. The benchmark fixes the same
+route file constant. `standard` uses the current base launcher settings with
+the same tool list; both profiles suppress Claude Code’s bundled skills for
+per-execution skill delivery. Both profiles keep the cockpit plugin. The benchmark fixes the same
 tool list for both profiles to isolate settings; production controller sessions independently
 apply Jev’s capability selection within repository policy. Each summary includes
 `startContextTokens` and `cacheReadShare`, calculated across the session as
@@ -85,7 +86,8 @@ A later contributor-note smoke run measured 41,356 start tokens and a 126,488 co
 
 ## Settings profile comparison
 
-Six live Claude Code 2.1.300 sessions compared `standard` and `lean` on the same
+Before per-execution skill delivery merged, six live Claude Code 2.1.300
+sessions compared `standard` and `lean` on the same
 logs argument-validation task at revision `f6dd971`, three fresh executions per
 profile. Both profiles reused the task's recorded Jev route, the same six tools,
 and the cockpit plugin. All six passed real CLI checks for invalid arguments
@@ -135,3 +137,12 @@ remains variable; the repeatable benefit here is the 605-token startup saving.
 `standard` remains the default. `lean` is opt-in while gateway account or shard
 affinity is investigated as a possible explanation for the alternating cache
 hits. The request captures do not establish that upstream cause.
+
+After per-execution skill delivery merged, a fresh pair on the same pinned logs
+issue measured 7,588 start tokens with standard and 6,984 with lean: 604 tokens
+saved. Both profiles now inherit Claude Code bundled-skill suppression from
+skill delivery; lean adds Git-instruction removal and dynamic-section exclusion.
+Both sessions passed the real CLI checks. This single pair is directional and
+adds no new cache-reuse claim. The existing skill-pack proof also passed with
+lean enabled for empty packs, 3 and 20 listed skills, invocation and pinned
+bodies, confirming that the settings profile preserves skill delivery.

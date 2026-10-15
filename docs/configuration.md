@@ -67,11 +67,13 @@ launchProfile: lean
 
 Both profiles retain Jev’s per-task tool selection within the repository ceiling,
 disable automatic memory and repository instruction discovery, and load the
-cockpit plugin. `lean` additionally sets `includeGitInstructions: false` and
-`disableBundledSkills: true` in Claude Code’s `--settings` JSON and passes
-`--exclude-dynamic-system-prompt-sections`.
-This removes built-in commit/PR guidance and bundled skills and stabilizes the
-system prefix across execution homes. `standard` retains the P1-1 settings for
+cockpit plugin. Per-execution skill delivery suppresses Claude Code’s bundled
+skills in both profiles with `disableBundledSkills: true` and the existing built-in plugin and
+skill overrides. `lean` additionally sets `includeGitInstructions: false` in
+Claude Code’s `--settings` JSON and passes
+`--exclude-dynamic-system-prompt-sections`. This removes built-in commit/PR
+guidance and stabilizes the system prefix across execution homes. `standard`
+retains the current base launcher settings for
 A/B measurement and stays the default while gateway cache behaviour is
 investigated. Use `launchProfile: lean` to opt in. These flags apply only to
 isolated execution sessions.

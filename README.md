@@ -182,8 +182,9 @@ Jev cannot add a tool outside that cap or grant shell commands. Without Jev,
 or during an outage, optional tools stay off. `kor doctor` prints the configured
 ceiling; the decision audit records the per-task probabilities.
 
-Opt in to `launchProfile: lean` to remove bundled skills, Git instructions
-and dynamic system-prompt sections while keeping the cockpit plugin.
+Opt in to `launchProfile: lean` to remove Git instructions and dynamic
+system-prompt sections while keeping the cockpit plugin. Both profiles suppress
+Claude Code’s bundled skills as part of per-execution skill delivery.
 `launchProfile: standard` remains the default while gateway cache behaviour is
 investigated. Tool selection is independent of the settings profile. See the
 [user guide](docs/user-guide.md#configure-a-repository) for repository setup
