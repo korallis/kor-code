@@ -605,7 +605,7 @@ export class KorDaemon {
         try {
           const review = reviewSessionEdit(edit, { ...await this.sessionContext(run.executionId, run.repository), ...(request.overBudget ? { overBudget: true } : {}) });
           checks.push(...review.checks);
-          overBudget = review.checks.some(check => check.name === "within the skill budget" && check.result === "pass" && check.reason !== undefined);
+          overBudget = review.needsConfirmation;
           tokens = review.tokens;
           previous = review.previous;
         } catch (error) { checks.push({ name: "skill catalogue available", result: "fail", reason: safeMessage(error) }); }
@@ -693,7 +693,7 @@ export class KorDaemon {
       const review = reviewSessionEdit(edit, { ...context, overBudget: true });
       const failed = review.checks.find(check => check.result === "fail");
       return { choice: sessionEditChoice(edit), tokenDelta: review.tokens ? review.tokens.after - review.tokens.before : null,
-        overBudget: edit.target === "skills" && review.tokens !== null && review.tokens.after > context.plan.budget && review.tokens.after > review.tokens.before,
+        overBudget: review.needsConfirmation,
         blocked: failed ? failed.reason ?? failed.name : null };
     };
     const effective = applySkillOverrides(context.plan, context.skills, context.overrides, context.policy);

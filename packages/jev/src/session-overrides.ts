@@ -11,8 +11,10 @@ export type SessionEdit =
   | { target: "playbook"; name: string }
   | { target: "tools"; name: string; present: boolean };
 /**
- * Edits folded in order; a later edit to the same skill or tool replaces an earlier one.
- * `confirmed` names the skills whose latest edit the operator confirmed above the repository budget.
+ * Edits folded in order; a later edit to the same skill or tool replaces an earlier one and
+ * becomes the latest. `confirmed` names the skill overrides the operator accepted above the
+ * repository budget: confirming an edit accepts every skill override in force at that moment,
+ * and a later unconfirmed edit to a skill withdraws its confirmation.
  */
 export interface SessionOverrides { skills: Map<string, SkillTier | "auto">; confirmed: Set<string>; playbook?: string; tools: Map<string, boolean> }
 export type SkillOverridePolicy = Pick<SkillsInput, "stage" | "allowedTools" | "stackTags" | "never" | "always" | "pins" | "bodyBudget">;
@@ -26,6 +28,7 @@ const PLAYBOOK = new RegExp(`^(?:playbook:)?(${NAME})$`);
 const TOOL_EDIT = new RegExp(`^tool:([+-])(${TOOL})$`);
 const LABEL = /^kor:(skill|playbook|tool)\/(.+)$/;
 const NO_PLAYBOOK = "none";
+const UNCONFIRMED_OVERRIDE = "Override not applied: over the skill budget without confirmation.";
 
 export function parseSessionEdit(target: string, choice: string): SessionEdit | undefined {
   let match: RegExpExecArray | null;
@@ -60,8 +63,9 @@ export function foldSessionEdits(edits: readonly SessionEdit[]): SessionOverride
   const overrides: SessionOverrides = { skills: new Map(), confirmed: new Set(), tools: new Map() };
   for (const edit of edits) {
     if (edit.target === "skills") {
+      overrides.skills.delete(edit.name);
       overrides.skills.set(edit.name, edit.tier);
-      if (edit.overBudget) overrides.confirmed.add(edit.name);
+      if (edit.overBudget) for (const name of overrides.skills.keys()) overrides.confirmed.add(name);
       else overrides.confirmed.delete(edit.name);
     }
     else if (edit.target === "tools") overrides.tools.set(edit.name, edit.present);
@@ -124,7 +128,7 @@ export function applySkillOverrides(plan: SkillPlan, skills: readonly SkillCandi
   const overridden = [...overrides.skills.keys()].reverse().filter(name => !overrides.confirmed.has(name))
     .flatMap(name => entries.filter(entry => entry.name === name && applied.has(name) && costly(entry)));
   const trim = [...jevPicks.map(entry => [entry, "Hidden to keep operator overrides within the skill budget."] as const),
-    ...overridden.map(entry => [entry, "Override not applied: over the skill budget without confirmation."] as const)];
+    ...overridden.map(entry => [entry, UNCONFIRMED_OVERRIDE] as const)];
   for (const [entry, reason] of trim) {
     if (planTokens(entries).total <= plan.budget) break;
     entries[entries.indexOf(entry)] = { ...entry, tier: "hidden", tokens: 0, reason };
@@ -153,7 +157,8 @@ export interface SessionEditContext {
   /** The operator accepted a plan over the repository's skill budget. */
   overBudget?: boolean;
 }
-export interface SessionEditReview { checks: PolicyCheck[]; tokens: { before: number; after: number } | null; previous?: string }
+/** `needsConfirmation`: the edit applies as asked only if the operator accepts going over budget. */
+export interface SessionEditReview { checks: PolicyCheck[]; tokens: { before: number; after: number } | null; needsConfirmation: boolean; previous?: string }
 
 const check = (name: string, problem: string | undefined, passReason?: string): PolicyCheck =>
   ({ name, result: problem ? "fail" : "pass", ...(problem ? { reason: problem } : passReason ? { reason: passReason } : {}) });
@@ -164,22 +169,29 @@ export function reviewSessionEdit(edit: SessionEdit, context: SessionEditContext
   if (edit.target === "skills") {
     const skill = skills.find(candidate => candidate.name === edit.name);
     const before = applySkillOverrides(context.plan, skills, context.overrides, policy);
-    const edited = new Map([...context.overrides.skills, [edit.name, edit.tier]]);
-    const confirmed = applySkillOverrides(context.plan, skills, { skills: edited, confirmed: new Set([...context.overrides.confirmed, edit.name]) }, policy);
+    // The two plans delivery can produce after this edit: as sent, and with the confirmation it would store.
+    const folded = foldSessionEdits([...[...context.overrides.skills].map(([name, tier]) => ({ target: "skills" as const, name, tier })), edit]);
+    const plain = { skills: folded.skills, confirmed: new Set([...context.overrides.confirmed].filter(name => name !== edit.name)) };
+    const unconfirmed = applySkillOverrides(context.plan, skills, plain, policy);
+    const confirmed = applySkillOverrides(context.plan, skills, { skills: folded.skills, confirmed: new Set(folded.skills.keys()) }, policy);
+    const dropped = (plan: SkillPlan) => new Set(plan.skills.filter(entry => entry.reason === UNCONFIRMED_OVERRIDE).map(entry => entry.name));
+    const droppedBefore = dropped(before);
+    const needsConfirmation = [...dropped(unconfirmed)].some(name => !droppedBefore.has(name) || name === edit.name);
+    const after = needsConfirmation && context.overBudget ? confirmed : unconfirmed;
     const tier = skill ? resolvedTier(skill, edit.tier, policy) : "hidden";
     const problem = skillOverrideProblem(skill, tier, policy);
-    const overspend = confirmed.tokens.total > context.plan.budget && confirmed.tokens.total > before.tokens.total;
     const current = before.skills.find(entry => entry.name === edit.name)?.tier;
     return {
       checks: [
         check("skill in the catalogue", skill && skill.kind !== "playbook" ? undefined : skill ? "Playbooks are overridden with the playbook target." : "Not in the skill catalogue."),
         check("allowed by repository policy", skill && skill.kind !== "playbook" ? problem : undefined),
-        check("within the skill budget", overspend && !context.overBudget ? `${confirmed.tokens.total} tokens exceed the ${context.plan.budget}-token budget; confirm over budget to accept.` : undefined,
-          overspend ? "Over budget, confirmed by the operator." : undefined),
+        check("within the skill budget", needsConfirmation && !context.overBudget ? `${confirmed.tokens.total} tokens exceed the ${context.plan.budget}-token budget; confirm over budget to accept.` : undefined,
+          needsConfirmation ? "Over budget, confirmed by the operator." : undefined),
         check("not already overridden", context.overrides.skills.get(edit.name) === edit.tier && (context.overrides.confirmed.has(edit.name) || !context.overBudget)
           ? "The same override is already in force." : undefined),
       ],
-      tokens: { before: before.tokens.total, after: confirmed.tokens.total },
+      tokens: { before: before.tokens.total, after: after.tokens.total },
+      needsConfirmation,
       ...(current ? { previous: current } : {}),
     };
   }
@@ -194,6 +206,7 @@ export function reviewSessionEdit(edit: SessionEdit, context: SessionEditContext
         check("not already overridden", context.overrides.playbook === edit.name ? "The same override is already in force." : undefined),
       ],
       tokens: { before: cost(current), after: cost(edit.name) },
+      needsConfirmation: false,
       previous: current,
     };
   }
@@ -203,6 +216,7 @@ export function reviewSessionEdit(edit: SessionEdit, context: SessionEditContext
       check("not already overridden", context.overrides.tools.get(edit.name) === edit.present ? "The same override is already in force." : undefined),
     ],
     tokens: null,
+    needsConfirmation: false,
     ...(context.overrides.tools.has(edit.name) ? { previous: context.overrides.tools.get(edit.name) ? "added" : "removed" } : {}),
   };
 }

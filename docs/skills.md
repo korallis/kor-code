@@ -932,8 +932,11 @@ policy, the stack matches and the body fits the tier. An explicit `pinned` tier
 obeys the configured `skills.bodyBudget` as well as the 2,000-token ceiling. A
 tool must be inside the repository's tool policy; an override never widens it.
 The new plan must stay within the repository's `skills.budget` unless the
-operator confirms **over budget**; that confirmation lifts only the soft budget,
-for that skill, and is stored with the override. An edit is judged against the overrides already
+operator confirms **over budget**. That confirmation lifts only the soft budget:
+it accepts every skill override in force at that moment and is stored with the
+override; a later unconfirmed edit to a skill withdraws it for that skill. An
+edit that would only apply over budget is refused unless confirmed, and the
+token change Kor reports is the plan the next session will actually get. An edit is judged against the overrides already
 in force, not against Jev's current plan: repeating the same override is refused,
 but hiding a skill Jev has not picked yet is kept for later sessions. Applied and
 refused edits alike go into
@@ -962,10 +965,10 @@ keeps Jev's tier, and the plan records `Override not applied:` with the reason.
 Jev plans every session again, so the merged plan is held to the budget again:
 Jev's own pinned and listed picks are hidden first, lowest probability first,
 then the overrides that were not confirmed over budget, latest first, with
-`Override not applied: over the skill budget without confirmation.` Armed
-entries cost nothing at the start and are never trimmed, nor are repository
-`always` and `pins`. Sending the same edit again with **Accept over budget**
-ticked confirms it. A playbook override that is not
+`Override not applied: over the skill budget without confirmation.`, for
+example after the budget is lowered. Armed entries cost nothing at the start and
+are never trimmed, nor are repository `always` and `pins`. Sending the same edit
+again with **Accept over budget** ticked confirms it. A playbook override that is not
 available at the session's stage, for example at repair, is left to Jev's
 Choice. An override can load a skill that outcome learning demoted. Neither
 calibration baseline arm receives overrides. No override can choose a model,
