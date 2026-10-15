@@ -1,9 +1,22 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 
-/** Preserve configured capabilities; aliases only name the same executable script. */
-export async function sessionPermissions(input: { worktree: string; allowedTools: readonly string[]; checks: readonly string[] }): Promise<string[]> {
+export const DEFAULT_ALLOWED_TOOLS = ["Read"] as const;
+const SEARCH_TOOLS = ["Glob", "Grep"] as const;
+
+function toolName(permission: string): string { return permission.split("(", 1)[0] ?? permission; }
+
+export function sessionTools(permissions: readonly string[], override?: readonly string[]): string[] {
+  return [...new Set(override ?? permissions.map(toolName))].sort();
+}
+
+export async function sessionPermissions(input: { worktree: string; allowedTools: readonly string[]; checks: readonly string[]; tools?: readonly string[] }): Promise<string[]> {
   const permissions = new Set(input.allowedTools);
+  if (permissions.has("Read")) {
+    for (const tool of SEARCH_TOOLS) {
+      if (!input.tools || input.tools.includes(tool)) permissions.add(tool);
+    }
+  }
   const root = await realpath(input.worktree);
   for (const pattern of input.allowedTools) {
     const match = /^Bash\((bash|sh) ([A-Za-z0-9_./-]+)(\s*\*)?\)$/.exec(pattern);
@@ -30,6 +43,7 @@ export async function sessionPermissions(input: { worktree: string; allowedTools
   return [...permissions];
 }
 
-export function permissionGuidance(permissions: readonly string[], checks: readonly string[]): string {
-  return `\n\nExecution permissions (do not request broader permissions):\n${permissions.join("\n")}\nStay in this isolated worktree. Use Read, Glob and Grep for inspection when available; a denied call did not execute. Use only permitted commands for verification and report any required operation that remains blocked.\nKor will run these authoritative checks after your session:\n${checks.length ? checks.join("\n") : "No repository checks configured."}`;
+export function permissionGuidance(permissions: readonly string[], checks: readonly string[], tools: readonly string[] = sessionTools(permissions)): string {
+  const inspection = ["Read", ...SEARCH_TOOLS].filter(tool => tools.includes(tool));
+  return `\n\nAvailable tools: ${tools.length ? tools.join(", ") : "none"}. Availability does not grant permission.\nExecution permissions (do not request broader permissions):\n${permissions.length ? permissions.join("\n") : "None."}\nStay in this isolated worktree.${inspection.length ? ` Use ${inspection.join(", ")} for inspection.` : ""} A denied call did not execute. Use only available tools and permitted commands for verification and report any required operation that remains blocked.\nKor will run these authoritative checks after your session:\n${checks.length ? checks.join("\n") : "No repository checks configured."}`;
 }

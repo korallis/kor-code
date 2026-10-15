@@ -39,7 +39,7 @@ export async function runVerifiedSessions(input: {
       input.onStage?.(execution.id, "execute");
       session = await race(input.launcher.launch({ execution, repositoryPath: repository.path, worktreePath: execution.worktree,
         prompt: previous ? repairPrompt(input.initialPrompt, previous) : input.initialPrompt,
-        ...(execution.route ? { route: execution.route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}), ...(repository.checks ? { checks: repository.checks } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}), ...(input.signal ? { signal: input.signal } : {}) }));
+        ...(execution.route ? { route: execution.route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}), ...(repository.tools ? { tools: repository.tools } : {}), ...(repository.checks ? { checks: repository.checks } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}), ...(input.signal ? { signal: input.signal } : {}) }));
     } catch (error) {
       // Preserve the attempt and elapsed time even when the provider never emits a result.
       if (input.calibration && execution.route) input.calibration.recordAttempt(metricFromSession({ executionId: execution.id, attempt: attemptNumber, attemptId, ...(input.decisionId ? { decisionId: input.decisionId } : {}), route: execution.route, startedAt, finishedAt: new Date().toISOString(), session: {}, verified: false, verificationFailures: 0 }));

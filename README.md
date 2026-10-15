@@ -44,7 +44,7 @@ In practice:
   (Ubuntu under WSL2).
 - **A small change takes about a minute** from queue to verified with a Haiku-class
   model, and costs cents.
-- **It is cautious.** Sessions can only use the tools on your allowlist, work in a
+- **It is cautious.** Sessions use your tool permissions plus file search, work in a
   worktree and never touch your checkout, and any failed check, unmet acceptance
   criterion or permission denial leaves the run `blocked` with a reason, waiting
   for you. With `ship: approve` even a verified run waits for your go-ahead.
@@ -162,9 +162,13 @@ pollIntervalSeconds: 120
 intakeLabel: kor
 ```
 
-`checks` decide whether a result is accepted. `toolAllowlist` is everything a
-session may do; one denied tool fails the attempt, so list the commands your
-project's tests use. Every field is explained in the
+`checks` decide whether a result is accepted. `toolAllowlist` grants tool and
+command permissions; unscoped `Read` also enables `Glob` and `Grep` for file
+search. Scoped Read policies require explicit search permissions. Sessions
+load only the effective permissions' base tool names, reducing
+startup context. Optional per-repository `tools: [Read, Edit, Write, Bash, Glob, Grep]`
+replaces that available set without granting shell permissions. `kor doctor`
+prints the effective set. Every field is explained in the
 [user guide](docs/user-guide.md#configure-a-repository).
 
 Before queueing a ticket, run `kor linear lint LEE-123` (or add `--json` for

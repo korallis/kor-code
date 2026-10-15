@@ -209,7 +209,7 @@ async function serve(args: readonly string[]): Promise<number> {
   const store = new LinearStore(paths.databaseFile);
   const audit = calibration ?? new PersistentDecisionAuditLog({ read: id => store.readDecisionAudit(id), write: (id, at, payload) => store.writeDecisionAudit(id, at, payload), update: (id, at, payload) => store.updateDecisionAudit(id, at, payload) });
   const runtime = (config: KorConfig): { controller: Controller; chooseRoute: NonNullable<DaemonOptions["chooseRoute"]> } => {
-    const repositories = new RepositoryRegistry(Object.entries(config.repos).map(([key, repository]) => ({ key, path: repository.path, defaultBranch: repository.defaultBranch, allowedTools: repository.toolAllowlist, checks: repository.checks })));
+    const repositories = new RepositoryRegistry(Object.entries(config.repos).map(([key, repository]) => ({ key, path: repository.path, defaultBranch: repository.defaultBranch, allowedTools: repository.toolAllowlist, checks: repository.checks, ...(repository.tools ? { tools: repository.tools } : {}) })));
     const routing = createServeRouting({ audit, defaultRoute: config.defaultRoute, client: { evaluate: (state, questions) => mission.jev().evaluate(state, questions) }, models: async () => {
       if (catalogue) return catalogue;
       const registry = await readModelRegistry(paths.modelsFile);

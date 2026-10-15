@@ -27,7 +27,7 @@ The isolated run ended with `✔ Validation passed`; its caller's `opus` setting
 
 The reversible installer is Validated in a disposable HOME and XDG tree for both local pilot and user scope. It stages Claude Code's local-path marketplace commands in a private HOME, publishes only Kor entries, restores the exact settings bytes on uninstall, and leaves `claude plugin list --json` without Kor. The revision proof used an `opus` user setting, a linked sandbox worktree, and an unrelated plugin refresh; uninstall preserved that plugin and its updated registry entries. The proof used the offline endpoint and no live gateway key. It validated the generated unit with `systemd-analyze --user verify`; systemctl sequencing used a command shim, so service lifecycle on the real user manager remains unvalidated.
 
-The Phase 6 cockpit (`packages/claude-plugin`) is Validated on a live daemon run: `/kor` draws the daemon's status with LIVE, STALE and UNAVAILABLE labels, `/kor override` sends overrides to the daemon, and `/kor demo` keeps the fixture execution, which `pnpm cockpit:proof` replays (see [Open the live cockpit](user-guide.md#the-claude-code-status-line)). Execution sessions are Validated locally with parsed stream-json telemetry and policy checks; `pnpm e2e:live` runs the scratch-repository hello-file check when supplied a runtime `KOR_GATEWAY_KEY` or `KOR_GATEWAY_KEY_FILE` (without a key it reports the external validation as Blocked and makes no provider call). Sessions use `dontAsk` with an explicit repository tool allowlist, so removing `Write` produces a permission denial and a failed attempt. See the [cockpit specification](specs/cockpit-mockups.md).
+The Phase 6 cockpit (`packages/claude-plugin`) is Validated on a live daemon run: `/kor` draws the daemon's status with LIVE, STALE and UNAVAILABLE labels, `/kor override` sends overrides to the daemon, and `/kor demo` keeps the fixture execution, which `pnpm cockpit:proof` replays (see [Open the live cockpit](user-guide.md#the-claude-code-status-line)). Execution sessions are Validated locally with parsed stream-json telemetry and policy checks; `pnpm e2e:live` runs the scratch-repository hello-file check when supplied a runtime `KOR_GATEWAY_KEY` or `KOR_GATEWAY_KEY_FILE` (without a key it reports the external validation as Blocked and makes no provider call). Sessions use `dontAsk` with explicit repository permissions and available tools; a disallowed call is denied, while an unavailable tool cannot be called. See the [cockpit specification](specs/cockpit-mockups.md).
 
 Verification runs each configured repository check and treats its exit code as authoritative. It collects the worktree diff, asks Jev one Noul per acceptance criterion at the controller's verification threshold option (default `0.7`), and retries a blocked attempt at most twice with the failing evidence in the next prompt. Run the offline proof:
 
@@ -42,7 +42,7 @@ verification-proof: broken: blocked (acceptance-1=pass); launches=3; state=start
 
 Configure checks on a repository entry with `checks: ["pnpm typecheck", "pnpm test"]`. A failed check or unmet acceptance criterion leaves the execution blocked and records each criterion finding in the Linear comment.
 
-For the live scratch run, the script's repository allowlist contains `Read,Write,Edit` and the three `git` commands needed to commit the hello file. To prove a policy failure, remove `Write` from `KOR_E2E_ALLOWED_TOOLS` and set `KOR_E2E_EXPECT_FAILURE=1`; the command reports the provider's permission denial and failed attempt. A launcher with no repository allowlist defaults to `Read`, so mutation is opt-in. Credentials are runtime-only and are never written to the repository or printed.
+For the live scratch run, the script's repository allowlist contains `Read,Write,Edit` and the three `git` commands needed to commit the hello file. Removing `Write` from `KOR_E2E_ALLOWED_TOOLS` also removes its schema, so a permission denial depends on which alternative tools the session attempts. A launcher with no repository allowlist defaults to `Read`, `Glob` and `Grep`, so mutation is opt-in. The available schemas are restricted with `--tools`; a repository `tools` override can reduce or extend that set without granting command permissions. Credentials are runtime-only and are never written to the repository or printed.
 
 ### Run a live execution
 
@@ -61,21 +61,18 @@ The command creates a scratch repository, creates a `kor/e2e-*` branch, commits 
 e2e:live passed; branch=kor/e2e-1791974354926; hello=yes; committed=yes; model=claude-haiku-4-5-20251001; cost_usd=0.04701935; duration_ms=5450; permission_denials=0
 ```
 
-Remove `Write` from the allowlist to check the failure path:
+To inspect the restricted profile, remove `Write` from the allowlist:
 
 ```sh
 KOR_E2E_DIR=/tmp/kor-e2e-live-denial \
 KOR_E2E_ALLOWED_TOOLS='Read,Edit,Bash(git status *),Bash(git add *),Bash(git commit *)' \
-KOR_E2E_EXPECT_FAILURE=1 pnpm e2e:live
+pnpm e2e:live
 ```
 
-The session then reports permission denials and does not report success:
-
-```text
-e2e:live failed; branch=kor/e2e-1791974375194; hello=no; committed=no; model=claude-haiku-4-5-20251001; cost_usd=0.05174289999999999; duration_ms=8983; permission_denials=2
-e2e:live failure=2 permission denials
-```
-
+This run may fail, report a denial from another tool, or complete through a permitted
+alternative. It is not a deterministic permission-denial proof.
+`KOR_E2E_EXPECT_FAILURE=1` asserts both a denial and a failed attempt; use it only
+when the session actually attempts a forbidden operation.
 
 ### Calibrate Jev routing against a baseline
 
