@@ -55,7 +55,7 @@ conflicts exit 1; invalid command arguments exit 2.
   calibrate report` prints its text report unless you pass `--json` to get
   the report object.
 
-## Attach a PNG: `kor linear attach-image ISSUE FILE --alt CAPTION [--json]`
+## Attach a PNG: `kor linear attach-image ISSUE FILE --alt CAPTION [--screen ID] [--json]`
 
 This is an explicit host-side Linear write, independent of the daemon and
 repository mapping. It creates an image attachment, adds a Markdown image under
@@ -66,12 +66,20 @@ repository mapping. It creates an image attachment, adds a Markdown image under
 | `schemaVersion` | `1`. |
 | `issue` | Canonical Linear issue identifier. |
 | `attachmentId` | Stable ID derived from issue UUID, PNG content and normalized caption. |
+| `screen` | Present when `--screen` is supplied; stable screen/state/viewport ID. |
 | `bytes` | Verified downloaded byte count. |
 | `sha256` | Digest matching the source PNG and downloaded asset. |
 | `verified` | `true` after description, attachment and byte readback pass. |
 
 Signed URLs and credentials are omitted. Repeat the same inputs to resume a
-partial write. Changing the caption or bytes creates another attachment.
+partial write. Changing the caption or bytes creates another attachment. With
+`--screen ID`, the inline `screen:ID` image is replaced in place and duplicate
+entries for that ID are collapsed. Other IDs and text are preserved; prior file
+attachments remain as history. IDs contain 1–128 lowercase letters, digits and
+single hyphens. Use a distinct ID for each screen/state/viewport. The combined
+ID marker and normalized caption must fit within 500 characters. Without
+`--screen`, the existing append/reuse behavior is unchanged. Unkeyed images are
+not inferred to belong to a keyed screen.
 Failures can leave a partial remote write; description updates are not atomic
 with attachment creation. See [PNG uploads](skills.md#linear-skills-and-png-uploads)
 for credentials, file limits, retries and concurrent-edit limitations. Invalid

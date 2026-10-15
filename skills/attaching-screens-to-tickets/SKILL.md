@@ -9,54 +9,41 @@ metadata:
   kor.anti: designing new screens; general issue creation or status updates
   kor.requires: Bash
   kor.visibility: public
-  kor.budget: "1100"
+  kor.budget: "850"
 ---
 
 # Attaching screens to tickets
 
-Deliver visible, verified images for every affected screen on each UI ticket.
-A local path, attachment title or upload success alone is insufficient. Use the
-existing project scope and ticket mapping; this workflow does not authorize new
-tickets, changes to ownership or unrelated issue updates.
+Use `kor linear attach-image` with a stable `--screen` ID for every inventory
+row. The command replaces that row's inline image regardless of caption or PNG
+changes, verifies the saved bytes, and collapses duplicate images with that ID.
+Keep IDs stable across requirement changes; use distinct IDs for states and
+viewports, such as `saved-items-empty-phone` and `saved-items-empty-desktop`.
 
-1. Read `docs/mockups/INDEX.md`, current requirements and each target issue,
-   including its existing Screens section and attachments. Confirm the team,
-   project and issue identity before writing. Map each ticket's acceptance criteria
-   to exact inventory rows, including relevant states and required viewports.
-   Share a screen across tickets when they both change it. Record a reason for
-   tickets with no UI; exclude only those from the UI coverage denominator.
-2. Inspect every selected PNG. Resolve missing, stale or mismatched mockups through
-   the design workflow before marking the ticket ready. Keep a pending list of
-   `(issue, screen, state, viewport, file)` entries and reuse already verified,
-   unchanged images. Record each existing image URL and exact caption against its
-   screen/state/viewport. Preserve other description sections and attachments.
-3. Upload each pending image with `kor linear attach-image <issue> <file>` when
-   the installed CLI supports it. Consult that version's help for caption and
-   output options. When unavailable, use the connected Linear MCP or server-side
-   API procedure in [upload and read-back](references/upload.md). Keep credentials
-   on the host; never put keys or signed upload URLs in tickets or logs.
-4. Ensure the issue description has a Screens section containing inline images
-   with captions naming screen, route/view, state, viewport and requirement IDs.
-   A file attachment may accompany the image; a plain link does not replace it.
-   Re-read before editing so another contributor's changes are preserved.
-5. Fetch the issue again. For each expected row, confirm the caption and inline
-   image, then retrieve the stored image with authorized access and open it.
-   Compare it with the intended PNG. Reject duplicate or stale inline versions
-   of the same row, even when a fresh image is also present. Use MCP image
-   extraction when available.
-   Record the verified issue identifier against that row in `INDEX.md` only after
-   this succeeds. Leave inaccessible images pending and report the actual failure.
-6. Reconcile both directions: every UI ticket has all its expected rows, and every
-   inventory row has at least one owning ticket. Report UI tickets verified / UI
-   tickets in scope, expected images verified / expected images, uncovered rows
-   and pending uploads. Completion requires 100% in both ratios and no uncovered
-   applicable rows. Hold UI tickets out of Todo until their images are verified;
-   follow the workspace's actual workflow state names and authorization.
+1. Read `docs/mockups/INDEX.md`, current requirements and target issues. Confirm
+   issue identity and scope. Map each UI ticket's acceptance criteria to exact
+   inventory rows, including states and viewports. Record why any ticket is non-UI.
+   Use the same row ID when several tickets share a screen.
+2. Inspect the selected PNGs. Resolve missing or stale mockups before uploading.
+   Store each row's stable Image ID in the inventory; a route or caption edit does
+   not create a new ID. Preserve other ticket content and unrelated images.
+3. For each mapped row, run the host-side command from
+   [commands and verification](references/upload.md), supplying the PNG, caption
+   and the row's existing `--screen` ID. Upload each row separately. If the CLI
+   lacks `--screen`, update Kor before refreshing ticket images.
+4. Read the issue again and inspect the downloaded image. Confirm exactly one
+   inline `screen:<id>` image for each expected row and the correct route, state,
+   viewport and requirement IDs. Only then record the verified ticket in INDEX.
+   The command checks storage and bytes; visual correctness still needs inspection.
+5. Reconcile both directions: every UI ticket has all expected rows and every
+   applicable row has an owning ticket. Report tickets verified / UI tickets,
+   verified images / expected images, uncovered rows and pending uploads.
+   Completion requires 100% in both ratios and zero stale or duplicate keyed
+   images. Hold UI tickets out of Todo until verified, using the workspace's
+   actual workflow names and authorized transitions.
 
-When a design changes, find all linked tickets from the inventory. Upload the new
-PNG using the existing caption verbatim when the row identity is unchanged;
-formatting a caption differently can append a second image. Replace the affected
-inline entry explicitly if the tool only appends, then read it back before
-retiring an old attachment. Update requirement IDs in the inventory and caption
-without leaving the superseded inline image in Screens. Reuse a matching upload on retry; after an uncertain
-write, read the issue before repeating it. Report partial completion explicitly.
+On a requirement change, re-render affected rows and call attach-image with the
+same IDs on every linked ticket. Repeating a successful command is safe; after
+an uncertain write, rerun identical inputs. Report partial completion explicitly.
+This workflow uses existing tickets; creating issues or changing ownership needs
+its own task scope.

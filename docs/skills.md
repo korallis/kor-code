@@ -268,7 +268,7 @@ with Jev and use runtime credentials only. UI ticket readiness calls for actual,
 captioned images for every affected screen and state.
 
 ```sh
-kor linear attach-image APP-123 ./mockups/settings-error.png --alt "/settings — error — desktop" --json
+kor linear attach-image APP-123 ./mockups/settings-error.png --screen settings-error-desktop --alt "/settings — error — desktop" --json
 ```
 
 This explicit write command works without a Kor daemon or repository mapping.
@@ -281,7 +281,8 @@ Kor requests a signed upload, PUTs the PNG with all returned headers, creates a
 file attachment and embeds an image under `## Screens` in the issue description.
 It reads the issue back and downloads the private asset with authentication,
 checking its byte count and SHA-256 against the source. The JSON success object
-contains `schemaVersion`, `issue`, `attachmentId`, `bytes`, `sha256` and
+contains `schemaVersion`, `issue`, `attachmentId`, `bytes`, `sha256`, optional
+`screen`, and
 `verified: true`; signed URLs and credentials are omitted. Exit 0 means verified,
 1 means an operation failed, and 2 means invalid command arguments. Failures use
 the shared CLI error shape.
@@ -289,9 +290,16 @@ the shared CLI error shape.
 Caption Markdown punctuation is converted to spaces and whitespace is collapsed
 for readable plain text; verification compares the same normalized caption.
 
-The issue, image bytes and normalized caption determine a stable attachment ID. Rerun the
-same command to resume a partial operation or verify an existing image; changed
-bytes or normalized captions create another image. Failures can leave a remote upload or
+The issue, image bytes and normalized caption determine a stable attachment ID.
+Use `--screen ID` for mockup sets: each screen/state/viewport gets its own stable
+ID, such as `settings-error-desktop`. The ID is embedded in the caption as
+`screen:settings-error-desktop`. Changed bytes or captions replace that inline
+entry, collapsing duplicate keyed entries while preserving other screens and
+text. Rerun identical inputs to resume a partial operation. Prior file attachments
+remain as history. IDs are 1–128 lowercase letters, digits and single hyphens;
+the ID marker and caption together must fit within 500 characters. Without an
+ID, changed bytes or captions still append another image; unkeyed images are not
+matched to keyed entries by guessing. Failures can leave a remote upload or
 attachment. Inspect the ticket before retrying with different inputs. Avoid
 concurrent description editing: Linear description writes have no conditional
 update guard. Existing text is preserved from the latest read, but simultaneous
@@ -507,10 +515,10 @@ coverage against requirements and capture coverage against the full matrix.
 
 Then use `skills/attaching-screens-to-tickets/SKILL.md` to map those rows to UI
 tickets, upload images, preserve existing descriptions and read every image back
-from Linear. It uses `kor linear attach-image` when supported by the installed
-CLI, with a documented connected-tool/server-side API fallback otherwise. The
-fallback needs Linear write access; lint and local mockup design do not. Keep
-credentials on the host and out of tickets, sources and captures.
+from Linear. It uses `kor linear attach-image` with a stable `--screen` ID per
+inventory row. Update Kor if the installed CLI lacks that option. Uploads need
+Linear write access; lint and local mockup design do not. Keep credentials on the
+host and out of tickets, sources and captures.
 
 A typical request is: "Use designing-screen-mockups for the requirements in
 docs/requirements.md, then attaching-screens-to-tickets for the agreed UI issues.

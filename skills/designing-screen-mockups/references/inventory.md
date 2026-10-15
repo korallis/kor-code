@@ -20,12 +20,15 @@ of views is incomplete coverage.
 
 One row per applicable screen/state/viewport. Expand every state above for each
 required viewport; the two rows below illustrate the columns, not a complete set.
-Use explicit filenames without spaces. Record a ticket only after read-back.
+Give every capture row a stable Image ID, including its state and viewport.
+Keep the ID when its route, requirements or caption change; pass it to the ticket
+upload command as `--screen`. Use explicit filenames without spaces. Record a
+ticket only after read-back.
 
-| Screen | Route or view | Requirement IDs | State | Viewport | Width | Height | HTML | PNG | Verified tickets |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| saved-items | /saved | R-1 | empty | phone | 390 | 844 | saved-items-empty.html | saved-items-empty-phone.png | pending |
-| saved-items | /saved | R-1 | empty | desktop | 1280 | 900 | saved-items-empty.html | saved-items-empty-desktop.png | pending |
+| Image ID | Screen | Route or view | Requirement IDs | State | Viewport | Width | Height | HTML | PNG | Verified tickets |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| saved-items-empty-phone | saved-items | /saved | R-1 | empty | phone | 390 | 844 | saved-items-empty.html | saved-items-empty-phone.png | pending |
+| saved-items-empty-desktop | saved-items | /saved | R-1 | empty | desktop | 1280 | 900 | saved-items-empty.html | saved-items-empty-desktop.png | pending |
 
 Record transitions such as "empty: Add item opens the create-item dialog" below
 the tables. Record blockers and requirement assumptions separately from excluded

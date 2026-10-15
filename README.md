@@ -308,7 +308,7 @@ Secondary routes to the same daemon. Every command prints JSON for scripts with
 | Stop an execution | `kor cancel LEE-123` (this does not move the Linear issue) |
 | Preview Jev's plan | `kor plan LEE-123` |
 | Check your setup | `kor doctor` |
-| Attach and verify a ticket screenshot | `kor linear attach-image APP-123 ./screen.png --alt "/settings — error — desktop" [--json]` |
+| Attach and verify a ticket screenshot | `kor linear attach-image APP-123 ./screen.png --screen settings-error-desktop --alt "/settings — error — desktop" [--json]` |
 | Create or import a private skill pack | `kor skills init`, `kor skills import --from DIRECTORY [--dry-run] [--json]` |
 | Check public skills for private content | `kor skills guard [DIRECTORY] [--json]` |
 | Validate public skills | `kor skills lint` (`[DIRECTORY] [--json]`) |
@@ -372,8 +372,8 @@ the same as an object.
   `kor skills add` and `update` need no credentials or daemon. Uninstall keeps
   edited imports with a warning; `--purge` discards imported copies and restores
   originals.
-  `kor linear attach-image` uploads a PNG, embeds it in the ticket and verifies
-  the saved bytes using runtime Linear credentials. `kor skills init` creates a
+  `kor linear attach-image --screen ID` uploads a PNG, replaces that screen in
+  place and verifies the saved bytes using runtime Linear credentials. `kor skills init` creates a
   private pack; `import --from` copies local skills without changing the source
   (`--dry-run` previews). `kor skills guard` checks the public tier against private
   skill names and the local `deny.txt`. `local-only` entries expose only a name

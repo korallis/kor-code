@@ -23,7 +23,9 @@ instead of inventing screens to fill gaps.
    to requirement IDs. Account for every flow entry, transition and destination.
 2. Write `docs/mockups/INDEX.md` using the
    [inventory format](references/inventory.md). Expand each screen across its
-   applicable states and viewports. Review empty, loading, error, populated and
+   applicable states and viewports, giving each row a stable Image ID such as
+   `saved-items-empty-phone`. Keep IDs across route and requirement edits.
+   Review empty, loading, error, populated and
    permission-denied states explicitly; give a reason for each inapplicable state.
    Use phone width 390 and desktop width 1280 unless project constraints specify
    others. Record heights too, so captures can be reproduced.
