@@ -11,13 +11,14 @@ const count = z.number().int().nonnegative();
 const measurement = z.number().nonnegative().nullable();
 const route = z.object({ provider: z.string(), model: z.string(), accountPolicy: z.enum(["fill-first", "manual", "least-used"]), sessionAffinity: z.boolean(), reasoningLevel: z.enum(["low", "medium", "high"]).optional(), label: z.enum(["jev", "fallback", "escalated"]).optional(), decisionId: z.string().optional() });
 export const runSchema = z.object({
-  executionId: z.string(), pairId: z.string(), issueId: z.string(), arm: z.enum(["jev", "baseline", "fallback"]),
+  purpose: z.enum(["route", "skills"]).optional(), executionId: z.string(), pairId: z.string(), issueId: z.string(), arm: z.enum(["jev", "baseline", "fallback"]),
   baseRevision: z.string(), route, sampled: z.boolean(), startedAt: z.string().datetime(),
   status: z.enum(["running", "verified", "failed", "interrupted", "escalated"]), finishedAt: z.string().datetime().optional(),
 });
 export type CalibrationRun = z.infer<typeof runSchema>;
 export const metricSchema = z.object({
   executionId: z.string(), attempt: count.positive(), attemptId: z.string().uuid().optional(), recordedAt: z.string().datetime(),
+  skillDecisionId: z.string().optional(), tools: z.array(z.string()).nullable().default(null),
   decisionId: z.string().optional(), model: z.string(), costUsd: measurement,
   inputTokens: measurement, outputTokens: measurement, cacheReadTokens: measurement, cacheCreationTokens: measurement,
   startContextTokens: measurement.default(null), contextTokenSum: measurement.default(null),

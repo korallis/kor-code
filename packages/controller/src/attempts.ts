@@ -10,6 +10,8 @@ import { planSessionTools } from "./tool-plan.js";
 
 /** Both arms use the same checks, acceptance judge, prompt and repair budget. */
 export async function runVerifiedSessions(input: {
+  skillsDisabled?: boolean;
+  pairedTools?: readonly (readonly string[] | null)[];
   execution: Execution;
   repository: Repository;
   initialPrompt: string;
@@ -42,7 +44,8 @@ export async function runVerifiedSessions(input: {
       const prompt = previous ? repairPrompt(input.initialPrompt, previous) : input.initialPrompt;
       const permissions = await race(sessionPermissions({ worktree: execution.worktree, allowedTools: repository.allowedTools ?? DEFAULT_ALLOWED_TOOLS,
         checks: repository.checks ?? [], ...(repository.tools ? { tools: repository.tools } : {}) }));
-      const toolPlan = await race(planSessionTools({ executionId: execution.id, task: prompt, permissions,
+      const pairedTools = input.pairedTools?.[repair] ?? input.pairedTools?.at(-1);
+      const toolPlan = pairedTools ? { tools: pairedTools } : await race(planSessionTools({ executionId: execution.id, task: prompt, permissions,
         ...(repository.tools ? { tools: repository.tools } : {}), ...(input.jev ? { jev: input.jev } : {}) }));
       session = await race(input.launcher.launch({ attemptId, ...(previous ? { playbookFailure: {
         classes: [...(previous.checks.some(check => check.status !== "pass") ? ["check-failure"] : []),
@@ -51,6 +54,7 @@ export async function runVerifiedSessions(input: {
         blockers: previous.blockers,
       } } : {}), skillStage: previous ? "repair" : "execute", execution, repositoryPath: repository.path, worktreePath: execution.worktree,
         prompt, tools: toolPlan.tools,
+        ...(input.skillsDisabled ? { skillsDisabled: true } : {}),
         ...(execution.route ? { route: execution.route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}), ...(repository.checks ? { checks: repository.checks } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}), ...(input.signal ? { signal: input.signal } : {}) }));
     } catch (error) {
       // Preserve the attempt and elapsed time even when the provider never emits a result.

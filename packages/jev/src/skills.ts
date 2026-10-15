@@ -8,9 +8,7 @@ import type { AppliedDecision, DecisionAuditLog, DecisionRequest } from "./index
 const NONE = "none-needed";
 const MAX_CANDIDATES = 100;
 const SKILL_TOOL_TOKENS = 636;
-const PIN_PROBABILITY = 0.8;
-const LIST_PROBABILITY = 0.25;
-const ARM_PROBABILITY = 0.15;
+export const DEFAULT_SKILL_THRESHOLDS = { pinned: 0.8, listed: 0.25, armed: 0.15 };
 const MAX_PINNED = 2;
 const MAX_LISTED = 4;
 const MAX_ARMED = 2;
@@ -18,9 +16,19 @@ const MAX_PINNED_TOKENS = 3_000;
 const MAX_BODY_TOKENS = 2_000;
 const MAX_ARMED_BODY_TOKENS = 1_500;
 const DEFAULT_BUDGET = 4_000;
+export const MIN_SKILL_SAMPLES = 20;
+const MAX_HISTORY = 8;
+export const skillLearningSchema = z.object({
+  samples: z.number().int().nonnegative(), offered: z.number().int().nonnegative(),
+  loaded: z.number().int().nonnegative(), used: z.number().int().nonnegative(),
+  passRate: z.number().min(0).max(1).nullable(), lift: z.number().min(-1).max(1).nullable(),
+  demoted: z.boolean(),
+  thresholds: z.object({ pinned: z.number().min(0).max(1), listed: z.number().min(0).max(1), armed: z.number().min(0).max(1) }),
+});
+export type SkillLearning = z.infer<typeof skillLearningSchema>;
 
 export const skillCandidateSchema = z.object({
-  name: z.string(), kind: z.string(), stages: z.array(z.string()), summary: z.string(),
+  hash: z.string().optional(), name: z.string(), kind: z.string(), stages: z.array(z.string()), summary: z.string(),
   triggers: z.array(z.string()), anti: z.array(z.string()), requires: z.array(z.string()),
   visibility: z.enum(["public", "local-only"]), jevVisible: z.enum(["full", "names-only"]),
   stackTags: z.array(z.string()).optional(),
@@ -40,12 +48,13 @@ export interface SkillsInput {
   budget?: number;
   listingBudget?: number;
   bodyBudget?: number;
+  learning?: Readonly<Record<string, SkillLearning>>;
 }
 const tokens = z.number().int().nonnegative();
 export const skillPlanSchema = z.object({
   catalogueHash: z.string(), source: z.enum(["jev", "fallback"]), budget: tokens,
   tokens: z.object({ pinned: tokens, listed: tokens, tool: tokens, total: tokens }),
-  skills: z.array(z.object({ name: z.string(), tier: z.enum(["pinned", "listed", "armed", "hidden"]), probability: z.number().min(0).max(1), tokens, reason: z.string() })),
+  skills: z.array(z.object({ hash: z.string().optional(), name: z.string(), tier: z.enum(["pinned", "listed", "armed", "hidden"]), probability: z.number().min(0).max(1), tokens, reason: z.string() })),
   selection: z.object({
     calls: tokens, durationMs: z.number().nonnegative(), callDurationMs: z.array(z.number().nonnegative()),
     inputTokens: tokens, outputTokens: tokens, usageReported: z.boolean(),
@@ -63,6 +72,7 @@ function ordered(names: string[], seed: string): string[] {
 }
 function filteredReason(skill: SkillCandidate, input: SkillsInput): string | undefined {
   if (input.never?.includes(skill.name)) return "Denied by repository policy.";
+  if (input.learning?.[skill.name]?.demoted && !input.always?.includes(skill.name) && !input.pins?.includes(skill.name)) return "Hidden by outcome learning: never loaded in the recent offer window.";
   if (skill.kind === "playbook") return "Playbooks have a separate decision.";
   if (skill.stages.length && !skill.stages.includes(input.stage)) return "Not available at this stage.";
   const tools = new Set(input.allowedTools.map(tool => tool.split("(")[0]));
@@ -79,12 +89,13 @@ function makePlan(input: SkillsInput, probabilities: Record<string, number>, sou
   const skills = [...input.catalogue.skills].sort((a, b) => Number(Boolean(forced(b))) - Number(Boolean(forced(a))) || (probabilities[b.name] ?? 0) - (probabilities[a.name] ?? 0) || a.name.localeCompare(b.name));
   for (const skill of skills) {
     const probability = probabilities[skill.name] ?? 0;
+    const thresholds = input.learning?.[skill.name]?.thresholds ?? DEFAULT_SKILL_THRESHOLDS;
     let reason = filteredReason(skill, input);
     let tier: SkillPlan["skills"][number]["tier"] = "hidden";
     if (!reason && source === "fallback" && !input.always?.includes(skill.name)) reason = "Fallback loads repository always skills only.";
     if (!reason && !forced(skill) && (probabilities[NONE] ?? 0) >= 0.5) reason = "Jev judged that no skill is needed.";
     if (!reason) {
-      if ((forced(skill) || probability >= PIN_PROBABILITY) && skill.cost.bodyTokens <= bodyLimit) {
+      if ((forced(skill) || probability >= thresholds.pinned) && skill.cost.bodyTokens <= bodyLimit) {
         if (pinned < MAX_PINNED && plan.tokens.pinned + skill.cost.bodyTokens <= MAX_PINNED_TOKENS && plan.tokens.total + skill.cost.bodyTokens <= budget) {
           tier = "pinned";
           pinned++;
@@ -92,7 +103,7 @@ function makePlan(input: SkillsInput, probabilities: Record<string, number>, sou
           plan.tokens.total += skill.cost.bodyTokens;
         } else reason = "Pinned count or token budget exceeded.";
       } else if (forced(skill)) reason = "Repository pin exceeds the per-body budget.";
-      else if (probability >= LIST_PROBABILITY && skill.cost.listingTokens > 0) {
+      else if (probability >= thresholds.listed && skill.cost.listingTokens > 0) {
         const tool = listed ? 0 : SKILL_TOOL_TOKENS;
         if (listed < MAX_LISTED && plan.tokens.listed + skill.cost.listingTokens <= (input.listingBudget ?? budget) && plan.tokens.total + skill.cost.listingTokens + tool <= budget) {
           tier = "listed";
@@ -101,12 +112,12 @@ function makePlan(input: SkillsInput, probabilities: Record<string, number>, sou
           plan.tokens.tool += tool;
           plan.tokens.total += skill.cost.listingTokens + tool;
         } else reason = "Listing count or token budget exceeded.";
-      } else if (probability >= ARM_PROBABILITY && skill.triggers.length && skill.cost.bodyTokens <= MAX_ARMED_BODY_TOKENS) {
+      } else if (probability >= thresholds.armed && skill.triggers.length && skill.cost.bodyTokens <= MAX_ARMED_BODY_TOKENS) {
         if (armed < MAX_ARMED) { tier = "armed"; armed++; }
         else reason = "Armed count exceeded.";
       } else reason = "Below tier thresholds or unsuitable body/listing cost.";
     }
-    plan.skills.push({ name: skill.name, tier, probability, tokens: tier === "pinned" || tier === "armed" ? skill.cost.bodyTokens : tier === "listed" ? skill.cost.listingTokens : 0, reason: reason ?? (forced(skill) ? "Repository configured guidance." : `Averaged probability ${probability.toFixed(4)} meets ${tier} rules.`) });
+    plan.skills.push({ ...(skill.hash ? { hash: skill.hash } : {}), name: skill.name, tier, probability, tokens: tier === "pinned" || tier === "armed" ? skill.cost.bodyTokens : tier === "listed" ? skill.cost.listingTokens : 0, reason: reason ?? (forced(skill) ? "Repository configured guidance." : `Averaged probability ${probability.toFixed(4)} meets ${tier} rules.`) });
   }
   plan.skills.sort((a, b) => a.name.localeCompare(b.name));
   return plan;
@@ -114,6 +125,8 @@ function makePlan(input: SkillsInput, probabilities: Record<string, number>, sou
 
 export async function decideSkills(input: SkillsInput, client: Pick<JevClient, "evaluate">, audit: DecisionAuditLog): Promise<AppliedDecision & { plan: SkillPlan }> {
   if (!Number.isSafeInteger(input.budget ?? DEFAULT_BUDGET) || (input.budget ?? DEFAULT_BUDGET) < 0) throw new Error("Invalid skill budget");
+  const learning = Object.fromEntries(Object.entries(input.learning ?? {}).filter(([, value]) => value.samples >= MIN_SKILL_SAMPLES));
+  input = { ...input, learning };
   const names = new Set(input.catalogue.skills.map(skill => skill.name));
   if (names.size !== input.catalogue.skills.length || names.has(NONE)) throw new Error("Duplicate or reserved skill name");
   for (const name of [...input.always ?? [], ...input.pins ?? [], ...input.never ?? []]) if (!names.has(name)) throw new Error(`Unknown repository skill: ${name}`);
@@ -123,18 +136,19 @@ export async function decideSkills(input: SkillsInput, client: Pick<JevClient, "
     return Number(Boolean(pinned(b))) - Number(Boolean(pinned(a))) || relevance(b) - relevance(a) || a.name.localeCompare(b.name);
   }).slice(0, MAX_CANDIDATES);
   // Paths and private descriptions never cross the decision boundary.
-  const state = { task: input.task, stage: input.stage, catalogueHash: input.catalogue.hash, stackTags: [...input.stackTags ?? []].sort() };
+  const history = Object.fromEntries(candidates.filter(skill => learning[skill.name]).slice(0, MAX_HISTORY).map(skill => [skill.name, learning[skill.name]!]));
+  const state = { ...(Object.keys(history).length ? { history } : {}), task: input.task, stage: input.stage, catalogueHash: input.catalogue.hash, stackTags: [...input.stackTags ?? []].sort() };
   const criteria: Record<string, JevJsonValue> = {};
   for (const skill of candidates) criteria[skill.name] = skill.jevVisible === "names-only" || skill.visibility === "local-only"
     ? { what: "Private guidance (local-only)." }
     : { what: skill.summary, not_for: skill.anti, examples: skill.triggers };
   criteria[NONE] = { what: "No specialised guidance is needed for this task.", not_for: [], examples: [] };
-  const revision = digest({ state, criteria, policy: { allowedTools: [...input.allowedTools].sort(), always: input.always ?? [], pins: input.pins ?? [], never: input.never ?? [], budget: input.budget ?? DEFAULT_BUDGET, listingBudget: input.listingBudget, bodyBudget: input.bodyBudget }, costs: input.catalogue.skills.map(skill => [skill.name, skill.cost, filteredReason(skill, input)]) }).slice(0, 16);
+  const revision = digest({ state, criteria, policy: { allowedTools: [...input.allowedTools].sort(), always: input.always ?? [], pins: input.pins ?? [], never: input.never ?? [], budget: input.budget ?? DEFAULT_BUDGET, listingBudget: input.listingBudget, bodyBudget: input.bodyBudget }, costs: input.catalogue.skills.map(skill => [skill.name, skill.hash, skill.cost, filteredReason(skill, input)]), ...(Object.keys(learning).length ? { learning } : {}) }).slice(0, 16);
   const decisionId = `skills-${input.executionId}-${revision}`;
   const previous = audit.get(decisionId);
   if (previous?.response.plan) return { ...audit.replay(decisionId), plan: previous.response.plan };
   const candidateNames = [...candidates.map(skill => skill.name), NONE];
-  const request: DecisionRequest = { decisionId, executionId: input.executionId, kind: "skills", question: "Which skill best supports the task? Use what, not_for and examples to distinguish neighbouring skills. Select none-needed for routine work that needs no specialised guidance. Judge task fit only.", state, inputs: [{ name: "catalogue-hash", value: input.catalogue.hash }], candidates: candidateNames, criteria, threshold: 0 };
+  const request: DecisionRequest = { decisionId, executionId: input.executionId, kind: "skills", question: "Which skill best supports the task? Use what, not_for and examples to distinguish neighbouring skills. Select none-needed for routine work that needs no specialised guidance. Judge task fit only.", state, inputs: [{ name: "catalogue-hash", value: input.catalogue.hash }, ...(Object.keys(learning).length ? [{ name: "skill-learning", value: learning }] : [])], candidates: candidateNames, criteria, threshold: 0 };
   const selection: SkillPlan["selection"] = { calls: 0, durationMs: 0, callDurationMs: [], inputTokens: 0, outputTokens: 0, usageReported: true, samples: [] };
   let source: SkillPlan["source"] = "jev";
   let outage: string | undefined;

@@ -12,7 +12,7 @@ export interface SessionTelemetryLike {
   usage?: Readonly<Record<string, number>>;
   apiErrorStatus?: number;
 }
-export interface SessionResultLike { telemetry?: SessionTelemetryLike; }
+export interface SessionResultLike { telemetry?: SessionTelemetryLike; skillDecisionId?: string; tools?: readonly string[] }
 import { metricSchema, type CalibrationRun, type CalibrationStore, type RunMetric, type RunOutcome } from "./store.js";
 
 export interface SessionMetricInput {
@@ -54,6 +54,8 @@ export function metricFromSession(input: SessionMetricInput): RunMetric {
   const cacheReadTokens = usageValue(telemetry?.usage, "cache_read_input_tokens", "cacheReadInputTokens");
   const cacheCreationTokens = usageValue(telemetry?.usage, "cache_creation_input_tokens", "cacheCreationInputTokens");
   return metricSchema.parse({
+    ...(input.session.skillDecisionId ? { skillDecisionId: input.session.skillDecisionId } : {}),
+    tools: input.session.tools ?? null,
     executionId: input.executionId,
     attempt: input.attempt,
     ...(input.attemptId ? { attemptId: input.attemptId } : {}),
@@ -153,7 +155,7 @@ export function buildReport(store: CalibrationStore, since?: string): Calibratio
   const date = since === undefined ? null : new Date(since).toISOString();
   const metrics = store.metrics();
   const outcomes = store.outcomes();
-  const runs = store.runs().filter(run => date === null || run.startedAt >= date);
+  const runs = store.runs().filter(run => run.purpose !== "skills" && (date === null || run.startedAt >= date));
   const observed = runs.map(run => observe(run, metrics.filter(metric => metric.executionId === run.executionId)));
   const arms = (["jev", "baseline", "fallback"] as const).map(arm => {
     const selected = observed.filter(row => row.run.arm === arm);
