@@ -27,6 +27,9 @@ const tasks = [
   ["Set up a new project from the product brief, including documentation, screen mockups and delivery tickets.", "setting-up-a-project"],
   ["Reply with exactly ACK. No procedure or engineering work is needed.", "none"],
   ["Implement CSV export. Repair attempt 2: the existing export check now fails with a TypeError on empty rows. Find and fix the regression, then rerun the check.", "fix-bug"],
+  ["Extraction accuracy is 72% on representative documents and must reach 95%. Prompt changes, a parser and a hybrid approach are plausible, but their failure modes are unknown. Resolve the uncertainty and ship an improvement that meets the target.", "hard-problem-resolution"],
+  ["Search takes 4 seconds at p95 against a 500ms target. We are blocked choosing caching, indexing or batching; their tradeoffs on the real workload are unknown. Resolve the approach choice and ship a measured improvement.", "hard-problem-resolution"],
+  ["Choose between competing models for a classification task with an accuracy and latency cap. Their errors on our data are unknown and published benchmarks disagree. Resolve the tradeoffs and implement a verified solution.", "hard-problem-resolution"],
 ];
 const audit = new MemoryDecisionAuditLog();
 const jev = new JevDecisionCore(new JevClient(), audit);
@@ -48,7 +51,7 @@ for (const [index, [task, expected]] of tasks.entries()) {
   results.push({ expected, actual: decision.choice, decisionId: decision.decisionId, ...decision.playbookPlan });
   await writeFile(join(output, "audit.json"), audit.serialize(), { mode: 0o600 });
   await writeFile(join(output, "results.json"), JSON.stringify(results, null, 2), { mode: 0o600 });
-  console.log(`${index + 1}/12 expected=${expected} actual=${decision.choice} tier=${decision.playbookPlan.tier} tokens=${decision.playbookPlan.tokens}`);
+  console.log(`${index + 1}/${tasks.length} expected=${expected} actual=${decision.choice} tier=${decision.playbookPlan.tier} tokens=${decision.playbookPlan.tokens}`);
 }
 const imported = new MemoryDecisionAuditLog();
 imported.importSerialized(audit.serialize());
@@ -69,5 +72,5 @@ const plan = skills => ({ sessionsDir: join(output, "policies"), executionId: "p
 await assert.rejects(buildSkillsPack(plan([{ name: "fix-bug", tier: "pinned" }, { name: "build-feature", tier: "pinned" }])), /at most one/);
 await assert.rejects(buildSkillsPack(plan([{ name: "fix-bug", tier: "listed" }])), /at most one/);
 const correct = results.filter(item => item.expected === item.actual).length;
-console.log(`playbooks: live=${correct}/12; maxTokens=${Math.max(...results.map(item => item.tokens))}/1500; replay=identical; repair=fresh; policy=pass`);
-assert.equal(correct, 12);
+console.log(`playbooks: live=${correct}/${tasks.length}; maxTokens=${Math.max(...results.map(item => item.tokens))}/1500; replay=identical; repair=fresh; policy=pass`);
+assert.equal(correct, tasks.length);

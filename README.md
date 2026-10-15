@@ -231,7 +231,11 @@ Kor ships skills (coding and PR standards, Linear and ticket guidance, project
 setup, principles) and playbooks (procedures such as `fix-bug` or
 `change-docs`). Before each session Jev picks the skills and at most one
 playbook within a token budget; the run's **Plan** tab shows what each attempt
-received. Keep your own guidance in a private pack outside the repository:
+received. The bundled [`hard-problem-resolution`](skills/hard-problem-resolution/SKILL.md)
+playbook handles accuracy, speed and competing technical approaches with measured
+research, an independent challenge and a recorded Jev decision before implementation
+and re-measurement. See [how it works](docs/pstack-playbooks.md#resolve-hard-technical-problems).
+Keep your own guidance in a private pack outside the repository:
 
 ```sh
 kor skills init                                         # creates ~/.config/kor/skills
