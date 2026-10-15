@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import { redact } from "@kor-code/jev";
 import { loadGatewayEnvironment } from "@kor-code/config";
 import { GatewayAdapter, MODEL_CAPABILITIES, loadAvailableVerifiedModels, isTextModel, modelFamily, modelProvider, readModelRegistry, writeModelRegistry, type ModelProbeResult } from "@kor-code/gateway-adapter";
 
@@ -118,12 +119,12 @@ export async function runModels(args: readonly string[]): Promise<number> {
 
   if (command === "list") {
     const registry = await readModelRegistry();
-    const verified = await loadAvailableVerifiedModels(registry, () => new GatewayAdapter().listModels(), () => console.error("Warning: gateway catalogue unavailable; using saved verified model registry."));
-    console.log("MODEL\tFAMILY\tPROVIDER\tCAPABILITIES\tCOST_USD\tDURATION_MS");
-    for (const item of verified) console.log(`${item.model}\t${modelFamily(item.model)}\t${item.provider}\t${MODEL_CAPABILITIES.filter(capability => item.capabilities[capability]).join(",")}\t${item.costUsd ?? "-"}\t${item.durationMs ?? "-"}`);
+    const verified = args.includes("--all") ? registry.models.map(item => ({ ...item, provider: modelProvider(item.model, item.provider) })) : await loadAvailableVerifiedModels(registry, () => new GatewayAdapter().listModels(), () => console.error("Warning: gateway catalogue unavailable; using saved verified model registry."));
+    console.log("MODEL\tFAMILY\tPROVIDER\tCAPABILITIES\tCOST_USD\tDURATION_MS\tVERIFIED\tERROR");
+    for (const item of verified) console.log(`${item.model}\t${modelFamily(item.model)}\t${item.provider}\t${MODEL_CAPABILITIES.filter(capability => item.capabilities[capability]).join(",")}\t${item.costUsd ?? "-"}\t${item.durationMs ?? "-"}\t${item.verified}\t${String(redact(item.error ?? "-")).replace(/[\r\n\t]+/g, " ")}`);
     return 0;
   }
-  if (command !== "probe") throw new Error("Usage: kor models list | kor models probe [--family family] [--model model]");
+  if (command !== "probe") throw new Error("Usage: kor models list [--all] | kor models probe [--family family] [--model model]");
   const gateway = new GatewayAdapter();
   const catalogue = await gateway.listModels();
   const ids = candidates(catalogue.data ?? []);

@@ -37,15 +37,21 @@ const riskLevels = ["low operational risk", "review required", "high risk or ext
 
 export function screenshotReadinessCheck(issue: Pick<PreflightIssue, "labels" | "hasScreenshot">): DecisionBundle["policyChecks"][number] {
   const requiresScreenshot = (issue.labels ?? []).some(label => label.trim().toLowerCase() === "ui");
-  return { name: "ui-screenshot", result: !requiresScreenshot || issue.hasScreenshot === true ? "pass" : "fail", reason: "UI-labelled tickets need a screenshot or mockup. Embed an image in the description or a comment, or attach an image file, then retry." };
+  if (!requiresScreenshot || issue.hasScreenshot === true) return { name: "ui-screenshot", result: "pass" };
+  return { name: "ui-screenshot", result: "fail", reason: "UI-labelled tickets need a screenshot or mockup. Embed an image in the description or a comment, or attach an image file, then retry." };
 }
 
 export function issueReadinessChecks(issue: PreflightIssue): DecisionBundle["policyChecks"] {
-  return [
+  const checks: DecisionBundle["policyChecks"] = [
     { name: "acceptance-criteria", result: issue.acceptanceCriteria.length > 0 ? "pass" : "fail", reason: "Add explicit acceptance criteria to the issue." },
     { name: "dependencies-complete", result: issue.dependencies.every(dependency => dependency.state === "completed") ? "pass" : "fail", reason: "Complete the issue's blocking dependencies before retrying." },
     screenshotReadinessCheck(issue),
   ];
+  return checks.map(check => {
+    if (check.result !== "pass") return check;
+    const { reason: _, ...passed } = check;
+    return passed;
+  });
 }
 
 function issueState(input: PreflightInput, readinessChecks: DecisionBundle["policyChecks"]): JsonValue {
@@ -64,7 +70,7 @@ function makeRequests(inputData: PreflightInput): DecisionRequest[] {
   const routeCandidates = models.length >= 2 ? models : [...models, "no-verified-route", "clarification"].slice(0, 2);
   const readinessChecks = [
     ...issueReadinessChecks(inputData.issue),
-    { name: "verified-route", result: models.length > 0 ? "pass" as const : "fail" as const },
+    { name: "verified-route", result: models.length > 0 ? "pass" as const : "fail" as const, ...(models.length ? {} : { reason: "No verified model is available; run kor models probe before retrying." }) },
   ];
   const routeCriteria: Record<string, JevJsonValue> = Object.fromEntries(inputData.verifiedModels.map(model => [model.model, {
     provider: model.provider,

@@ -31,10 +31,10 @@ export async function readModelRegistry(path = modelRegistryPath()): Promise<Mod
     if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { models?: unknown }).models)) return { version: 1, models: [] };
     return { version: 1, models: (parsed as { models: ModelProbeResult[] }).models.filter(item => typeof item?.model === "string" && typeof item.verified === "boolean").map(item => {
       // Older probes marked missing thinking output false; that evidence means unknown.
-      if (item.capabilities?.thinking !== false) return item;
+      const verified = item.verified && item.capabilities?.streaming === true && item.capabilities.tool_calls === true && item.capabilities.structured_output === true;
       const capabilities = { ...item.capabilities };
-      delete capabilities.thinking;
-      return { ...item, capabilities };
+      if (capabilities.thinking === false) delete capabilities.thinking;
+      return { ...item, capabilities, verified };
     }) };
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return { version: 1, models: [] };
