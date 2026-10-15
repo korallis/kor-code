@@ -329,17 +329,22 @@ export async function installKor(options: { scope: InstallScope; pilot?: string;
 }
 
 export async function uninstallKor(options: { purge: boolean }): Promise<{ output: string }> {
-  const skillsRestored = await uninstallSkills();
   const environment = process.env;
   const manifestPath = journalPath(environment);
   const manifest = await readManifest(manifestPath);
-  if (!manifest) return { output: skillsRestored ? "Imported skills uninstalled; original tier files restored." : "Kor is not installed (no install manifest)" };
-  if (manifest.phase !== "restored" || options.purge) await undo(manifest, environment, options.purge);
-  if (options.purge) {
-    await rm(manifestPath);
-    await rm(`${manifestPath}.tmp`, { force: true });
-    await rm(manifest.backupDir, { recursive: true });
-    await pruneDirectories(manifest);
+  let output = "Kor is not installed (no install manifest)";
+  if (manifest) {
+    if (manifest.phase !== "restored" || options.purge) await undo(manifest, environment, options.purge);
+    if (options.purge) {
+      await rm(manifestPath);
+      await rm(`${manifestPath}.tmp`, { force: true });
+      await rm(manifest.backupDir, { recursive: true });
+      await pruneDirectories(manifest);
+    }
+    output = `Kor uninstalled${options.purge ? " (purged new Kor data; restored pre-existing data)" : "; config and state retained"}\n${options.purge ? "Replayed" : "Backups:"} ${manifest.backupDir}`;
   }
-  return { output: `Kor uninstalled${options.purge ? " (purged new Kor data; restored pre-existing data)" : "; config and state retained"}\n${options.purge ? "Replayed" : "Backups:"} ${manifest.backupDir}` };
+  const skillsOutput = await uninstallSkills(options).catch(error =>
+    `WARNING: Imported skills recovery is incomplete: ${error instanceof Error ? error.message : "unable to restore skills"}. Kor's own uninstall completed; skills backups were retained.`,
+  );
+  return { output: [output, skillsOutput].filter(Boolean).join("\n") };
 }

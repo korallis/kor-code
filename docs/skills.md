@@ -472,13 +472,19 @@ plus each operation's preceding version in `history/<id>/` with a manifest. Thes
 backups may contain private guidance; keep them private. No credentials or daemon
 are required. Temporary fetch directories are removed after each command.
 
-`kor uninstall` reverses all imports, including public imports, restores original
-lock/attribution files, and removes the skills journal after success. It works even
-when only skills were installed, retains unrelated tier files, and refuses to
-discard later edits. Save edited files, restore the installed snapshots named in
-the error, and retry. An interrupted transaction is recovered before restoring
-the original imports. `kor uninstall --purge` uses the same skills restoration;
-normal Kor configuration retention follows the existing uninstall contract.
+`kor uninstall` removes unchanged imports, including public imports, and restores
+original lock/attribution files. It warns and keeps locally edited imported paths
+while completing Kor's own uninstall. Retained edited bundles become local files;
+the skills journal and original snapshots remain available for a later purge.
+Unrelated tier files are retained, and skills-only installations work the same way.
+
+`kor uninstall --purge` warns that local edits to imported copies are discarded,
+removes those copies and restores original tier files. Skills restoration follows
+Kor's own uninstall so a retained configuration snapshot cannot reintroduce imports
+after they are removed. Once all imports are restored, the skills journal is
+removed. An interrupted transaction is recovered first. A skills recovery error
+produces a warning and retains its backups without blocking Kor's own uninstall.
+Normal Kor configuration retention follows the existing uninstall contract.
 
 `--json` produces `schemaVersion`, `ok`, `applied`, `changes` and `lint`. A change
 contains `tier`, `name`, `before` (null for add), `after`, `changed`, `diffStat`,

@@ -222,27 +222,46 @@ async function applyChanges(changes: Change[], initialTiers: Map<SkillTier, stri
   }
 }
 
-async function restoreSkills(): Promise<boolean> {
+async function restoreSkills(options: { purge: boolean }): Promise<string | undefined> {
   const journal = await readJournal();
-  if (!journal) return false;
+  if (!journal) return undefined;
   if (journal.transaction) {
+    if (options.purge) journal.transaction.phase = "restoring";
     await checkRestore(journal.transaction, false);
     await restoreManifest(journal.transaction, false);
     delete journal.transaction;
     journal.installation.phase = "preparing";
     await saveJournal(journal);
   }
-  await checkRestore(journal.installation, false);
+  const kept: InstallManifest["entries"] = [];
+  if (!options.purge) {
+    for (const entry of journal.installation.entries) {
+      const current = await fingerprint(entry.path);
+      if (current !== entry.before && current !== entry.after) kept.push(entry);
+    }
+  }
   journal.installation.phase = "restoring";
+  const restoration = {
+    ...journal.installation,
+    entries: journal.installation.entries.filter(entry => !kept.includes(entry)),
+  };
+  await checkRestore(restoration, false);
   await saveJournal(journal);
-  await restoreManifest(journal.installation, false);
+  await restoreManifest(restoration, false);
+  if (kept.length) {
+    journal.installation.phase = "installed";
+    await saveJournal(journal);
+    return `WARNING: Kept locally edited imported paths: ${kept.map(entry => entry.path).join(", ")}. Run kor uninstall --purge to remove imported copies and restore originals.`;
+  }
   await rm(journalRoot(), { recursive: true });
-  return true;
+  return options.purge
+    ? "WARNING: Purged imported skills, including local edits; original tier files restored."
+    : "Imported skills uninstalled; original tier files restored.";
 }
 
-export async function uninstallSkills(): Promise<boolean> {
-  if (!await readJournal()) return false;
-  return withSkillsLock(restoreSkills);
+export async function uninstallSkills(options: { purge: boolean }): Promise<string | undefined> {
+  if (!await readJournal()) return undefined;
+  return withSkillsLock(() => restoreSkills(options));
 }
 
 export async function runSkillsInstall(args: readonly string[]): Promise<{ ok: boolean; output: string; report: unknown }> {

@@ -368,7 +368,9 @@ the same as an object.
   `kor skills index` writes a private catalogue in Kor state; `list`, `show` and
   `doctor` inspect sources without writing. Use repeated `--from DIRECTORY` for
   an explicit local scan and `--estimate` for reproducible costs without a gateway.
-  `kor skills add` and `update` need no credentials or daemon.
+  `kor skills add` and `update` need no credentials or daemon. Uninstall keeps
+  edited imports with a warning; `--purge` discards imported copies and restores
+  originals.
   `kor linear attach-image` uploads a PNG, embeds it in the ticket and verifies
   the saved bytes using runtime Linear credentials. `kor skills init` creates a
   private pack; `import --from` copies local skills without changing the source
