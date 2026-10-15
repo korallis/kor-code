@@ -85,7 +85,7 @@ try {
   if (!run(["lint", empty, "--json"], 1).diagnostics.some(item => item.rule === "empty-tier")) throw new Error("Empty tiers must fail.");
   await mkdir(join(empty, "missing-skill"));
   if (!run(["lint", empty, "--json"], 1).diagnostics.some(item => item.rule === "skill-file")) throw new Error("Missing SKILL.md must fail.");
-  for (const args of [["lint", "--unknown"], ["index"], ["lint", "one", "two"]]) {
+  for (const args of [["lint", "--unknown"], ["unknown"], ["lint", "one", "two"]]) {
     if (run([...args, "--json"], 2).error.code !== "invalid_arguments") throw new Error("Expected usage error.");
   }
   console.log(`PASS ${cases.length} planted cases, attributed quotation, symlink, empty tier, missing SKILL.md, 3 usage errors; default tier resolved outside the checkout`);

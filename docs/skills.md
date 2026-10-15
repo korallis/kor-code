@@ -143,3 +143,101 @@ Before adding a skill, review these judgment checks alongside lint:
 - Prepare at least three representative scenarios, compare outcomes with guidance
   hidden and offered, and record gaps. This lint proof checks authoring rules; it
   does not establish that either seed improves execution outcomes.
+
+## Catalogue
+
+Build and inspect the merged catalogue without starting the daemon:
+
+```sh
+kor skills index
+kor skills list --json
+kor skills show human-written-code
+kor skills doctor --estimate
+kor skills doctor --from ./existing-skills --from ./another-pack --json
+```
+
+`index` writes `XDG_STATE_HOME/kor/skills/catalogue.json` (default
+`~/.local/state/kor/skills/catalogue.json`) only when there are no errors. The
+write is atomic, with a `0700` directory and a `0600` file. A failed index keeps
+the previous catalogue. `list`, `show` and `doctor` rebuild a read-only view of the
+current sources, so they detect changes without replacing that file. `show NAME`
+prints one row's metadata, origins, costs and catalogue hash; an ambiguous name
+fails. These commands do not select skills or deliver them to sessions.
+
+By default the sources are Kor's bundled public `skills/`, the optional private
+`XDG_CONFIG_HOME/kor/skills/` directory, and configured packs. No harness skill
+folder is searched automatically. Repeat `--from DIRECTORY` to **replace** these
+sources with an explicit read-only scan. A source may be a skill directory, a
+`SKILL.md` file, or a parent containing skills. Discovery follows directory links,
+resolves physical paths once per source and stops at each skill bundle. It skips
+`.git` and `node_modules`. Symlinks inside a bundle fail indexing. Sources are
+never copied, edited or executed.
+
+Configure sources and soft warning budgets in Kor's `config.yaml`:
+
+```yaml
+skills:
+  privatePath: ~/private-guidance
+  packs:
+    - ~/skill-packs/frontend
+  jev: names-only
+  listingBudget: 8000
+  bodyBudget: 2000
+```
+
+Paths support `~` and resolve relative to `config.yaml`. `privatePath` replaces
+the default private directory; a missing explicit source is an error. `jev`
+defaults to `names-only` for private guidance; `full` permits its description and
+selection hints in the catalogue. `metadata.kor.visibility: local-only` always
+reduces the row to its name and a fixed summary label, with triggers and
+anti-triggers omitted. Explicit `--from` scans also use that restricted view.
+Origins, tool requirements and hashes remain local catalogue facts; consumers
+must respect `jevVisible` when constructing selection requests.
+
+Identical bundles merge into one row with every origin retained. The SHA-256
+content hash covers every bundled file, using sorted relative filenames and
+byte hashes, so changing a reference, script or asset changes the skill hash.
+Repeated paths to the same physical file are counted once. Different content
+with the same name is an error, including within one tier. The sole exception
+is a private skill declaring `metadata.kor.overrides: public`: it replaces a
+public skill of that name, with a warning. The public tier uses the full lint
+rules above. External sources accept existing non-Kor metadata and missing
+licenses for inventory purposes, while validating names, descriptions and Kor
+metadata. Inventory success is not permission to execute a bundle; delivery
+must still enforce authoring, routing and repository policy.
+
+Costs cover `name: description` (zero for manual-only skills), the body, and the
+sum of text files under `references/`. `referencesMaxTokens` represents loading
+all those reference texts, excluding binary assets and executable scripts.
+Without credentials, with `--estimate`, or after a counting failure, costs use
+`ceil(characters / 3.7)`. Otherwise the command calls the gateway's
+`/v1/messages/count_tokens`, using the existing configured route as tokenizer
+context. It never chooses or changes a route. Each request times out after two
+seconds; a failure switches remaining rows to estimates. Each row labels its
+method. Gateway counts include the endpoint's message framing, so they are a
+conservative cost, not an exact harness prompt delta. Private `names-only`,
+`local-only` and `--from` text always stays local and uses estimates. Full-visible
+text may be sent to the configured gateway for counting.
+
+`doctor` and the other catalogue commands report exact duplicate groups, name
+collisions, bodies over 500 lines, bodies above `kor.budget` (or `bodyBudget`),
+and a combined listing above `listingBudget`. Listing costs sum the deduplicated
+active rows. Warnings do not prevent writing; errors return `1` and prevent an
+index write. Usage errors return `2`. No usage-history diagnosis is inferred
+from the initial zero counters; outcome collection is separate work.
+
+With `--json`, `index`, `list` and `doctor` return `schemaVersion: 1`, `hash`,
+`ok`, `budgets`, `totals`, `skills`, `duplicates` and `diagnostics`. Skill rows
+include selection hints, `jevVisible`, costs and method, bundle hash, source
+attribution where supplied, origins and initial statistics. Diagnostics carry
+`severity`, `rule`, `path` and `message`. `show` returns `schemaVersion: 1`,
+`catalogueHash` and `skill`.
+
+The catalogue hash fingerprints that deterministic snapshot, including costs,
+visibility, budgets and diagnostics. There are no timestamps. Repeated inputs
+and token-count results produce byte-identical output regardless of source
+argument order. A gateway/estimate change can therefore change the hash. Skill
+selection decisions should include this hash in their input state so a changed
+catalogue receives a fresh immutable decision revision; indexing itself does
+not revise existing route decisions. To reproduce a scan across outages, use
+`--estimate`.
