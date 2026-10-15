@@ -335,8 +335,8 @@ prepareSkills: async input => buildSkillsPack({
 })
 ```
 
-`selectSkills` represents the separate selection integration; catalogue commands
-and `kor serve` do not yet activate a selection policy automatically.
+`kor serve` supplies Jev selection through this callback; catalogue commands
+remain read-only inventory operations. See the selection rules below.
 
 Listed entries become directory symlinks to their indexed bundles under
 `skills/`, with a `.claude-plugin/plugin.json` named `kor-skills`. The launcher
@@ -618,3 +618,90 @@ Completion means all required views have applicable captures, all applicable
 rows have valid PNGs and owning tickets, and every scoped UI ticket has all its
 expected images verified from Linear. Changed requirements invalidate affected
 captures and linked ticket images. Existing unrelated images remain intact.
+
+## Jev selection and context budgets
+
+`kor serve` now selects skills immediately before every session through the
+launcher's `prepareSkills` callback. Initial sessions use stage `execute`;
+repair sessions use `repair` and include the current failure evidence. This
+replaces the unused `generalist/testing` preflight placeholder. `kor plan`
+continues to evaluate readiness, complexity, risk, route and agent; selection
+waits for the resolved session tools and worktree. Routing remains an independent
+per-task Jev decision.
+
+The selector filters by stage, required tools, `kor.stack` tags (comma-separated
+`package.json` dependency names), and repository denies. Playbooks have a separate
+decision. It ranks trigger matches to cap eligible options at 100, plus
+`none-needed`. Jev sees descriptions, anti-triggers and examples; `local-only`
+entries expose only their name and a fixed private-guidance label. Source paths,
+bodies and private descriptions stay local.
+
+Two Choice calls run concurrently with different deterministic option orders.
+Kor averages their complete probability maps. If `P(none-needed) >= 0.5`, only
+explicit repository guidance remains eligible. The following rules then apply:
+
+| Tier | Rule | Hard limit |
+| --- | --- | --- |
+| Pinned | Probability >= 0.80; body <= 2,000 tokens | Two skills, 3,000 body tokens total |
+| Listed | Probability >= 0.25 when not pinned; nonempty listing | Four skills |
+| Armed | Probability >= 0.15 when not pinned/listed; triggers present | Two skills, each body <= 1,500 tokens |
+| Hidden | Filtered, below thresholds or over a budget | No context cost |
+
+An oversized high-probability body can be listed instead. Armed entries are
+recorded in `armed.json`; automatic injection is the separate mid-run hook work.
+No armed body enters session context yet. A tier that exceeds its count or token
+cap stays hidden, with the reason retained in the plan.
+
+Configure repository guidance under an existing mapping:
+
+```yaml
+repos:
+  app:
+    path: ~/projects/app
+    skills:
+      always: [human-written-code]
+      pins: []
+      never: []
+      budget: 4000
+```
+
+`never` wins over pins and Jev. `always` and `pins` request pinned guidance while
+still obeying stage, tool, body and total budgets; `always` also applies during
+an outage. Unknown names are configuration errors. During a TypeSafe outage or
+invalid answer, the plan is labelled `source: fallback`, all probabilities are
+zero and only permitted repository `always` skills can load. The independent
+route decision is unchanged.
+
+The repository budget defaults to 4,000 tokens across pinned bodies, visible
+listings and a one-time 636-token allowance for the `Skill` tool. Global
+`skills.listingBudget` and `skills.bodyBudget` can tighten their respective caps.
+Launch-time costs use the catalogue's reproducible character estimates; these
+are estimates, not billed token counts. Body loads after a listed skill is
+invoked are outside this starting-context budget.
+
+Each `skills-<execution>-<revision>` decision contains `probabilities`, a `plan`
+with every catalogue entry's tier, probability, token cost and reason, and policy
+checks for budget, tools, visibility and catalogue hash. `plan.selection` records
+both option orders and answers, per-call/total latency, Jev token usage and
+whether usage was fully reported. The catalogue hash, task, stage, stack, policy
+and costs participate in the revision. Identical inputs replay without a network
+call; changed catalogue, repair evidence or policy creates a new decision.
+`explain`, durable replay and observed outcomes retain the complete plan.
+
+Run the public selection proof with:
+
+```bash
+pnpm skills:fixture
+pnpm skills:fixture --live-jev
+```
+
+The first command replays actual recorded Jev responses for 23 labelled tasks
+against the eight-skill public catalogue snapshot in `scripts/fixtures/skills.json`.
+It checks >= 85% top-1, 100% top-3, distinct option orders, budget totals,
+serialized replay and `always`-only outage fallback. The live command requires
+runtime TypeSafe credentials and allows at most one changed choice. It reports
+actual live latency and usage separately from local replay time. This small,
+synthetic public corpus is distinct from the earlier 98-skill research experiment;
+it does not establish accuracy across arbitrary private or imported libraries.
+`--record` refreshes the checked-in responses against that fixed snapshot; review
+the resulting data diff before committing.

@@ -32,6 +32,7 @@ export interface CatalogueSkill {
   tier: SkillOrigin["tier"];
   kind: string;
   stages: string[];
+  stackTags?: string[];
   summary: string;
   triggers: string[];
   anti: string[];
@@ -219,7 +220,7 @@ export async function buildSkillsCatalogue(options: { config: KorConfig; paths: 
     if (bodyLines > MAX_BODY_LINES) diagnostics.push({ severity: "warning", rule: "body-lines", path: candidate.origin.path, message: `${header.name}: ${bodyLines} body lines exceed ${MAX_BODY_LINES}` });
     skills.push({
       name: header.name, tier: candidate.origin.tier, kind: metadata["kor.kind"] ?? "skill", stages: split(metadata["kor.stages"]),
-      summary,
+      stackTags: split(metadata["kor.stack"]), summary,
       triggers: privateText ? [] : split(metadata["kor.triggers"]), anti: privateText ? [] : split(metadata["kor.anti"]), requires: split(metadata["kor.requires"]),
       visibility: privateText ? "local-only" : "public",
       jevVisible: privateText ? "names-only" : "full",

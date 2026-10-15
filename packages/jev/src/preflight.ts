@@ -19,7 +19,6 @@ export interface PreflightInput {
   issue: PreflightIssue;
   verifiedModels: readonly CatalogueModel[];
   defaultRoute: Route;
-  skills?: readonly string[];
   agents?: readonly string[];
   threshold?: number;
 }
@@ -32,7 +31,6 @@ export interface PreflightPlan {
   outage?: string;
 }
 
-const defaultSkills = ["generalist", "testing"] as const;
 const defaultAgents = ["generalist", "specialist"] as const;
 const complexityLevels = ["small bounded change", "multi-file change", "cross-system change"] as const;
 const riskLevels = ["low operational risk", "review required", "high risk or external change"] as const;
@@ -82,7 +80,6 @@ function makeRequests(inputData: PreflightInput): DecisionRequest[] {
     { ...common, decisionId: decisionId(inputData, "complexity"), kind: "complexity", answerType: "score", question: "How complex is this issue for an isolated coding session?", candidates: [...complexityLevels], threshold: 0 },
     { ...common, decisionId: decisionId(inputData, "risk"), kind: "risk", answerType: "score", question: "How much delivery or operational risk does this issue carry?", candidates: [...riskLevels], threshold: 0 },
     { ...common, decisionId: decisionId(inputData, "route"), kind: "route", question: "Which verified model best fits this issue? Compare the supplied provider, capabilities, cost, and duration. Choose no-verified-route when no supplied model is suitable.", candidates: routeCandidates, policyChecks: [{ name: "verified-model", result: models.length > 0 ? "pass" : "fail" }], criteria: routeCriteria, nonApplyingCandidates: ["no-verified-route", "clarification"] },
-    { ...common, decisionId: decisionId(inputData, "skill"), kind: "skill", question: "Which available skill best supports this issue? Select testing when the primary requested deliverable is test development or test diagnosis. Select generalist for implementation, documentation, or configuration work with routine verification.", candidates: [...(inputData.skills ?? defaultSkills)], criteria: { generalist: "Implement or document a bounded change, including routine checks.", testing: "Specialized test development or diagnosis is the main deliverable." } },
     { ...common, decisionId: decisionId(inputData, "agent"), kind: "agent", question: "Which available agent profile best supports this issue? Select generalist for bounded implementation or documentation. Select specialist only when the issue explicitly requires deep domain expertise or a broad investigation.", candidates: [...(inputData.agents ?? defaultAgents)], criteria: { generalist: "A coding worker can complete the bounded change with ordinary repository context.", specialist: "Requires deep domain expertise, architecture research, or specialized investigation." } },
   ];
 }

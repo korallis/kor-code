@@ -44,7 +44,7 @@ export async function runVerifiedSessions(input: {
         checks: repository.checks ?? [], ...(repository.tools ? { tools: repository.tools } : {}) }));
       const toolPlan = await race(planSessionTools({ executionId: execution.id, task: prompt, permissions,
         ...(repository.tools ? { tools: repository.tools } : {}), ...(input.jev ? { jev: input.jev } : {}) }));
-      session = await race(input.launcher.launch({ execution, repositoryPath: repository.path, worktreePath: execution.worktree,
+      session = await race(input.launcher.launch({ skillStage: previous ? "repair" : "execute", execution, repositoryPath: repository.path, worktreePath: execution.worktree,
         prompt, tools: toolPlan.tools,
         ...(execution.route ? { route: execution.route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}), ...(repository.checks ? { checks: repository.checks } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}), ...(input.signal ? { signal: input.signal } : {}) }));
     } catch (error) {

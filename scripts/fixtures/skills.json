@@ -1,0 +1,1413 @@
+{
+  "catalogue": {
+    "hash": "sha256:4c92e22250c32ea29e94393e4a20eb2f15af32fe1cddca4793110ccb2ee3767c",
+    "skills": [
+      {
+        "name": "attaching-screens-to-tickets",
+        "kind": "skill",
+        "stages": [
+          "plan",
+          "project-setup",
+          "execute"
+        ],
+        "summary": "Attaches screen images to Linear issues. Use when preparing UI tickets or replacing stale mockups after a design change.",
+        "triggers": [
+          "screenshot on every ticket",
+          "attach mockups",
+          "refresh ticket images"
+        ],
+        "anti": [
+          "designing new screens",
+          "general issue creation or status updates"
+        ],
+        "requires": [
+          "Bash"
+        ],
+        "visibility": "public",
+        "jevVisible": "full",
+        "cost": {
+          "listingTokens": 41,
+          "bodyTokens": 637
+        }
+      },
+      {
+        "name": "designing-screen-mockups",
+        "kind": "skill",
+        "stages": [
+          "plan",
+          "project-setup",
+          "execute"
+        ],
+        "summary": "Designs complete screen mockups. Use when starting an app, mapping user flows or updating designs after requirements change.",
+        "triggers": [
+          "screen inventory",
+          "mock up every screen",
+          "changed UI requirement"
+        ],
+        "anti": [
+          "attaching existing images to issues",
+          "implementing production components"
+        ],
+        "requires": [
+          "Bash"
+        ],
+        "visibility": "public",
+        "jevVisible": "full",
+        "cost": {
+          "listingTokens": 41,
+          "bodyTokens": 743
+        }
+      },
+      {
+        "name": "human-written-code",
+        "kind": "standard",
+        "stages": [
+          "execute",
+          "repair",
+          "review"
+        ],
+        "summary": "Reviews code for needless machinery and filler. Use when writing, editing or reviewing code, or cleaning up a diff.",
+        "triggers": [
+          "write code",
+          "edit code",
+          "review diff",
+          "clean up comments"
+        ],
+        "anti": [
+          "writing prose or pull request descriptions"
+        ],
+        "requires": [],
+        "visibility": "public",
+        "jevVisible": "full",
+        "cost": {
+          "listingTokens": 37,
+          "bodyTokens": 400
+        }
+      },
+      {
+        "name": "pr-standard",
+        "kind": "standard",
+        "stages": [
+          "review",
+          "ship"
+        ],
+        "summary": "Writes clear pull request titles and bodies. Use when opening, editing or reviewing a pull request or changelog entry.",
+        "triggers": [
+          "open pull request",
+          "write PR description",
+          "review PR",
+          "changelog"
+        ],
+        "anti": [
+          "implementing or refactoring code"
+        ],
+        "requires": [],
+        "visibility": "public",
+        "jevVisible": "full",
+        "cost": {
+          "listingTokens": 36,
+          "bodyTokens": 514
+        }
+      },
+      {
+        "name": "setting-up-a-project",
+        "kind": "playbook",
+        "stages": [
+          "project-setup",
+          "plan"
+        ],
+        "summary": "Sets up a project from a product brief. Use when starting a repository or preparing a project for implementation.",
+        "triggers": [
+          "start project",
+          "bootstrap repository",
+          "prepare implementation"
+        ],
+        "anti": [
+          "updating individual documents in an established project",
+          "implementing a single feature"
+        ],
+        "requires": [
+          "Bash"
+        ],
+        "visibility": "public",
+        "jevVisible": "full",
+        "cost": {
+          "listingTokens": 37,
+          "bodyTokens": 1237
+        }
+      },
+      {
+        "name": "using-linear",
+        "kind": "skill",
+        "stages": [
+          "plan",
+          "execute",
+          "repair",
+          "review",
+          "ship",
+          "project-setup"
+        ],
+        "summary": "Reads and updates Linear data. Use when reading issues, changing project records, linking work or reporting ticket progress.",
+        "triggers": [
+          "read Linear issue",
+          "update Linear project",
+          "report ticket progress",
+          "upload issue image"
+        ],
+        "anti": [
+          "drafting or splitting ticket content",
+          "implementing code without tracker changes"
+        ],
+        "requires": [
+          "Bash"
+        ],
+        "visibility": "public",
+        "jevVisible": "full",
+        "cost": {
+          "listingTokens": 38,
+          "bodyTokens": 1031
+        }
+      },
+      {
+        "name": "writing-linear-tickets",
+        "kind": "skill",
+        "stages": [
+          "plan",
+          "review",
+          "project-setup"
+        ],
+        "summary": "Writes buildable Linear tickets. Use when creating, refining, splitting or reviewing issues and their acceptance criteria.",
+        "triggers": [
+          "create ticket",
+          "split issue",
+          "acceptance criteria",
+          "review ticket readiness"
+        ],
+        "anti": [
+          "routine tracker reads or status updates",
+          "implementing existing tickets"
+        ],
+        "requires": [
+          "Bash"
+        ],
+        "visibility": "public",
+        "jevVisible": "full",
+        "cost": {
+          "listingTokens": 40,
+          "bodyTokens": 1269
+        }
+      },
+      {
+        "name": "writing-project-docs",
+        "kind": "skill",
+        "stages": [
+          "project-setup",
+          "plan",
+          "execute",
+          "review"
+        ],
+        "summary": "Writes a consistent project documentation set. Use when authoring project docs or revising them after requirements change.",
+        "triggers": [
+          "write project docs",
+          "document architecture",
+          "update requirements",
+          "document changed behaviour"
+        ],
+        "anti": [
+          "orchestrating repository setup",
+          "rendering mockups",
+          "publishing tracker issues"
+        ],
+        "requires": [
+          "Bash"
+        ],
+        "visibility": "public",
+        "jevVisible": "full",
+        "cost": {
+          "listingTokens": 39,
+          "bodyTokens": 1296
+        }
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "skills-01",
+      "task": "Clean up duplicated helpers and narrating comments in a code diff. Match neighbouring naming and keep the implementation simple.",
+      "stage": "execute",
+      "expected": "human-written-code",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "human-written-code",
+              "confidence": 1,
+              "probabilities": {
+                "designing-screen-mockups": 0,
+                "attaching-screens-to-tickets": 0,
+                "writing-project-docs": 0,
+                "human-written-code": 1,
+                "none-needed": 0,
+                "using-linear": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 948,
+            "output_tokens": 84
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "human-written-code",
+              "confidence": 1,
+              "probabilities": {
+                "writing-project-docs": 0,
+                "designing-screen-mockups": 0,
+                "using-linear": 0,
+                "none-needed": 0,
+                "attaching-screens-to-tickets": 0,
+                "human-written-code": 1
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 948,
+            "output_tokens": 84
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-02",
+      "task": "Review this implementation for unnecessary abstractions, redundant guards and filler comments.",
+      "stage": "review",
+      "expected": "human-written-code",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "human-written-code",
+              "confidence": 1,
+              "probabilities": {
+                "writing-linear-tickets": 0,
+                "writing-project-docs": 0,
+                "human-written-code": 1,
+                "using-linear": 0,
+                "pr-standard": 0,
+                "none-needed": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 930,
+            "output_tokens": 74
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "human-written-code",
+              "confidence": 1,
+              "probabilities": {
+                "using-linear": 0,
+                "writing-project-docs": 0,
+                "human-written-code": 1,
+                "writing-linear-tickets": 0,
+                "pr-standard": 0,
+                "none-needed": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 930,
+            "output_tokens": 74
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-03",
+      "task": "Repair the implementation by reusing existing helpers and keeping the code change small and clear.",
+      "stage": "repair",
+      "expected": "human-written-code",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "human-written-code",
+              "confidence": 0.98,
+              "probabilities": {
+                "none-needed": 0.01,
+                "human-written-code": 0.99,
+                "using-linear": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 647,
+            "output_tokens": 46
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "human-written-code",
+              "confidence": 0.98,
+              "probabilities": {
+                "using-linear": 0,
+                "none-needed": 0.01,
+                "human-written-code": 0.99
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 647,
+            "output_tokens": 46
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-04",
+      "task": "Write a pull request title and body for this completed fix, following the repository PR template and reporting honest verification.",
+      "stage": "ship",
+      "expected": "pr-standard",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "pr-standard",
+              "confidence": 1,
+              "probabilities": {
+                "none-needed": 0,
+                "pr-standard": 1,
+                "using-linear": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 655,
+            "output_tokens": 44
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "pr-standard",
+              "confidence": 1,
+              "probabilities": {
+                "using-linear": 0,
+                "pr-standard": 1,
+                "none-needed": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 655,
+            "output_tokens": 44
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-05",
+      "task": "Review a PR description and changelog entry for clear outcome, required headings and measured testing evidence.",
+      "stage": "review",
+      "expected": "pr-standard",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "pr-standard",
+              "confidence": 1,
+              "probabilities": {
+                "writing-project-docs": 0,
+                "pr-standard": 1,
+                "using-linear": 0,
+                "none-needed": 0,
+                "writing-linear-tickets": 0,
+                "human-written-code": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 933,
+            "output_tokens": 73
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "pr-standard",
+              "confidence": 1,
+              "probabilities": {
+                "human-written-code": 0,
+                "writing-linear-tickets": 0,
+                "none-needed": 0,
+                "pr-standard": 1,
+                "using-linear": 0,
+                "writing-project-docs": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 933,
+            "output_tokens": 73
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-06",
+      "task": "Open a pull request for this feature. Explain the user-visible behaviour and include acceptance checklist and screenshots where needed.",
+      "stage": "ship",
+      "expected": "pr-standard",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "pr-standard",
+              "confidence": 1,
+              "probabilities": {
+                "pr-standard": 1,
+                "none-needed": 0,
+                "using-linear": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 655,
+            "output_tokens": 44
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "pr-standard",
+              "confidence": 1,
+              "probabilities": {
+                "pr-standard": 1,
+                "using-linear": 0,
+                "none-needed": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 655,
+            "output_tokens": 44
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-07",
+      "task": "Read a Linear issue and its project, labels and state before adding a progress comment through the Linear API.",
+      "stage": "execute",
+      "expected": "using-linear",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "using-linear",
+              "confidence": 1,
+              "probabilities": {
+                "none-needed": 0,
+                "writing-project-docs": 0,
+                "attaching-screens-to-tickets": 0,
+                "human-written-code": 0,
+                "designing-screen-mockups": 0,
+                "using-linear": 1
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 947,
+            "output_tokens": 83
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "using-linear",
+              "confidence": 1,
+              "probabilities": {
+                "attaching-screens-to-tickets": 0,
+                "writing-project-docs": 0,
+                "using-linear": 1,
+                "human-written-code": 0,
+                "none-needed": 0,
+                "designing-screen-mockups": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 947,
+            "output_tokens": 83
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-08",
+      "task": "Update the status of an existing Linear issue after reading its team workflow and current state.",
+      "stage": "execute",
+      "expected": "using-linear",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "using-linear",
+              "confidence": 1,
+              "probabilities": {
+                "human-written-code": 0,
+                "using-linear": 1,
+                "attaching-screens-to-tickets": 0,
+                "none-needed": 0,
+                "writing-project-docs": 0,
+                "designing-screen-mockups": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 943,
+            "output_tokens": 83
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "using-linear",
+              "confidence": 1,
+              "probabilities": {
+                "attaching-screens-to-tickets": 0,
+                "writing-project-docs": 0,
+                "using-linear": 1,
+                "human-written-code": 0,
+                "designing-screen-mockups": 0,
+                "none-needed": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 943,
+            "output_tokens": 83
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-09",
+      "task": "Find an existing Linear project and comment on its issue without creating duplicates or changing scope.",
+      "stage": "execute",
+      "expected": "using-linear",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "using-linear",
+              "confidence": 0.98,
+              "probabilities": {
+                "none-needed": 0.02,
+                "human-written-code": 0,
+                "using-linear": 0.98,
+                "attaching-screens-to-tickets": 0,
+                "designing-screen-mockups": 0,
+                "writing-project-docs": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 943,
+            "output_tokens": 83
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "using-linear",
+              "confidence": 0.99,
+              "probabilities": {
+                "designing-screen-mockups": 0,
+                "writing-project-docs": 0,
+                "human-written-code": 0,
+                "attaching-screens-to-tickets": 0,
+                "using-linear": 0.99,
+                "none-needed": 0.01
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 943,
+            "output_tokens": 83
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-10",
+      "task": "Write a Linear ticket for the settings screen with outcome, why, checkable acceptance criteria, screenshot, scope and dependencies.",
+      "stage": "plan",
+      "expected": "writing-linear-tickets",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "writing-linear-tickets",
+              "confidence": 1,
+              "probabilities": {
+                "writing-project-docs": 0,
+                "attaching-screens-to-tickets": 0,
+                "none-needed": 0,
+                "designing-screen-mockups": 0,
+                "writing-linear-tickets": 1,
+                "using-linear": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 961,
+            "output_tokens": 86
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "writing-linear-tickets",
+              "confidence": 1,
+              "probabilities": {
+                "writing-linear-tickets": 1,
+                "designing-screen-mockups": 0,
+                "attaching-screens-to-tickets": 0,
+                "none-needed": 0,
+                "writing-project-docs": 0,
+                "using-linear": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 961,
+            "output_tokens": 86
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-11",
+      "task": "Split this large Linear feature request into small agent-ready issues, each with acceptance criteria, dependencies and screens.",
+      "stage": "plan",
+      "expected": "writing-linear-tickets",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "writing-linear-tickets",
+              "confidence": 1,
+              "probabilities": {
+                "attaching-screens-to-tickets": 0,
+                "designing-screen-mockups": 0,
+                "none-needed": 0,
+                "using-linear": 0,
+                "writing-project-docs": 0,
+                "writing-linear-tickets": 1
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 957,
+            "output_tokens": 86
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "writing-linear-tickets",
+              "confidence": 1,
+              "probabilities": {
+                "using-linear": 0,
+                "writing-project-docs": 0,
+                "attaching-screens-to-tickets": 0,
+                "writing-linear-tickets": 1,
+                "designing-screen-mockups": 0,
+                "none-needed": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 957,
+            "output_tokens": 86
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-12",
+      "task": "Review Linear ticket readiness: check the outcome, acceptance criteria, scope, blocking dependencies and UI screenshots.",
+      "stage": "review",
+      "expected": "writing-linear-tickets",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "writing-linear-tickets",
+              "confidence": 0.96,
+              "probabilities": {
+                "writing-linear-tickets": 0.97,
+                "writing-project-docs": 0,
+                "human-written-code": 0,
+                "none-needed": 0,
+                "pr-standard": 0,
+                "using-linear": 0.03
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 934,
+            "output_tokens": 75
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "writing-linear-tickets",
+              "confidence": 0.99,
+              "probabilities": {
+                "writing-linear-tickets": 0.99,
+                "pr-standard": 0,
+                "none-needed": 0,
+                "human-written-code": 0,
+                "using-linear": 0.01,
+                "writing-project-docs": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 934,
+            "output_tokens": 75
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-13",
+      "task": "Create the project documentation set: requirements, architecture, ADRs, glossary and development guide from this approved brief.",
+      "stage": "project-setup",
+      "expected": "writing-project-docs",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "writing-project-docs",
+              "confidence": 1,
+              "probabilities": {
+                "writing-linear-tickets": 0,
+                "attaching-screens-to-tickets": 0,
+                "designing-screen-mockups": 0,
+                "using-linear": 0,
+                "none-needed": 0,
+                "writing-project-docs": 1
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 962,
+            "output_tokens": 86
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "writing-project-docs",
+              "confidence": 1,
+              "probabilities": {
+                "attaching-screens-to-tickets": 0,
+                "using-linear": 0,
+                "writing-project-docs": 1,
+                "none-needed": 0,
+                "designing-screen-mockups": 0,
+                "writing-linear-tickets": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 962,
+            "output_tokens": 86
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-14",
+      "task": "Update project requirements and architecture docs consistently, assigning requirement ids and recording an ADR for the decision.",
+      "stage": "execute",
+      "expected": "writing-project-docs",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "writing-project-docs",
+              "confidence": 1,
+              "probabilities": {
+                "human-written-code": 0,
+                "none-needed": 0,
+                "attaching-screens-to-tickets": 0,
+                "using-linear": 0,
+                "designing-screen-mockups": 0,
+                "writing-project-docs": 1
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 945,
+            "output_tokens": 85
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "writing-project-docs",
+              "confidence": 1,
+              "probabilities": {
+                "attaching-screens-to-tickets": 0,
+                "none-needed": 0,
+                "writing-project-docs": 1,
+                "human-written-code": 0,
+                "designing-screen-mockups": 0,
+                "using-linear": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 945,
+            "output_tokens": 85
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-15",
+      "task": "Write a development guide and user guide with executable setup commands, shared terminology and open questions.",
+      "stage": "project-setup",
+      "expected": "writing-project-docs",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "writing-project-docs",
+              "confidence": 1,
+              "probabilities": {
+                "attaching-screens-to-tickets": 0,
+                "writing-linear-tickets": 0,
+                "designing-screen-mockups": 0,
+                "writing-project-docs": 1,
+                "none-needed": 0,
+                "using-linear": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 956,
+            "output_tokens": 86
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "writing-project-docs",
+              "confidence": 1,
+              "probabilities": {
+                "writing-linear-tickets": 0,
+                "none-needed": 0,
+                "using-linear": 0,
+                "writing-project-docs": 1,
+                "designing-screen-mockups": 0,
+                "attaching-screens-to-tickets": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 956,
+            "output_tokens": 86
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-16",
+      "task": "Design mockups for every app screen and state: create the inventory, static HTML and PNG captures at phone and desktop widths.",
+      "stage": "project-setup",
+      "expected": "designing-screen-mockups",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "designing-screen-mockups",
+              "confidence": 1,
+              "probabilities": {
+                "writing-linear-tickets": 0,
+                "none-needed": 0,
+                "using-linear": 0,
+                "designing-screen-mockups": 1,
+                "writing-project-docs": 0,
+                "attaching-screens-to-tickets": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 963,
+            "output_tokens": 89
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "designing-screen-mockups",
+              "confidence": 1,
+              "probabilities": {
+                "none-needed": 0,
+                "designing-screen-mockups": 1,
+                "writing-linear-tickets": 0,
+                "using-linear": 0,
+                "attaching-screens-to-tickets": 0,
+                "writing-project-docs": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 963,
+            "output_tokens": 89
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-17",
+      "task": "A screen requirement changed. Regenerate its static HTML mockup and PNG, then check inventory screen coverage.",
+      "stage": "execute",
+      "expected": "designing-screen-mockups",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "designing-screen-mockups",
+              "confidence": 1,
+              "probabilities": {
+                "human-written-code": 0,
+                "none-needed": 0,
+                "using-linear": 0,
+                "writing-project-docs": 0,
+                "designing-screen-mockups": 1,
+                "attaching-screens-to-tickets": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 948,
+            "output_tokens": 88
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "designing-screen-mockups",
+              "confidence": 0.96,
+              "probabilities": {
+                "writing-project-docs": 0,
+                "using-linear": 0,
+                "none-needed": 0,
+                "human-written-code": 0,
+                "attaching-screens-to-tickets": 0.03,
+                "designing-screen-mockups": 0.97
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 948,
+            "output_tokens": 88
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-18",
+      "task": "Audit mockup coverage against the screen inventory, missing loading/error states and the phone/desktop viewport matrix.",
+      "stage": "execute",
+      "expected": "designing-screen-mockups",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "designing-screen-mockups",
+              "confidence": 0.87,
+              "probabilities": {
+                "using-linear": 0.01,
+                "designing-screen-mockups": 0.89,
+                "writing-project-docs": 0.01,
+                "none-needed": 0.03,
+                "attaching-screens-to-tickets": 0.06,
+                "human-written-code": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 948,
+            "output_tokens": 88
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "designing-screen-mockups",
+              "confidence": 0.87,
+              "probabilities": {
+                "none-needed": 0.04,
+                "attaching-screens-to-tickets": 0.04,
+                "writing-project-docs": 0.01,
+                "designing-screen-mockups": 0.89,
+                "using-linear": 0.02,
+                "human-written-code": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 948,
+            "output_tokens": 88
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-19",
+      "task": "Attach the existing screen mockup PNGs to their Linear tickets with captions and stable screen IDs, then verify every stored image.",
+      "stage": "execute",
+      "expected": "attaching-screens-to-tickets",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "attaching-screens-to-tickets",
+              "confidence": 0.96,
+              "probabilities": {
+                "designing-screen-mockups": 0,
+                "writing-project-docs": 0,
+                "human-written-code": 0,
+                "none-needed": 0,
+                "using-linear": 0.03,
+                "attaching-screens-to-tickets": 0.97
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 951,
+            "output_tokens": 90
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "attaching-screens-to-tickets",
+              "confidence": 0.98,
+              "probabilities": {
+                "none-needed": 0,
+                "designing-screen-mockups": 0,
+                "using-linear": 0.02,
+                "writing-project-docs": 0,
+                "human-written-code": 0,
+                "attaching-screens-to-tickets": 0.98
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 951,
+            "output_tokens": 90
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-20",
+      "task": "A mockup image changed. Replace the screenshot on the owning Linear ticket and verify the saved bytes without deleting unrelated images.",
+      "stage": "execute",
+      "expected": "attaching-screens-to-tickets",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "attaching-screens-to-tickets",
+              "confidence": 0.95,
+              "probabilities": {
+                "attaching-screens-to-tickets": 0.96,
+                "using-linear": 0.04,
+                "designing-screen-mockups": 0,
+                "writing-project-docs": 0,
+                "human-written-code": 0,
+                "none-needed": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 950,
+            "output_tokens": 90
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "attaching-screens-to-tickets",
+              "confidence": 0.87,
+              "probabilities": {
+                "designing-screen-mockups": 0,
+                "attaching-screens-to-tickets": 0.89,
+                "writing-project-docs": 0,
+                "human-written-code": 0,
+                "none-needed": 0,
+                "using-linear": 0.11
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 950,
+            "output_tokens": 90
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-21",
+      "task": "Return the result of 7 + 5. Do not perform any workflow or change files.",
+      "stage": "execute",
+      "expected": "none-needed",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "none-needed",
+              "confidence": 1,
+              "probabilities": {
+                "human-written-code": 0,
+                "writing-project-docs": 0,
+                "using-linear": 0,
+                "none-needed": 1,
+                "attaching-screens-to-tickets": 0,
+                "designing-screen-mockups": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 945,
+            "output_tokens": 83
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "none-needed",
+              "confidence": 1,
+              "probabilities": {
+                "using-linear": 0,
+                "designing-screen-mockups": 0,
+                "writing-project-docs": 0,
+                "human-written-code": 0,
+                "none-needed": 1,
+                "attaching-screens-to-tickets": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 945,
+            "output_tokens": 83
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-22",
+      "task": "Reply with the word ready. No files, project work or external services are involved.",
+      "stage": "execute",
+      "expected": "none-needed",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "none-needed",
+              "confidence": 1,
+              "probabilities": {
+                "designing-screen-mockups": 0,
+                "writing-project-docs": 0,
+                "using-linear": 0,
+                "human-written-code": 0,
+                "none-needed": 1,
+                "attaching-screens-to-tickets": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 943,
+            "output_tokens": 83
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "none-needed",
+              "confidence": 1,
+              "probabilities": {
+                "attaching-screens-to-tickets": 0,
+                "using-linear": 0,
+                "none-needed": 1,
+                "human-written-code": 0,
+                "designing-screen-mockups": 0,
+                "writing-project-docs": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 943,
+            "output_tokens": 83
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills-23",
+      "task": "Report the value true as plain text. This is a simple response without any coding or documentation workflow.",
+      "stage": "execute",
+      "expected": "none-needed",
+      "responses": [
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-1": {
+              "type": "choice",
+              "choice": "none-needed",
+              "confidence": 1,
+              "probabilities": {
+                "using-linear": 0,
+                "human-written-code": 0,
+                "none-needed": 1,
+                "designing-screen-mockups": 0,
+                "writing-project-docs": 0,
+                "attaching-screens-to-tickets": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 946,
+            "output_tokens": 83
+          }
+        },
+        {
+          "model": "jev-1.13.0",
+          "answers": {
+            "skills-0": {
+              "type": "choice",
+              "choice": "none-needed",
+              "confidence": 1,
+              "probabilities": {
+                "attaching-screens-to-tickets": 0,
+                "using-linear": 0,
+                "writing-project-docs": 0,
+                "none-needed": 1,
+                "human-written-code": 0,
+                "designing-screen-mockups": 0
+              }
+            }
+          },
+          "usage": {
+            "input_tokens": 946,
+            "output_tokens": 83
+          }
+        }
+      ]
+    }
+  ]
+}

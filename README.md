@@ -402,8 +402,13 @@ the same as an object.
   (`--dry-run` previews). `kor skills guard` checks the public tier against private
   skill names and the local `deny.txt`. `local-only` entries expose only a name
   and fixed label to Jev. The launcher accepts a selected skill pack, exposes only
-  listed skills, and prefixes pinned guidance to the task. Automatic Jev selection
-  remains separate work.
+  listed skills, and prefixes pinned guidance to the task. Before each initial or
+  repair session, Jev selects guidance using two shuffled Choice calls and a
+  4,000-token starting-context budget. Repository `skills.always`, `pins` and
+  `never` configure guidance; outages load only permitted `always` skills and
+  label the plan `fallback`. See [selection and budgets](docs/skills.md#jev-selection-and-context-budgets).
+  Run `pnpm skills:fixture` for the recorded 23-task proof, or add `--live-jev`
+  to compare against live TypeSafe answers.
 
 - [User guide](docs/user-guide.md): install, credentials, configuration, Linear
   setup, Mission Control job by job, the CLI and status line, recovery,

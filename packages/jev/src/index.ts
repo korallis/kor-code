@@ -2,6 +2,8 @@ export * from "./contracts.js";
 export * from "./client.js";
 export * from "./redact.js";
 export * from "./preflight.js";
+export * from "./skills.js";
+import { decideSkills, skillPlanSchema, type SkillPlan, type SkillsInput } from "./skills.js";
 import type { CatalogueModel, DecisionBundle, DecisionInput, JsonValue, Route } from "@kor-code/core";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
@@ -9,7 +11,7 @@ import { answerSchema, type JevAnswer, type JevJsonValue, type JevQuestion, type
 import type { JevClient } from "./client.js";
 import { redact } from "./redact.js";
 
-export type DecisionKind = "route" | "skill" | "agent" | "context" | "readiness" | "complexity" | "risk" | "acceptance" | "tools";
+export type DecisionKind = "route" | "skill" | "skills" | "agent" | "context" | "readiness" | "complexity" | "risk" | "acceptance" | "tools";
 export type DecisionAnswerType = "choice" | "noul" | "score";
 export interface AcceptanceJudgmentRequest {
   executionId: string;
@@ -25,7 +27,7 @@ export interface AcceptanceJudgment {
   passed: boolean;
 }
 export interface DecisionRequest { decisionId: string; executionId: string; kind: DecisionKind; question: string; state: JsonValue; inputs: DecisionInput[]; candidates: string[]; criteria?: Record<string, JevJsonValue>; nonApplyingCandidates?: string[]; answerType?: DecisionAnswerType; evidenceRefs?: string[]; policyChecks?: DecisionBundle["policyChecks"]; threshold?: number; overrides?: JsonValue }
-export interface AppliedDecision extends DecisionBundle { kind: DecisionKind; applied: boolean; escalated: boolean; answerType?: DecisionAnswerType; model?: string; probabilities?: Record<string, number>; noul?: number; score?: number; overrides?: JsonValue; observedOutcome?: JsonValue }
+export interface AppliedDecision extends DecisionBundle { plan?: SkillPlan; kind: DecisionKind; applied: boolean; escalated: boolean; answerType?: DecisionAnswerType; model?: string; probabilities?: Record<string, number>; noul?: number; score?: number; overrides?: JsonValue; observedOutcome?: JsonValue }
 export interface DecisionAuditRecord { request: DecisionRequest; response: AppliedDecision; recordedAt: string; rawAnswer?: JevAnswer; overrides?: JsonValue; observedOutcome?: JsonValue }
 export interface DecisionAuditLog { append(record: DecisionAuditRecord): void; get(decisionId: string): DecisionAuditRecord | undefined; explain(decisionId: string): DecisionAuditRecord; replay(decisionId: string): AppliedDecision; recordOutcome(decisionId: string, outcome: JsonValue): void }
 export interface DecisionAuditPersistence { read(decisionId: string): string | undefined; write(decisionId: string, recordedAt: string, payload: string): void; update(decisionId: string, recordedAt: string, payload: string): void }
@@ -33,12 +35,13 @@ export interface DecisionAuditPersistence { read(decisionId: string): string | u
 const jsonValue = z.json();
 const policyCheckSchema = z.object({ name: z.string(), result: z.enum(["pass", "fail", "unresolved"]), reason: z.string().optional() });
 const decisionRequestSchema = z.object({
-  decisionId: z.string(), executionId: z.string(), kind: z.enum(["route", "skill", "agent", "context", "readiness", "complexity", "risk", "acceptance", "tools"]), question: z.string(), state: jsonValue,
+  decisionId: z.string(), executionId: z.string(), kind: z.enum(["route", "skill", "skills", "agent", "context", "readiness", "complexity", "risk", "acceptance", "tools"]), question: z.string(), state: jsonValue,
   inputs: z.array(z.object({ name: z.string(), value: jsonValue, source: z.string().optional() })), candidates: z.array(z.string()), criteria: z.record(z.string(), jsonValue).optional(), nonApplyingCandidates: z.array(z.string()).optional(), answerType: z.enum(["choice", "noul", "score"]).optional(), evidenceRefs: z.array(z.string()).optional(),
   policyChecks: z.array(policyCheckSchema).optional(), threshold: z.number().optional(), overrides: jsonValue.optional(),
 });
 const appliedDecisionSchema = z.object({
-  decisionId: z.string(), executionId: z.string(), question: z.string(), inputs: z.array(z.object({ name: z.string(), value: jsonValue, source: z.string().optional() })), choice: z.string(), candidates: z.array(z.string()), confidence: z.number(), reasons: z.array(z.string()), evidenceRefs: z.array(z.string()), policyChecks: z.array(policyCheckSchema), kind: z.enum(["route", "skill", "agent", "context", "readiness", "complexity", "risk", "acceptance", "tools"]), applied: z.boolean(), escalated: z.boolean(), answerType: z.enum(["choice", "noul", "score"]).optional(), model: z.string().optional(), probabilities: z.record(z.string(), z.number()).optional(), noul: z.number().optional(), score: z.number().optional(), overrides: jsonValue.optional(), observedOutcome: jsonValue.optional(),
+  plan: skillPlanSchema.optional(),
+  decisionId: z.string(), executionId: z.string(), question: z.string(), inputs: z.array(z.object({ name: z.string(), value: jsonValue, source: z.string().optional() })), choice: z.string(), candidates: z.array(z.string()), confidence: z.number(), reasons: z.array(z.string()), evidenceRefs: z.array(z.string()), policyChecks: z.array(policyCheckSchema), kind: z.enum(["route", "skill", "skills", "agent", "context", "readiness", "complexity", "risk", "acceptance", "tools"]), applied: z.boolean(), escalated: z.boolean(), answerType: z.enum(["choice", "noul", "score"]).optional(), model: z.string().optional(), probabilities: z.record(z.string(), z.number()).optional(), noul: z.number().optional(), score: z.number().optional(), overrides: jsonValue.optional(), observedOutcome: jsonValue.optional(),
 });
 const auditRecordSchema = z.object({ request: decisionRequestSchema, response: appliedDecisionSchema, recordedAt: z.string(), rawAnswer: answerSchema.optional(), overrides: jsonValue.optional(), observedOutcome: jsonValue.optional() });
 function applyDecision(request: DecisionRequest, answer: JevAnswer | undefined, model?: string): AppliedDecision {
@@ -142,6 +145,7 @@ export class JevDecisionCore {
   }
   async decide(request: DecisionRequest): Promise<AppliedDecision> { return (await this.preflight([request])).decisions[0]!; }
   async selectRoute(request: DecisionRequest): Promise<AppliedDecision> { return this.decide({ ...request, kind: "route" }); }
+  async selectSkills(input: SkillsInput): Promise<AppliedDecision & { plan: SkillPlan }> { return decideSkills(input, this.client, this.audit); }
   async selectSkill(request: DecisionRequest): Promise<AppliedDecision> { return this.decide({ ...request, kind: "skill" }); }
   async selectAgent(request: DecisionRequest): Promise<AppliedDecision> { return this.decide({ ...request, kind: "agent" }); }
   async rankContext(request: DecisionRequest): Promise<AppliedDecision> { return this.decide({ ...request, kind: "context" }); }

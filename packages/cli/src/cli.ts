@@ -20,6 +20,7 @@ import { CalibrationStore, buildReport, formatReport } from "@kor-code/calibrati
 import type { CatalogueModel, KorCliError } from "@kor-code/core";
 import { runSkillsInstall, SkillsUsageError, SKILLS_INSTALL_USAGE } from "./skills-install.js";
 import { formatSkillLint, lintSkills } from "./skills-lint.js";
+import { prepareSessionSkills } from "./skills-session.js";
 import { buildSkillsCatalogue, formatSkillsCatalogue, writeSkillsCatalogue } from "./skills-catalogue.js";
 import { guardPrivateSkills, importPrivateSkills, initPrivateSkills, privateSkillsPath } from "./skills-private.js";
 
@@ -223,7 +224,7 @@ async function serve(args: readonly string[]): Promise<number> {
       onStage: (executionId, stage) => daemon.setStage(executionId, stage),
       onSpend: (executionId, spend) => store.recordSpend(executionId, spend),
       worktrees: new GitWorktreeManager(paths.worktreesDir),
-      launcher: new SessionLauncher({ repoRoot: sourceRoot, launchProfile: config.launchProfile, sandboxRoot: paths.sessionsDir, gateway: () => mission.sessionGateway(), cockpit: { statusUrl, stateDir: paths.stateDir }, onOutput: (executionId, channel, text) => daemon.recordOutput(executionId, channel, text) }),
+      launcher: new SessionLauncher({ prepareSkills: input => prepareSessionSkills({ input, config, paths, jev: routing.jev }), repoRoot: sourceRoot, launchProfile: config.launchProfile, sandboxRoot: paths.sessionsDir, gateway: () => mission.sessionGateway(), cockpit: { statusUrl, stateDir: paths.stateDir }, onOutput: (executionId, channel, text) => daemon.recordOutput(executionId, channel, text) }),
       limits: new ConcurrencyLimiter({ total: config.limits.total, perRepository: config.limits.perRepository, ...(config.limits.perProvider ? { perProvider: config.limits.perProvider } : {}) }),
       defaultRoute: config.defaultRoute,
       jev: routing.jev,
