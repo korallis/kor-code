@@ -353,7 +353,10 @@ the same as an object.
 
 - [Public skills](docs/skills.md): bundled code and PR standards, Linear operations
   and ticket-writing guidance, authoring schema, lint, catalogue commands, private
-  and configured sources, routing guardrails and token costs. `kor skills index`
+  and configured sources, routing guardrails and token costs. Lint runs locally
+  without credentials or a daemon, scans every bundled text file for explicit
+  model, provider and effort routing, and reports description overlap as a warning.
+  `kor skills index`
   writes a private catalogue in Kor state; `list`, `show` and `doctor` inspect
   sources without writing. Use repeated `--from DIRECTORY` for an explicit local
   scan and `--estimate` for reproducible costs without a gateway.
