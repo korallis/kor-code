@@ -17,6 +17,7 @@ import { readModelRegistry, writeModelRegistry } from "@kor-code/gateway-adapter
 import { PersistentDecisionAuditLog } from "@kor-code/jev";
 import { CalibrationStore, buildReport, formatReport } from "@kor-code/calibration";
 import type { CatalogueModel, KorCliError } from "@kor-code/core";
+import { formatSkillLint, lintSkills } from "./skills-lint.js";
 
 class CliFailure extends Error {
   constructor(readonly code: string, message: string, readonly hint: string, readonly exitCode = 1) { super(message); }
@@ -244,6 +245,20 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
   const cleanArgs = args.filter(arg => arg !== "--debug");
   const command = cleanArgs[0] ?? "help";
   try {
+    if (command === "skills") {
+      const skillArgs = cleanArgs.slice(1);
+      const usage = "kor skills lint [DIRECTORY] [--json]";
+      if (skillArgs[0] === "--help" || skillArgs[0] === "-h" || skillArgs[0] === "lint" && skillArgs.includes("--help")) {
+        print(`Usage: ${usage}\nChecks the public skills tier without credentials or a daemon. DIRECTORY defaults to Kor's bundled skills.`, false);
+        return 0;
+      }
+      const directories = skillArgs.slice(1).filter(arg => arg !== "--json");
+      if (skillArgs[0] !== "lint" || directories.length > 1 || directories.some(arg => arg.startsWith("-"))) usageFailure(usage);
+      const root = directories[0] ?? fileURLToPath(new URL("../../../skills", import.meta.url));
+      const report = await lintSkills(root);
+      print(jsonFlag(skillArgs) ? report : formatSkillLint(report), jsonFlag(skillArgs));
+      return report.ok ? 0 : 1;
+    }
     if (command === "doctor") {
       if (cleanArgs.slice(1).some(arg => arg !== "--json")) usageFailure("kor doctor [--json]");
       const report = await runDoctor();
@@ -306,7 +321,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     if (debug && error instanceof Error && error.stack) process.stderr.write(`${error.stack}\n`);
     return failure instanceof CliFailure ? failure.exitCode : 1;
   }
-  process.stdout.write("Usage: kor ui | kor serve [--ui-dir DIST] [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list | kor models probe [--family family] [--model model]\n");
+  process.stdout.write("Usage: kor skills lint [DIRECTORY] [--json] | kor ui | kor serve [--ui-dir DIST] [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list | kor models probe [--family family] [--model model]\n");
   return 0;
 }
 

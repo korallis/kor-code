@@ -14,6 +14,11 @@ bump.
 
 ## Running it from a script
 
+`kor skills lint [DIRECTORY] [--json]` is a local, read-only command with no
+daemon or credential requirement. Its report schema, diagnostic rules and token
+estimates are documented in [Public skills](skills.md#output-and-proof). It uses
+the standard `0`/`1`/`2` exit codes and shared CLI errors for I/O failures.
+
 - Use the installed `kor` (or `bin/kor` from the checkout). Both print clean
   JSON on stdout. `pnpm kor` prints pnpm build output before the command's own
   output and is meant for interactive use.

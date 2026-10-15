@@ -41,6 +41,8 @@ jobs:
           echo "$RUNNER_TEMP/kor-tools/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Prepare
         run: pnpm install --frozen-lockfile && pnpm build
+      - name: Lint public skills and prove rejection rules
+        run: bin/kor skills lint && node scripts/skills-lint-proof.mjs
       - name: Typecheck and validate plugin
         run: pnpm typecheck
       - name: Offline proofs
