@@ -91,7 +91,7 @@ function localLinks(text: string): string[] {
   return [...new Set(targets)].filter(target => target && !/^(?:[a-z][a-z0-9+.-]*:|#)/i.test(target));
 }
 
-export async function lintSkills(root: string, options: { private?: boolean } = {}): Promise<SkillLintReport> {
+export async function lintSkills(root: string, options: { private?: boolean; names?: readonly string[]; visibility?: "public" | "local-only" } = {}): Promise<SkillLintReport> {
   root = resolve(root);
   const diagnostics: SkillLintDiagnostic[] = [];
   const skills: SkillLintReport["skills"] = [];
@@ -133,7 +133,7 @@ export async function lintSkills(root: string, options: { private?: boolean } = 
     if (upstreamQuote) add(file, lines(text).length, "error", "upstream-quote", "Close the upstream quotation fence.");
   }
 
-  const entries = (await readdir(root, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
+  const entries = (await readdir(root, { withFileTypes: true })).filter(entry => !options.names || options.names.includes(entry.name)).sort((a, b) => a.name.localeCompare(b.name));
   for (const entry of entries) {
     const directory = resolve(root, entry.name);
     if (entry.isSymbolicLink()) { add(directory, 1, "error", "symlink", "Public skills must not be symlinks."); continue; }
@@ -172,7 +172,7 @@ export async function lintSkills(root: string, options: { private?: boolean } = 
       if (!TRIGGER.test(description.slice(0, EARLY_TRIGGER_CHARS))) add(skillFile, 3, "warning", "trigger-late", `Put the use trigger within the first ${EARLY_TRIGGER_CHARS} characters.`);
       const kind = metadata["kor.kind"];
       if (kind !== undefined && !["skill", "standard", "playbook"].includes(kind)) add(skillFile, 1, "error", "metadata", "kor.kind must be skill, standard or playbook.");
-      if (metadata["kor.visibility"] !== undefined && !((options.private ? ["public", "local-only"] : ["public"]).includes(metadata["kor.visibility"]))) add(skillFile, 1, "error", "metadata", "Visibility must be public, or local-only in the private tier.");
+      if (metadata["kor.visibility"] !== undefined && !((options.private || options.visibility === "local-only" ? ["public", "local-only"] : ["public"]).includes(metadata["kor.visibility"]))) add(skillFile, 1, "error", "metadata", "Visibility must be public, or local-only in the private tier.");
       if (metadata["kor.stages"]?.split(",").some(stage => !STAGES.has(stage.trim()))) add(skillFile, 1, "error", "metadata", "kor.stages contains an unknown stage.");
       const budget = metadata["kor.budget"] === undefined ? DEFAULT_BODY_BUDGET : Number(metadata["kor.budget"]);
       if (!Number.isInteger(budget) || budget <= 0) add(skillFile, 1, "error", "metadata", "kor.budget must be a positive integer token count.");

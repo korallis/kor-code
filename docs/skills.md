@@ -10,9 +10,9 @@ and verified Linear images (`attaching-screens-to-tickets`).
 Project guidance covers setup (`setting-up-a-project`, a playbook) and documentation
 (`writing-project-docs`, with one template per document). See
 [project setup](project-setup.md) for the workflow and manual use.
-Repository policy takes precedence over the bundled guidance. Shipping this tier
-does not yet load it into execution sessions; catalogue selection and delivery
-are separate work.
+Repository policy takes precedence over the bundled guidance. Indexing does not
+select skills. Execution delivery consumes an explicit plan; automatic Jev
+selection is a separate integration.
 
 The direct shipping path also enforces the PR layout in code, without loading a
 skill into the session. It uses the five sections from `pr-standard`, maps
@@ -310,6 +310,83 @@ update guard. Existing text is preserved from the latest read, but simultaneous
 writers can still overwrite one another. The command verifies storage and ticket
 references; viewing images automatically inside execution sessions is separate.
 
+## Execution delivery
+
+`buildSkillsPack` in the CLI consumes a valid catalogue and an explicit
+`SkillDeliveryPlan` with its `catalogueHash` and `{name, tier}` entries. It writes
+`sessionsDir/<execution-id>/skills-pack/`. It does not choose skills or change
+the execution route. The launcher exposes a `prepareSkills` callback, called
+before every session with the resolved repository permissions. A selector can
+use the callback to prepare a fresh pack for initial and repair sessions:
+
+```ts
+prepareSkills: async input => buildSkillsPack({
+  sessionsDir: paths.sessionsDir,
+  executionId: input.execution.id,
+  catalogue,
+  plan: await selectSkills(input),
+  allowedTools: input.allowedTools,
+})
+```
+
+`selectSkills` represents the separate selection integration; catalogue commands
+and `kor serve` do not yet activate a selection policy automatically.
+
+Listed entries become directory symlinks to their indexed bundles under
+`skills/`, with a `.claude-plugin/plugin.json` named `kor-skills`. The launcher
+passes this directory as a second `--plugin-dir`, retaining the cockpit plugin.
+The harness sees names such as `kor-skills:human-written-code` and descriptions;
+the body enters context only when invoked. Directory links preserve relative
+references and assets. Keep indexed source bundles available and unchanged
+throughout a session; re-index after editing them.
+
+Pinned entries contribute only their Markdown bodies, sorted by name and
+prefaced with `Selected guidance: NAME`, at the start of the first user message.
+They do not enter the plugin listing. Hidden entries contribute nothing. Armed
+entries produce a private `armed.json` containing names, source paths, hashes
+and triggers, without listing or injecting bodies. Hook execution and firing
+records belong to the separate mid-run arming integration; this delivery layer
+does not install a hook.
+
+Before writing a pack, delivery verifies the catalogue hash, rejects duplicate
+or unknown plan entries, rereads every selected bundle and checks its content
+hash. It reruns strict authoring and routing lint on the selected bundles,
+including private bundles (`local-only` visibility is accepted). Inventory-only
+imports without the required license or with unsupported fields must be adapted
+before execution. Required tools must already be available under repository
+permissions. Frontmatter `allowed-tools` grants must exactly match existing
+permission entries; skill invocation cannot broaden auto-approval. Manual-only
+skills cannot be listed. Private pack paths and
+`armed.json` stay in Kor's session directory, with private directory permissions.
+
+The launcher respects the effective tool profile and enables `Skill` only when
+there are listed entries, with approval scoped to those names. Preparation sees
+only permissions for tools available in that profile.
+`--setting-sources ""`, `disableBundledSkills: true` and the disposable harness
+configuration prevent ambient harness skills from joining the list. Claude Code
+2.1.300 also requires disabling `cc-plugin-plugin-authoring@builtin` and setting
+`skillOverrides` for `design` and `doctor` to `off`; they survive the bundled
+skill switch. These settings apply only to the disposable session. Empty and
+pinned-only plans expose no `Skill` tool and no plugin listing; preparing them
+also removes any stale pack from a previous attempt. Skill order, manifest and
+pinned prefix are deterministic for stable prompt caching.
+
+After `pnpm build`, run the live proof using an existing Jev route object
+(`label: "jev"`, with its `decisionId`) and an output directory outside the
+checkout:
+
+```sh
+node scripts/skills-pack-proof.mjs /tmp/jev-route.json /tmp/kor-skills-proof
+```
+
+The proof reads gateway credentials at runtime, invokes the real catalogue CLI
+and launcher against temporary bundles, and captures request bodies without
+headers. It checks exact init listings for 0, 3 and 20 skills, absence of a body
+sentinel before invocation, body arrival and context growth after invocation,
+ambient skill isolation and pinned prefixes. Captures, streams and measured
+context counts remain in the output directory. No real harness configuration
+is modified.
+
 ## Private pack
 
 Create the pack, preview an explicit source, then copy it:
@@ -527,8 +604,8 @@ host and out of tickets, sources and captures.
 A typical request is: "Use designing-screen-mockups for the requirements in
 docs/requirements.md, then attaching-screens-to-tickets for the agreed UI issues.
 Report every missing capture or ticket image." These are guidance bundles; they
-do not create tickets or render images merely by being installed. Until session
-delivery is available, explicitly supply the selected skill body to the working
+do not create tickets or render images merely by being installed. For sessions
+without an explicit delivery plan, supply the selected skill body to the working
 session; load its direct reference only when that step needs it.
 
 Completion means all required views have applicable captures, all applicable
