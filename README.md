@@ -140,6 +140,12 @@ and credential handling.
 
 ## Quick start
 
+For a new project, the bundled `setting-up-a-project` playbook and
+`writing-project-docs` skill cover the brief, full documentation set and setup
+readiness gates. See [project setup guidance](docs/project-setup.md) for manual
+use and the distinction between documentation, mockups and published tickets.
+Validate the bundled guidance with `kor skills lint`.
+
 **1. Describe your project** in `~/.config/kor/config.yaml`. The installer scaffolds
 it with empty `checks` and `toolAllowlist`, which are yours to fill in. The file
 used for the screenshots below (a scratch clone of this repository):
