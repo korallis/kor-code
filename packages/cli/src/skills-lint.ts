@@ -15,11 +15,13 @@ const OVERLAP_KEYWORDS = 3;
 const DESCRIPTION_STOP_WORDS = new Set(["a", "an", "the", "and", "or", "for", "to", "of", "in", "on", "with", "when", "whenever", "use", "uses", "writes", "reviews", "creates", "editing", "writing", "reviewing"]);
 const TRIGGER = /\buse (?:when|whenever|for)\b/i;
 const ROUTING_TEXT = [
+  /\bxhigh\b/i,
   /\b(?:claude|gpt|grok|gemini|kimi|o[134])-[a-z0-9][a-z0-9._-]*\b/i,
   /--(?:model|agents|provider|harness|effort|reasoning[-_](?:effort|level))\b/i,
   /\b(?:model|provider|harness|effort|reasoning[ _-](?:level|effort))["']?\s*[:=]/i,
-  /\b(?:use|choose|select|prefer|pin|switch to|run with)\s+(?:the\s+)?(?:opus|sonnet|haiku|fable|Claude Code|Codex|Cursor)\b/i,
-  /\b(?:use|choose|select|prefer|pin|switch to|run with)\s+(?:the\s+)?(?:OpenAI|Anthropic|Google|xAI|Moonshot)\s+(?:model|provider|harness)\b/i,
+  /\b(?:use|choose|select|prefer|pin|switch to|run with)\s+(?:the\s+)?(?:opus|sonnet|haiku|fable|o[134]\s+model|Claude Code|Codex|Cursor)\b/i,
+  /\b(?:on|with|using|via|under)\s+(?:the\s+)?(?:model\s+)?(?:opus|sonnet|haiku|fable|o[134]\s+model|Claude Code|Codex|Cursor)\b/i,
+  /\b(?:use|choose|select|prefer|pin|switch to|run with)\s+(?:the\s+)?(?:OpenAI|Anthropic|Google|xAI|Moonshot)\s+(?:model|provider|harness|for|over)\b/i,
   /\b(?:set|pin|switch)\s+(?:the\s+)?(?:model|provider|harness)\s+to\b/i,
   /\b(?:use|choose|select|prefer|pin|set|run with)\s+(?:the\s+)?(?:(?:reasoning[ -])?effort|reasoning[ -]level)\s+(?:to\s+)?(?:none|minimal|low|medium|high|xhigh|max|ultra)\b/i,
   /\b(?:use|choose|select|prefer|pin|set|run with)\s+(?:none|minimal|low|medium|high|xhigh|max|ultra)\s+(?:(?:reasoning[ -])?effort|reasoning[ -]level)\b/i,

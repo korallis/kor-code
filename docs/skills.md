@@ -108,9 +108,11 @@ required `SKILL.md` is always scanned. Text is decoded as UTF-8.
 
 The text scan rejects model slugs, routing flags, routing assignments, explicit
 instructions naming a model tier or harness, provider selection instructions,
-and instructions setting an effort level. Ordinary mentions of effort or a
-domain model are allowed, as are statements that leave routing to Jev. For
-example, "Use the domain model to name things" and "Make minimal effort to cut
+and instructions setting an effort level. This includes tiers after routing
+prepositions (`on`, `with`, `using`, `via`, `under`), provider choices followed by
+`for` or `over`, and the routing-specific `xhigh` token. Ordinary mentions of
+effort or a domain model are allowed, as are statements that leave routing to Jev.
+For example, "Use the domain model to name things" and "Make minimal effort to cut
 scope" pass. A provider's style guide is also ordinary prose. An ordinary code
 fence does not exempt routing text.
 

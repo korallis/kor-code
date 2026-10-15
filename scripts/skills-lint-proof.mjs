@@ -41,6 +41,12 @@ try {
     ["no-routing", source("", "```sh\nrun --agents '{\"worker\": {\"model\": \"gpt-example-1\"}}'\n```\n")],
     ["no-routing", source("", "Choose the Codex harness.\n")],
     ["no-routing", source("", "Use the sonnet model.\n")],
+    ...[
+      "Run this on Sonnet.", "Run this with Sonnet 4.", "Run this using Sonnet.",
+      "Run this via Sonnet.", "Run this under Sonnet.", "Run it with xhigh effort.",
+      "Spawn a subagent with model sonnet.", "Use the o3 model.",
+      "Use OpenAI for this step.", "Prefer Anthropic over OpenAI.",
+    ].map(instruction => ["no-routing", source("", `${instruction}\n`)]),
     ["no-routing", source("", "Prefer the Anthropic provider.\n")],
     ["no-routing", source("", "Set the model to example.\n")],
     ["no-routing", source("", "Use high effort for this task.\n")],
@@ -94,6 +100,10 @@ try {
     "Choose a provider pattern for the adapter.",
     "This skill never names or suggests a model, harness, effort or provider.",
     "Read the haiku and annotate the opus.",
+    "Select the harness for the test rig.",
+    "Use the effort estimate from the ticket.",
+    "Prefer Google style comments in the file.",
+    "Opus is a musical work; the sonnet is a poem.",
   ];
   await writeFile(join(prose, "SKILL.md"), source("", ordinary.join("\n")));
   await writeFile(join(prose, "image.png"), Buffer.from("PNG\0gpt-example-1\0"));
