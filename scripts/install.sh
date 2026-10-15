@@ -89,7 +89,7 @@ if [ -n "$pilot" ]; then
 fi
 say 'Installing dependencies and building Kor Code and Mission Control…'
 corepack pnpm install --frozen-lockfile
-# Workspace build scripts call `pnpm` too. Supply a checkout-local shim even
+# Workspace build scripts call `pnpm` too. Supply a user-local shim even
 # when Corepack's global pnpm shims have never been enabled.
 pnpm_bin="${XDG_CACHE_HOME:-$HOME/.cache}/kor-code/bin"
 mkdir -p "$pnpm_bin"

@@ -364,7 +364,7 @@ saved as WebP.
 git clone https://github.com/korallis/kor-code.git
 cd kor-code
 corepack pnpm install --frozen-lockfile
-corepack pnpm build
+corepack pnpm -r --if-present build
 node packages/cli/dist/cli.js install --pilot ~/code/my-project --no-systemd
 export PATH="$HOME/.local/bin:$PATH"
 kor ui

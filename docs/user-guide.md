@@ -1144,7 +1144,7 @@ For a manual checkout, use the same pilot and scope as the original install:
 cd kor-code
 git pull --ff-only
 corepack pnpm install --frozen-lockfile
-corepack pnpm build
+corepack pnpm -r --if-present build
 node packages/cli/dist/cli.js install --pilot ~/code/my-project --no-systemd
 kor ui
 ```
