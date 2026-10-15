@@ -666,7 +666,10 @@ starts as soon as the run verifies. The daemon:
 3. Pushes the branch and opens a pull request. The title and body follow the
    bundled [PR standard](../skills/pr-standard/SKILL.md), or the repository's own
    PR template if it has one, written from the verified diff and the recorded
-   checks by the run's effective task route, including your applied route override.
+   checks by the run's effective task route, including your applied route override
+   across providers. If your overridden model is unavailable, fails the prose completion or
+   returns invalid content, Kor uses the issue text and evidence with a clear
+   fallback note; it does not select a replacement model.
    Nonvisual changes omit Screenshots; changelog and checklist lines contain only
    the change and acceptance condition. If no Jev route or override can be reused, the
    body says it fell back to the issue text. Linear moves to **In Review**.

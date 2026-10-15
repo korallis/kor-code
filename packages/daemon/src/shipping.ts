@@ -22,7 +22,7 @@ const PR_TEMPLATE_PATHS = ['.github/pull_request_template.md', '.github/PULL_REQ
 export interface ShippingCommandResult { code: number; stdout: string; stderr: string }
 export type ShippingCommand = (file: string, args: string[], cwd: string) => Promise<ShippingCommandResult>;
 export interface ShippingInput { execution: Execution; issue: LinearIssue; repository: KorRepositoryConfig }
-export type DescribePullRequest = (input: { executionId: string; head: string; prompt: string; route?: Route }) => Promise<string | null>;
+export type DescribePullRequest = (input: { executionId: string; head: string; prompt: string; route?: Route }) => Promise<string | null | { kind: "fallback"; reason: string }>;
 const descriptionSchema = z.object({
   title: z.string().trim().min(1).max(PR_TITLE_LIMIT).regex(/^(?:feat|fix|refactor|perf|docs|ci|chore)\([\w.-]+\): [^\r\n.][^\r\n]*[^.\r\n]$/),
   summary: z.string().trim().min(1).max(PR_FIELD_LIMIT),
@@ -305,6 +305,15 @@ export class GitHubShipping implements ShippingDriver {
     }
     return execution;
   }
+  private fallbackDescription(input: ShippingInput, reason: string): PullRequestDescription {
+    const title = publicText(input.issue.title, input).replace(/[\r\n]+/g, ' ').trim().replace(/\.+$/, '').slice(0, PR_TITLE_LIMIT);
+    return {
+      title: (/^(?:feat|fix|refactor|perf|docs|ci|chore)\([\w.-]+\): .+/.test(title) ? title : `chore(task): ${title}`).slice(0, PR_TITLE_LIMIT).replace(/\.+$/, ''),
+      summary: `${title}\n\nPR prose fallback: ${reason} This description uses issue text and recorded evidence; review the summary and changelog before merging.`,
+      changelog: [{ kind: 'Changed', text: title }],
+      testing: 'The recorded repository checks and acceptance findings below are the verification evidence. No additional testing is claimed.',
+    };
+  }
   private async description(input: ShippingInput, head: string): Promise<PullRequestDescription> {
     if (!this.describe) throw new Error('PR writing requires Jev routing and a model completion; check the model registry and gateway');
     const latest = input.execution.verification?.attempts.at(-1);
@@ -327,21 +336,16 @@ export class GitHubShipping implements ShippingDriver {
     ].join('\n\n'), input);
     const route = input.execution.route;
     const output = await this.describe({ executionId: input.execution.id, head, prompt, ...(route ? { route } : {}) });
-    if (output === null) {
-      const title = publicText(input.issue.title, input).replace(/[\r\n]+/g, ' ').trim().replace(/\.+$/, '').slice(0, PR_TITLE_LIMIT);
-      return {
-        title: (/^(?:feat|fix|refactor|perf|docs|ci|chore)\([\w.-]+\): .+/.test(title) ? title : `chore(task): ${title}`).slice(0, PR_TITLE_LIMIT).replace(/\.+$/, ''),
-        summary: `${title}\n\nPR prose fallback: The run has no reusable applied Jev route decision. This description uses issue text and recorded evidence; review the summary and changelog before merging.`,
-        changelog: [{ kind: 'Changed', text: title }],
-        testing: 'The recorded repository checks and acceptance findings below are the verification evidence. No additional testing is claimed.',
-      };
-    }
+    if (output === null || typeof output !== 'string') return this.fallbackDescription(input, output?.reason ?? 'The run has no reusable applied Jev route decision.');
     const json = output.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
     try {
       const parsed = descriptionSchema.parse(JSON.parse(json));
       return descriptionSchema.parse({ title: publicText(parsed.title, input), summary: publicText(parsed.summary, input),
         changelog: parsed.changelog.map(entry => ({ ...entry, text: publicText(entry.text, input) })), testing: publicText(parsed.testing, input) });
-    } catch { throw new Error('PR writing returned invalid structured content; retry shipping to regenerate it'); }
+    } catch {
+      if (route?.label === 'override') return this.fallbackDescription(input, 'The overridden task model returned invalid PR content; no replacement model was selected.');
+      throw new Error('PR writing returned invalid structured content; retry shipping to regenerate it');
+    }
   }
   private async body(input: ShippingInput, head: string, description: PullRequestDescription): Promise<string> {
     const latest = input.execution.verification?.attempts.at(-1);

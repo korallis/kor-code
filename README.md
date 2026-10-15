@@ -53,6 +53,10 @@ Any failed check, unmet criterion or permission denial stops the run as
   optional: GitHub connections, pull request lists and PR creation use the API.
   Tokens need repository contents write and pull request write access.
 
+PR writing reuses the task route, including a cross-provider override. If the
+overridden model cannot write the PR, Kor publishes an evidence-based fallback
+with a clear note; it does not select a replacement model.
+
 ## Install
 
 ```sh

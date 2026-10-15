@@ -38,7 +38,9 @@ not copied into the generated public Intent section.
 Direct publication reuses the run's effective task route for PR writing. An
 applied owner override keeps its override ID and all effective route settings;
 the PR writer uses that route without asking Jev again or claiming inherited
-Jev confidence. Otherwise, the recorded, applied Jev route is reused.
+Jev confidence. Override verification matches the selected model name, as intake
+does, so an inherited provider label cannot reject a cross-provider override.
+Otherwise, the recorded, applied Jev route is reused.
 The selected model receives a bounded, redacted diff at the verified head, the
 issue, repository check results, and acceptance findings. Its structured answer
 supplies the title, plain-prose summary, user-facing changelog, and testing summary.
@@ -59,9 +61,10 @@ from issue text and recorded verification evidence, with a visible
 keeps a conventional issue title or uses `chore(task): <issue title>`; it does not
 guess the change type or choose a model. Existing PR bodies are left unchanged.
 
-An empty verified-model registry, unavailable service, failed completion, or
-invalid generated content still blocks PR creation for retry. The branch may have
-been pushed before this step.
+For an override, an unavailable model or catalogue, failed completion, or invalid
+structured content uses an evidence-based fallback with a clear reason and no
+replacement model. Other Jev-routed runs still block PR creation for retry on
+these failures. The branch may have been pushed before this step.
 
 The bundled `pr-standard` layout appears in this order:
 

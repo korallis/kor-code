@@ -57,10 +57,20 @@ assert.deepEqual(completedRoutes.at(-1), overriddenRoute);
 assert.equal(routeAudit.export().length, 3);
 assert.equal(await routing.describePullRequest({ ...routeInput, route: { ...overriddenRoute, decisionId: undefined } }), null);
 routeModels[0].available = false;
-await assert.rejects(routing.describePullRequest({ ...routeInput, route: overriddenRoute }), /overridden task route is no longer verified and available/);
+assert.equal((await routing.describePullRequest({ ...routeInput, route: overriddenRoute })).kind, 'fallback');
 await assert.rejects(routing.describePullRequest(routeInput), /no longer verified and available/);
 routeModels[0].available = true;
-console.log('PR route reuse: zero new Jev questions; inherited confidence and source persisted; retries reuse one audit row; provider, effort and account settings preserved; uncertain, fallback, missing and mismatched task decisions never promoted; unavailable model blocks');
+const crossProviderRoute = { ...overriddenRoute, model: 'fixture-cross-provider' };
+routeModels.push({ model: crossProviderRoute.model, provider: 'another-provider', capabilities: [] });
+assert.equal(await routing.describePullRequest({ ...routeInput, route: crossProviderRoute }), '{}');
+assert.deepEqual(completedRoutes.at(-1), crossProviderRoute);
+const unavailableWriter = createServeRouting({ audit: routeAudit, defaultRoute: taskRoute, models: async () => routeModels,
+  complete: async () => { throw new Error('fixture completion unavailable'); },
+});
+const proseFallback = await unavailableWriter.describePullRequest({ ...routeInput, route: crossProviderRoute });
+assert.equal(proseFallback.kind, 'fallback');
+assert(proseFallback.reason.includes('no replacement model was selected'));
+console.log('PR route reuse: zero new Jev questions; inherited confidence and source persisted; retries reuse one audit row; provider, effort and account settings preserved; uncertain, fallback, missing and mismatched task decisions never promoted; unavailable Jev model blocks; cross-provider override preserved; unavailable override or writer returns an explicit fallback');
 const exec = promisify(execFile);
 const parent = process.env.KOR_PROOF_DIR ?? tmpdir();
 await mkdir(parent, { recursive: true });
@@ -287,6 +297,13 @@ assert(fallbackBody.includes('no reusable applied Jev route decision'));
 assert(fallbackBody.includes('node hello.js'));
 assert(!fallbackBody.includes(secret));
 assert.deepEqual(fallbackBody.match(/^## .+$/gm), ['## What does this PR do?', '## Changelog', '## How was it tested?', '## Screenshots', '## Checklist']);
+const overrideInput = { ...renderInput, execution: { ...renderInput.execution, route: crossProviderRoute } };
+for (const response of [proseFallback, 'invalid structured content']) {
+  const overrideRenderer = new GitHubShipping(real, async () => response);
+  const fallback = await overrideRenderer.description(overrideInput, fallbackHead);
+  assert(fallback.summary.includes('PR prose fallback:'));
+  assert(fallback.summary.includes('no replacement model was selected'));
+}
 console.log(`PR standard proof: optional screenshot heading; bounded evidence keeps checklist; model prose and conventional titles; committed repository template wins; plain template retains policy; screenshots linked; unresolved checks unticked; template redaction; defaultBytes=${(await readFile(join(root,'direct/pr-body.md'))).length}; templateBytes=${Buffer.byteLength(templateBody)}`);
 
 // Construct the v4 schema directly, independent of git history or a previous dist build.
