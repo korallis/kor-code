@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { loadKorConfig, parseDotEnv, readRuntimeEnvFile, runtimePaths } from "@kor-code/config";
 import { z } from "zod";
+import { stringify } from "yaml";
 import { checkRestore, fingerprint, mkdirRecorded, missing, pruneDirectories, readManifest, recordAfter, remember, restoreManifest, saveManifest, type InstallManifest } from "./install-journal.js";
 
 import { uninstallSkills } from "./skills-install.js";
@@ -66,18 +67,19 @@ function unitFile(environment: NodeJS.ProcessEnv): string {
     "Restart=on-failure", "RestartSec=3", "NoNewPrivileges=true", "PrivateTmp=true", "", "[Install]", "WantedBy=default.target", ""].join("\n");
 }
 
-async function scaffoldConfig(pilot: string, environment: NodeJS.ProcessEnv): Promise<void> {
+async function scaffoldConfig(pilot: string, environment: NodeJS.ProcessEnv, linearTeam: string | undefined): Promise<void> {
   const paths = runtimePaths(environment);
-  if ((await loadKorConfig(paths.configFile, { home: paths.home })).exists) return;
+  const loaded = await loadKorConfig(paths.configFile, { home: paths.home });
+  if (loaded.exists) return;
   let branch = "main";
   try { branch = (await command("git", ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], environment, pilot)).replace(/^origin\//, ""); } catch {
     try { await command("git", ["rev-parse", "--verify", "refs/heads/main"], environment, pilot); }
     catch { branch = await command("git", ["symbolic-ref", "--short", "HEAD"], environment, pilot); }
   }
-  // JSON is a YAML subset. Values are never shell-interpolated.
-  const config = { repos: { [basename(pilot)]: { path: pilot, defaultBranch: branch, checks: [], toolAllowlist: [] } },
-    limits: { total: 2, perRepository: 1 }, defaultRoute: { provider: "anthropic", model: "claude-sonnet-5-5", accountPolicy: "fill-first", sessionAffinity: true, reasoningLevel: "medium" }, pollIntervalSeconds: 60, intakeLabel: "kor" };
-  await writeFile(paths.configFile, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  const { limits, launchProfile, pollIntervalSeconds, intakeLabel } = loaded.config;
+  const config = { repos: { [basename(pilot)]: { path: pilot, linearTeam: linearTeam ?? "YOUR_TEAM_KEY", defaultBranch: branch, ship: "auto", checks: [], toolAllowlist: [] } },
+    limits, launchProfile, pollIntervalSeconds, intakeLabel };
+  await writeFile(paths.configFile, stringify(config), { mode: 0o600 });
 }
 
 async function scaffoldGateway(environment: NodeJS.ProcessEnv): Promise<string | undefined> {
@@ -174,7 +176,7 @@ async function undo(manifest: InstallManifest, environment: NodeJS.ProcessEnv, p
 }
 
 /** Refresh installed artifacts while keeping the original uninstall journal and credentials. */
-async function refreshKor(manifest: InstallManifest, options: { scope: InstallScope; pilot?: string; systemd: boolean }): Promise<{ output: string }> {
+async function refreshKor(manifest: InstallManifest, options: { scope: InstallScope; pilot?: string; linearTeam?: string; systemd: boolean }): Promise<{ output: string }> {
   const paths = runtimePaths();
   if (manifest.scope !== options.scope || manifest.claudeConfigDir !== resolve(process.env.CLAUDE_CONFIG_DIR || join(paths.home, ".claude")) || options.pilot && await realpath(resolve(options.pilot.replace(/^~\//, `${paths.home}/`))) !== manifest.pilot) {
     throw new Error("Installation scope, Claude directory or pilot changed; uninstall before changing these options");
@@ -214,7 +216,7 @@ async function refreshKor(manifest: InstallManifest, options: { scope: InstallSc
   return { output: "Kor updated; configuration, credentials and original uninstall backups retained.\nDaemon stopped for the update; run kor ui to launch Mission Control.\nCLIProxyAPI addition: existing credential retained (value not printed)." };
 }
 
-export async function installKor(options: { scope: InstallScope; pilot?: string; systemd: boolean }): Promise<{ output: string }> {
+export async function installKor(options: { scope: InstallScope; pilot?: string; linearTeam?: string; systemd: boolean }): Promise<{ output: string }> {
   const environment = process.env;
   const paths = runtimePaths(environment);
   const manifestPath = journalPath(environment);
@@ -291,7 +293,7 @@ export async function installKor(options: { scope: InstallScope; pilot?: string;
     // Do not follow an old unit symlink when replacing it.
     await rm(serviceFile, { force: true });
     await writeFile(serviceFile, unit, { mode: 0o600 });
-    await scaffoldConfig(pilot, environment);
+    await scaffoldConfig(pilot, environment, options.linearTeam);
     key = await scaffoldGateway(environment);
     await prepareMarketplace(marketplaceDir, options.scope === "local" ? pilot : undefined);
     await installCockpit(manifest, marketplaceDir, stage, environment);
@@ -324,7 +326,7 @@ export async function installKor(options: { scope: InstallScope; pilot?: string;
     `Kor installed (scope: ${options.scope})`, `CLI: ${cliLink}`, `Config: ${paths.configFile}`, `Service: ${serviceFile} (not started${options.systemd ? "" : "; systemd control skipped"})`,
     `Cockpit: ${PLUGIN_ID}${options.scope === "local" ? ` only when Claude starts in ${pilot} (linked worktrees disabled)` : ""}`, `Manifest: ${manifestPath}`,
     ...(key ? [`CLIProxyAPI addition: - ${key}`, `Stored the same new key in ${paths.gatewayEnvFile} (0600). Add the printed line to CLIProxyAPI manually.`] : ["CLIProxyAPI addition: existing credential retained; add its api-keys line manually if needed (value not printed)."]),
-    "Configure repository mapping, checks and toolAllowlist; run kor doctor before starting the service.",
+    "Confirm linearTeam (replace YOUR_TEAM_KEY if present), checks and toolAllowlist; run kor doctor before starting the service.",
   ].join("\n") };
 }
 
@@ -342,6 +344,14 @@ export async function uninstallKor(options: { purge: boolean }): Promise<{ outpu
       await pruneDirectories(manifest);
     }
     output = `Kor uninstalled${options.purge ? " (purged new Kor data; restored pre-existing data)" : "; config and state retained"}\n${options.purge ? "Replayed" : "Backups:"} ${manifest.backupDir}`;
+  }
+  if (options.purge) {
+    const paths = runtimePaths(environment);
+    const cache = resolve(environment.XDG_CACHE_HOME || join(paths.home, ".cache"), "kor-code");
+    if ([root, paths.configDir, paths.stateDir, paths.shareDir, manifest?.pilot].some(path => path && (contains(cache, path) || contains(path, cache)))) throw new Error("Installer cache must be separate from Kor data and checkouts");
+    await rejectSymlinkParents(cache);
+    if (await exists(cache) && (await lstat(cache)).isSymbolicLink()) throw new Error("Installer cache must not be a symlink");
+    await rm(cache, { recursive: true, force: true });
   }
   const skillsOutput = await uninstallSkills(options).catch(error =>
     `WARNING: Imported skills recovery is incomplete: ${error instanceof Error ? error.message : "unable to restore skills"}. Kor's own uninstall completed; skills backups were retained.`,

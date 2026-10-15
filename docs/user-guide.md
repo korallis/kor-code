@@ -38,8 +38,8 @@ You write a Linear issue with acceptance criteria. Kor then:
 1. **Queues** it (the **Start** and **Queue** buttons in Mission Control, `kor run
    LEE-123`, or the daemon polls Linear for Todo issues with the intake label `kor`).
 2. **Plans** it. One Jev preflight judges whether the issue is ready, how complex
-   and risky it is, and which model, skill and agent fit. Jev is the decision
-   service Kor calls through the TypeSafe API. If Jev is unavailable or unsure,
+   and risky it is, and which route and agent fit. Skills and playbooks are selected
+   for execution. Jev is the decision service Kor calls through the TypeSafe API. If Jev is unavailable or unsure,
    Kor uses your configured default route and labels it `fallback`.
 3. **Works** in an isolated git worktree. It starts Claude Code there, with the
    chosen model, through your CLIProxyAPI gateway and only the tools in your
@@ -88,7 +88,7 @@ git clone https://github.com/korallis/kor-code.git
 cd kor-code
 pnpm install --frozen-lockfile
 pnpm build
-node packages/cli/dist/cli.js install --pilot ~/code/my-project
+node packages/cli/dist/cli.js install --pilot ~/code/my-project --linear-team APP
 export PATH="$HOME/.local/bin:$PATH"
 kor --help
 ```
@@ -99,7 +99,11 @@ on, and the Claude Code status-line plugin activates only when Claude starts in
 that exact directory.
 Keep the `kor-code` checkout on disk: the installed `kor` command is a symlink to
 its compiled CLI, and the daemon serves Mission Control from it. Rebuild after you
-update it.
+update it. The installer writes YAML with the supplied team key, empty checks and
+tool permissions, `ship: auto`, `launchProfile: lean` and a 60-second poll interval.
+See the [README scaffold](../README.md#quick-start). Manual installs without
+`--linear-team` write `YOUR_TEAM_KEY`, which must be replaced; the one-liner prompts
+for the key when creating a config. Reinstalls preserve existing configuration.
 
 On a machine with no Kor files, the installer prints a new gateway key for you to
 add to CLIProxyAPI by hand. The key below is redacted:
@@ -214,8 +218,10 @@ reason, and never shows a key.
 
 Kor reads `~/.config/kor/config.yaml` (or `$XDG_CONFIG_HOME/kor/config.yaml`). The
 installer scaffolds it with empty `checks` and `toolAllowlist`; they are
-deliberate placeholders for your policy. This is the file used for the Mission Control
-captures in this guide (the project path is a scratch clone of this repository):
+deliberate placeholders for your policy. The example below is the customized
+configuration used for these Mission Control captures, with a 120-second poll
+interval; the fresh scaffold uses 60 seconds and inherits the schema defaults
+for omitted settings (see the [README scaffold](../README.md#quick-start)).
 
 ```yaml
 repos:
@@ -286,6 +292,25 @@ You can edit all of this in Mission Control (a project's **Repository settings**
 or **Settings**); the daemon validates it, writes `config.yaml` atomically and keeps
 the previous file as `config.yaml.bak`. The full schema, including calibration
 options, is in [configuration](configuration.md).
+
+## Add your own skills
+
+Keep private guidance outside the public checkout. Preview and import it with:
+
+```sh
+kor skills init
+kor skills import --from ./my-skills --dry-run --skip-invalid
+kor skills import --from ./my-skills --skip-invalid
+kor skills doctor
+```
+
+Each skill gets a result and its own diagnostics; `--json` exposes the same report
+for scripts. Without `--skip-invalid`, an invalid skill stops the batch before
+anything is copied. With it, valid skills are copied and invalid or conflicting
+ones are reported as skipped. An all-invalid batch exits `1`. Existing destination
+skills are never overwritten; dry runs leave the destination unchanged. The
+[private pack guide](skills.md#private-pack) covers layout, visibility and privacy
+checks.
 
 ## Check your setup with `kor doctor`
 
@@ -533,14 +558,17 @@ readiness: ready (0.92); confidence=0.92; status=applied
 complexity: small bounded change (0.39); confidence=0.41; status=applied
 risk: low operational risk (0.00); confidence=1.00; status=applied
 route: claude-haiku-5-5; confidence=0.96; status=applied
-skill: generalist; confidence=1.00; status=applied
 agent: generalist; confidence=1.00; status=applied
 linear: no clarification needed
 ```
 
+`kor plan` reports readiness, complexity, risk, route and agent decisions. It
+does not print a skill or playbook selection; those are made for execution.
+The values and IDs above vary by issue and Jev response.
+
 `kor plan` exits `1` while readiness is `blocked`, a decision is escalated, or a
-fallback route is in use. The first attempt, before any model had passed the
-probe, looked like this, and Kor wrote the `PLAN …` text as an issue comment:
+fallback route is in use. With no verified model, Kor reports a blocked plan
+and writes the `PLAN …` text as an issue comment. For example:
 
 ```text
 $ kor plan LEE-1111
@@ -548,10 +576,10 @@ PLAN plan-be9c64fa-e7dd-446a-bc3e-76e8b0c5fc4d
 route: anthropic/claude-sonnet-5-5 [fallback]
 fallback: false
 readiness: blocked (0.03); confidence=0.03; status=blocked
+verified-route: fail; No verified model is available; run kor models probe before retrying.
 complexity: small bounded change (0.42); confidence=0.37; status=applied
 risk: low operational risk (0.09); confidence=0.88; status=applied
 route: no-verified-route; confidence=0.96; status=blocked
-skill: generalist; confidence=0.98; status=applied
 agent: generalist; confidence=1.00; status=applied
 linear: clarification comment written
 FAIL plan: preflight did not produce a ready route. Hint: resolve the reported decisions or provide a healthy Jev response, then retry
@@ -1234,7 +1262,7 @@ cd kor-code
 git pull --ff-only
 corepack pnpm install --frozen-lockfile
 corepack pnpm -r --if-present build
-node packages/cli/dist/cli.js install --pilot ~/code/my-project --no-systemd
+node packages/cli/dist/cli.js install --pilot ~/code/my-project --linear-team APP --no-systemd
 kor ui
 ```
 
@@ -1246,23 +1274,30 @@ To remove Kor, run `kor uninstall`. It stops the daemon (and disables an install
 every file it changed from its backups, and removes the status-line plugin and
 marketplace, while keeping your config, state and the backups. `kor uninstall
 --purge` also removes the config, state and data Kor created, and restores
-anything that predated the installation. Run on a fresh home, the pair left
-nothing behind:
+anything that predated the installation. Purge also removes the installer cache
+at `~/.cache/kor-code` (`$XDG_CACHE_HOME/kor-code` when set): its pnpm shim,
+Corepack downloads and pnpm store/cache. A normal uninstall retains that cache.
+From the manual checkout route, the commands look like this:
 
 ```text
 $ kor uninstall
 Kor uninstalled; config and state retained
 Backups: /tmp/kor-t15/fresh/.local/state/kor-install/backups/1792000537354-86e40e1d
-$ kor uninstall --purge
+$ node packages/cli/dist/cli.js uninstall --purge
 Kor uninstalled (purged new Kor data; restored pre-existing data)
 Replayed /tmp/kor-t15/fresh/.local/state/kor-install/backups/1792000537354-86e40e1d
-$ find $HOME -mindepth 1 | wc -l
-0
 ```
 
 A normal uninstall also removes the `kor` link, so to purge afterwards run
 `node packages/cli/dist/cli.js uninstall --purge` from the checkout. Do not remove
 Kor's key from CLIProxyAPI's `api-keys` until you are finished with it; Kor never
-edits the proxy. Kor never touches `~/.codex` or `~/.agents`. More recovery detail
+edits the proxy. After the one-liner, the downloaded checkout (default `~/.local/share/kor-code`)
+and its `node_modules` and build output remain. Remove that checkout yourself once
+you no longer need the source CLI. Credentials outside Kor's config directory
+(such as Linear and TypeSafe env files), your CLIProxyAPI key entry, and other
+tools' caches/state (including shared Corepack/pnpm caches, GitHub CLI and
+no-mistakes state) remain. The installer uses only its own cache for new downloads;
+shared caches from older installations remain. Kor never touches `~/.codex` or
+`~/.agents`. More recovery detail
 (unrelated settings edits, interrupted installs) is in
 [configuration](configuration.md#install-and-uninstall).

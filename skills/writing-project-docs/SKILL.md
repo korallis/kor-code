@@ -14,17 +14,14 @@ metadata:
 
 # Write project docs
 
-Read the brief, existing docs, repository policy and relevant implementation.
-Keep established paths and terms. For a new project, use the paths below; only
-README lives at the root. For an update, change the affected documents and their
-dependants without rewriting unrelated decisions.
+Read the brief, docs, repository policy and relevant code. Preserve established
+paths and terms; update affected documents and dependants. New projects use the
+paths below; only README lives at root.
 
-## Select the documents
+## Select documents
 
-For a full set, work through these templates one at a time. For a targeted edit,
-read only the relevant templates. Templates are writing prompts, not executable
-scripts or text to copy unchanged. Replace every prompt with project facts,
-explicit proposals or an owned open question.
+For a full set, read every template; targeted edits need only affected templates.
+Replace prompts with facts, proposals or owned questions. Templates are not scripts.
 
 | Output | Read when writing |
 | --- | --- |
@@ -44,47 +41,41 @@ explicit proposals or an owned open question.
 
 ## Write from evidence
 
-Read [claim traceability](references/claim-traceability.md) before writing.
-Every rule, invariant and constraint needs a cited authoritative source beside
-it and a row in `docs/claim-audit.md`. Check each claim against that source;
-delete or correct claims without support. Existing docs are candidates to audit,
-not authority for their own assertions. A general review is not this check.
+Read [claim traceability](references/claim-traceability.md). Cite authority beside
+every rule, invariant and constraint; verify it and log the result in
+`docs/claim-audit.md`. Correct or delete unsupported claims. Existing docs cannot
+justify their own assertions.
 
-- Assign stable `REQ-001` style IDs and observable acceptance to requirements.
-  Carry those IDs into specs, interfaces and planned work. On a change, follow
-  the IDs through affected docs, screens and tickets; record stale downstream
-  artifacts for refresh. Preserve IDs and mark removed requirements superseded.
-- Use a boundaries table and invariants for architecture. ADRs distinguish
-  proposed, accepted and superseded decisions, with context and consequences.
-  For an undecided new project, write a proposed ADR and its open question.
-- Fix each domain term once in the glossary and reuse its spelling. Keep an
-  open-question table with an owner, proposed default and what its answer blocks.
-- Use relative Markdown links, including the document's directory and `.md`
-  suffix, so cross-references open in the repository browser.
-- Separate targets from observed behaviour. Derive commands from repository
-  scripts or wrappers and run them where possible. Mark unrun commands as
-  unverified and future commands as planned. Describe an absent interface as N/A
-  with the reason in the contract document. A full set still accounts for it.
-- Use real app screenshots in README and user instructions when the app exists.
-  Before then, state that screenshots are pending. Label any linked mockups as
-  designs; never fabricate captures, image links, ticket IDs or verification.
-- Keep secrets and private identifiers out of examples and captures. Use
-  runtime configuration names and public-safe synthetic data.
+- Give requirements stable `REQ-001` IDs and observable acceptance. Carry IDs
+  through specs, interfaces and work plans. Follow changes through docs, screens
+  and tickets; flag stale artifacts. Preserve IDs; mark removals superseded.
+- Architecture needs a boundaries table and invariants. ADRs state context,
+  consequences and proposed/accepted/superseded status. Undecided projects need
+  proposed ADRs and open questions.
+- Define canonical terms once in the glossary. Open questions need an owner,
+  proposed default and blocked work.
+- Use relative Markdown links with directory and `.md` suffix.
+- Separate targets from observations. Derive commands from scripts or wrappers;
+  run them where possible. Label unrun commands unverified and future commands
+  planned. Account for absent interfaces as N/A with a reason in the contract.
+- Use real app screenshots in README and user instructions. If the app is absent,
+  mark captures pending and label mockups as designs. Never fabricate evidence.
+- Keep examples and captures public-safe: runtime configuration names, synthetic
+  data, no secrets or private identifiers.
 
 ## Verify the set
 
-Read the written files. Check that each brief constraint has a requirement or an
-explicit non-goal, each requirement has acceptance and planned work, and contracts,
-specs, architecture and glossary agree. Verify local links and screenshot files
-exist; inspect real images when claiming screenshots. Remove template prompts and
-empty sections. Finish the claim ledger: enumerate every rule-like statement,
-check its cited source and record the result and any correction. Reconcile the
-document claim IDs with the ledger; no unsourced or unchecked claim may remain.
-Run [the claim-ID check](scripts/check-claim-ids.mjs) with Node from the project
-root; a nonzero exit blocks completion. It checks README and `docs/`; use an
-equivalent executed check for other established layouts.
-Missing facts belong in open questions with a proposed default.
+Read the files. Each brief constraint needs a requirement or non-goal; every
+requirement needs acceptance and planned work. Reconcile contracts, specs,
+architecture and glossary. Verify links and screenshot files; inspect claimed
+captures. Remove prompts and empty sections.
 
-Finish with the document list, observed checks, unverified commands and remaining
-decisions. Documentation completeness does not establish implementation or
-tracker readiness.
+Complete the claim ledger: enumerate every rule-like statement, verify sources,
+record corrections and reconcile document claim IDs. Resolve every unsupported
+or unchecked claim. Run [the claim-ID check](scripts/check-claim-ids.mjs) with Node
+from the project root; nonzero exit blocks completion. It checks README and
+`docs/`; execute an equivalent for other established layouts. Missing facts go
+in open questions with proposed defaults.
+
+Report documents, observed checks, unverified commands and remaining decisions.
+Documentation completeness does not prove implementation or tracker readiness.

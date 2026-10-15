@@ -16,25 +16,20 @@ metadata:
 
 ## Separate facts from proposals
 
-Keep unspecified product and API choices explicit: authentication, data fields,
-endpoint method/path, date boundaries, defaults and viewports are decisions,
-not facts to invent. Label proposed choices and illustrative IDs accordingly.
-If a choice changes acceptance, name it as a readiness blocker on every affected
-ticket, including backend work. Preserve existing contract details when revising
-requirements. A draft with unresolved choices is not ready for implementation.
+Treat unspecified authentication, data fields, endpoint method/path, date
+boundaries, defaults and viewports as decisions. Label proposals and illustrative
+IDs. Choices affecting acceptance block every affected ticket, including backend
+work. Preserve existing contracts when revising requirements.
 
-When planning without tracker tools, describe conditional operations, including
-searches and team discovery, rather than claiming anything was created. Reuse
-existing states, labels, ownership and project settings once verified.
+Without tracker tools, describe conditional searches and team discovery; claim
+creation only after readback. Reuse verified states, labels, ownership and project
+settings.
 
-Report each ticket as blocked with its specific gaps, or ready only after all
-gates pass; keep per-ticket statuses and the final summary consistent.
-Readiness is cumulative: **all** blocking dependencies must be completed,
-**all** affected inventory images attached and inspected, and **all** product
-questions affecting acceptance resolved. Satisfying one condition does not waive
-the others. Count route/state/viewport rows before recommending Todo; attach each
-row's actual PNG, without inventing additional screens or dropping listed ones.
-
+Report each ticket's specific blockers consistently with the final summary.
+Readiness requires **all** blocking dependencies completed, **all** affected
+inventory images attached and inspected, and **all** acceptance questions
+resolved. Count route/state/viewport rows before recommending Todo; attach each
+row's actual PNG without adding or dropping screens.
 
 1. **Read the brief and existing work.** Preserve the owner's stated outcome,
    shared vocabulary and constraints. Search the target project for duplicates
@@ -99,5 +94,4 @@ Check **every** ticket:
   requirements and integration have an owner; nothing disappeared in splitting.
 - Out-of-scope text prevents adjacent work from silently entering this ticket.
 
-Report a short readiness result with issue links and specific unresolved gaps.
-Do not claim readiness from a template filled with placeholders.
+Report issue links and specific unresolved gaps; placeholders do not establish readiness.

@@ -86,54 +86,85 @@ async function copyBundle(source: string, destination: string): Promise<number> 
   return bytes;
 }
 
-export async function importPrivateSkills(options: { config: KorConfig; paths: KorPaths; from: string; dryRun: boolean }) {
+type ImportDiagnostic = { rule: string; severity: "error" | "warning"; message: string };
+type ImportStatus = "pending" | "would-copy" | "copied" | "invalid" | "skipped" | "conflict" | "duplicate" | "not-copied";
+type ImportResult = { name: string; status: ImportStatus; suggestedVisibility: "local-only"; diagnostics: ImportDiagnostic[] };
+
+export async function importPrivateSkills(options: { config: KorConfig; paths: KorPaths; from: string; dryRun: boolean; skipInvalid?: boolean }) {
   const destination = await physicalPath(resolve(privateSkillsPath(options.config, options.paths)));
   const source = await realpath(resolve(options.from));
   const sourceRoot = (await lstat(source)).isDirectory() ? source : dirname(source);
   if (contains(sourceRoot, destination) || contains(destination, sourceRoot)) throw new Error("Import source and private pack must not overlap");
   await assertPrivateLocation(destination);
-  const catalogue = await buildSkillsCatalogue({ ...options, from: [source], estimate: true });
   const report = {
-    schemaVersion: 1, ok: catalogue.ok, dryRun: options.dryRun, destination, bytes: 0,
-    skills: catalogue.skills.map(skill => ({ name: skill.name, status: options.dryRun ? "would-copy" : "pending", suggestedVisibility: "local-only" })),
-    duplicates: catalogue.totals.duplicates, diagnostics: catalogue.diagnostics.map(item => ({ rule: item.rule, severity: item.severity, message: item.message })),
+    schemaVersion: 1, ok: true, dryRun: options.dryRun, destination, bytes: 0,
+    skills: new Array<ImportResult>(), duplicates: 0, diagnostics: new Array<ImportDiagnostic>(),
   };
-  if (!catalogue.skills.length) {
-    report.ok = false;
-    report.diagnostics.push({ severity: "error", rule: "empty-import", message: "No skills found in the explicit source" });
-  }
   const bundled = await buildSkillsCatalogue({ ...options, from: [fileURLToPath(new URL("../../../skills", import.meta.url))], estimate: true });
-  for (const skill of report.skills) {
-    const imported = catalogue.skills.find(candidate => candidate.name === skill.name);
-    if (bundled.skills.some(publicSkill => publicSkill.name === skill.name && publicSkill.hash === imported?.hash)) {
-      report.ok = false;
-      skill.status = "conflict";
-      report.diagnostics.push({ severity: "error", rule: "public-name", message: `${skill.name}: identical to the public bundle; no private copy is needed` });
-    }
-    if (await exists(join(destination, skill.name))) {
-      report.ok = false;
-      skill.status = "conflict";
-      report.diagnostics.push({ severity: "error", rule: "destination-exists", message: `${skill.name}: destination exists; import never overwrites` });
-    }
-  }
-  if (!report.ok) return report;
   const staging = join(options.paths.stateDir, `skills-import-${randomUUID()}`);
+  const selected = new Map<string, { hash: string; result: ImportResult; bytes: number }>();
   await mkdir(staging, { recursive: true, mode: 0o700 });
   try {
-    for (const skill of catalogue.skills) {
-      const origin = skill.origins[0];
-      if (!origin) throw new Error("Import source is missing");
-      report.bytes += await copyBundle(dirname(origin.path), join(staging, skill.name));
+    for (const file of await skillFiles(source)) {
+      const result: ImportResult = { name: basename(dirname(file)), status: "pending", suggestedVisibility: "local-only", diagnostics: [] };
+      report.skills.push(result);
+      try {
+        const skill = await readSkillBundle(file, "private");
+        result.name = skill.header.name;
+        const previous = selected.get(result.name);
+        if (previous) {
+          if (previous.hash === skill.hash) {
+            result.status = "duplicate";
+            report.duplicates++;
+          } else {
+            result.status = previous.result.status = "conflict";
+            const diagnostic: ImportDiagnostic = { severity: "error", rule: "name-collision", message: "Different source bundles use the same name" };
+            result.diagnostics.push(diagnostic);
+            previous.result.diagnostics.push(diagnostic);
+          }
+          continue;
+        }
+        selected.set(result.name, { hash: skill.hash, result, bytes: 0 });
+        if (bundled.skills.some(publicSkill => publicSkill.name === result.name && publicSkill.hash === skill.hash)) {
+          result.status = "conflict";
+          result.diagnostics.push({ severity: "error", rule: "public-name", message: "Identical to the public bundle; no private copy is needed" });
+        }
+        if (await exists(join(destination, result.name))) {
+          result.status = "conflict";
+          result.diagnostics.push({ severity: "error", rule: "destination-exists", message: "Destination exists; import never overwrites" });
+        }
+        if (result.status !== "pending") continue;
+        const bytes = await copyBundle(dirname(file), join(staging, result.name));
+        const lint = await lintSkills(staging, { private: true, names: [result.name] });
+        result.diagnostics.push(...lint.diagnostics.map(item => ({ rule: item.rule, severity: item.severity, message: `${item.file}:${item.line}: ${item.message}` })));
+        if (!lint.ok) result.status = "invalid";
+        else selected.set(result.name, { hash: skill.hash, result, bytes });
+      } catch (error) {
+        result.status = "invalid";
+        result.diagnostics.push({ severity: "error", rule: "skill-format", message: error instanceof Error && error.name !== "YAMLParseError" ? error.message : "Invalid YAML frontmatter" });
+      }
     }
-    const lint = await lintSkills(staging, { private: true });
-    report.diagnostics.push(...lint.diagnostics.map(item => ({ rule: item.rule, severity: item.severity, message: `${item.file}:${item.line}: ${item.message}` })));
-    report.ok = lint.ok;
+    if (!report.skills.length) {
+      report.ok = false;
+      report.diagnostics.push({ severity: "error", rule: "empty-import", message: "No skills found in the explicit source" });
+    }
+    report.diagnostics.push(...report.skills.flatMap(skill => skill.diagnostics.map(item => ({ ...item, message: `${skill.name}: ${item.message}` }))));
+    const invalid = report.skills.filter(skill => skill.status === "invalid" || skill.status === "conflict");
+    if (options.skipInvalid) {
+      for (const skill of invalid) skill.status = "skipped";
+    } else if (invalid.length) report.ok = false;
+    const ready = [...selected.values()].filter(skill => skill.result.status === "pending");
+    if (!ready.length && invalid.length) report.ok = false;
+    for (const skill of ready) {
+      skill.result.status = report.ok ? "would-copy" : "not-copied";
+      report.bytes += skill.bytes;
+    }
     if (!report.ok || options.dryRun) return report;
     await initPrivateSkills(destination);
-    for (const skill of report.skills) {
-      if (await exists(join(destination, skill.name))) throw new Error("Import destination changed during validation; no overwrite permitted");
-      await copyBundle(join(staging, skill.name), join(destination, skill.name));
-      skill.status = "copied";
+    for (const skill of ready) {
+      if (await exists(join(destination, skill.result.name))) throw new Error("Import destination changed during validation; no overwrite permitted");
+      await copyBundle(join(staging, skill.result.name), join(destination, skill.result.name));
+      skill.result.status = "copied";
     }
     return report;
   } finally { await rm(staging, { recursive: true, force: true }); }

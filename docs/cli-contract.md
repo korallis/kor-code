@@ -25,6 +25,13 @@ the standard `0`/`1`/`2` exit codes and shared CLI errors for I/O failures.
 shapes, hashes, source configuration and budgets are documented in
 [Catalogue](skills.md#catalogue). `show` accepts the same flags.
 
+`kor skills import --from DIRECTORY [--dry-run] [--skip-invalid] [--json]` reports
+per-skill status and diagnostics without a daemon. Invalid batches leave the
+pack unchanged unless `--skip-invalid` is present; that flag copies valid skills
+and reports invalid/conflicting ones as skipped. An empty or all-invalid batch
+exits `1`; a successful import or preview exits `0`. See [Private pack](skills.md#private-pack)
+for report statuses and destination rules.
+
 `kor skills add <git-url>@<commit> --tier public|private [--skill NAME ...]`
 and `kor skills update [--check|--apply]` also accept `--json` without a daemon.
 Their lockfile, licence status, diff report and recovery contract are documented
@@ -46,11 +53,12 @@ conflicts exit 1; invalid command arguments exit 2.
 - `--json` is accepted by `run`, `status`, `cancel`, `retry`, `logs`, `doctor`,
   `plan`, `install`, `uninstall`, `linear lint`, `linear attach-image`, `skills lint`,
   `skills add`, `skills update`, `skills index`, `skills list`, `skills show`,
-  `skills doctor` and `calibrate report`. A failure of any command is reported as
+  `skills doctor`, `skills init`, `skills import`, `skills guard` and `calibrate report`. A failure of any command is reported as
   a JSON error object when `--json` is present (see [Errors](#errors)). Only some
   commands print JSON on success: `run`, `status`, `cancel`, `retry`, `logs`,
   `doctor`, `plan`, `install`, `uninstall`, `linear lint`, `linear attach-image`,
-  `skills lint`, `skills add`, `skills update` and the catalogue commands do.
+  `skills lint`, `skills init`, `skills import`, `skills guard`, `skills add`,
+  `skills update` and the catalogue commands do.
   `kor models list` and `kor models probe` always print a table, and `kor
   calibrate report` prints its text report unless you pass `--json` to get
   the report object.
