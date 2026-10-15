@@ -37,10 +37,11 @@ inside them reads this daemon.
 The route handoff retains Jev's provider, model, label and `decisionId`; controller
 metrics and terminal observations refer to that preflight audit. Retry replays the
 same healthy decision while issue intent, blocking dependencies and eligible models are
-unchanged, and rechecks that its model is eligible. Operator guidance from
-Request changes and answers does not change the preflight fingerprint. Outage
-fallbacks are retried under a fresh audit ID. Changed inputs create a fresh
-immutable preflight revision while retaining earlier decisions. With calibration
+unchanged, and rechecks that its model is eligible. Once readiness passes,
+operator guidance from Request changes and answers retains that decision, including
+one reached after an earlier refusal. Before readiness passes, an operator answer
+creates a fresh preflight revision. Outage fallbacks are retried under a fresh
+audit ID. Changed inputs create a fresh immutable preflight revision while retaining earlier decisions. With calibration
 enabled, recorded attempt metrics retain provider-reported costs, which may be unknown.
 `--jev` filters candidates against the live gateway catalogue at startup; plain
 `serve` reads the verified registry. Both modes use Jev for acceptance judgments,

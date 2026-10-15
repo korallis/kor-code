@@ -16,7 +16,7 @@ export function createServeRouting(options: {
 }) {
   const client = options.client ?? new JevClient();
   const jev = new JevDecisionCore(client, options.audit);
-  const chooseRoute: NonNullable<DaemonOptions["chooseRoute"]> = async ({ executionId, issue }) => {
+  const chooseRoute: NonNullable<DaemonOptions["chooseRoute"]> = async ({ executionId, issue, previousDecisionId }) => {
     let models: CatalogueModel[] = [];
     let catalogueFailure: JevUnavailableError | undefined;
     try { models = [...await options.models()].sort((a, b) => a.model.localeCompare(b.model)); }
@@ -27,12 +27,16 @@ export function createServeRouting(options: {
     };
     const state = preflightRequests(input)[0]?.state;
     const original = options.audit.get(`route-${executionId}`);
-    const fingerprint = (value: unknown) => createHash('sha256').update(JSON.stringify(redact(value), (key, field: unknown) => {
+    const previous = options.audit.get(previousDecisionId ?? `route-${executionId}`) ?? original;
+    const previousReadiness = previous && options.audit.get(previous.request.decisionId.replace(/^route-/, 'readiness-'));
+    const fingerprint = (value: unknown, excludeGuidance = false) => createHash('sha256').update(JSON.stringify(redact(value), (key, field: unknown) => {
       if (key === 'labels' && Array.isArray(field)) return routingLabels(field);
-      if (key === 'description' && typeof field === 'string') return field.split('\n\nOperator guidance:\n')[0];
+      if (excludeGuidance && key === 'description' && typeof field === 'string') return field.split('\n\nOperator guidance:\n')[0];
       return field;
     }) ?? 'null').digest('hex').slice(0, 16);
-    let decisionRevision = original && fingerprint(original.request.state) !== fingerprint(state) ? fingerprint(state) : undefined;
+    const retained = previous && previousReadiness?.response.applied && previousReadiness.response.choice === 'ready' && fingerprint(previous.request.state, true) === fingerprint(state, true) ? previous : undefined;
+    let decisionRevision = retained ? retained.request.decisionId.slice(`route-${executionId}`.length + 1) || undefined
+      : original && fingerprint(original.request.state) !== fingerprint(state) ? fingerprint(state) : undefined;
     const baseRevision = decisionRevision;
     for (let retry = 1; ; retry++) {
       const saved = options.audit.get(`readiness-${executionId}${decisionRevision ? `-${decisionRevision}` : ""}`);

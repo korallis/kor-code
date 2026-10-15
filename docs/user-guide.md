@@ -424,7 +424,8 @@ linear: no comment written
 
 It exits `1` when readiness is `blocked` or `uncertain`, a decision is escalated
 or the route is a fallback. For `uncertain`, all deterministic readiness checks
-pass: review the acceptance criteria in Linear, add any missing detail, then retry.
+pass: review the acceptance criteria in Linear, add any missing detail, then retry,
+or use **Send and retry** in Mission Control to answer and ask Jev again.
 Request changes and operator answers retain an execution's ready verdict while
 the underlying issue and eligible models stay unchanged.
 

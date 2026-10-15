@@ -198,9 +198,10 @@ label a Todo issue `kor` and let the daemon pick it up on its next poll.
 
 A confidence-only readiness refusal is reported as `uncertain`, with Jev's score
 and the required threshold. All deterministic checks pass in that case; review
-the acceptance criteria in Linear, add any missing detail, then retry. Once an
-execution is ready, **Request changes** and operator answers keep that verdict
-while the issue and eligible models stay unchanged.
+the acceptance criteria in Linear, add any missing detail, then retry, or answer
+in Mission Control to ask Jev again. Once an execution is ready, **Request changes**
+and operator answers keep that verdict while the issue and eligible models stay
+unchanged.
 
 ### Work in Mission Control
 
