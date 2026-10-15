@@ -347,8 +347,11 @@ export async function uninstallKor(options: { purge: boolean }): Promise<{ outpu
   }
   if (options.purge) {
     const paths = runtimePaths(environment);
-    const cache = resolve(environment.XDG_CACHE_HOME || join(paths.home, ".cache"), "kor-code");
-    if ([root, paths.configDir, paths.stateDir, paths.shareDir, manifest?.pilot].some(path => path && (contains(cache, path) || contains(path, cache)))) throw new Error("Installer cache must be separate from Kor data and checkouts");
+    // A symlinked cache directory is followed; only Kor's own subdirectory inside its target is removed.
+    const real = (path: string) => realpath(path).catch(error => { if (missing(error)) return resolve(path); throw error; });
+    const cache = join(await real(environment.XDG_CACHE_HOME || join(paths.home, ".cache")), "kor-code");
+    const protectedPaths = await Promise.all([root, paths.configDir, paths.stateDir, paths.shareDir, manifest?.pilot].flatMap(path => path ? [real(path)] : []));
+    if (protectedPaths.some(path => contains(cache, path) || contains(path, cache))) throw new Error("Installer cache must be separate from Kor data and checkouts");
     await rejectSymlinkParents(cache);
     if (await exists(cache) && (await lstat(cache)).isSymbolicLink()) throw new Error("Installer cache must not be a symlink");
     await rm(cache, { recursive: true, force: true });

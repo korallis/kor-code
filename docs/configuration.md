@@ -371,7 +371,10 @@ supports the update path; use the same ref and save local edits first. Git error
 retain their diagnostic text. Uninstall leaves the downloaded checkout and
 installer cache. `uninstall --purge` removes `$XDG_CACHE_HOME/kor-code` (default
 `~/.cache/kor-code`), including the local pnpm shim, Corepack downloads and pnpm
-store/cache. This directory is reserved for Kor's installer. The checkout,
+store/cache. This directory is reserved for Kor's installer. When `~/.cache` (or
+`$XDG_CACHE_HOME`) is a symlink, purge follows it and removes only `kor-code`
+inside its target; the link, the target directory and everything else in it
+remain. A `kor-code` that is itself a symlink is refused. The checkout,
 its dependencies/builds, external credentials and other tools' shared caches/state
 remain; see [update and uninstall](user-guide.md#update-and-uninstall).
 

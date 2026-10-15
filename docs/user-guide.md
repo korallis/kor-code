@@ -1360,7 +1360,8 @@ marketplace, while keeping your config, state and the backups. `kor uninstall
 --purge` also removes the config, state and data Kor created, and restores
 anything that predated the installation. Purge also removes the installer cache
 at `~/.cache/kor-code` (`$XDG_CACHE_HOME/kor-code` when set): its pnpm shim,
-Corepack downloads and pnpm store/cache. A normal uninstall retains that cache.
+Corepack downloads and pnpm store/cache. If `~/.cache` is a symlink, purge removes
+only `kor-code` inside its target. A normal uninstall retains that cache.
 From the manual checkout route, the commands look like this:
 
 ```text

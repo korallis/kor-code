@@ -126,7 +126,8 @@ Run `kor ui` afterwards. Local checkout edits or divergent commits stop the upda
 with a fix-it message. `kor uninstall` removes the integration; `kor uninstall
 --purge` also removes Kor's own data and `~/.cache/kor-code` (or
 `$XDG_CACHE_HOME/kor-code`), including the installer's pnpm shim, Corepack downloads
-and pnpm store/cache. The downloaded checkout, its dependencies/builds, external
+and pnpm store/cache; a symlinked `~/.cache` is followed and only its `kor-code`
+is removed. The downloaded checkout, its dependencies/builds, external
 credentials, proxy key entry and caches/state owned by other tools remain.
 
 For a private fork or mirror, authenticate with `gh auth login`, then use the
