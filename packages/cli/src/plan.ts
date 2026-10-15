@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { resolveLinearApiKey } from "@kor-code/linear";
+import { hasScreenshot, resolveLinearApiKey } from "@kor-code/linear";
 import { HttpLinearClient } from "@kor-code/linear";
 import { LinearStore } from "@kor-code/linear";
 import { JevClient, JevDecisionCore, PersistentDecisionAuditLog, planPreflight, type PreflightPlan } from "@kor-code/jev";
@@ -16,6 +16,7 @@ function formatPlan(plan: PreflightPlan): string {
   for (const decision of plan.decisions) {
     const value = decision.answerType === "noul" ? `${decision.choice} (${decision.noul?.toFixed(2) ?? "0.00"})` : decision.answerType === "score" ? `${decision.choice} (${decision.score?.toFixed(2) ?? "0.00"})` : decision.choice;
     lines.push(`${decision.kind}: ${value}; confidence=${decision.confidence.toFixed(2)}; status=${decision.applied ? "applied" : "blocked"}`);
+    if (decision.kind === "readiness") lines.push(...decision.policyChecks.filter(check => check.result !== "pass").map(check => `${check.name}: ${check.result}; ${check.reason ?? "Resolve this policy check, then retry."}`));
   }
   return lines.join("\n");
 }
@@ -33,7 +34,7 @@ export async function runPlan(issueId: string, environment: NodeJS.ProcessEnv = 
   const jevKey = environment.TYPESAFE_API_KEY ?? environment.TYPESAFE_KEY ?? environment.JEV_API_KEY;
   const core = new JevDecisionCore(new JevClient(jevKey ? { apiKey: jevKey } : {}), audit);
   const executionId = `plan-${randomUUID()}`;
-  const plan = await planPreflight({ executionId, issue: { id: issue.id, title: issue.title, ...(issue.description !== undefined ? { description: issue.description } : {}), acceptanceCriteria: issue.acceptanceCriteria, dependencies: issue.dependencies.map(dependency => ({ id: dependency.id, state: dependency.stateType })) }, verifiedModels, defaultRoute: config.config.defaultRoute }, core, audit);
+  const plan = await planPreflight({ executionId, issue: { id: issue.id, title: issue.title, ...(issue.description !== undefined ? { description: issue.description } : {}), acceptanceCriteria: issue.acceptanceCriteria, labels: issue.labels, hasScreenshot: hasScreenshot(issue), dependencies: issue.dependencies.map(dependency => ({ id: dependency.id, state: dependency.stateType })) }, verifiedModels, defaultRoute: config.config.defaultRoute }, core, audit);
   const output = formatPlan(plan);
   let commentWritten = false;
   if (plan.decisions.some(decision => decision.escalated || decision.kind === "readiness" && decision.choice === "blocked")) {

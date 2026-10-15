@@ -152,6 +152,14 @@ session may do; one denied tool fails the attempt, so list the commands your
 project's tests use. Every field is explained in the
 [user guide](docs/user-guide.md#configure-a-repository).
 
+Before queueing a ticket, run `kor linear lint LEE-123` (or add `--json` for
+scripts). This read-only check requires acceptance criteria, completed blocking
+dependencies, and a screenshot or mockup on tickets labelled `UI` (case-insensitive).
+Embed the image in the description or a comment, or attach an image file.
+Missing images block Jev readiness with instructions to fix the ticket.
+Use `kor linear lint --project PROJECT-ID` to check a project of up to 100 issues.
+Lint checks ticket facts; `kor plan` also judges scope and the verified route.
+
 **2. Run `kor doctor`.** It prints one `PASS` or `FAIL` per check:
 
 ```text

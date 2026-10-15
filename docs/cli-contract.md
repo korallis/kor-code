@@ -34,7 +34,7 @@ the standard `0`/`1`/`2` exit codes and shared CLI errors for I/O failures.
   `plan`, `install`, `uninstall` and `calibrate report`, and a failure of any
   command is reported as a JSON error object when `--json` is present (see
   [Errors](#errors)). Only some commands print JSON on success: `run`, `status`,
-  `cancel`, `retry`, `logs`, `doctor`, `plan`, `install` and `uninstall` do.
+  `cancel`, `retry`, `logs`, `doctor`, `plan`, `linear lint`, `install` and `uninstall` do.
   `kor models list` and `kor models probe` always print a table, and `kor
   calibrate report` prints its text report unless you pass `--json` to get
   the report object.
@@ -337,6 +337,29 @@ $ kor plan LEE-1117 --json
 
 `outage` (a string) is present when Jev was unavailable, and `commentWritten` says
 whether a clarification comment was posted to the issue.
+
+Each decision in `plan --json` also includes `policyChecks` and `reasons`.
+Checks have `name`, `result` (`pass`, `fail` or `unresolved`) and an optional
+actionable `reason`. A UI-labelled ticket without an image has a failed
+`ui-screenshot` check and a `blocked` readiness decision. These fields are retained
+in the durable Jev audit.
+
+### `kor linear lint --json`
+
+Use `kor linear lint ISSUE-ID --json`, or `kor linear lint --project PROJECT-ID
+--json` for a project of up to 100 issues. This read-only command needs Linear
+credentials, with no daemon, Kor repository configuration or TypeSafe key required.
+It returns `{ "schemaVersion": 1, "ready": boolean, "issues": [...] }`. Each issue
+has `issueId`, `status` (`ready` or `blocked`), `hasScreenshot`, and `checks` in the
+same shape as plan policy checks. `ready` means every ticket check passes; it does
+not include the verified-route check or Jev's scope judgment. An empty project
+returns `ready: true` and `issues: []`.
+
+Exit `0` means ready; exit `1` means blocked or an operational failure; invalid
+arguments exit `2`. A blocked report is a normal result without an `error` object.
+Operational and usage failures use the standard JSON error envelope. Project
+queries fail explicitly if there are more than 100 issues, rather than reporting
+readiness from an incomplete page.
 
 ## Over HTTP
 

@@ -5,6 +5,7 @@ import { basename, join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { formatDoctor, runDoctor } from "./doctor.js";
 import { runPlan } from "./plan.js";
+import { linearLintUsage, runLinearLint } from "./linear.js";
 import { installKor, uninstallKor, type InstallScope } from "./install.js";
 import { runModels, probeModel } from "./models.js";
 import { openUi, daemonQueueAction } from "./ui.js";
@@ -38,6 +39,7 @@ function errorHint(command: string, error: unknown): string {
   if (command === "uninstall") return "save any later edits; restore the reported installed snapshot, then retry `kor uninstall`";
   if (command === "serve") return "check the Kor configuration and daemon state, then retry";
   if (command === "run" || command === "plan") return "check the issue identifier, the Linear credentials, and that config.yaml maps the issue's team or project to a repository, then retry";
+  if (command === "linear") return "check the issue or project identifier and Linear credentials; for projects above 100 issues, lint individual issues";
   if (command === "status" || command === "cancel" || command === "retry" || command === "logs") return "check the execution ID or issue key, then retry";
   return `run \`kor ${command} --help\` or retry with --debug for details`;
 }
@@ -276,12 +278,25 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
       const blocked = result.plan.fallback || result.plan.decisions.some(decision => decision.escalated || decision.kind === "readiness" && decision.choice === "blocked");
       if (jsonFlag(cleanArgs)) {
         const { plan } = result;
-        process.stdout.write(`${JSON.stringify({ schemaVersion: 1, planId: plan.executionId, ready: !blocked, route: plan.route, fallback: plan.fallback, ...(plan.outage ? { outage: plan.outage } : {}), decisions: plan.decisions.map(decision => ({ kind: decision.kind, choice: decision.choice, confidence: decision.confidence, applied: decision.applied, escalated: decision.escalated })), commentWritten: result.commentWritten })}\n`);
+        process.stdout.write(`${JSON.stringify({ schemaVersion: 1, planId: plan.executionId, ready: !blocked, route: plan.route, fallback: plan.fallback, ...(plan.outage ? { outage: plan.outage } : {}), decisions: plan.decisions.map(decision => ({ kind: decision.kind, choice: decision.choice, confidence: decision.confidence, applied: decision.applied, escalated: decision.escalated, policyChecks: decision.policyChecks, reasons: decision.reasons })), commentWritten: result.commentWritten })}\n`);
       } else {
         process.stdout.write(`${result.output}\n${result.commentWritten ? "linear: clarification comment written" : "linear: no clarification needed"}\n`);
         if (blocked) process.stderr.write("FAIL plan: preflight did not produce a ready route. Hint: resolve the reported decisions or provide a healthy Jev response, then retry\n");
       }
       return blocked ? 1 : 0;
+    }
+    if (command === "linear") {
+      const lintArgs = cleanArgs.slice(1);
+      if (lintArgs.length === 1 && (lintArgs[0] === "--help" || lintArgs[0] === "-h") || lintArgs[0] === "lint" && lintArgs.length === 2 && (lintArgs[1] === "--help" || lintArgs[1] === "-h")) {
+        process.stdout.write(`Usage: ${linearLintUsage}\nRead-only checks for acceptance criteria, completed dependencies, and screenshots on UI-labelled tickets.\n`);
+        return 0;
+      }
+      if (lintArgs.filter(arg => arg === "--json").length > 1) usageFailure(linearLintUsage);
+      const selectors = lintArgs.filter(arg => arg !== "--json");
+      const project = selectors[1] === "--project";
+      const reference = selectors[project ? 2 : 1];
+      if (selectors[0] !== "lint" || selectors.length !== (project ? 3 : 2) || !reference || reference.startsWith("-") || !project && !/^[A-Z][A-Z0-9]+-[0-9]+$/.test(reference)) usageFailure(linearLintUsage);
+      return await runLinearLint(reference, project, jsonFlag(lintArgs));
     }
     if (command === "status") return await status(cleanArgs.slice(1));
     if (command === "run") return await runIssue(cleanArgs.slice(1));
@@ -321,7 +336,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     if (debug && error instanceof Error && error.stack) process.stderr.write(`${error.stack}\n`);
     return failure instanceof CliFailure ? failure.exitCode : 1;
   }
-  process.stdout.write("Usage: kor skills lint [DIRECTORY] [--json] | kor ui | kor serve [--ui-dir DIST] [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--context] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list | kor models probe [--family family] [--model model]\n");
+  process.stdout.write("Usage: kor skills lint [DIRECTORY] [--json] | kor ui | kor serve [--ui-dir DIST] [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--context] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor linear lint ISSUE-ID [--json] | kor linear lint --project PROJECT-ID [--json] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list | kor models probe [--family family] [--model model]\n");
   return 0;
 }
 
