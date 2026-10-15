@@ -427,6 +427,11 @@ the same as an object.
   label the plan `fallback`. See [selection and budgets](docs/skills.md#jev-selection-and-context-budgets).
   Run `pnpm skills:fixture` for the recorded 23-task proof, or add `--live-jev`
   to compare against live TypeSafe answers.
+  Jev also records a separate `playbook` Choice before each session. At most one
+  procedure is pinned, with a separate 1,500-token body cap. Repairs ask again
+  with the current failure classes. Run `node scripts/playbooks-proof.mjs /tmp/kor-playbooks-proof`
+  after building for the live 12-task fixture and delivery checks. See
+  [playbook selection](docs/skills.md#playbook-selection) for policy and audit details.
 
 - [User guide](docs/user-guide.md): install, credentials, configuration, Linear
   setup, Mission Control job by job, the CLI and status line, recovery,

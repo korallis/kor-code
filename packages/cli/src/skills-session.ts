@@ -5,7 +5,7 @@ import type { KorConfig, KorPaths } from "@kor-code/config";
 import type { SessionLaunch, SessionSkillPack } from "@kor-code/controller";
 import type { JevDecisionCore } from "@kor-code/jev";
 import { buildSkillsCatalogue } from "./skills-catalogue.js";
-import { buildSkillsPack } from "./skills-pack.js";
+import { buildSkillsPack, type SkillDeliveryPlan } from "./skills-pack.js";
 
 const packageSchema = z.object({ dependencies: z.record(z.string(), z.string()).optional(), devDependencies: z.record(z.string(), z.string()).optional() });
 export async function prepareSessionSkills(options: {
@@ -25,10 +25,19 @@ export async function prepareSessionSkills(options: {
   } catch (error) {
     if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
   }
-  const decision = await jev.selectSkills({ executionId: input.execution.id, task: input.prompt,
+  const [decision, playbook] = await Promise.all([jev.selectSkills({ executionId: input.execution.id, task: input.prompt,
     stage: input.skillStage ?? "execute",
     catalogue, allowedTools: input.allowedTools, stackTags, ...repository?.skills,
     ...(config.skills ? { listingBudget: config.skills.listingBudget, bodyBudget: config.skills.bodyBudget } : {}),
-  });
-  return buildSkillsPack({ sessionsDir: paths.sessionsDir, executionId: input.execution.id, catalogue, plan: decision.plan, allowedTools: input.allowedTools });
+  }), jev.selectPlaybook({ executionId: input.execution.id, task: input.prompt,
+    stage: input.skillStage ?? "execute", catalogue, allowedTools: input.allowedTools, stackTags,
+    ...(repository?.skills?.never ? { never: repository.skills.never } : {}),
+    ...(input.attemptId ? { attemptId: input.attemptId } : {}),
+    ...(input.playbookFailure ? { failure: input.playbookFailure } : {}),
+    ...(input.playbookOverride !== undefined ? { override: input.playbookOverride } : {}),
+  })]);
+  const selected = playbook.playbookPlan.selected;
+  const plan: SkillDeliveryPlan = { catalogueHash: catalogue.hash, skills: decision.plan.skills.map(skill => ({ name: skill.name,
+    tier: skill.name === selected ? "pinned" : skill.tier })) };
+  return buildSkillsPack({ sessionsDir: paths.sessionsDir, executionId: input.execution.id, catalogue, plan, allowedTools: input.allowedTools });
 }

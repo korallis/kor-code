@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { chmod, mkdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import type { SessionSkillPack } from "@kor-code/controller";
+import { PLAYBOOK_BODY_BUDGET } from "@kor-code/jev";
 import { readSkillBundle, type CatalogueSkill, type SkillsCatalogue } from "./skills-catalogue.js";
 import { lintSkills } from "./skills-lint.js";
 
@@ -35,6 +36,8 @@ export async function buildSkillsPack(input: {
     if (entry.tier !== "hidden") selected.push({ skill, tier: entry.tier });
   }
   selected.sort((a, b) => compare(a.skill.name, b.skill.name));
+  const playbooks = selected.filter(entry => entry.skill.kind === "playbook");
+  if (playbooks.length > 1 || playbooks.some(entry => entry.tier !== "pinned" || entry.skill.cost.bodyTokens > PLAYBOOK_BODY_BUDGET)) throw new Error("Delivery requires at most one pinned playbook within its body budget");
   const tools = new Set(input.allowedTools.map(tool => tool.split("(")[0]));
   const bundles = [];
   for (const { skill, tier } of selected) {

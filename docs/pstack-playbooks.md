@@ -11,9 +11,10 @@ kor skills lint
 ```
 
 From a source checkout, use `bin/kor` after installing dependencies and building.
-The files ship with Kor; no separate plugin installation is required. This content
-change makes them discoverable in the catalogue. Session selection and delivery
-remain the responsibility of Kor's decision and execution layers.
+The files ship with Kor; no separate plugin installation is required. The
+catalogue makes them discoverable. Before each session, Jev's recorded
+`playbook` decision selects at most one procedure for pinned delivery. Repairs
+ask again with failure evidence. See [selection policy](skills.md#playbook-selection).
 
 ## Session playbooks
 
