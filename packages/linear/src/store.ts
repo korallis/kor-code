@@ -94,6 +94,7 @@ export class LinearStore {
       CREATE TABLE IF NOT EXISTS run_messages (id TEXT PRIMARY KEY, execution_id TEXT NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL, recorded_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS writer (id INTEGER PRIMARY KEY CHECK(id=1), token TEXT, expires_at INTEGER);
       CREATE TABLE IF NOT EXISTS decision_audit (decision_id TEXT PRIMARY KEY, recorded_at TEXT NOT NULL, payload TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS execution_previews (issue_id TEXT PRIMARY KEY, execution_id TEXT NOT NULL UNIQUE);
       CREATE TABLE IF NOT EXISTS verification_attempts (attempt_id TEXT PRIMARY KEY, execution_id TEXT NOT NULL, attempt_number INTEGER NOT NULL, started_at INTEGER NOT NULL);
       INSERT OR IGNORE INTO writer(id) VALUES (1);`);
     this.transaction(() => {
@@ -264,8 +265,16 @@ export class LinearStore {
     });
   }
   private enqueueInTransaction(issueId: string): Assignment {
-    this.db.prepare(`INSERT OR IGNORE INTO assignments(issue_id,execution_id,session_id,status,available_at) VALUES(?,?,?,'queued',?)`).run(issueId, randomUUID(), randomUUID(), this.now());
+    const executionId = this.previewExecutionId(issueId);
+    this.db.prepare(`INSERT OR IGNORE INTO assignments(issue_id,execution_id,session_id,status,available_at) VALUES(?,?,?,'queued',?)`).run(issueId, executionId, randomUUID(), this.now());
+    this.db.prepare('DELETE FROM execution_previews WHERE issue_id=?').run(issueId);
     return this.getAssignment(issueId);
+  }
+  previewExecutionId(issueId: string): string {
+    const assignment = this.db.prepare('SELECT execution_id FROM assignments WHERE issue_id=?').get(issueId);
+    if (assignment) return string(assignment.execution_id);
+    this.db.prepare('INSERT OR IGNORE INTO execution_previews VALUES(?,?)').run(issueId, randomUUID());
+    return string(object(this.db.prepare('SELECT execution_id FROM assignments WHERE issue_id=? UNION ALL SELECT execution_id FROM execution_previews WHERE issue_id=? LIMIT 1').get(issueId, issueId)).execution_id);
   }
   getAssignment(issueId: string): Assignment {
     return parseAssignment(this.db.prepare('SELECT * FROM assignments WHERE issue_id=?').get(issueId));

@@ -12,7 +12,7 @@ import { openUi, daemonQueueAction } from "./ui.js";
 import { createServeRouting } from "./serve-routing.js";
 import { ensureRuntimeDirectories, loadGatewayEnvironment, loadKorConfig, repositoryKeyForIssue, runtimePaths, type KorConfig } from "@kor-code/config";
 import { HttpLinearClient, LinearStore, attachLinearImage } from "@kor-code/linear";
-import { GitHubShipping, KorDaemon, MissionServices, processMatches, readExecutionStatus, readStatus, type DaemonOptions, type DescribePullRequest } from "@kor-code/daemon";
+import { GitHubShipping, KorDaemon, MissionServices, OverrideStore, processMatches, readExecutionStatus, readStatus, type DaemonOptions, type DescribePullRequest } from "@kor-code/daemon";
 import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController, type Controller } from "@kor-code/controller";
 import { loadAvailableVerifiedModels, modelProvider, readModelRegistry, writeModelRegistry } from "@kor-code/gateway-adapter";
 import { PersistentDecisionAuditLog, foldSessionEdits } from "@kor-code/jev";
@@ -124,8 +124,21 @@ async function runIssue(args: readonly string[]): Promise<number> {
   const loaded = await loadKorConfig(paths.configFile, { home: paths.home });
   const issue = await canonicalIssue(issueReference);
   if (dryRun) {
-    print({ issueId: issue.identifier, canonicalIssueId: issue.id, title: issue.title, dryRun: true, intake: loaded.config.intakeLabel, route: loaded.config.defaultRoute, planned: ["enqueue durable assignment", "run isolated session when kor serve is active"] }, json);
-    return 0;
+    const store = new LinearStore(paths.databaseFile);
+    const overrides = new OverrideStore(paths.databaseFile);
+    try {
+      const executionId = store.previewExecutionId(issue.id);
+      const override = overrides.activeRoute(executionId);
+      const mission = new MissionServices(paths);
+      await mission.initialize();
+      const audit = new PersistentDecisionAuditLog({ read: id => store.readDecisionAudit(id), write: (id, at, payload) => store.writeDecisionAudit(id, at, payload), update: (id, at, payload) => store.updateDecisionAudit(id, at, payload) });
+      const routing = createServeRouting({ audit, defaultRoute: loaded.config.defaultRoute, client: { evaluate: (state, questions) => mission.jev().evaluate(state, questions) }, models: async () =>
+        (await loadAvailableVerifiedModels(await readModelRegistry(paths.modelsFile), async () => (await mission.gateway()).listModels())).map(result => ({ provider: modelProvider(result.model, result.provider), model: result.model, capabilities: Object.entries(result.capabilities).map(([name, supported]) => ({ name, supported: supported === true })), ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) })),
+      });
+      const route = override ? { ...loaded.config.defaultRoute, model: override.choice } : (await routing.chooseRoute({ executionId, issue: await mission.linear().getIssue(issue.id) })).route;
+      print({ issueId: issue.identifier, canonicalIssueId: issue.id, title: issue.title, executionId, dryRun: true, intake: loaded.config.intakeLabel, route, planned: ["enqueue durable assignment", "run isolated session when kor serve is active"] }, json);
+      return 0;
+    } finally { overrides.close(); store.close(); }
   }
   const store = new LinearStore(paths.databaseFile);
   try {
@@ -363,7 +376,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
           print(jsonFlag(skillArgs) ? report : [
             ...report.skills.map(skill => `${skill.name}: ${skill.status}; suggested visibility ${skill.suggestedVisibility}`),
             ...report.diagnostics.map(item => `${item.severity.toUpperCase()} [${item.rule}] ${item.message}`),
-            `${report.ok ? "PASS" : "FAIL"} ${dryRun ? "dry-run" : "import"}: ${report.skills.length} skills, ${report.duplicates} duplicates, ${report.bytes} bytes; ${report.destination}`,
+            `${report.ok ? "PASS" : "FAIL"} ${dryRun ? "dry-run" : "import"}: ${report.skills.filter(skill => skill.status === "copied" || skill.status === "would-copy").length} ${dryRun ? "would copy" : "copied"}, ${report.skills.filter(skill => skill.status === "skipped").length} skipped, ${report.duplicates} duplicates, ${report.bytes} bytes; ${report.destination}`,
           ].join("\n"), jsonFlag(skillArgs));
           return report.ok ? 0 : 1;
         }

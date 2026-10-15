@@ -236,6 +236,7 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
   const grade = healthScore === null ? '—' : healthScore >= 0.9 ? 'A' : healthScore >= 0.8 ? 'B' : healthScore >= 0.65 ? 'C' : 'D';
   const readyIds = issues.filter(issue => isOpen(issue) && !projectRuns.some(run => run.issueId === issue.id && !FINISHED.has(run.status)) && issue.labels.includes(intake) && issue.acceptanceCriteria.length > 0).map(issue => issue.id);
   const selectedReady = selected.filter(id => readyIds.includes(id));
+  const queueCount = selectedReady.length || readyIds.length;
   const queueSelected = (ids: readonly string[]) => { const [first, ...rest] = ids; if (first) queue.mutate({ issueIds: [first, ...rest] }, { onSuccess: () => setSelected([]) }); };
   const openPulls = pulls.data?.pulls.value.filter(pull => pull.state === 'open') ?? [];
   const activity = buildActivity(projectRuns, overrides.filter(record => projectRuns.some(run => run.executionId === record.executionId))).slice(0, 5);
@@ -301,7 +302,7 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
           <span {...stylex.props(layout.grow)} />
           {teamUrl && <Button brand="linear" href={teamUrl} external>Open in Linear</Button>}
           <Button icon={SettingsIcon} onClick={() => setTab('settings')}>Settings</Button>
-          <Button variant="primary" icon={Play} busy={queue.isPending} disabled={readyIds.length === 0} onClick={() => queueSelected(selectedReady.length ? selectedReady : readyIds)}>Queue {selectedReady.length || readyIds.length} issues for Kor</Button>
+          <Button variant="primary" icon={Play} busy={queue.isPending} disabled={readyIds.length === 0} onClick={() => queueSelected(selectedReady.length ? selectedReady : readyIds)}>Queue {queueCount} {queueCount === 1 ? 'issue' : 'issues'} for Kor</Button>
         </Card>
         <Tabs value={tab} onChange={setTab} items={tabs} label="Project views" />
         {tab === 'overview' && (

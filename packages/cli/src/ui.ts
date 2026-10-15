@@ -82,7 +82,7 @@ export async function daemonQueueAction(input: { executionId: string; action: "c
   const url = await liveUiUrl(token);
   if (!url) throw new Error("Kor daemon is not running; start kor serve before changing the queue");
   const response = await fetch(`${url}api/runs/${encodeURIComponent(input.executionId)}/${input.action}`, {
-    method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: "{}", signal: AbortSignal.timeout(20_000), redirect: "error",
+    method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ origin: "CLI" }), signal: AbortSignal.timeout(20_000), redirect: "error",
   });
   const payload: unknown = await response.json();
   if (!response.ok) {

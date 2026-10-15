@@ -53,11 +53,11 @@ export function SessionPackEditor({ executionId }: { executionId: string }) {
       <div {...stylex.props(styles.group)}>
         <div {...stylex.props(layout.row)}>
           <span {...stylex.props(styles.kind)}>next session</span>
-          <span {...stylex.props(text.mono, text.sm, tokens.total > budget ? text.amber : text.secondary)}>{count(tokens.total)} / {count(budget)} guidance tokens per turn</span>
+          <span {...stylex.props(text.mono, text.sm, tokens.total > budget ? text.amber : text.secondary)}>{count(tokens.total)} / {count(budget)} estimated guidance tokens per turn</span>
           <span {...stylex.props(layout.grow)} />
           <Checkbox checked={overBudget} onChange={setOverBudget} label="Accept over budget" />
         </div>
-        <span {...stylex.props(styles.reasons)}>{planned ? 'Jev\'s latest plan with your overrides applied. Edits reach the next session: the next repair attempt or a retry.' : 'Jev has not planned this run yet, so edits are measured against an empty plan; they apply when the first session starts.'} Repository denials always win; tools stay inside the repository policy.</span>
+        <span {...stylex.props(styles.reasons)}>{planned ? 'Estimate using Jev\'s latest plan and your overrides. Jev replans when the next session starts, so its guidance total may change. Edits reach the next repair attempt or retry.' : 'Jev has not planned this run yet, so edits are measured against an empty plan; they apply when the first session starts.'} Repository denials always win; tools stay inside the repository policy.</span>
       </div>
       <div {...stylex.props(styles.group)}>
         <div {...stylex.props(layout.row)}><span {...stylex.props(styles.kind)}>skills</span><span {...stylex.props(layout.grow)} /><TextInput label="Find a skill" value={filter} onChange={setFilter} placeholder="Find a skill" mono /></div>
@@ -83,7 +83,7 @@ export function SessionPackEditor({ executionId }: { executionId: string }) {
         {tools.overrides.length > 0 && <span {...stylex.props(styles.reasons)}>In force: {tools.overrides.map(tool => `${tool.present ? '+' : '−'}${tool.name}`).join(' ')}; Jev decides the rest per task.</span>}
         <div {...stylex.props(layout.rowWrap)}>{tools.options.map(option => optionButton('tools', option, option.choice.slice('tool:'.length)))}</div>
       </div>
-      {override.data?.tokens && override.data.record.status === 'applied' && <Notice tone="ok" title={`Next session: ${count(override.data.tokens.before)} → ${count(override.data.tokens.after)} guidance tokens per turn`} />}
+      {override.data?.tokens && override.data.record.status === 'applied' && <Notice tone="ok" title={`Estimated next session: ${count(override.data.tokens.before)} → ${count(override.data.tokens.after)} guidance tokens per turn`} />}
     </>
   );
 }

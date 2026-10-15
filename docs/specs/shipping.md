@@ -7,8 +7,10 @@ from `no-mistakes axi status` in that worktree:
 - An initialized repository uses `no-mistakes axi run --intent … --no-publish-intent --base-branch … --wait 1s`.
 - Only the explicit **repo not initialized** response permits the direct
   `git push` and GitHub API PR creation fallback.
-- An unavailable binary, daemon, invalid response, approval gate, or failed pipeline
-  keeps delivery blocked. None permits a fallback or a merge.
+- An unavailable binary or invalid response keeps delivery blocked. For an
+  initialized repository, an unavailable daemon, approval gate or failed pipeline
+  also blocks delivery. An explicit uninitialized-repository response permits
+  direct delivery even with the daemon stopped. None of these paths merges.
 
 The adapter supports the TOON contract exposed by no-mistakes 1.84. GitHub
 reads and PR creation use the REST API with `GH_TOKEN`, `GITHUB_TOKEN`, a token

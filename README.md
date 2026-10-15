@@ -48,9 +48,10 @@ Any failed check, unmet criterion or permission denial stops the run as
 - A TypeSafe API key, for Jev.
 - To ship: a GitHub `origin`, Git `user.name` and `user.email`, GitHub write
   access through GitHub CLI (`gh auth login`) or `GH_TOKEN` / `GITHUB_TOKEN`,
-  and a running `no-mistakes` daemon, which tells Kor whether the repository has
-  a delivery pipeline. `gh-axi` is
-  optional: GitHub connections, pull request lists and PR creation use the API.
+  and the `no-mistakes` CLI. Repositories initialised for its pipeline also need
+  its daemon running; an explicit "not initialized" response uses direct PR
+  delivery. `gh-axi` is optional: GitHub connections, pull request lists and PR
+  creation use the API.
   Tokens need repository contents write and pull request write access.
 
 PR writing reuses the task route, including a cross-provider override. If the
@@ -85,8 +86,8 @@ covers forks, private mirrors and a manual build.
 ## First run
 
 **1. Set your repository policy** in `~/.config/kor/config.yaml`. The installer
-writes a scaffold with your checkout, team key and default branch; add the checks
-that decide whether work is accepted and the tools sessions may use:
+writes a scaffold with your checkout, team key, default branch and `ship: approve`.
+Add the checks that decide whether work is accepted and the tools sessions may use:
 
 ```yaml
 repos:
@@ -138,7 +139,9 @@ FAIL doctor: one or more checks failed. Hint: fix the reported checks and rerun 
 
 The management key and `quota-axi` are optional: without them Mission Control
 cannot show the gateway's account slots and quota windows. `no-mistakes` is
-needed only to ship, so runs still verify without it. Everything else must pass.
+required for repositories using its pipeline. The CLI must be installed for
+shipping; a repository explicitly reported as uninitialised uses direct PR
+delivery even when the daemon is stopped. Everything else must pass.
 [What each line means](docs/user-guide.md#check-your-setup-with-kor-doctor).
 
 **3. Open Mission Control:**
@@ -240,11 +243,13 @@ public tier. More in [Skills](docs/skills.md).
 **Explore alternatives** lists every decision Jev made with its other
 candidates. Pick one, such as a different verified model, and Kor applies it from
 the next attempt if policy allows. The same dialog edits the next session's
-skills, playbook and tools, showing the per-turn token cost of each change.
+skills, playbook and tools, estimating the per-turn token cost of each change
+using the latest plan. Jev replans at session start, so the final total may differ;
+**Sessions received** records the guidance actually delivered.
 Every override is audited, commented on the Linear issue and can be reverted.
 Repository deny lists and tool policy always win.
 
-![Explore alternatives: a route override, then the next session's skills, playbook and tools](docs/images/mc-override.webp)
+![Explore alternatives estimates guidance from the latest plan, with a pinned skill in an isolated acceptance run](docs/images/override-estimate.png)
 
 Linear labels do the same per issue: `kor:skill/NAME`, `kor:skill/-NAME`,
 `kor:playbook/NAME`, `kor:tool/NAME`, `kor:tool/-NAME`.
@@ -271,7 +276,7 @@ The CLI reaches the same daemon. Every command takes `--json`; the
 | You want to | Run |
 | --- | --- |
 | Preview Jev's plan | `kor plan LEE-123` |
-| Queue an issue | `kor run LEE-123` (`--dry-run` previews) |
+| Queue an issue | `kor run LEE-123` (`--dry-run` records and previews Jev's route without queueing) |
 | See runs | `kor status --json [LEE-123]` |
 | Read a run's timeline | `kor logs EXECUTION-ID` |
 | Retry or stop a run | `kor retry LEE-123`, `kor cancel LEE-123` |
@@ -287,8 +292,10 @@ configuration, keys and state.
 
 `kor uninstall` stops the daemon and removes the integration but keeps your
 configuration and state. `kor uninstall --purge` also removes Kor's data and its
-installer cache. The Kor checkout, your external key files and the gateway's key
-entry stay; remove them yourself.
+installer cache, registered Kor worktrees and their local `kor/*` branches.
+This discards those branches even if unmerged; save work you want to keep first.
+Unrelated worktrees, branches and remote branches remain. The Kor checkout, your
+external key files and the gateway's key entry stay; remove them yourself.
 
 ## Troubleshooting
 

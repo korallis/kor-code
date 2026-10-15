@@ -223,7 +223,10 @@ the old CLI link and unit, and removes the marketplace/cache. It deletes only
 Kor's entries from current registries, retaining unrelated plugins and marketplace
 refreshes; if the remaining content equals the original, it restores its exact
 backup bytes. It retains Kor config, data and backups. Purge additionally restores pre-install
-config/state/share contents, removing newly created data. It can also run after
+config/state/share contents, removing newly created data. Before restoring those
+directories it removes registered Kor worktrees and their local `kor/*` branches
+using the ownership markers and execution records. Unmerged work is discarded;
+unrelated worktrees, local branches and remote branches are retained. It can also run after
 normal uninstall, via the source CLI. An installation failure rolls back; an
 interruption leaves a journal that `kor uninstall --purge` can replay.
 

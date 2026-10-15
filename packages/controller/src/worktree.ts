@@ -17,7 +17,7 @@ export class GitWorktreeManager implements WorktreeManager {
     const branch = input.branch || `kor/${basename(input.issueId)}`;
     if (input.detached) {
       await execFile("git", ["-C", input.repository.path, "worktree", "add", "--detach", path, input.baseRevision ?? input.repository.defaultBranch ?? "HEAD"]);
-      await writeFile(join(resolve(this.root), `${input.executionId}.kor-worktree.json`), `${JSON.stringify({ executionId: input.executionId, issueId: input.issueId, path, repository: input.repository.path })}\n`, { mode: 0o600 });
+      await writeFile(join(resolve(this.root), `${input.executionId}.kor-worktree.json`), `${JSON.stringify({ executionId: input.executionId, issueId: input.issueId, path, repository: input.repository.path, branch: "(detached)" })}\n`, { mode: 0o600 });
       return { executionId: input.executionId, issueId: input.issueId, path, branch: "(detached)", repository: input.repository.path };
     }
     try {
@@ -38,7 +38,7 @@ export class GitWorktreeManager implements WorktreeManager {
     }
     const addArgs = branchExists ? ["worktree", "add", ...(stale ? ["--force"] : []), path, branch] : ["worktree", "add", "-b", branch, path, input.repository.defaultBranch ?? "HEAD"];
     await execFile("git", ["-C", input.repository.path, ...addArgs]);
-    await writeFile(join(resolve(this.root), `${input.executionId}.kor-worktree.json`), `${JSON.stringify({ executionId: input.executionId, issueId: input.issueId, path, repository: input.repository.path })}\n`, { mode: 0o600 });
+    await writeFile(join(resolve(this.root), `${input.executionId}.kor-worktree.json`), `${JSON.stringify({ executionId: input.executionId, issueId: input.issueId, path, repository: input.repository.path, branch })}\n`, { mode: 0o600 });
     return { executionId: input.executionId, issueId: input.issueId, path, branch, repository: input.repository.path };
   }
   async remove(worktree: Worktree): Promise<void> { await execFile("git", ["-C", worktree.repository, "worktree", "remove", "--force", worktree.path]).catch(() => undefined); }
