@@ -223,7 +223,10 @@ the old CLI link and unit, and removes the marketplace/cache. It deletes only
 Kor's entries from current registries, retaining unrelated plugins and marketplace
 refreshes; if the remaining content equals the original, it restores its exact
 backup bytes. It retains Kor config, data and backups. Purge additionally restores pre-install
-config/state/share contents, removing newly created data. It can also run after
+config/state/share contents, removing newly created data. Before restoring those
+directories it removes registered Kor worktrees and their local `kor/*` branches
+using the ownership markers and execution records. Unmerged work is discarded;
+unrelated worktrees, local branches and remote branches are retained. It can also run after
 normal uninstall, via the source CLI. An installation failure rolls back; an
 interruption leaves a journal that `kor uninstall --purge` can replay.
 
@@ -319,7 +322,9 @@ Each repository can also carry a `skills` block (`always`, `pins`, `never`, `bud
 
 `linearTeam` and `linearProject` map a Linear issue to this repository. `linearProject` wins when both match; otherwise Kor uses the team mapping. A repository key that exactly matches the issue's team key or project ID is also accepted for small pilots.
 
-Use `kor run LEE-123 --dry-run` to resolve a Linear issue and preview the queue operation without writing anything. It prints the issue's canonical UUID and title, the intake label, the default route, and the planned actions (`enqueue durable assignment`, `run isolated session when kor serve is active`). It fails with `No Kor repository mapping for Linear team …` when `config.yaml` has no repository for the issue's team or project, and it does not check the issue's state. `kor run LEE-123` enqueues the assignment and prints its `executionId`; the daemon claims it and writes the Linear progress, using deterministic comment IDs so a retry updates or reuses the existing comment. `kor cancel` and `kor retry` change only Kor's queue: a cancelled execution's Linear issue is not moved back to Todo, so do that in Linear. Agent-session mutations remain disabled for a personal key; they require the later OAuth app capability.
+Use `kor run LEE-123 --dry-run` to resolve a Linear issue and record Jev's preflight route using the same planner as the daemon. It reserves an `executionId` and writes the decision audit locally, without queueing an assignment or launching a session. It prints the issue's canonical UUID and title, the `executionId`, the intake label, the selected route, and the planned actions (`enqueue durable assignment`, `run isolated session when kor serve is active`). The next enqueue reuses that ID and decision. Changed issue details, available models or applied overrides can change the route before execution. Blocked readiness fails the preview instead of showing a runnable default.
+
+The command fails with `No Kor repository mapping for Linear team …` when `config.yaml` has no repository for the issue's team or project. It does not check the issue's state. `kor run LEE-123` enqueues the assignment and prints its `executionId`. The daemon claims it and writes the Linear progress, using deterministic comment IDs so a retry updates or reuses the existing comment. `kor cancel` and `kor retry` change only Kor's queue: a cancelled execution's Linear issue is not moved back to Todo, so do that in Linear. Agent-session mutations remain disabled for a personal key; they require the later OAuth app capability.
 
 Run `kor doctor` (or `pnpm kor doctor`) for bounded checks of the credentials, CLIProxyAPI, management endpoint, quota-axi, Claude Code, no-mistakes, and every configured repository. Only the config, the keys, the gateway, Claude Code and the repositories are needed to run and verify an issue; the management endpoint and quota-axi feed the cockpit's account panel, and the no-mistakes daemon is needed for delivery. A missing Kor client key reports the exact one-line proxy addition to make:
 

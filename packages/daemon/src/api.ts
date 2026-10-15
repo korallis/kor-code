@@ -126,8 +126,8 @@ export class MissionApi {
         if (actionPath?.[1] && actionPath[2]) {
           const executionId = this.daemon.missionRun(decodeURIComponent(actionPath[1])).executionId;
           const action = z.enum(["cancel", "retry", "answer", "approve", "request-changes", "note"]).parse(actionPath[2]);
-          const body = ["answer", "request-changes", "note"].includes(action) ? message.parse(input) : (empty.parse(input), undefined);
-          const linearSync = await this.daemon.runAction(executionId, action, body?.message);
+          const body = ["answer", "request-changes", "note"].includes(action) ? message.parse(input) : z.strictObject({ origin: z.enum(["CLI", "Mission Control"]).optional() }).parse(input);
+          const linearSync = await this.daemon.runAction(executionId, action, "message" in body ? body.message : undefined, "origin" in body ? body.origin : undefined);
           send(200, { schemaVersion: 1, executionId, accepted: true, run: this.daemon.missionRun(executionId), linearSync } satisfies ActionResponse); return;
         }
         if (path === "/api/overrides") {

@@ -11,6 +11,7 @@ import { checkRestore, fingerprint, mkdirRecorded, missing, pruneDirectories, re
 
 import { uninstallSkills } from "./skills-install.js";
 import { stopLocalDaemon } from "./daemon-lifecycle.js";
+import { purgeKorWorktrees } from "./install-worktrees.js";
 
 import { addKorSettings, installedPluginSchema, PLUGIN_ID, readObject, writeObject } from "./install-json.js";
 
@@ -77,7 +78,7 @@ async function scaffoldConfig(pilot: string, environment: NodeJS.ProcessEnv, lin
     catch { branch = await command("git", ["symbolic-ref", "--short", "HEAD"], environment, pilot); }
   }
   const { limits, launchProfile, pollIntervalSeconds, intakeLabel } = loaded.config;
-  const config = { repos: { [basename(pilot)]: { path: pilot, linearTeam: linearTeam ?? "YOUR_TEAM_KEY", defaultBranch: branch, ship: "auto", checks: [], toolAllowlist: [] } },
+  const config = { repos: { [basename(pilot)]: { path: pilot, linearTeam: linearTeam ?? "YOUR_TEAM_KEY", defaultBranch: branch, ship: "approve", checks: [], toolAllowlist: [] } },
     limits, launchProfile, pollIntervalSeconds, intakeLabel };
   await writeFile(paths.configFile, stringify(config), { mode: 0o600 });
 }
@@ -167,6 +168,7 @@ async function undo(manifest: InstallManifest, environment: NodeJS.ProcessEnv, p
     await command("systemctl", ["--user", "disable", "kor.service"], environment, root);
   }
   await stopLocalDaemon();
+  if (purge) await purgeKorWorktrees();
   manifest.phase = manifest.phase === "restored" || manifest.phase === "purging" ? "purging" : "restoring";
   await saveManifest(journalPath(environment), manifest);
   await restoreManifest(manifest, purge);
@@ -335,6 +337,10 @@ export async function uninstallKor(options: { purge: boolean }): Promise<{ outpu
   const manifestPath = journalPath(environment);
   const manifest = await readManifest(manifestPath);
   let output = "Kor is not installed (no install manifest)";
+  if (!manifest && options.purge) {
+    await stopLocalDaemon();
+    await purgeKorWorktrees();
+  }
   if (manifest) {
     if (manifest.phase !== "restored" || options.purge) await undo(manifest, environment, options.purge);
     if (options.purge) {

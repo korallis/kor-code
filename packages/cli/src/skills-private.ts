@@ -157,7 +157,7 @@ export async function importPrivateSkills(options: { config: KorConfig; paths: K
     if (!ready.length && invalid.length) report.ok = false;
     for (const skill of ready) {
       skill.result.status = report.ok ? "would-copy" : "not-copied";
-      report.bytes += skill.bytes;
+      if (report.ok) report.bytes += skill.bytes;
     }
     if (!report.ok || options.dryRun) return report;
     await initPrivateSkills(destination);

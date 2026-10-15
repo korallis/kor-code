@@ -68,7 +68,7 @@ supervise, verify, synchronise.
 | A running [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) | The local gateway that holds your model accounts, at `http://127.0.0.1:8317` by default. |
 | A Linear personal API key | To read issues and write progress. Kor uses only Linear's API: no webhook or Linear app to install. |
 | A TypeSafe API key | For Jev. |
-| To ship: a GitHub `origin`, Git identity, GitHub write access and a running `no-mistakes` daemon | To commit, push and open the pull request. |
+| To ship: a GitHub `origin`, Git identity, GitHub write access and the `no-mistakes` CLI (plus its daemon for pipeline repositories) | To commit, push and open the pull request. |
 
 Install with one command:
 
@@ -114,8 +114,8 @@ What the installer writes:
 - `~/.local/bin/kor`, a link to the CLI in the checkout. Add `~/.local/bin` to
   `PATH` if it is not there. Keep the checkout: the CLI and Mission Control run
   from it.
-- `~/.config/kor/config.yaml`, a scaffold with your checkout, team key and
-  default branch ([next section](#configure-a-repository)). An existing config is
+- `~/.config/kor/config.yaml`, a scaffold with your checkout, team key,
+  default branch and `ship: approve` ([next section](#configure-a-repository)). An existing config is
   kept.
 - A systemd user unit, installed but not started. `--no-systemd` skips it, and a
   machine without a user manager skips it automatically. You do not need the
@@ -177,8 +177,8 @@ It supplies the GitHub credential helper for shipping itself, so
 
 ## Configure a repository
 
-Kor reads `~/.config/kor/config.yaml`. The scaffold leaves `checks` and
-`toolAllowlist` empty on purpose: they are your policy. This is the config
+Kor reads `~/.config/kor/config.yaml`. The scaffold sets `ship: approve` and leaves
+`checks` and `toolAllowlist` empty on purpose: they are your policy. This is the config
 used for this guide:
 
 ```yaml
@@ -274,7 +274,7 @@ FAIL doctor: one or more checks failed. Hint: fix the reported checks and rerun 
 | `CLIProxyAPI with Kor key` | every model call | Start CLIProxyAPI and add Kor's key to its `api-keys`. `HTTP 401` means the proxy does not know the key; `missing` prints a new key to add. |
 | `CLIProxyAPI management access`, `quota-axi` | account slots and quota windows in Mission Control | Optional. Set `CPA_MANAGEMENT_KEY` (or add it when you connect the gateway in Settings) and install `quota-axi`. |
 | `Claude Code` | every session | Install Claude Code 2.1.299 or newer. |
-| `no-mistakes daemon` | shipping | Start it. Runs still verify without it. |
+| `no-mistakes daemon` | pipeline shipping | Start it for repositories initialised for its pipeline. An explicit uninitialised-repository response allows direct PR delivery with the daemon stopped. |
 | `repo <name>` | that repository | `path` must be the checkout root, the default branch must exist, and `origin` must match `remote` if set. |
 | `repo <name> shipping target` | shipping | Set `origin` to a github.com HTTPS or SSH URL. |
 | `repo <name> git identity` | shipping | `git config user.name "Your Name"` and `git config user.email "you@example.com"` in the checkout (or with `--global`). |
@@ -513,9 +513,11 @@ again 15 seconds later.
 ### Override Jev, and undo it
 
 **Explore alternatives** (`E`) lists every decision Jev made with its other
-candidates, and the next session's skills, playbook and tools:
+candidates, and estimates the next session's skills, playbook and tools using the
+latest recorded plan. Jev replans at session start, so the final total can change.
+**Sessions received** shows the actual guidance delivered:
 
-![Explore alternatives: the route switched to another verified model, then the next session's skills, playbook and tools](images/mc-override.webp)
+![Explore alternatives estimates guidance from the latest plan, with a pinned skill in an isolated acceptance run](images/override-estimate.png)
 
 - **Route.** Any other verified model. It applies from the next attempt; the
   running session keeps its model.
@@ -625,16 +627,18 @@ $ kor skills init
 /tmp/kor-rf/home/.config/kor/skills
 $ kor skills import --from ./my-skills --dry-run --skip-invalid
 team-style: would-copy; suggested visibility local-only
-PASS dry-run: 1 skills, 0 duplicates, 216 bytes; /tmp/kor-rf/home/.config/kor/skills
+PASS dry-run: 1 would copy, 0 skipped, 0 duplicates, 216 bytes; /tmp/kor-rf/home/.config/kor/skills
 $ kor skills import --from ./my-skills --skip-invalid
 team-style: copied; suggested visibility local-only
-PASS import: 1 skills, 0 duplicates, 216 bytes; /tmp/kor-rf/home/.config/kor/skills
+PASS import: 1 copied, 0 skipped, 0 duplicates, 216 bytes; /tmp/kor-rf/home/.config/kor/skills
 $ kor skills guard
 PASS skills guard: 112 public files, 1 private names or deny entries
 ```
 
 Import copies; it never changes the source. Without `--skip-invalid` one invalid
 skill stops the batch; with it, valid skills are copied and the rest reported.
+The summary counts copied (or would-copy) skills separately from skipped skills
+and duplicates; bytes count only the bundles copied or planned for copying.
 Existing skills are never overwritten. Private skills are `local-only` by default:
 Jev sees only their name, never their content. `kor skills guard` checks that no
 private name or `deny.txt` entry appears in the public tier.
@@ -659,10 +663,12 @@ starts as soon as the run verifies. The daemon:
 1. Commits **only the verified files** on `kor/<issue key>`. Unrelated files and
    likely secrets (`.env*`, keys, credential files, agent config directories,
    logs) are left out; a secret the session staged or committed blocks shipping.
-2. Asks the `no-mistakes` daemon which delivery gate the repository uses. A
+2. Asks the `no-mistakes` CLI which delivery gate the repository uses. A
    repository initialised for no-mistakes goes through its pipeline; only an
    explicit "not initialized" answer allows a direct push and pull request. An
-   unreachable daemon or a failed pipeline keeps shipping blocked.
+   unreachable daemon or a failed pipeline keeps shipping blocked for an initialised
+   repository. The daemon can be stopped on the direct PR path, but the CLI must
+   return the explicit uninitialised-repository response.
 3. Pushes the branch and opens a pull request. The title and body follow the
    bundled [PR standard](../skills/pr-standard/SKILL.md), or the repository's own
    PR template if it has one, written from the verified diff and the recorded
@@ -676,7 +682,8 @@ starts as soon as the run verifies. The daemon:
 4. Waits. When you merge, Kor moves Linear to **Done**, marks the run `complete`
    and removes its clean worktree.
 
-Kor never merges, force-pushes or deletes branches. A shipping failure blocks the
+Kor never merges or force-pushes. Only an explicit uninstall with `--purge`
+deletes its local issue branches. A shipping failure blocks the
 run with the reason; **Retry** resumes shipping without rerunning the session.
 
 **Evidence.** The runs in this guide were left at the approval gate. Direct
@@ -728,8 +735,11 @@ $ kor status --json LEE-1164
 }
 ```
 
-`kor run --dry-run` shows the configured default route; Jev chooses the actual
-route when the run starts.
+`kor run --dry-run` records Jev's preflight route using the same planner as the
+daemon, without queueing or launching a session. The next enqueue reuses that
+execution ID and decision. Changed issue details, available models or applied
+overrides can change the route before execution; blocked readiness fails the
+preview instead of showing a runnable default.
 
 **Status line.** Where the `kor-cockpit` plugin is enabled (the pilot checkout,
 or every project after a user-scope install), Claude Code shows a one-line Kor
@@ -867,8 +877,11 @@ Changing the pilot or scope needs an uninstall first.
 **Uninstall** with `kor uninstall`. It stops the daemon, restores every file the
 installer changed, removes the plugin and the `kor` link, and keeps your config,
 state and backups. `kor uninstall --purge` also removes the config, state and data
-Kor created, and its installer cache in `~/.cache/kor-code`. After a plain
-uninstall the `kor` link is gone, so purge from the checkout:
+Kor created, its installer cache in `~/.cache/kor-code`, and its registered
+worktrees and local `kor/*` branches. This discards unmerged work on those
+branches; save anything you want to keep first. Cleanup checks Kor's ownership
+records and leaves unrelated worktrees, local branches and remote branches alone.
+After a plain uninstall the `kor` link is gone, so purge from the checkout:
 
 ```sh
 node ~/.local/share/kor-code/packages/cli/dist/cli.js uninstall --purge

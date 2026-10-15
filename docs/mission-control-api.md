@@ -87,6 +87,10 @@ and there is no learned-memory store in the current foundation.
 | `POST /api/accounts/:id/pause`, `.../resume` | Resolve the opaque account slot inside the gateway adapter and update its actual management status |
 | `POST /api/connections` | Persist write-only provider credentials in private Kor state and update the relevant adapter |
 
+Cancel, retry and approve accept an optional `origin` (`CLI` or `Mission Control`).
+Omitting it records Mission Control; the CLI sends `CLI` so its timeline attribution
+reflects where the action started.
+
 Repository setting `ship: approve` keeps a verified execution in `waiting`
 until approval. `ship: auto` preserves existing publication behaviour and is
 the default for existing configurations. Approval releases publication; it does

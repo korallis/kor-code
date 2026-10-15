@@ -100,7 +100,7 @@ const tokenCount = (value: number) => value.toLocaleString("en-US");
 function overrideComment(record: OverrideRecord): string {
   const verb = record.status === "reverted" ? "reverted" : "applied";
   return [
-    `**Kor override ${record.id} ${verb}** from the ${record.origin}: \`${record.target}\` → \`${record.choice}\`${record.previous ? ` (was \`${record.previous}\`)` : ""}.`,
+    `**Kor override ${record.id} ${verb}** from ${record.origin}: \`${record.target}\` → \`${record.choice}\`${record.previous ? ` (was \`${record.previous}\`)` : ""}.`,
     `Execution \`${record.executionId}\`. ${record.reason}`,
     `Policy: ${record.policyChecks.map(check => `${check.name} ${check.result}${check.result === "pass" && check.reason ? ` (${check.reason})` : ""}`).join("; ") || "none"}.`,
   ].join("\n\n");
@@ -438,7 +438,7 @@ export class KorDaemon {
     await this.writeSnapshot();
     return issues.map(issue => this.missionRun(issue.id));
   }
-  async runAction(executionId: string, action: "cancel" | "retry" | "answer" | "approve" | "request-changes" | "note", message?: string): Promise<LinearSync> {
+  async runAction(executionId: string, action: "cancel" | "retry" | "answer" | "approve" | "request-changes" | "note", message?: string, origin: "CLI" | "Mission Control" = "Mission Control"): Promise<LinearSync> {
     const assignment = this.store.findAssignment(executionId);
     if (!assignment) throw new ApiFailure(404, "not_found", "Execution not found");
     if (this.shippingActive.has(executionId)) throw new ApiFailure(409, "conflict", "Publication is advancing; wait for it to settle");
@@ -466,7 +466,7 @@ export class KorDaemon {
     if (!accepted) throw new ApiFailure(409, "conflict", "This action is not available in the execution's current state");
     // The durable action has already applied. Ancillary failures must not ask
     // clients to repeat it; unacknowledged Linear writes retry on the next poll.
-    await this.log(executionId, `${action} accepted from Mission Control`).catch(error => this.reportError(error));
+    await this.log(executionId, `${action} accepted from ${origin}`).catch(error => this.reportError(error));
     if (this.options.linear) await flushLinearWrites(this.store, this.options.linear).catch(error => this.reportError(error));
     await this.writeSnapshot().catch(error => this.reportError(error));
     const { pendingWrites } = this.store.counts();
@@ -637,7 +637,7 @@ export class KorDaemon {
     }
     const failed = checks.filter(check => check.result === "fail").map(check => check.reason ? `${check.name} (${check.reason})` : check.name);
     const applied = failed.length === 0;
-    const guidance = tokens ? ` Selected guidance goes from ${tokenCount(tokens.before)} to ${tokenCount(tokens.after)} tokens per turn.` : "";
+    const guidance = tokens ? ` Estimated guidance with the current plan goes from ${tokenCount(tokens.before)} to ${tokenCount(tokens.after)} tokens per turn; Jev replans at session start.` : "";
     const record = this.overrides.record({
       executionId: run.executionId,
       issueId: run.issueId,
@@ -752,7 +752,7 @@ export class KorDaemon {
   }
 
   async revertOverride(id: string, origin = "cockpit"): Promise<OverrideAnswer> {
-    const record = this.overrides.revert(id, `Reverted from the ${origin}; the previous choice is back in force.`);
+    const record = this.overrides.revert(id, `Reverted from ${origin}; the previous choice is back in force.`);
     if (!record) return { status: 409, error: `${id} is not an applied override` };
     await this.log(record.executionId, `override ${record.id} reverted`);
     await this.flushOverrideComments();

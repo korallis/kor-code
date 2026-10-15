@@ -87,7 +87,7 @@ export interface OverrideResponse { schemaVersion: 1; record: OverrideRecord; to
 /** One edit Mission Control can send: its per-turn token change, or why policy refuses it. */
 export interface SessionOption { choice: string; tokenDelta: number | null; overBudget: boolean; blocked: string | null }
 type SkillTier = "pinned" | "listed" | "armed" | "hidden";
-/** The next session's guidance for an execution: Jev's latest plan with the overrides in force applied. */
+/** Estimated guidance using the latest plan and active overrides; Jev replans at session start. */
 export interface SessionPackResponse {
   schemaVersion: 1;
   executionId: string;
@@ -158,10 +158,10 @@ export interface MissionControlApi {
   "GET /api/connections": Endpoint<never, ConnectionsResponse>;
   "GET /api/events": Endpoint<never, MissionEvent>;
   "POST /api/runs": Endpoint<QueueRequest, QueueResponse>;
-  "POST /api/runs/:id/cancel": Endpoint<Record<string, never>, ActionResponse>;
-  "POST /api/runs/:id/retry": Endpoint<Record<string, never>, ActionResponse>;
+  "POST /api/runs/:id/cancel": Endpoint<{ origin?: "CLI" | "Mission Control" }, ActionResponse>;
+  "POST /api/runs/:id/retry": Endpoint<{ origin?: "CLI" | "Mission Control" }, ActionResponse>;
   "POST /api/runs/:id/answer": Endpoint<MessageRequest, ActionResponse>;
-  "POST /api/runs/:id/approve": Endpoint<Record<string, never>, ActionResponse>;
+  "POST /api/runs/:id/approve": Endpoint<{ origin?: "CLI" | "Mission Control" }, ActionResponse>;
   "POST /api/runs/:id/request-changes": Endpoint<MessageRequest, ActionResponse>;
   "POST /api/runs/:id/note": Endpoint<MessageRequest, ActionResponse>;
   "POST /api/overrides": Endpoint<OverrideRequest, OverrideResponse>;

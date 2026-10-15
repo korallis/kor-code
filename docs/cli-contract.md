@@ -121,24 +121,31 @@ $ kor run LEE-1115
 | `status` | The assignment's current state. |
 | `queued` | `true` when the assignment is waiting for the daemon. Running the command again for the same issue returns the same `executionId`; `queued` describes the current state, not a new run. |
 
-`kor run ISSUE-ID --dry-run` resolves the issue and prints what would be queued.
-It creates no execution, so it has no `executionId`, and its output has no
-`schemaVersion`:
+`kor run ISSUE-ID --dry-run` resolves the issue and records Jev's preflight route
+using the same planner as the daemon. It reserves an `executionId` and writes
+the decision audit locally, without queueing an assignment or launching a
+session. The next enqueue reuses that ID and decision. Changed issue details,
+available models or applied overrides can change the route before execution.
+Blocked readiness fails the preview instead of showing a runnable default.
+The output includes `executionId` and has no `schemaVersion`:
 
 ```text
-$ kor run LEE-1117 --dry-run
+$ kor run LEE-1168 --dry-run
 {
-  "issueId": "LEE-1117",
-  "canonicalIssueId": "bfbb1847-7f14-469d-8ef8-4efcbf8e80fd",
-  "title": "[throwaway] Kor README capture: add a question function",
+  "issueId": "LEE-1168",
+  "canonicalIssueId": "3908ad04-0de2-42a7-902a-6912912bfdc4",
+  "title": "[throwaway] Kor acceptance 3: add a shout helper",
+  "executionId": "a3ef403b-4e96-4d0a-838a-a79fbd378b56",
   "dryRun": true,
   "intake": "kor",
   "route": {
     "provider": "anthropic",
-    "model": "claude-haiku-5-5",
+    "model": "claude-haiku-4-5-20251001",
     "accountPolicy": "fill-first",
     "sessionAffinity": true,
-    "reasoningLevel": "medium"
+    "reasoningLevel": "medium",
+    "label": "jev",
+    "decisionId": "route-a3ef403b-4e96-4d0a-838a-a79fbd378b56"
   },
   "planned": [
     "enqueue durable assignment",
