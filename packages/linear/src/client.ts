@@ -64,6 +64,13 @@ export class HttpLinearClient implements LinearClient {
     this.capabilities = { agentSessions: options.capabilities?.agentSessions ?? false };
   }
 
+  async fetchImage(url: string): Promise<Response> {
+    const asset = new URL(url);
+    if (asset.protocol !== 'https:' || asset.hostname !== 'uploads.linear.app' || asset.username || asset.password || asset.port) throw new Error('Unsupported Linear image URL');
+    const apiKey = this.options.apiKey ?? await resolveLinearApiKey(this.options.envFile);
+    return (this.options.fetcher ?? globalThis.fetch)(asset, { headers: { authorization: apiKey }, redirect: 'error', signal: AbortSignal.timeout(15_000) });
+  }
+
   async query(query: string, variables: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
     const apiKey = this.options.apiKey ?? await resolveLinearApiKey(this.options.envFile);
     let response: Response;

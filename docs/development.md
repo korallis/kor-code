@@ -134,6 +134,48 @@ The outage still launches the configured default route, but unavailable acceptan
 
 Rejected, escalated, and abandoned outcomes are recorded by the controller. The shipping daemon records merged or rejected outcomes when it observes a PR merge or closure. The calibration proof invokes that hook locally; the shipping replay exercises the observation path with forge fixtures. Neither proof merges a real PR. Credentials are read at runtime and never printed or committed.
 
+## Context delivery
+
+A live controller run on 2026-10-15 uploaded a 142-byte PNG to a scratch Linear
+issue, downloaded the authenticated asset into the execution worktree, listed
+its local path, and read it through the session's `Read` tool. The run completed
+verification in three turns with zero permission denials. The captured first
+request contained the `AGENTS.md` sentinel exactly once inside the selected
+excerpt, omitted the raw tails of both instruction files, and redacted the
+planted credential. The delivered context block was 963 UTF-8 bytes. The scratch
+issue was canceled after verification; its private asset URLs are not published.
+
+A paired bench used five representative scratch tasks, three runs per arm,
+live Jev routing/ranking/acceptance, and real `SessionLauncher` sessions. The
+hidden arm removed the context block immediately before launch; both arms used
+the same launch profile and each task's Jev-selected route. This isolates the
+context block from the separate lean-launch work.
+
+| Task | Median model turns, hidden / delivered | Median initial context tokens, hidden / delivered |
+| --- | --- | --- |
+| Contributor note | 3 / 3 | 30,710 / 30,762 |
+| Documentation index | 4 / 4 | 30,714 / 30,784 |
+| Bounded bug fix | 3 / 3 | 30,695 / 30,750 |
+| Constant extraction | 3 / 3 | 30,752 / 30,807 |
+| CSS edit | 3 / 3 | 30,686 / 30,740 |
+
+Across the 15 pairs, distinct assistant-message turns totaled 50 / 49 and
+processed context totaled 1,563,307 / 1,532,414 tokens. The CLI's separate
+`num_turns` counter totaled 57 / 58; the contributor-note median rose from
+3 to 4 on that counter. All other task medians were unchanged. Raw stream events
+were deduplicated by assistant message ID for the model-turn/context measures.
+There were zero permission denials in either arm.
+
+All 30 produced artifacts met their checks and live acceptance judgments after
+correcting one baseline proof check: its newline split counted a trailing newline
+as another line. The unchanged 19-line note passed the corrected check and a
+fresh Jev judgment (0.94). The original failure was retained in the evidence.
+These 15 pairs are **directional**. They use scratch fixtures; the historical
+issue suite was not replayed. No new unit-test suite was added.
+
+The [context specification](specs/context-and-verification.md) describes the
+text budget, source ranking, native instruction exclusions and image boundary.
+
 ## The daemon
 
 The local daemon proof exercises intake, the loopback endpoint, lease renewal during an 800 ms run with a 200 ms lease, restart recovery, queued and running cancellation, terminal failure and retry, orphan worktree cleanup, and PID identity protection:

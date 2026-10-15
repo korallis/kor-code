@@ -38,7 +38,7 @@ export interface SessionSpend {
 }
 export interface AgentManifest { id: string; name: string; description?: string; skills: string[]; capabilities: string[]; acceptance: AcceptanceCondition[] }
 export interface ExecutionManifest { executionId: string; issueId: string; repository: string; worktree: string; branch: string; agents: AgentManifest[]; acceptance: AcceptanceCondition[] }
-export interface ContextSource { id: string; path: string; purpose: "rule" | "issue" | "document" | "decision" | "evidence"; relevance: number; content: string; truncated?: boolean }
+export interface ContextSource { id: string; path: string; purpose: "rule" | "issue" | "document" | "decision" | "evidence" | "file" | "image"; relevance: number; content: string; truncated?: boolean }
 export interface ContextSourceReference { id: string; path: string; purpose: ContextSource["purpose"] }
 export interface ContextManifest { executionId: string; repository: string; worktree: string; sources: ContextSource[]; droppedSources: ContextSourceReference[]; compacted: boolean; redacted: boolean; relevanceOverride?: { source: "caller"; reason: string } }
 export type ShippingStage =

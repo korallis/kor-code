@@ -44,6 +44,7 @@ export type LinearWrite =
 export interface LinearClientCapabilities { agentSessions?: boolean }
 
 export interface LinearClient {
+  fetchImage?(url: string): Promise<Response>;
   getIssue(id: string): Promise<LinearIssue>;
   listIssues(teamKey: string, limit?: number): Promise<LinearIssue[]>;
   listWorkflowStates(teamKey: string): Promise<LinearWorkflowState[]>;

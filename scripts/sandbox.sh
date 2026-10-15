@@ -48,7 +48,7 @@ if [ "${1:-}" = "--run" ]; then
   env -i \
     HOME="$run_home" CLAUDE_CONFIG_DIR="$run_config" \
     CODEX_HOME="$run_home/.codex" XDG_CONFIG_HOME="$run_home/.config" XDG_DATA_HOME="$run_home/.local/share" \
-    PATH="$safe_path" CLAUDE_CODE_DISABLE_CLAUDE_MDS=1 \
+    PATH="$safe_path" \
     ANTHROPIC_BASE_URL="${KOR_GATEWAY_URL:-http://127.0.0.1:8317}" ANTHROPIC_AUTH_TOKEN="$gateway_key" \
     KOR_EXECUTION_ID="${KOR_EXECUTION_ID:-}" KOR_WORKTREE="${KOR_WORKTREE:-}" KOR_ROUTE_MODEL="${KOR_ROUTE_MODEL:-}" \
     KOR_STATUS_URL="${KOR_STATUS_URL:-}" KOR_STATE_DIR="${KOR_STATE_DIR:-}" KOR_COCKPIT="${KOR_COCKPIT:-}" "$@"
