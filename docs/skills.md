@@ -1,9 +1,11 @@
 # Public skills
 
 Kor's public guidance lives in `skills/<name>/SKILL.md`, licensed under the
-repository's MIT license unless a skill declares another license. The first two
+repository's MIT license unless a skill declares another license. The bundled
 standards cover code style (`human-written-code`) and pull requests (`pr-standard`).
-They adapt the owner's code and PR conventions, with repository policy taking
+The `using-linear` skill covers tracker operations and image handling;
+`writing-linear-tickets` covers scope, acceptance, dependencies and screen evidence.
+The standards adapt the owner's code and PR conventions, with repository policy taking
 precedence. Shipping this tier does not yet load it into execution sessions;
 catalogue selection and delivery are separate work.
 
@@ -241,3 +243,43 @@ selection decisions should include this hash in their input state so a changed
 catalogue receives a fresh immutable decision revision; indexing itself does
 not revise existing route decisions. To reproduce a scan across outages, use
 `--estimate`.
+
+## Linear skills and PNG uploads
+
+The two Linear skills are available in the public tier for compatible skill
+consumers; they do not enable automatic selection or delivery into Kor sessions.
+Use `using-linear` for tracker reads and updates, and `writing-linear-tickets`
+for drafting, splitting and reviewing ticket content. They keep model routing
+with Jev and use runtime credentials only. UI ticket readiness calls for actual,
+captioned images for every affected screen and state.
+
+```sh
+kor linear attach-image APP-123 ./mockups/settings-error.png --alt "/settings — error — desktop" --json
+```
+
+This explicit write command works without a Kor daemon or repository mapping.
+It accepts an issue identifier or UUID and a local PNG (maximum 20 MiB), with a
+required one-line caption of up to 500 characters. It needs a Linear key with
+issue read/write and upload permissions, from `LINEAR_API_KEY` or
+`~/.config/linear/env`. Run it on the host, keeping credentials out of prompts.
+
+Kor requests a signed upload, PUTs the PNG with all returned headers, creates a
+file attachment and embeds an image under `## Screens` in the issue description.
+It reads the issue back and downloads the private asset with authentication,
+checking its byte count and SHA-256 against the source. The JSON success object
+contains `schemaVersion`, `issue`, `attachmentId`, `bytes`, `sha256` and
+`verified: true`; signed URLs and credentials are omitted. Exit 0 means verified,
+1 means an operation failed, and 2 means invalid command arguments. Failures use
+the shared CLI error shape.
+
+Caption Markdown punctuation is converted to spaces and whitespace is collapsed
+for readable plain text; verification compares the same normalized caption.
+
+The issue, image bytes and normalized caption determine a stable attachment ID. Rerun the
+same command to resume a partial operation or verify an existing image; changed
+bytes or normalized captions create another image. Failures can leave a remote upload or
+attachment. Inspect the ticket before retrying with different inputs. Avoid
+concurrent description editing: Linear description writes have no conditional
+update guard. Existing text is preserved from the latest read, but simultaneous
+writers can still overwrite one another. The command verifies storage and ticket
+references; viewing images automatically inside execution sessions is separate.

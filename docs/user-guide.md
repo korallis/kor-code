@@ -495,6 +495,18 @@ check routes, download images, or write to Linear. The same screenshot check is
 included in Jev readiness for `kor plan` and daemon execution. See the
 [Linear specification](specs/linear-integration.md#issue-readiness) for formats.
 
+To add a local PNG screenshot or mockup, run:
+
+```sh
+kor linear attach-image APP-123 ./screen.png --alt "/settings — error — desktop" --json
+```
+
+This writes to Linear: it uploads the PNG, creates an attachment and embeds it
+under Screens, then verifies the ticket and downloaded image bytes. A PNG can be
+up to 20 MiB. Repeating the same image and normalized caption reuses its attachment.
+See [PNG uploads](skills.md#linear-skills-and-png-uploads) for credentials, caption
+normalization, partial-write retries and concurrent-edit limitations.
+
 Run the full preflight when those ticket checks pass:
 
 ```text

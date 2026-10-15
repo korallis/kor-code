@@ -11,7 +11,7 @@ import { runModels, probeModel } from "./models.js";
 import { openUi, daemonQueueAction } from "./ui.js";
 import { createServeRouting } from "./serve-routing.js";
 import { ensureRuntimeDirectories, loadGatewayEnvironment, loadKorConfig, repositoryKeyForIssue, runtimePaths, type KorConfig } from "@kor-code/config";
-import { HttpLinearClient, LinearStore } from "@kor-code/linear";
+import { HttpLinearClient, LinearStore, attachLinearImage } from "@kor-code/linear";
 import { GitHubShipping, KorDaemon, MissionServices, processMatches, readExecutionStatus, readStatus, type DaemonOptions } from "@kor-code/daemon";
 import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController, type Controller } from "@kor-code/controller";
 import { readModelRegistry, writeModelRegistry } from "@kor-code/gateway-adapter";
@@ -40,6 +40,7 @@ function errorHint(command: string, error: unknown): string {
   if (command === "uninstall") return "save any later edits; restore the reported installed snapshot, then retry `kor uninstall`";
   if (command === "serve") return "check the Kor configuration and daemon state, then retry";
   if (command === "run" || command === "plan") return "check the issue identifier, the Linear credentials, and that config.yaml maps the issue's team or project to a repository, then retry";
+  if (command === "linear attach-image") return "check the PNG, caption, issue identifier and Linear write credentials; rerun identical inputs to resume a partial upload";
   if (command === "linear") return "check the issue or project identifier and Linear credentials; for projects above 100 issues, lint individual issues";
   if (command === "status" || command === "cancel" || command === "retry" || command === "logs") return "check the execution ID or issue key, then retry";
   return `run \`kor ${command} --help\` or retry with --debug for details`;
@@ -248,6 +249,37 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
   const cleanArgs = args.filter(arg => arg !== "--debug");
   const command = cleanArgs[0] ?? "help";
   try {
+    if (command === "linear") {
+      const imageUsage = 'kor linear attach-image ISSUE FILE --alt "SCREEN ROUTE STATE" [--json]';
+      const usage = `${linearLintUsage} | ${imageUsage}`;
+      const linearArgs = cleanArgs.slice(1);
+      if (linearArgs.includes("--help") || linearArgs.includes("-h")) {
+        print(`Usage: ${usage}\nlint: read-only acceptance, dependency and UI screenshot checks.\nattach-image: uploads a PNG (up to 20 MiB), adds it to Screens and attachments, then verifies the saved bytes. Requires Linear read/write access.`, false);
+        return 0;
+      }
+      if (linearArgs[0] === "lint") {
+        if (linearArgs.filter(arg => arg === "--json").length > 1) usageFailure(linearLintUsage);
+        const selectors = linearArgs.filter(arg => arg !== "--json");
+        const project = selectors[1] === "--project";
+        const reference = selectors[project ? 2 : 1];
+        if (selectors[0] !== "lint" || selectors.length !== (project ? 3 : 2) || !reference || reference.startsWith("-") || !project && !/^[A-Z][A-Z0-9]+-[0-9]+$/.test(reference)) usageFailure(linearLintUsage);
+        return await runLinearLint(reference, project, jsonFlag(linearArgs));
+      }
+      if (linearArgs[0] !== "attach-image") usageFailure(usage);
+      const [, issue, file, ...flags] = linearArgs;
+      let alt: string | undefined;
+      for (let index = 0; index < flags.length; index++) {
+        const flag = flags[index];
+        if (flag === "--json") continue;
+        if (flag !== "--alt" || alt !== undefined) usageFailure(usage);
+        alt = flags[++index];
+        if (!alt || alt.startsWith("--")) usageFailure(usage);
+      }
+      if (!issue || issue.startsWith("-") || !file || file.startsWith("-") || !alt) usageFailure(usage);
+      const result = await attachLinearImage({ issue, file, alt });
+      print(jsonFlag(linearArgs) ? result : `${result.issue}: image verified (${result.bytes} bytes, sha256 ${result.sha256})`, jsonFlag(linearArgs));
+      return 0;
+    }
     if (command === "skills") {
       const skillArgs = cleanArgs.slice(1);
       const catalogueCommands = ["index", "list", "show", "doctor"];
@@ -319,19 +351,6 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
       }
       return blocked ? 1 : 0;
     }
-    if (command === "linear") {
-      const lintArgs = cleanArgs.slice(1);
-      if (lintArgs.length === 1 && (lintArgs[0] === "--help" || lintArgs[0] === "-h") || lintArgs[0] === "lint" && lintArgs.length === 2 && (lintArgs[1] === "--help" || lintArgs[1] === "-h")) {
-        process.stdout.write(`Usage: ${linearLintUsage}\nRead-only checks for acceptance criteria, completed dependencies, and screenshots on UI-labelled tickets.\n`);
-        return 0;
-      }
-      if (lintArgs.filter(arg => arg === "--json").length > 1) usageFailure(linearLintUsage);
-      const selectors = lintArgs.filter(arg => arg !== "--json");
-      const project = selectors[1] === "--project";
-      const reference = selectors[project ? 2 : 1];
-      if (selectors[0] !== "lint" || selectors.length !== (project ? 3 : 2) || !reference || reference.startsWith("-") || !project && !/^[A-Z][A-Z0-9]+-[0-9]+$/.test(reference)) usageFailure(linearLintUsage);
-      return await runLinearLint(reference, project, jsonFlag(lintArgs));
-    }
     if (command === "status") return await status(cleanArgs.slice(1));
     if (command === "run") return await runIssue(cleanArgs.slice(1));
     if (command === "cancel" || command === "retry") return await updateQueue(command, cleanArgs.slice(1));
@@ -364,13 +383,13 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
   } catch (error) {
     const failure = (command === "install" || command === "uninstall") && !(error instanceof CliFailure)
       ? new CliFailure(`${command}_failed`, errorMessage(error), errorHint(command, error)) : error;
-    const structured = cliError(command, failure);
+    const structured = cliError(command === "linear" && cleanArgs[1] === "attach-image" ? "linear attach-image" : command, failure);
     if (jsonFlag(args)) process.stdout.write(`${JSON.stringify({ schemaVersion: 1, error: structured })}\n`);
     else process.stderr.write(`FAIL ${command}: ${structured.message}. Hint: ${structured.hint}\n`);
     if (debug && error instanceof Error && error.stack) process.stderr.write(`${error.stack}\n`);
     return failure instanceof CliFailure ? failure.exitCode : 1;
   }
-  process.stdout.write("Usage: kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json] | kor ui | kor serve [--ui-dir DIST] [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--context] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor linear lint ISSUE-ID [--json] | kor linear lint --project PROJECT-ID [--json] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list | kor models probe [--family family] [--model model]\n");
+  process.stdout.write("Usage: kor linear attach-image ISSUE FILE --alt CAPTION [--json] | kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json] | kor ui | kor serve [--ui-dir DIST] [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--context] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor linear lint ISSUE-ID [--json] | kor linear lint --project PROJECT-ID [--json] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list | kor models probe [--family family] [--model model]\n");
   return 0;
 }
 

@@ -20,7 +20,7 @@ function run(args, status = 0) {
 
 try {
   const seeds = run(["lint", "--json"]);
-  if (!seeds.ok || seeds.skills.length !== 2 || seeds.diagnostics.length) throw new Error("Seed lint must pass without warnings.");
+  if (!seeds.ok || !["human-written-code", "pr-standard"].every(name => seeds.skills.some(skill => skill.name === name)) || seeds.diagnostics.length) throw new Error("Seed lint must pass without warnings.");
   for (const skill of seeds.skills) console.log(`PASS seed ${skill.name}: listing=${skill.listingTokens}, body=${skill.bodyTokens} estimated tokens`);
   const cases = [
     ["schema", source("", undefined, description, "Uppercase")],

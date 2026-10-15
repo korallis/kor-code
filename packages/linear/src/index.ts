@@ -4,3 +4,4 @@ export * from './runtime.js';
 export * from './fake.js';
 export * from './store.js';
 export * from './screenshots.js';
+export * from './images.js';
