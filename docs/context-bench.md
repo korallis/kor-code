@@ -108,3 +108,24 @@ cache reuse or lower total cost. Median context sum was 87,909 versus 97,761
 and observed session cost was $0.00338 versus $0.00384 (standard versus lean).
 Two standard sessions and all three lean sessions had one denied `git -C … diff`
 command each; every session still completed and passed the runtime checks.
+
+A follow-up investigation captured requests from four more executions per
+profile, with the same input revision, task and Jev route. All eight passed the
+real CLI checks. Consecutive requests had identical tools and system blocks in
+both profiles. Lean also kept the prefix through the user prompt identical;
+only the trailing environment message changed with the checkout path. Standard
+included a changing Git snapshot before the user prompt.
+
+| Follow-up execution | Standard first-turn read / creation | Lean first-turn read / creation |
+| --- | ---: | ---: |
+| 1 | 0 / 7,585 | 0 / 6,979 |
+| 2 | 6,160 / 1,423 | 6,618 / 361 |
+| 3 | 6,160 / 1,422 | 0 / 6,979 |
+| 4 | 6,160 / 1,426 | 6,618 / 361 |
+
+On the second execution, lean's first-turn cache share was 94.83% versus
+standard's 81.23%; whole-session shares were 86.55% versus 85.97%. The later lean
+miss occurred despite the stable prefix. These captures rule out changing
+launcher prompt content as its explanation, but do not identify the upstream
+cause or establish that the original miss was a one-off warm-up. Cache reuse
+remains variable; the repeatable benefit here is the 605-token startup saving.
