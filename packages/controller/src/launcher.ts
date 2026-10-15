@@ -38,6 +38,7 @@ export interface SessionResult {
   failureReasons?: readonly string[];
 }
 export interface SessionLauncherLike { launch(input: SessionLaunch): Promise<SessionResult> }
+export interface SessionSkillPack { pluginDir?: string; listedSkills: readonly string[]; pinnedGuidance: string }
 export interface SessionLauncherOptions {
   repoRoot?: string; command?: string; args?: string[]; env?: NodeJS.ProcessEnv; gatewayKey?: string; sandboxScript?: string; allowedTools?: readonly string[]; tools?: readonly string[];
   /** Where the daemon publishes status, so the cockpit inside the session reads it rather than the session's own sandbox home. */
@@ -45,9 +46,14 @@ export interface SessionLauncherOptions {
   onOutput?: (executionId: string, channel: "stdout" | "stderr", text: string) => void;
   gateway?: () => Promise<{ baseUrl: string; key: string | undefined }>;
   sandboxRoot?: string;
+  prepareSkills?: (input: SessionLaunch & { allowedTools: readonly string[] }) => Promise<SessionSkillPack>;
 }
 
-const CONTEXT_SETTINGS = { claudeMdExcludes: ["**"], autoMemoryEnabled: false };
+const CONTEXT_SETTINGS = {
+  claudeMdExcludes: ["**"], autoMemoryEnabled: false, disableBundledSkills: true,
+  enabledPlugins: { "cc-plugin-plugin-authoring@builtin": false },
+  skillOverrides: { design: "off", doctor: "off" },
+};
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : undefined;
@@ -215,14 +221,20 @@ export class SessionLauncher implements SessionLauncherLike {
     const script = this.options.sandboxScript ?? resolve(this.repoRoot, "scripts/sandbox.sh");
     const checks = input.checks ?? [];
     const override = input.tools ?? this.options.tools;
-    const allowedTools = await sessionPermissions({ worktree: input.worktreePath, allowedTools: input.allowedTools ?? this.options.allowedTools ?? DEFAULT_ALLOWED_TOOLS, checks, ...(override ? { tools: override } : {}) });
-    const tools = sessionTools(allowedTools, override);
+    const permissions = await sessionPermissions({ worktree: input.worktreePath, allowedTools: input.allowedTools ?? this.options.allowedTools ?? DEFAULT_ALLOWED_TOOLS, checks, ...(override ? { tools: override } : {}) });
+    const allowedTools = permissions.filter(tool => tool.split("(")[0] !== "Skill");
+    const availableTools = sessionTools(allowedTools, override).filter(tool => tool !== "Skill");
+    const skills = await this.options.prepareSkills?.({ ...input, tools: availableTools, allowedTools: allowedTools.filter(tool => availableTools.includes(tool.split("(")[0] ?? tool)) });
+    const listedSkills = [...(skills?.listedSkills ?? [])].sort();
+    allowedTools.push(...listedSkills.map(name => `Skill(kor-skills:${name})`));
+    const tools = [...availableTools, ...(listedSkills.length ? ["Skill"] : [])].sort();
+    const prompt = (skills?.pinnedGuidance ?? "") + input.prompt + permissionGuidance(allowedTools, checks, tools);
     const toolArgs = allowedTools.length > 0 ? [...allowedTools] : [""];
     const routeArgs = [
       ...(input.route?.model ? ["--model", input.route.model] : []),
       ...(input.route?.reasoningLevel ? ["--effort", input.route.reasoningLevel] : []),
     ];
-    const commandArgs = this.options.args ?? ["claude", "-p", input.prompt + permissionGuidance(allowedTools, checks, tools), ...routeArgs, "--plugin-dir", resolve(this.repoRoot, "packages/claude-plugin"), "--no-session-persistence", "--permission-mode", "dontAsk", "--tools", tools.join(","), "--allowedTools", ...toolArgs, "--output-format", "stream-json", "--verbose", "--setting-sources", "", "--settings", JSON.stringify(CONTEXT_SETTINGS)];
+    const commandArgs = this.options.args ?? ["claude", "-p", prompt, ...routeArgs, "--plugin-dir", resolve(this.repoRoot, "packages/claude-plugin"), ...(skills?.pluginDir ? ["--plugin-dir", skills.pluginDir] : []), "--tools", tools.join(","), "--no-session-persistence", "--permission-mode", "dontAsk", "--allowedTools", ...toolArgs, "--output-format", "stream-json", "--verbose", "--setting-sources", "", "--settings", JSON.stringify(CONTEXT_SETTINGS)];
     const args = ["--run", ...commandArgs];
     const tool = commandArgs[0] ?? "claude";
     const toolDir = tool.includes("/") ? dirname(tool) : this.findToolDir(tool);

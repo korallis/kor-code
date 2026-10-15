@@ -16,7 +16,7 @@ const DEFAULT_BODY_BUDGET = 2_000;
 const STAGES = new Set(["plan", "execute", "repair", "review", "ship", "project-setup"]);
 const TEXT_EXTENSIONS = new Set([".md", ".txt", ".json", ".yaml", ".yml"]);
 const SKIP_DIRECTORIES = new Set([".git", "node_modules"]);
-const headerSchema = skillFrontmatterSchema.pick({ name: true, description: true, metadata: true, "disable-model-invocation": true })
+const headerSchema = skillFrontmatterSchema.pick({ name: true, description: true, metadata: true, "disable-model-invocation": true, "allowed-tools": true })
   .extend({
     license: z.string().optional(),
     metadata: privateSkillMetadataSchema.optional(),
@@ -93,7 +93,7 @@ export async function skillFiles(root: string): Promise<string[]> {
   return visit(root);
 }
 
-async function readCandidate(path: string, tier: SkillOrigin["tier"]): Promise<Candidate> {
+export async function readSkillBundle(path: string, tier: SkillOrigin["tier"]): Promise<Candidate> {
   const source = (await readFile(path, "utf8")).replace(/\r\n/g, "\n");
   const match = /^---\n([\s\S]*?)\n---(?:\n|$)/.exec(source);
   if (!match) throw new Error("Missing YAML frontmatter");
@@ -186,7 +186,7 @@ export async function buildSkillsCatalogue(options: { config: KorConfig; paths: 
     }
     for (const path of files) {
       try {
-        if (!candidates.some(candidate => candidate.origin.path === path && candidate.origin.tier === source.tier)) candidates.push(await readCandidate(path, source.tier));
+        if (!candidates.some(candidate => candidate.origin.path === path && candidate.origin.tier === source.tier)) candidates.push(await readSkillBundle(path, source.tier));
       }
       catch (error) { diagnostics.push({ severity: "error", rule: "skill-format", path, message: error instanceof Error && error.name !== "YAMLParseError" ? error.message : "Invalid YAML frontmatter" }); }
     }

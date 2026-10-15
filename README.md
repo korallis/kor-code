@@ -374,8 +374,8 @@ the same as an object.
   and ticket-writing guidance, complete screen mockups and verified ticket images,
   authoring schema, lint, catalogue commands, private
   and configured sources, pinned imports and updates, lockfiles, attribution,
-  uninstall, routing guardrails and token costs. Lint runs locally without
-  credentials or a daemon, scans every bundled text file for explicit model,
+  uninstall, routing guardrails, token costs and per-execution delivery. Lint runs
+  locally without credentials or a daemon, scans every bundled text file for explicit model,
   provider and effort routing, and reports description overlap as a warning.
   `kor skills index` writes a private catalogue in Kor state; `list`, `show` and
   `doctor` inspect sources without writing. Use repeated `--from DIRECTORY` for
@@ -388,7 +388,9 @@ the same as an object.
   private pack; `import --from` copies local skills without changing the source
   (`--dry-run` previews). `kor skills guard` checks the public tier against private
   skill names and the local `deny.txt`. `local-only` entries expose only a name
-  and fixed label to Jev. Session selection and delivery are separate work.
+  and fixed label to Jev. The launcher accepts a selected skill pack, exposes only
+  listed skills, and prefixes pinned guidance to the task. Automatic Jev selection
+  remains separate work.
 
 - [User guide](docs/user-guide.md): install, credentials, configuration, Linear
   setup, Mission Control job by job, the CLI and status line, recovery,
