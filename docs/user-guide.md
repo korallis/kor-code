@@ -189,7 +189,7 @@ Configure repository mapping, checks and toolAllowlist; run kor doctor before st
 | Linear personal API key | `LINEAR_API_KEY`, or `LINEAR_API_KEY=…` in `~/.config/linear/env` |
 | TypeSafe API key | `TYPESAFE_API_KEY` (or `TYPESAFE_KEY`, `JEV_API_KEY`), or the same names in `~/.config/typesafe/env` |
 | CLIProxyAPI management key (optional) | `CPA_MANAGEMENT_KEY`, in `gateway.env` or the environment |
-| GitHub | `gh-axi` (or `gh`) logged in with `gh auth login`, or `GH_TOKEN` in the environment |
+| GitHub | `gh-axi` (or `gh`) logged in with `gh auth login`, or `GH_TOKEN` / `GITHUB_TOKEN` in the environment, or a token saved in Settings |
 | Anything you paste into Mission Control's **Settings** | `~/.local/state/kor/connections.json` (mode `0600`, write-only). A saved Linear, Jev, GitHub or gateway key wins over the rows above. |
 
 Runtime environment variables override the files for that one process. Kor never
@@ -307,6 +307,9 @@ PASS quota-axi: available
 PASS Claude Code: 2.1.300 (Claude Code)
 FAIL no-mistakes daemon: not running
 PASS repo kor-code: <sandbox>/pilot (main)
+PASS repo kor-code shipping target: github.com
+PASS repo kor-code git identity: user.name and user.email configured
+PASS repo kor-code push access: push dry run passed; no remote refs changed
 FAIL doctor: one or more checks failed. Hint: fix the reported checks and rerun `kor doctor`
 ```
 
@@ -328,8 +331,27 @@ FAIL quota-axi: unavailable
 | `no-mistakes daemon` | **shipping** | Delivery cannot pass the repository gate without it; see below. Verification does not need it. |
 | `CLIProxyAPI management access`, `quota-axi` | Mission Control's account slots, quota windows and footer | Optional. Add the management key when you connect the gateway (or set `CPA_MANAGEMENT_KEY`) and have `quota-axi` available to see the account pool and its windows. |
 
-`kor doctor` does not check GitHub. Mission Control's sidebar and Settings show
-whether `gh-axi` or a pasted token can reach it.
+Before starting work, doctor also checks each repository’s shipping prerequisites:
+
+| Line | If it fails |
+| --- | --- |
+| `repo <name> shipping target` | Set `origin` to a `https://github.com/OWNER/REPO.git` or `git@github.com:OWNER/REPO.git` URL, or configure `remote`. Local-only origins cannot ship. |
+| `repo <name> git identity` | Run `git config user.name "Your Name"` and `git config user.email "you@example.com"` in that checkout. Use `--global` to apply the identity to all repositories. |
+| `repo <name> push access` | Log in with `gh auth login --hostname github.com`, export `GH_TOKEN` / `GITHUB_TOKEN` with repository write access, or save a token in Settings. SSH origins need a GitHub SSH key. Check network and repository permissions, then rerun doctor. |
+
+The push check uses the same credential environment as shipping, including tokens
+saved in Settings, and runs `git push --dry-run --no-verify` to
+a unique `refs/heads/kor/doctor-…` probe ref. It changes no remote refs and skips
+local push hooks.
+A pass checks current push access; it cannot guarantee that a later push satisfies
+branch protection or CI requirements. Kor supplies the GitHub credential helper for
+environment tokens and `gh` logins; `gh auth setup-git` is unnecessary.
+Mission Control’s GitHub light checks API connectivity, so use doctor for the
+repository push check. Settings, doctor and the Jev client share the Jev key
+resolver: a saved key, `TYPESAFE_API_KEY` / `TYPESAFE_KEY` / `JEV_API_KEY`, then
+`~/.config/typesafe/env`.
+
+![Jev with the documented credential file, before and after the resolver fix](images/jev-credential-resolution.webp)
 
 ## Start the daemon and open Mission Control
 

@@ -6,9 +6,9 @@ import { redact, runtimeSecrets } from "./redact.js";
 
 export interface JevClientOptions { apiKey?: string; endpoint?: string; model?: string; fetch?: typeof globalThis.fetch; timeoutMs?: number }
 
-async function keyFromRuntimeFile(): Promise<string | undefined> {
+async function keyFromRuntimeFile(home: string): Promise<string | undefined> {
   try {
-    const text = await readFile(join(homedir(), ".config/typesafe/env"), "utf8");
+    const text = await readFile(join(home, ".config/typesafe/env"), "utf8");
     for (const line of text.split(/\r?\n/)) {
       const match = /^\s*(?:export\s+)?(?:TYPESAFE_API_KEY|TYPESAFE_KEY|JEV_API_KEY)\s*=\s*(.*?)\s*$/.exec(line);
       if (!match?.[1]) continue;
@@ -22,8 +22,9 @@ async function keyFromRuntimeFile(): Promise<string | undefined> {
   }
   return undefined;
 }
-export async function resolveJevApiKey(explicit?: string): Promise<string | undefined> {
-  return explicit || process.env.TYPESAFE_API_KEY || process.env.TYPESAFE_KEY || process.env.JEV_API_KEY || await keyFromRuntimeFile();
+export async function resolveJevApiKey(explicit?: string, options: { environment?: NodeJS.ProcessEnv; home?: string } = {}): Promise<string | undefined> {
+  const environment = options.environment ?? process.env;
+  return explicit || environment.TYPESAFE_API_KEY || environment.TYPESAFE_KEY || environment.JEV_API_KEY || await keyFromRuntimeFile(options.home ?? environment.HOME ?? homedir());
 }
 export class JevUnavailableError extends Error {}
 export class JevRequestError extends JevUnavailableError {

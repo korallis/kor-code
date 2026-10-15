@@ -3,7 +3,8 @@ import { randomBytes } from "node:crypto";
 import { access, readFile, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
-import { loadGatewayEnvironment, loadKorConfig, parseDotEnv, runtimePaths, type GatewayEnvironment, type KorPaths } from "@kor-code/config";
+import { loadGatewayEnvironment, loadKorConfig, parseDotEnv, runtimePaths, type GatewayEnvironment, type KorPaths, type KorRepositoryConfig } from "@kor-code/config";
+import { MissionServices } from "@kor-code/daemon";
 import { sessionPermissions, sessionTools } from "@kor-code/controller";
 
 const execFileAsync = promisify(execFile);
@@ -20,10 +21,10 @@ export interface DoctorOptions {
 
 export type DoctorCommand = (file: string, args: readonly string[]) => Promise<{ stdout: string; stderr: string }>;
 
-function commandRunner(): DoctorCommand {
+function commandRunner(environment: NodeJS.ProcessEnv): DoctorCommand {
   return async (file, args) => {
     if (!file) throw new Error("command name is empty");
-    return execFileAsync(file, [...args], { timeout: 10_000, maxBuffer: 256 * 1024 });
+    return execFileAsync(file, [...args], { env: environment, timeout: 20_000, maxBuffer: 256 * 1024 });
   };
 }
 
@@ -83,6 +84,32 @@ async function checkCommand(name: string, file: string, args: readonly string[],
   } catch { return { name, status: "error", detail: "unavailable" }; }
 }
 
+async function checkShipping(key: string, repository: KorRepositoryConfig, command: DoctorCommand): Promise<DoctorCheck[]> {
+  const checks: DoctorCheck[] = [];
+  const git = async (args: string[]) => (await command("git", ["-C", repository.path, ...args])).stdout.trim();
+  const remote = repository.remote ?? await git(["remote", "get-url", "origin"]).catch(() => undefined);
+  const github = remote && /^(?:https:\/\/github\.com\/|git@github\.com:)([\w.-]+\/[\w.-]+?)(?:\.git)?$/.test(remote);
+  checks.push({ name: `repo ${key} shipping target`, status: github ? "ok" : "error", detail: github ? "github.com" : "Shipping needs a github.com repository. Set origin with `git remote set-url origin https://github.com/OWNER/REPO.git` (use `git remote add origin` if missing), or set this repo's remote in config.yaml." });
+  const missingIdentity: string[] = [];
+  for (const field of ["user.name", "user.email"]) {
+    try { if (!await git(["config", "--get", field])) missingIdentity.push(field); }
+    catch { missingIdentity.push(field); }
+  }
+  checks.push({ name: `repo ${key} git identity`, status: missingIdentity.length ? "error" : "ok", detail: missingIdentity.length ? `Missing ${missingIdentity.join(" and ")}. In this repository run ${missingIdentity.map(field => `\`git config ${field} "${field === "user.name" ? "Your Name" : "you@example.com"}"\``).join(" and ")}.` : "user.name and user.email configured" });
+  if (github && remote) {
+    try {
+      const probeRef = `HEAD:refs/heads/kor/doctor-${randomBytes(8).toString("hex")}`;
+      await git(["push", "--dry-run", "--no-verify", "--porcelain", remote, probeRef]);
+      checks.push({ name: `repo ${key} push access`, status: "ok", detail: "push dry run passed; no remote refs changed" });
+    } catch {
+      checks.push({ name: `repo ${key} push access`, status: "error", detail: "Push dry run failed. Run `gh auth login --hostname github.com`, set GH_TOKEN or GITHUB_TOKEN with repository write access, or save a token in Settings. For SSH origins, configure a GitHub SSH key. Check repository access and network, then rerun `kor doctor`." });
+    }
+  } else {
+    checks.push({ name: `repo ${key} push access`, status: "error", detail: "Not checked; fix the shipping target above and rerun `kor doctor`." });
+  }
+  return checks;
+}
+
 async function checkRepositories(config: Awaited<ReturnType<typeof loadKorConfig>>, command: DoctorCommand): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
   for (const [key, repository] of Object.entries(config.config.repos).sort(([left], [right]) => left.localeCompare(right))) {
@@ -104,6 +131,7 @@ async function checkRepositories(config: Awaited<ReturnType<typeof loadKorConfig
       const permitted = sessionTools(permissions);
       const tools = sessionTools(permissions, repository.tools).filter(tool => permitted.includes(tool));
       checks.push({ name: `repo ${key}`, status: "ok", detail: `${repository.path} (${repository.defaultBranch})` });
+      checks.push(...await checkShipping(key, repository, command));
       checks.push({ name: `repo ${key} tools`, status: "ok", detail: `${tools.join(", ") || "none"} (${repository.tools ? "tools override intersected with policy" : "effective permission base names; automatic search requires unscoped Read"}); Jev selects optional tools per task; availability does not grant command permissions` });
     } catch {
       // Never forward git stderr: a configured remote can contain credentials.
@@ -116,7 +144,14 @@ async function checkRepositories(config: Awaited<ReturnType<typeof loadKorConfig
 export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorReport> {
   const environment = options.environment ?? process.env;
   const paths = options.paths ?? runtimePaths(environment);
-  const command: DoctorCommand = options.command ?? commandRunner();
+  const mission = new MissionServices(paths);
+  await mission.initialize();
+  const command: DoctorCommand = options.command ?? commandRunner(mission.shippingEnvironment(environment));
+  let jevKey: DoctorCheck;
+  try {
+    const available = Boolean(await mission.jevApiKey(environment));
+    jevKey = { name: "TypeSafe key", status: available ? "ok" : "error", detail: available ? "available" : "missing; set TYPESAFE_API_KEY or ~/.config/typesafe/env" };
+  } catch { jevKey = { name: "TypeSafe key", status: "error", detail: "Unable to read TypeSafe runtime credential file" }; }
   let config: Awaited<ReturnType<typeof loadKorConfig>> | undefined;
   let configCheck: DoctorCheck;
   try {
@@ -126,7 +161,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   const checks: DoctorCheck[] = [
     configCheck,
     await checkCredential("Linear key", ["LINEAR_API_KEY"], resolve(paths.home, ".config", "linear", "env"), environment),
-    await checkCredential("TypeSafe key", ["TYPESAFE_API_KEY", "TYPESAFE_KEY", "JEV_API_KEY"], resolve(paths.home, ".config", "typesafe", "env"), environment),
+    jevKey,
     await checkGateway(environment, paths, options.fetcher ?? globalThis.fetch),
     await checkManagement(environment, paths, options.fetcher ?? globalThis.fetch),
     await checkCommand("quota-axi", "quota-axi", ["--json", "--no-credential-refresh"], command),

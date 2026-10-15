@@ -8,7 +8,7 @@ import { decode } from "@toon-format/toon";
 import { loadGatewayEnvironment, type KorPaths } from "@kor-code/config";
 import { GatewayAdapter, readModelRegistry } from "@kor-code/gateway-adapter";
 import { HttpLinearClient, type LinearClient } from "@kor-code/linear";
-import { JevClient } from "@kor-code/jev";
+import { JevClient, resolveJevApiKey } from "@kor-code/jev";
 import { redact, runtimeSecrets } from "@kor-code/jev";
 import { CalibrationStore, buildReport } from "@kor-code/calibration";
 import type { AskRequest, AskResponse, BrainResponse, ConnectRequest, ConnectionsResponse, ModelsResponse, PullsResponse, SuggestedAction } from "@kor-code/mission-control";
@@ -82,12 +82,28 @@ export class MissionServices {
     const result = await exec("gh-axi", args, { ...(cwd ? { cwd } : {}), env: { ...process.env, ...(this.credentials.github ? { GH_TOKEN: this.credentials.github } : {}) }, timeout: 20_000, maxBuffer: 2_000_000 });
     return result.stdout;
   }
+  shippingEnvironment(environment: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = { ...environment, ...(this.credentials.github ? { GH_TOKEN: this.credentials.github } : {}), GIT_TERMINAL_PROMPT: "0" };
+    const entries: [string, string][] = [];
+    if (env.GH_TOKEN || env.GITHUB_TOKEN) entries.push(["credential.https://github.com.helper", ""]);
+    entries.push(["credential.https://github.com.helper", "!gh auth git-credential"]);
+    const count = Number(env.GIT_CONFIG_COUNT ?? 0);
+    if (!Number.isSafeInteger(count) || count < 0) throw new Error("Invalid GIT_CONFIG_COUNT");
+    for (const [offset, [key, value]] of entries.entries()) {
+      env[`GIT_CONFIG_KEY_${count + offset}`] = key;
+      env[`GIT_CONFIG_VALUE_${count + offset}`] = value;
+    }
+    env.GIT_CONFIG_COUNT = String(count + entries.length);
+    return env;
+  }
+  jevApiKey(environment: NodeJS.ProcessEnv = process.env): Promise<string | undefined> {
+    return resolveJevApiKey(this.credentials.jev, { environment, home: this.paths.home });
+  }
   async shippingCommand(file: string, args: string[], cwd: string): Promise<{ code: number; stdout: string; stderr: string }> {
-    const token = this.credentials.github;
     const secrets = [...runtimeSecrets(), ...this.secrets()];
     try {
       const result = await exec(file, args, { cwd, timeout: 30_000, maxBuffer: 2_097_152,
-        env: { ...process.env, ...(token ? { GH_TOKEN: token } : {}), ...(token && file === "git" ? { GIT_CONFIG_COUNT: "2", GIT_CONFIG_KEY_0: "credential.helper", GIT_CONFIG_VALUE_0: "", GIT_CONFIG_KEY_1: "credential.helper", GIT_CONFIG_VALUE_1: "!gh auth git-credential" } : {}) },
+        env: this.shippingEnvironment(),
       });
       return { code: 0, stdout: String(redact(result.stdout, secrets)), stderr: String(redact(result.stderr, secrets)) };
     } catch (error) {
@@ -98,14 +114,14 @@ export class MissionServices {
   }
   jev(): JevClient { return new JevClient(this.credentials.jev ? { apiKey: this.credentials.jev } : {}); }
   async connections(): Promise<ConnectionsResponse> {
-    const [linear, github, gateway] = await Promise.allSettled([
-      this.linear().listIssues("KOR", 1), this.github(["api", "/user", "--jq", ".login"]), this.gateway().then(adapter => adapter.listModels()),
+    const [linear, github, gateway, jev] = await Promise.allSettled([
+      this.linear().listIssues("KOR", 1), this.github(["api", "/user", "--jq", ".login"]), this.gateway().then(adapter => adapter.listModels()), this.jevApiKey(),
     ]);
     return { schemaVersion: 1, connections: [
       { id: "linear", status: linear.status === "fulfilled" ? "connected" : "unavailable", reason: linear.status === "fulfilled" ? null : "Linear credentials or API unavailable" },
       { id: "github", status: github.status === "fulfilled" ? "connected" : "unavailable", reason: github.status === "fulfilled" ? null : "GitHub credentials or API unavailable" },
       { id: "gateway", status: gateway.status === "fulfilled" ? "connected" : "unavailable", reason: gateway.status === "fulfilled" ? null : "Gateway credentials or API unavailable" },
-      { id: "jev", status: this.credentials.jev || process.env.TYPESAFE_API_KEY ? "connected" : "unavailable", reason: this.credentials.jev || process.env.TYPESAFE_API_KEY ? null : "Jev credential not configured" },
+      { id: "jev", status: jev.status === "fulfilled" && jev.value ? "connected" : "unavailable", reason: jev.status === "rejected" ? "Unable to read TypeSafe runtime credential file" : jev.value ? null : "Jev credential not configured; set TYPESAFE_API_KEY or ~/.config/typesafe/env" },
     ] };
   }
   async models(): Promise<ModelsResponse> {
