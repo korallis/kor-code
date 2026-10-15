@@ -52,8 +52,9 @@ In practice:
   accounts, a Linear API key, a TypeSafe API key, and, for the pull-request step,
   a GitHub `origin`, `gh-axi` and a `no-mistakes` daemon.
 - **Repair prompts stay focused.** Repairs receive failing checks (the last 4,000
-  characters each) and unmet criteria. Large diffs reach Jev as a bounded file list
-  and relevant hunks; omitted content is marked. Check exit codes still block
+  characters each) and unmet criteria. Diffs above a 24k-token estimate reach Jev
+  as a file list and hunks shared across changed files; omitted content is marked.
+  Check exit codes still block
   completion. [Verification budgets and the live proof](docs/specs/context-and-verification.md#prompt-budgets)
   describe the limits.
 - **Be aware of the edge of the evidence.** Queue, plan, work, verify, request

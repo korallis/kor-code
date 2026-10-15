@@ -27,24 +27,27 @@ checks and failing or unresolved findings; passing evidence is excluded. Each
 failed check contributes up to its last 4,000 characters, sharing the remaining
 budget across failures when many checks fail. The added repair evidence has
 a 16,000-byte serialized budget, with explicit truncation if it is exhausted. The
-original task prompt and a reminder of the criterion IDs remain intact; passing
-findings and passing check output are excluded.
+original task prompt and a reminder of the criterion IDs remain intact. Each
+non-check blocker is capped at 1,000 bytes, with 2,000 bytes shared across those
+blockers, so a large diagnostic cannot displace the failing-check tails.
 
-The diff supplied to Jev has a 24,000-token ceiling. Kor uses UTF-8 bytes of
-serialized JSON as a conservative token upper bound, including JSON escaping;
-ordinary text therefore compacts before it reaches 24,000 actual tokens. Small
-diffs are unchanged. Oversized diffs include a sorted file list and hunks for
-changed paths mentioned in the criteria, sharing the available space across those
-files. If no changed path is named, the summary includes the start of the diff.
-File-list and hunk omissions are marked and cannot count as evidence. Tracked and
-untracked diffs are streamed, so large output does not exhaust a subprocess buffer.
+The diff supplied to Jev has a 24,000-token estimated budget. Token estimates
+use 3 serialized UTF-8 bytes per token, including JSON escaping. This allows up
+to 72,000 serialized bytes of diff evidence; bytes and tokens are separate units.
+A mid-sized diff below this estimate reaches Jev in full. Oversized diffs include
+a sorted file list and hunks shared across all changed files, with paths named in
+the criteria considered first. A criterion without a path still receives evidence
+from later files. File-list and hunk omissions are marked and cannot count as
+evidence. Tracked and untracked diffs are streamed, so large output does not exhaust
+a subprocess buffer.
 
-Check output and tool details are shortened further when necessary to reserve
-space for the diff. Exit codes, check statuses, denied-call identities and tool
-error flags remain authoritative. State plus the largest criterion stays within a
-30,000-token upper bound, leaving 2,000 tokens for Jev's question instructions and
-framing. If criterion/check metadata alone cannot fit, verification blocks with an
-actionable budget error rather than sending an oversized question. Semantic
+Check output and tool details are shortened only when the combined state and
+largest criterion exceed the 30,000-token estimate, leaving 2,000 estimated tokens
+for question framing. Smaller diffs leave more room for tool evidence. Exit codes,
+check statuses, denied-call identities and tool error flags remain authoritative.
+If criterion/check metadata alone cannot fit, verification blocks with an
+actionable budget error. Estimates differ from Jev's tokenizer; the live proof
+records server-reported input usage alongside the local estimates. Semantic
 approval never overrides a failed process or repository check.
 
 Run the live budget proof after installing dependencies and building Kor:
@@ -56,7 +59,10 @@ pnpm verification:proof
 
 The first command uses the existing TypeSafe runtime credentials, creates a
 scratch Git repository, runs a check producing 100,000 characters with exit 7,
-and asks the real Jev judge about a diff above the cap. It prints conservative
-prompt-token upper bounds, judgment and unavailability counts, and the scratch
-artifact directory. It does not launch an agent or publish anything. The second
-command runs the existing repair/retry proof.
+and asks the real Jev judge about a diff above the cap. It also judges a mid-sized
+diff with a path-free criterion, then a larger version requiring compaction,
+including ordinary and maximum-sized tool-record fixtures. A large-blocker check
+confirms the failed-check tail survives. It prints token estimates, server usage,
+judgment and unavailability counts, and the scratch artifact directory. It does
+not launch an agent or publish anything. The second command runs the existing
+repair/retry proof.

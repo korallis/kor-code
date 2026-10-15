@@ -1,5 +1,5 @@
 import { execFile as execFileCallback } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -22,11 +22,18 @@ const execution: Execution = { id: "budget-proof", issueId: "budget-proof", repo
 const client = new JevClient();
 let calls = 0;
 let largestRequest = 0;
+let largestEstimatedRequest = 0;
+const usage: Array<number | null> = [];
+let latestState = "";
 const jev = new JevDecisionCore({ async evaluate(state, questions) {
   calls += 1;
   largestRequest = Math.max(largestRequest, Buffer.byteLength(JSON.stringify({ state, questions })));
+  latestState = JSON.stringify(state);
+  largestEstimatedRequest = Math.max(largestEstimatedRequest, Math.ceil(Buffer.byteLength(JSON.stringify({ state, questions })) / 3));
   await writeFile(join(root, `request-${calls}.json`), JSON.stringify({ state, questions }, null, 2));
-  return client.evaluate(state, questions);
+  const response = await client.evaluate(state, questions);
+  usage.push(response.usage?.input_tokens ?? null);
+  return response;
 } });
 const attempt = await verifyAttempt({ execution, acceptance: [{ id: "required", description: "required.txt contains criterion-specific marker; required-large.txt contains large relevant change", required: true }, { id: "missing", description: "missing.txt exists with repaired marker", required: true }], session: { exitCode: 0, events: [], stdout: "", stderr: "" }, attempt: 1, checks: ["node check.cjs", "echo passing-evidence-marker"], baseRevision, jev, enforceSemantic: true, settings: verificationSettings() });
 await writeFile(join(root, "attempt.json"), JSON.stringify(attempt, null, 2));
@@ -38,5 +45,25 @@ if (repairUpperBound > 6_000 || !prompt.includes("final failure marker") || prom
 if (calls !== 1 || unavailable || attempt.findings[0]?.status !== "pass" || attempt.findings[1]?.status !== "fail") throw new Error("Oversized diff did not receive a passing live judgment");
 if (!attempt.diff.includes("+++ b/required.txt") || !attempt.diff.includes("criterion-specific marker") || !attempt.diff.includes("unrelated.txt")) throw new Error("Compacted diff omitted the file list or criterion-specific hunk");
 if (!prompt.includes("missing: fail") || prompt.includes("required: pass")) throw new Error("Repair prompt did not isolate failing findings");
-if (largestRequest > 32_000 || !attempt.blockers.some(blocker => blocker.startsWith("Check failed:")) || attempt.checks[0]?.exitCode !== 7) throw new Error("Prompt budget or authoritative exit-code gate changed");
-console.log(JSON.stringify({ proof: "verification-budget", checkOutputCharacters: attempt.checks[0]?.output.length, repairTokenUpperBound: repairUpperBound, diffTokenUpperBound: Buffer.byteLength(JSON.stringify(attempt.diff)), requestTokenUpperBound: largestRequest, liveRequests: calls, liveJudgments: attempt.findings.length, acceptanceUnavailable: unavailable, nonzeroExitStillBlocks: true, artifacts: root }));
+if (largestEstimatedRequest > 32_000 || !attempt.blockers.some(blocker => blocker.startsWith("Check failed:")) || attempt.checks[0]?.exitCode !== 7) throw new Error("Prompt budget or authoritative exit-code gate changed");
+const noisyBlocker = repairPrompt("Preserve the acceptance requirements.", { ...attempt, blockers: ["Diff unavailable: " + "x".repeat(100_000), ...attempt.blockers] });
+if (!noisyBlocker.includes("final failure marker") || !noisyBlocker.includes("Check failed:")) throw new Error("A large blocker displaced failing-check evidence");
+
+const midsize = await mkdtemp(join(process.env.KOR_PROOF_DIR ?? tmpdir(), "kor-verification-midsize-"));
+await execFile("git", ["init", "-q", midsize]);
+await execFile("git", ["-C", midsize, "-c", "user.name=Kor Proof", "-c", "user.email=proof@example.invalid", "commit", "--allow-empty", "-qm", "proof base"]);
+const midsizeBase = await verificationBase(midsize);
+await mkdir(join(midsize, "src"));
+for (let index = 0; index < 12; index++) await writeFile(join(midsize, `src/m${String(index).padStart(2, "0")}.ts`), `export function fn${index}(a: number, b: number) { return a * ${index} + b; }\n`.repeat(60));
+const toolOutput = "ordinary shell evidence ".repeat(29);
+const toolResults = Array.from({ length: 20 }, (_, index) => ({ toolName: "Bash", toolUseId: `tool-${index}`, input: "run repository checks", output: toolOutput, isError: false }));
+const midsizeAttempt = await verifyAttempt({ execution: { ...execution, id: "midsize-proof", worktree: midsize }, acceptance: [{ id: "last-module", description: "A function named fn11 that returns a * 11 + b is exported from one of the new modules under src", required: true }], session: { exitCode: 0, events: [], stdout: "", stderr: "", telemetry: { result: "ok", isError: false, permissionDenials: 0, toolResults } }, attempt: 1, checks: [], baseRevision: midsizeBase, jev, enforceSemantic: true, settings: verificationSettings() });
+await writeFile(join(root, "midsize-attempt.json"), JSON.stringify(midsizeAttempt, null, 2));
+if (!midsizeAttempt.diff.includes("fn11") || midsizeAttempt.diff.includes("Diff compacted") || midsizeAttempt.blockers.length || midsizeAttempt.findings[0]?.status !== "pass") throw new Error("A midsize diff with a path-free criterion lost valid evidence");
+if (!latestState.includes(toolOutput)) throw new Error("Ordinary tool evidence was unnecessarily truncated");
+for (let index = 0; index < 12; index++) await writeFile(join(midsize, `src/m${String(index).padStart(2, "0")}.ts`), `export function fn${index}(a: number, b: number) { return a * ${index} + b; }\n`.repeat(600));
+const maximalToolResults = Array.from({ length: 32 }, (_, index) => ({ toolName: "Bash", toolUseId: `maximum-${index}`, input: "check input ".repeat(85), output: "check output ".repeat(315), isError: false }));
+const compactedAttempt = await verifyAttempt({ execution: { ...execution, id: "compacted-proof", worktree: midsize }, acceptance: [{ id: "last-module", description: "A function named fn11 that returns a * 11 + b is exported from one of the new modules under src", required: true }], session: { exitCode: 0, events: [], stdout: "", stderr: "", telemetry: { result: "ok", isError: false, permissionDenials: 0, toolResults: maximalToolResults } }, attempt: 1, checks: [], baseRevision: midsizeBase, jev, enforceSemantic: true, settings: verificationSettings() });
+if (!compactedAttempt.diff.includes("Diff compacted") || !compactedAttempt.diff.includes("fn11") || compactedAttempt.blockers.length || compactedAttempt.findings[0]?.status !== "pass") throw new Error(`Compaction lost evidence: ${JSON.stringify({ blockers: compactedAttempt.blockers, findings: compactedAttempt.findings })}`);
+if (latestState.includes('"output":"[output omitted]"')) throw new Error("Compaction discarded all tool evidence");
+console.log(JSON.stringify({ proof: "verification-budget", checkOutputCharacters: attempt.checks[0]?.output.length, repairTokenUpperBound: repairUpperBound, diffEstimatedTokens: Math.ceil(Buffer.byteLength(JSON.stringify(attempt.diff)) / 3), requestBytes: largestRequest, requestEstimatedTokens: largestEstimatedRequest, reportedInputTokens: usage, liveRequests: calls, liveJudgments: attempt.findings.length + midsizeAttempt.findings.length + compactedAttempt.findings.length, acceptanceUnavailable: unavailable + midsizeAttempt.blockers.filter(blocker => blocker.startsWith("Jev acceptance unavailable")).length, midsizeDiffBytes: Buffer.byteLength(midsizeAttempt.diff), midsizeFinding: midsizeAttempt.findings[0]?.note, compactedFinding: compactedAttempt.findings[0]?.note, maximalToolOutputsRetained: true, ordinaryToolOutputPreserved: true, noisyBlockerPreservesTail: true, nonzeroExitStillBlocks: true, artifacts: root }));
