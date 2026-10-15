@@ -379,6 +379,7 @@ The [troubleshooting table](docs/user-guide.md#troubleshooting) has the rest.
   [open questions](docs/open-questions.md), [review follow-ups](docs/review-followups.md).
 - [Development and validation](docs/development.md) and
   [measuring session context](docs/context-bench.md): building from source and the proof commands.
+  Offline proofs use ephemeral ports and can run alongside Kor on its default port 8327.
 
 ## License
 
