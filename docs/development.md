@@ -30,7 +30,7 @@ The isolated run ended with `✔ Validation passed`; its caller's `opus` setting
 
 The reversible installer is Validated in a disposable HOME and XDG tree for both local pilot and user scope. It stages Claude Code's local-path marketplace commands in a private HOME, publishes only Kor entries, restores the exact settings bytes on uninstall, and leaves `claude plugin list --json` without Kor. The revision proof used an `opus` user setting, a linked sandbox worktree, and an unrelated plugin refresh; uninstall preserved that plugin and its updated registry entries. The proof used the offline endpoint and no live gateway key. It validated the generated unit with `systemd-analyze --user verify`; systemctl sequencing used a command shim, so service lifecycle on the real user manager remains unvalidated.
 
-The Phase 6 cockpit (`packages/claude-plugin`) is Validated on a live daemon run: `/kor` draws the daemon's status with LIVE, STALE and UNAVAILABLE labels, `/kor override` sends overrides to the daemon, and `/kor demo` keeps the fixture execution, which `pnpm cockpit:proof` replays (see [Open the live cockpit](user-guide.md#the-claude-code-status-line)). Execution sessions are Validated locally with parsed stream-json telemetry and policy checks; `pnpm e2e:live` runs the scratch-repository hello-file check when supplied a runtime `KOR_GATEWAY_KEY` or `KOR_GATEWAY_KEY_FILE` (without a key it reports the external validation as Blocked and makes no provider call). Sessions use `dontAsk` with explicit repository permissions and available tools; a disallowed call is denied, while an unavailable tool cannot be called. See the [cockpit specification](specs/cockpit-mockups.md).
+The Phase 6 cockpit (`packages/claude-plugin`) is Validated on a live daemon run: `/kor` draws the daemon's status with LIVE, STALE and UNAVAILABLE labels, `/kor override` sends overrides to the daemon, and `/kor demo` keeps the fixture execution, which `pnpm cockpit:proof` replays (see [Open the live cockpit](user-guide.md#the-cli-and-the-claude-code-status-line)). Execution sessions are Validated locally with parsed stream-json telemetry and policy checks; `pnpm e2e:live` runs the scratch-repository hello-file check when supplied a runtime `KOR_GATEWAY_KEY` or `KOR_GATEWAY_KEY_FILE` (without a key it reports the external validation as Blocked and makes no provider call). Sessions use `dontAsk` with explicit repository permissions and available tools; a disallowed call is denied, while an unavailable tool cannot be called. See the [cockpit specification](specs/cockpit-mockups.md).
 
 Verification runs each configured repository check and treats its exit code as authoritative. It collects the worktree diff, asks Jev one Noul per acceptance criterion at the controller's verification threshold option (default `0.7`), and retries a blocked attempt at most twice with the failing evidence in the next prompt. Run the offline proof:
 
@@ -189,7 +189,7 @@ No live Linear or gateway credential was used for this proof; credentials are su
 
 ### Shipping
 
-The delivery flow is described in the [user guide](user-guide.md#what-happens-after-the-checks-pass) and the [shipping specification](specs/shipping.md).
+The delivery flow is described in the [user guide](user-guide.md#what-happens-after-approval) and the [shipping specification](specs/shipping.md).
 
 The shipping flow is **Validated locally** for real Git, SQLite, HTTP snapshots,
 and live Jev judgments; the gate, forge and Linear writes, and cleanup are
@@ -224,4 +224,4 @@ Intent section.
 
 ## Cockpit proof
 
-The cockpit (`packages/claude-plugin`) is a Claude Code mod. `pnpm cockpit:proof` replays the fixture execution that `/kor demo` draws, and `pnpm cockpit` loads the plugin into a disposable Claude Code configuration for interactive use. See the [cockpit specification](specs/cockpit-mockups.md) and the [user guide](user-guide.md#the-claude-code-status-line).
+The cockpit (`packages/claude-plugin`) is a Claude Code mod. `pnpm cockpit:proof` replays the fixture execution that `/kor demo` draws, and `pnpm cockpit` loads the plugin into a disposable Claude Code configuration for interactive use. See the [cockpit specification](specs/cockpit-mockups.md) and the [user guide](user-guide.md#the-cli-and-the-claude-code-status-line).
