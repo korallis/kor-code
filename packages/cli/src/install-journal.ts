@@ -82,6 +82,7 @@ export async function recordAfter(manifest: InstallManifest): Promise<void> {
     entry.after = await fingerprint(entry.path);
     if (entry.after !== null && ["shared", "settings"].includes(entry.policy)) {
       entry.afterBackup = `${entry.backup}.after`;
+      await rm(entry.afterBackup, { recursive: true, force: true });
       await cp(entry.path, entry.afterBackup, { recursive: true, verbatimSymlinks: true, preserveTimestamps: true });
     }
   }

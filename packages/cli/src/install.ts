@@ -8,6 +8,7 @@ import { loadKorConfig, parseDotEnv, readRuntimeEnvFile, runtimePaths } from "@k
 import { z } from "zod";
 import { checkRestore, fingerprint, mkdirRecorded, missing, pruneDirectories, readManifest, recordAfter, remember, restoreManifest, saveManifest, type InstallManifest } from "./install-journal.js";
 
+import { uninstallSkills } from "./skills-install.js";
 import { stopLocalDaemon } from "./daemon-lifecycle.js";
 
 import { addKorSettings, installedPluginSchema, PLUGIN_ID, readObject, writeObject } from "./install-json.js";
@@ -331,13 +332,19 @@ export async function uninstallKor(options: { purge: boolean }): Promise<{ outpu
   const environment = process.env;
   const manifestPath = journalPath(environment);
   const manifest = await readManifest(manifestPath);
-  if (!manifest) return { output: "Kor is not installed (no install manifest)" };
-  if (manifest.phase !== "restored" || options.purge) await undo(manifest, environment, options.purge);
-  if (options.purge) {
-    await rm(manifestPath);
-    await rm(`${manifestPath}.tmp`, { force: true });
-    await rm(manifest.backupDir, { recursive: true });
-    await pruneDirectories(manifest);
+  let output = "Kor is not installed (no install manifest)";
+  if (manifest) {
+    if (manifest.phase !== "restored" || options.purge) await undo(manifest, environment, options.purge);
+    if (options.purge) {
+      await rm(manifestPath);
+      await rm(`${manifestPath}.tmp`, { force: true });
+      await rm(manifest.backupDir, { recursive: true });
+      await pruneDirectories(manifest);
+    }
+    output = `Kor uninstalled${options.purge ? " (purged new Kor data; restored pre-existing data)" : "; config and state retained"}\n${options.purge ? "Replayed" : "Backups:"} ${manifest.backupDir}`;
   }
-  return { output: `Kor uninstalled${options.purge ? " (purged new Kor data; restored pre-existing data)" : "; config and state retained"}\n${options.purge ? "Replayed" : "Backups:"} ${manifest.backupDir}` };
+  const skillsOutput = await uninstallSkills(options).catch(error =>
+    `WARNING: Imported skills recovery is incomplete: ${error instanceof Error ? error.message : "unable to restore skills"}. Kor's own uninstall completed; skills backups were retained.`,
+  );
+  return { output: [output, skillsOutput].filter(Boolean).join("\n") };
 }

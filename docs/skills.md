@@ -371,3 +371,125 @@ cannot establish that arbitrary material is public-safe; review the content and
 licensing before publishing it. `init`, `import` and `guard` require no daemon or
 credentials, support `--json`, and use exit `0` for success, `1` for failed checks
 or I/O, and `2` for invalid arguments.
+
+## Install pinned skills
+
+Imports copy files into exactly one Kor tier: `skills/` beside Kor's packages
+(`--tier public`), or `$XDG_CONFIG_HOME/kor/skills` (default
+`~/.config/kor/skills`, `--tier private`). A newly created private root has mode
+0700. There is no arbitrary destination option. Harness skill directories are
+never installation targets. Imports do not make skills available to execution
+sessions; catalogue selection and session delivery are separate features.
+
+```sh
+kor skills add https://github.com/cursor/plugins.git@e5136d82418d \
+  --subpath pstack/skills \
+  --skill principle-laziness-protocol principle-subtract-before-you-add \
+  --tier private --adapt-frontmatter
+```
+
+Use a credential-free HTTPS Git URL and a pinned commit, never a branch or tag.
+Full 40-character SHAs work on any supported remote. Short SHAs (7–39 characters)
+are resolved from advertised refs, or through GitHub's public commits API for an
+older GitHub commit; resolution must match the supplied prefix. Private local
+repositories can use `file:///absolute/path@<full-commit>`. Embedded credentials,
+URL query strings and fragments are rejected. Authenticated remote repositories
+are outside this command's scope.
+
+`--skill` accepts one or more directory names and can be repeated. Without it,
+all discovered skills are selected. `--subpath` limits discovery inside a source
+repository and resolves duplicate skill names in monorepos. Missing or ambiguous
+names fail. Kor fetches with depth 1 into a temporary directory, copies the chosen
+bundles, and lints them together with the destination tier before writing installed
+files. No source scripts or hooks run. Symlinks in bundles or destination parents
+are rejected. Existing names are never overwritten by `add`.
+
+Upstream skills must meet Kor's format. The explicit `--adapt-frontmatter` option
+fills a missing `license` from the upstream licence file and rephrases descriptions
+that lack a third-person action as `Guides development. Use when …`, removing a
+leading `Apply when`, `Apply before`, `Use when` or `Use for`. It preserves body
+content (normalising CRLF to LF), leaves other fields intact and records the option
+for future updates. It does not remove routing instructions or repair broken
+references. Review the resulting description for accuracy; overlapping skills
+still need authored `kor.anti` hints. Adapt larger upstream workflows separately.
+
+Every import needs a licence file at the skill directory or a parent within the
+fetched repository. The nearest `LICENSE`, `LICENCE` or `COPYING` file (optionally
+`.md`/`.txt`) is copied as `LICENSE.upstream`. Public imports require a recognised
+permissive licence: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, Unlicense
+or CC0-1.0. Recognition is a conservative text check, not a legal review. Review
+additional terms and public suitability before importing. Private imports may
+record `UNKNOWN`; they still require a licence file, valid format and no routing
+instructions. Private bundles may declare `kor.visibility: local-only`.
+
+Each tier gets a `skills.lock.json` (`schemaVersion: 1`, `skills` array). Each entry
+records `name`, credential-free source `url`, full `commit`, source `subpath`,
+installed content `hash`, `license`, source `licenseFile`, `licenseHash` and
+`adaptFrontmatter`. Content hashes use SHA-256 over sorted relative names, file
+bytes and modes, with the same fingerprint function as Kor's install journal;
+`LICENSE.upstream` and adapted frontmatter are included. `SOURCES.md` gives readable
+attribution. Commit the public tier, lockfile and attribution together; keep the
+private tier outside public source control.
+
+## Check and apply updates
+
+```sh
+kor skills update --check
+kor skills update --check --tier private --skill principle-laziness-protocol --json
+kor skills update --apply --tier private
+kor skills update --check --tier private --commit <full-commit>
+```
+
+The default is `--check` across both tiers. `--check` and `--apply` are mutually
+exclusive. Each source is shallow-fetched at upstream HEAD, or the explicit
+`--commit` pin. The report shows old/new commits, a Git diff stat of the installed
+and proposed bundles, and licence status (`new`, `unchanged`, `changed`), including
+changes to the licence text or its source path. Public licence eligibility appears
+as `allowed` or `blocked`. A commit-only change advances the lock even when the
+content diff is empty. An unchanged commit and content is a no-op.
+
+`--check` changes no tier or journal files. `--apply` re-lints the complete proposed
+tier, requires an eligible public licence and updates copies, attribution and pins.
+A change in permissive licence terms is reported and can be applied explicitly;
+read `--check` before applying. There is no paired skill evaluator in this import
+command: it reports that evaluation has not run. Review guidance and verify its
+outcomes before offering it to sessions.
+
+Both modes reject edits that differ from a locked bundle hash. Save those edits
+and restore the locked files before retrying. Destination symlinks and conflicting
+names are errors. An in-process failure restores the preceding version. Operations
+serialize through a PID lock beside the skills journal; a busy operation must
+finish before another mutation can start. If a process was killed, read the PID
+in `$XDG_STATE_HOME/kor-install/skills.busy`, confirm that process has exited, then
+remove only that stale lock and run `kor uninstall` to replay the recovery journal.
+Kor leaves stale locks for explicit recovery instead of guessing whether an owner
+is still active.
+
+The skills install journal uses Kor's existing snapshot and restoration machinery
+under `$XDG_STATE_HOME/kor-install/skills` (default
+`~/.local/state/kor-install/skills`). It stores the original files for uninstall,
+plus each operation's preceding version in `history/<id>/` with a manifest. These
+backups may contain private guidance; keep them private. No credentials or daemon
+are required. Temporary fetch directories are removed after each command.
+
+`kor uninstall` removes unchanged imports, including public imports, and restores
+original lock/attribution files. It warns and keeps locally edited imported paths
+while completing Kor's own uninstall. Retained edited bundles become local files;
+the skills journal and original snapshots remain available for a later purge.
+Unrelated tier files are retained, and skills-only installations work the same way.
+
+`kor uninstall --purge` warns that local edits to imported copies are discarded,
+removes those copies and restores original tier files. Skills restoration follows
+Kor's own uninstall so a retained configuration snapshot cannot reintroduce imports
+after they are removed. Once all imports are restored, the skills journal is
+removed. An interrupted transaction is recovered first. A skills recovery error
+produces a warning and retains its backups without blocking Kor's own uninstall.
+Normal Kor configuration retention follows the existing uninstall contract.
+
+`--json` produces `schemaVersion`, `ok`, `applied`, `changes` and `lint`. A change
+contains `tier`, `name`, `before` (null for add), `after`, `changed`, `diffStat`,
+`licenseStatus` and `licenseAllowed`. `before`/`after` use the lock entry format;
+`lint` uses the reports described above. Exit 0 means the check or install passed;
+1 means lint, licence, conflict or I/O failure; 2 means invalid arguments. A check
+that finds an available, valid update still exits 0. Failures use the shared CLI
+error shape. These commands never load gateway or Linear credentials.

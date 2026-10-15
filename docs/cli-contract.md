@@ -25,6 +25,13 @@ the standard `0`/`1`/`2` exit codes and shared CLI errors for I/O failures.
 shapes, hashes, source configuration and budgets are documented in
 [Catalogue](skills.md#catalogue). `show` accepts the same flags.
 
+`kor skills add <git-url>@<commit> --tier public|private [--skill NAME ...]`
+and `kor skills update [--check|--apply]` also accept `--json` without a daemon.
+Their lockfile, licence status, diff report and recovery contract are documented
+in [Skills imports](skills.md#install-pinned-skills). `update` defaults to checking
+both tiers; an available valid update exits 0. Invalid content, licences or local
+conflicts exit 1; invalid command arguments exit 2.
+
 - Use the installed `kor` (or `bin/kor` from the checkout). Both print clean
   JSON on stdout. `pnpm kor` prints pnpm build output before the command's own
   output and is meant for interactive use.
@@ -37,12 +44,13 @@ shapes, hashes, source configuration and budgets are documented in
   wrong (a usage error). Two commands deviate for usage errors: `kor calibrate`
   and `kor models` report a wrong argument as `command_failed` with exit `1`.
 - `--json` is accepted by `run`, `status`, `cancel`, `retry`, `logs`, `doctor`,
-  `plan`, `install`, `uninstall`, `linear lint`, `linear attach-image`, `skills lint` and
-  `calibrate report`, and a failure of any command is reported as a JSON error
-  object when `--json` is present (see
-  [Errors](#errors)). Only some commands print JSON on success: `run`, `status`,
-  `cancel`, `retry`, `logs`, `doctor`, `plan`, `install`, `uninstall`,
-  `linear lint`, `linear attach-image` and `skills lint` do.
+  `plan`, `install`, `uninstall`, `linear lint`, `linear attach-image`, `skills lint`,
+  `skills add`, `skills update`, `skills index`, `skills list`, `skills show`,
+  `skills doctor` and `calibrate report`. A failure of any command is reported as
+  a JSON error object when `--json` is present (see [Errors](#errors)). Only some
+  commands print JSON on success: `run`, `status`, `cancel`, `retry`, `logs`,
+  `doctor`, `plan`, `install`, `uninstall`, `linear lint`, `linear attach-image`,
+  `skills lint`, `skills add`, `skills update` and the catalogue commands do.
   `kor models list` and `kor models probe` always print a table, and `kor
   calibrate report` prints its text report unless you pass `--json` to get
   the report object.

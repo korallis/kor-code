@@ -18,6 +18,7 @@ import { readModelRegistry, writeModelRegistry } from "@kor-code/gateway-adapter
 import { PersistentDecisionAuditLog } from "@kor-code/jev";
 import { CalibrationStore, buildReport, formatReport } from "@kor-code/calibration";
 import type { CatalogueModel, KorCliError } from "@kor-code/core";
+import { runSkillsInstall, SkillsUsageError, SKILLS_INSTALL_USAGE } from "./skills-install.js";
 import { formatSkillLint, lintSkills } from "./skills-lint.js";
 import { buildSkillsCatalogue, formatSkillsCatalogue, writeSkillsCatalogue } from "./skills-catalogue.js";
 import { guardPrivateSkills, importPrivateSkills, initPrivateSkills, privateSkillsPath } from "./skills-private.js";
@@ -358,10 +359,17 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
         }
         return catalogue.ok ? 0 : 1;
       }
-      const usage = "kor skills init [--json] | kor skills import --from DIRECTORY [--dry-run] [--json] | kor skills guard [DIRECTORY] [--json] | kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json]";
-      if (skillArgs[0] === "--help" || skillArgs[0] === "-h" || skillArgs[0] === "lint" && skillArgs.includes("--help")) {
-        print(`Usage: ${usage}\nLint checks the public tier. Catalogue commands merge bundled, private and configured skills; show requires NAME. --from replaces those sources for a read-only scan. No daemon required.`, false);
+      const usage = `kor skills init [--json] | kor skills import --from DIRECTORY [--dry-run] [--json] | kor skills guard [DIRECTORY] [--json] | kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json] | ${SKILLS_INSTALL_USAGE}`;
+      if (skillArgs[0] === "--help" || skillArgs[0] === "-h" || ["lint", "add", "update"].includes(skillArgs[0] ?? "") && skillArgs.includes("--help")) {
+        print(`Usage: ${usage}\nLint checks the public tier. Catalogue commands merge bundled, private and configured skills; show requires NAME. --from replaces those sources for a read-only scan. add requires a pinned commit; update defaults to --check across both tiers. No daemon required.`, false);
         return 0;
+      }
+      if (skillArgs[0] === "add" || skillArgs[0] === "update") {
+        try {
+          const result = await runSkillsInstall(skillArgs);
+          print(jsonFlag(skillArgs) ? result.report : result.output, jsonFlag(skillArgs));
+          return result.ok ? 0 : 1;
+        } catch (error) { if (error instanceof SkillsUsageError) usageFailure(SKILLS_INSTALL_USAGE); throw error; }
       }
       const directories = skillArgs.slice(1).filter(arg => arg !== "--json");
       if (skillArgs[0] !== "lint" || directories.length > 1 || directories.some(arg => arg.startsWith("-"))) usageFailure(usage);
@@ -432,7 +440,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     if (debug && error instanceof Error && error.stack) process.stderr.write(`${error.stack}\n`);
     return failure instanceof CliFailure ? failure.exitCode : 1;
   }
-  process.stdout.write("Usage: kor linear attach-image ISSUE FILE --alt CAPTION [--json] | kor skills init [--json] | kor skills import --from DIRECTORY [--dry-run] [--json] | kor skills guard [DIRECTORY] [--json] | kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json] | kor ui | kor serve [--ui-dir DIST] [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--context] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor linear lint ISSUE-ID [--json] | kor linear lint --project PROJECT-ID [--json] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list | kor models probe [--family family] [--model model]\n");
+  process.stdout.write("Usage: kor linear attach-image ISSUE FILE --alt CAPTION [--json] | kor skills init [--json] | kor skills import --from DIRECTORY [--dry-run] [--json] | kor skills guard [DIRECTORY] [--json] | kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json] | kor skills add|update --help | kor ui | kor serve [--ui-dir DIST] [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--context] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor linear lint ISSUE-ID [--json] | kor linear lint --project PROJECT-ID [--json] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list | kor models probe [--family family] [--model model]\n");
   return 0;
 }
 
