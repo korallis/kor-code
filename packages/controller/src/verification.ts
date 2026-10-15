@@ -1,15 +1,39 @@
 import { randomUUID } from "node:crypto";
-import { execFile as execFileCallback } from "node:child_process";
-import { readFile, realpath } from "node:fs/promises";
+import { execFile as execFileCallback, spawn } from "node:child_process";
+import { realpath } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
+import { StringDecoder } from "node:string_decoder";
 import type { AcceptanceCondition, Evidence, Execution, RepositoryCheckResult, VerificationAttempt, VerificationReport } from "@kor-code/core";
 import { redact, type JevDecisionCore } from "@kor-code/jev";
 import { VerificationError, VerificationTracker } from "@kor-code/verification";
 import type { SessionResult } from "./launcher.js";
 
 const execFile = promisify(execFileCallback);
-const maxDiffCharacters = 200_000;
+const maxDiffTokens = 24_000;
+const maxAcceptanceTokens = 30_000;
+const estimatedBytesPerToken = 3;
+const maxDiffBytes = Math.floor(maxDiffTokens * estimatedBytesPerToken);
+const maxCheckOutputCharacters = 4_000;
+const maxRepairEvidenceBytes = 16_000;
+const truncationMarker = "\n[truncated; omitted content is not evidence]";
+
+// Include JSON escaping in the estimate; leave 2k tokens for question framing.
+function serializedBytes(value: unknown): number { return Buffer.byteLength(JSON.stringify(value), "utf8"); }
+function estimatedTokens(value: unknown): number { return Math.ceil(serializedBytes(value) / estimatedBytesPerToken); }
+function boundedText(text: string, budget: number, tail = false): string {
+  if (serializedBytes(text) <= budget) return text;
+  if (budget < serializedBytes(truncationMarker)) return budget >= serializedBytes("[omitted]") ? "[omitted]" : "";
+  let low = 0;
+  let high = text.length;
+  while (low < high) {
+    const length = Math.ceil((low + high) / 2);
+    const candidate = tail ? truncationMarker + text.slice(-length) : text.slice(0, length) + truncationMarker;
+    if (serializedBytes(candidate) <= budget) low = length;
+    else high = length - 1;
+  }
+  return tail ? truncationMarker + (low ? text.slice(-low) : "") : text.slice(0, low) + truncationMarker;
+}
 
 export interface VerificationOptions {
   /** Probability of yes required from each acceptance Noul. */
@@ -56,20 +80,56 @@ async function git(cwd: string, args: readonly string[]): Promise<string> {
 }
 /** Capture before the first session, so committed session changes remain in evidence. */
 export async function verificationBase(cwd: string): Promise<string> { try { return (await git(cwd, ["rev-parse", "HEAD"])).trim(); } catch { return ""; } }
-async function collectDiff(cwd: string, base: string): Promise<string> {
-  let diff = await git(cwd, ["diff", "--no-ext-diff", "--no-textconv", base, "--"]);
+async function diffExcerpt(cwd: string, args: readonly string[]): Promise<{ text: string; truncated: boolean }> {
+  const child = spawn("git", ["-C", cwd, "--literal-pathspecs", "diff", "--no-ext-diff", "--no-textconv", ...args], { stdio: ["ignore", "pipe", "pipe"], timeout: 30_000 });
+  const completed = new Promise<void>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", code => code === 0 || (args.includes("--no-index") && code === 1) ? resolve() : reject(new Error(`git diff exited ${code}`)));
+  });
+  let stderr = "";
+  child.stderr.on("data", chunk => { stderr = (stderr + String(chunk)).slice(-maxCheckOutputCharacters); });
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  await Promise.all([completed, (async () => {
+    for await (const chunk of child.stdout) {
+      if (bytes < maxDiffBytes) chunks.push(Buffer.from(chunk).subarray(0, maxDiffBytes - bytes));
+      bytes += Buffer.byteLength(chunk);
+    }
+  })()]).catch(error => { throw new Error(`${String(error)}: ${safeText(stderr)}`); });
+  return { text: safeText(new StringDecoder("utf8").write(Buffer.concat(chunks))), truncated: bytes > maxDiffBytes };
+}
+async function collectDiff(cwd: string, base: string, acceptance: readonly AcceptanceCondition[]): Promise<{ diff: string; paths: string[] }> {
+  const changed = (await git(cwd, ["diff", "--name-only", "--no-renames", "-z", base, "--"])).split("\0").filter(Boolean);
   const untracked = (await git(cwd, ["ls-files", "--others", "--exclude-standard", "-z"])).split("\0").filter(Boolean);
+  const paths = [...new Set([...changed, ...untracked])].sort();
   const root = await realpath(cwd);
   for (const file of untracked) {
     const path = await realpath(resolve(cwd, file));
     const fromRoot = relative(root, path);
     if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`)) throw new Error(`Untracked path escapes worktree: ${file}`);
-    const content = await readFile(path, "utf8");
-    diff += `\n--- /dev/null\n+++ ${file}\n${content}`;
-    if (diff.length > maxDiffCharacters) throw new Error("Repository diff exceeds the verification limit; narrow the change before retrying");
   }
-  if (diff.length > maxDiffCharacters) throw new Error("Repository diff exceeds the verification limit; narrow the change before retrying");
-  return safeText(diff);
+  const tracked = await diffExcerpt(cwd, [base, "--"]);
+  let diff = tracked.text;
+  let truncated = tracked.truncated;
+  for (const file of untracked) {
+    if (truncated || estimatedTokens(diff) > maxDiffTokens) { truncated = true; break; }
+    const addition = await diffExcerpt(cwd, ["--no-index", "--", "/dev/null", file]);
+    diff += `\n${addition.text}`;
+    truncated ||= addition.truncated;
+  }
+  if (!truncated && estimatedTokens(diff) <= maxDiffTokens) return { diff, paths };
+  const descriptions = acceptance.map(criterion => criterion.description).join("\n");
+  const mentionedPaths = new Set(descriptions.match(/[\w./-]+/g)?.map(word => word.replace(/\.+$/, "")));
+  const ordered = [...paths.filter(path => mentionedPaths.has(path)), ...paths.filter(path => !mentionedPaths.has(path))];
+  const fileList = boundedText(paths.map(path => JSON.stringify(path)).join("\n"), 4_000);
+  let summary = `Diff compacted; omitted changes are not evidence.\nChanged files:\n${fileList}\n\nHunks across changed files (criterion-named paths first):\n`;
+  for (const [index, file] of ordered.entries()) {
+    const budget = Math.floor((maxDiffBytes - serializedBytes(summary)) / (ordered.length - index)) - 2;
+    if (budget < serializedBytes(truncationMarker)) break;
+    const excerpt = await diffExcerpt(cwd, untracked.includes(file) ? ["--no-index", "--", "/dev/null", file] : [base, "--", file]);
+    summary += `\n${boundedText(excerpt.text + (excerpt.truncated ? truncationMarker : ""), budget)}`;
+  }
+  return { diff: boundedText(safeText(summary), maxDiffBytes), paths };
 }
 
 export async function verifyAttempt(input: {
@@ -98,10 +158,9 @@ export async function verifyAttempt(input: {
   let publication: VerificationAttempt["publication"];
   try {
     if (input.baseRevision) {
-      diff = await collectDiff(execution.worktree, input.baseRevision);
-      const changed = await git(execution.worktree, ["diff", "--name-only", "--no-renames", "-z", input.baseRevision, "--"]);
-      const untracked = await git(execution.worktree, ["ls-files", "--others", "--exclude-standard", "-z"]);
-      publication = { baseRevision: input.baseRevision, paths: [...new Set([...changed.split("\0"), ...untracked.split("\0")].filter(Boolean))] };
+      const collected = await collectDiff(execution.worktree, input.baseRevision, acceptance);
+      diff = collected.diff;
+      publication = { baseRevision: input.baseRevision, paths: collected.paths };
     }
   }
   catch (error) { blockers.push(`Diff unavailable: ${failureText(error)}`); }
@@ -116,7 +175,25 @@ export async function verifyAttempt(input: {
   let judgmentError: string | undefined;
   try {
     if (!input.jev) throw new Error("TypeSafe acceptance judge is not configured");
-    judgments = await input.jev.judgeAcceptance({ executionId: execution.id, attempt: input.attempt, attemptId, state: { diff, checks: checks.map(check => ({ ...check })), session: { exitCode: session.exitCode, failed: blockers.length > 0, deniedTools: denials.map(denial => ({ ...denial })), toolResults: (session.telemetry?.toolResults ?? []).map(result => ({ ...result, denied: denials.some(denial => denial.toolUseId === result.toolUseId) })) }, evidenceErrors: blockers }, criteria: acceptance, threshold: settings.acceptanceThreshold });
+    const state = {
+      diff,
+      checks: checks.map(({ output, ...check }) => ({ ...check, output: output.length > maxCheckOutputCharacters ? truncationMarker + output.slice(-maxCheckOutputCharacters) : output })),
+      session: { exitCode: session.exitCode, failed: blockers.length > 0, deniedTools: denials.map(denial => ({ ...denial })), toolResults: (session.telemetry?.toolResults ?? []).map(result => ({ ...result, denied: denials.some(denial => denial.toolUseId === result.toolUseId) })) },
+      evidenceErrors: blockers,
+    };
+    const questionTokens = Math.max(0, ...acceptance.map(criterion => estimatedTokens(criterion)));
+    let detailBudget = maxCheckOutputCharacters;
+    while (estimatedTokens(state) + questionTokens > maxAcceptanceTokens && detailBudget > 0) {
+      detailBudget = Math.floor(detailBudget / 2);
+      state.checks = state.checks.map(check => ({ ...check, output: detailBudget ? boundedText(check.output, detailBudget, true) : "[output omitted]" }));
+      state.session.deniedTools = state.session.deniedTools.map(denial => ({ ...denial, input: detailBudget ? boundedText(denial.input, detailBudget) : "[input omitted]" }));
+      state.session.toolResults = state.session.toolResults.map(result => ({ ...result, input: detailBudget ? boundedText(result.input, detailBudget) : "[input omitted]", output: detailBudget ? boundedText(result.output, detailBudget, true) : "[output omitted]" }));
+      state.evidenceErrors = state.evidenceErrors.map(error => detailBudget ? boundedText(error, detailBudget) : "[error detail omitted]");
+    }
+    const diffBudget = Math.min(maxDiffTokens, maxAcceptanceTokens - estimatedTokens({ ...state, diff: "" }) - questionTokens);
+    if (diffBudget < estimatedTokens(truncationMarker)) throw new Error("Acceptance metadata exceeds the question budget; narrow the criteria or checks");
+    state.diff = boundedText(diff, Math.floor(diffBudget * estimatedBytesPerToken));
+    judgments = await input.jev.judgeAcceptance({ executionId: execution.id, attempt: input.attempt, attemptId, state, criteria: acceptance, threshold: settings.acceptanceThreshold });
   } catch (error) {
     if (input.enforceSemantic) { judgmentError = `Jev acceptance unavailable: ${failureText(error)}`; blockers.push(judgmentError); }
   }
@@ -129,5 +206,11 @@ export async function verifyAttempt(input: {
   return { attempt: input.attempt, attemptId, startedAt, completedAt: new Date().toISOString(), checks, diff, evidence, findings, blockers, ...(publication ? { publication } : {}) };
 }
 export function repairPrompt(initial: string, attempt: VerificationAttempt): string {
-  return `${initial}\n\nRepair attempt ${attempt.attempt + 1}. Resolve these verification failures and preserve the acceptance requirements:\n${attempt.blockers.join("\n")}\n\nDenied tools (these did not execute):\n${attempt.evidence.filter(item => item.kind === "policy").map(item => item.summary).join("\n")}\n\nAuthoritative check output:\n${attempt.checks.map(check => `${check.command}: exit ${check.exitCode ?? "unavailable"}\n${check.output}`).join("\n").slice(0, 100_000)}\n\nPer-criterion findings:\n${attempt.findings.map(finding => `${finding.conditionId}: ${finding.status} — ${finding.note ?? ""}`).join("\n")}`;
+  const failedFindings = attempt.findings.filter(finding => finding.status !== "pass");
+  const failedChecks = attempt.checks.filter(check => check.status !== "pass");
+  const blockers = attempt.blockers.filter(blocker => !blocker.startsWith("Check failed:") && !failedFindings.some(finding => blocker.startsWith(`${finding.conditionId}:`))).map(blocker => boundedText(blocker, 1_000));
+  const failures = `Repair attempt ${attempt.attempt + 1}. Resolve these verification failures and preserve the acceptance requirements (${attempt.findings.map(finding => finding.conditionId).join(", ")}):\n${boundedText(blockers.join("\n"), 2_000)}\n\nFailing or unresolved criteria:\n${failedFindings.map(finding => `${finding.conditionId}: ${finding.status} — ${finding.note ?? ""}`).join("\n")}\n\nAuthoritative failing checks:\n${failedChecks.map(check => `Check failed: ${check.command}: exit ${check.exitCode ?? "unavailable"}`).join("\n")}\n\nDenied tools (these did not execute):\n${attempt.evidence.filter(item => item.kind === "policy" && item.status !== "pass").map(item => item.summary).join("\n")}\n\nFailing check output (tails, in check order):\n`;
+  const outputBudget = Math.max(0, Math.floor((maxRepairEvidenceBytes - serializedBytes(failures)) / Math.max(1, failedChecks.length)) - 4);
+  const output = failedChecks.map(check => boundedText(check.output.slice(-maxCheckOutputCharacters), outputBudget, true)).join("\n");
+  return `${initial}\n\n${boundedText(failures + output, maxRepairEvidenceBytes)}`;
 }
