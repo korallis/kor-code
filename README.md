@@ -201,7 +201,10 @@ label a Todo issue `kor` and let the daemon pick it up on its next poll.
 **Home** shows what needs you, what is ready to ship, running agents, spend and
 **Next up**. A run that needs an answer lands in **Needs you**: type the answer
 and **Send and retry** writes it to the Linear issue and runs again. Ctrl+K (⌘K)
-opens **Ask Jev** anywhere.
+opens **Ask Jev** anywhere. Execution failures also appear in **Needs you** with
+**Retry**, and Kor posts the reason and a `kor:blocked` label to Linear.
+Ask Jev accepts questions up to 2,000 characters and uses a bounded run summary,
+so growing decision history does not fill its request.
 
 **Agents** streams each run's real output, its seven stages, tokens and cost,
 with **Stop run**, **Retry** and a **Note for Jev**.
@@ -307,6 +310,8 @@ configuration, keys and state.
 `kor uninstall` stops the daemon and removes the integration but keeps your
 configuration and state. `kor uninstall --purge` also removes Kor's data and its
 installer cache, registered Kor worktrees and their local `kor/*` branches.
+Purge also works after a reinstall. After a plain uninstall, run
+`node ~/.local/share/kor-code/packages/cli/dist/cli.js uninstall --purge`.
 This discards those branches even if unmerged; save work you want to keep first.
 Unrelated worktrees, branches and remote branches remain. The Kor checkout, your
 external key files and the gateway's key entry stay; remove them yourself.

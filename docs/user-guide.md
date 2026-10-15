@@ -323,6 +323,11 @@ pill in the top bar, a bell counting runs that need you, the screens and your
 projects in the sidebar with the connection lights, and a footer with pool
 health, run slots, today's spend and verified runs.
 
+Ask Jev accepts up to 2,000 characters. It receives up to 20 run summaries within
+a 6,000-byte context budget, with failures and runs waiting for approval first.
+Each summary includes the issue key, status, next step and pull request URL.
+Decision history, logs and full verification reports stay out of this request.
+
 ## Choose models
 
 Kor routes only to models that pass a short probe in a sandbox session:
@@ -445,6 +450,13 @@ a fallback.
 
 Jev checks readiness before any session starts. Runs over `limits` stay `queued`
 until a slot frees.
+
+Execution failures appear in **Needs you** with their reason and **Retry**.
+Kor also posts the failure to Linear and adds `kor:blocked`. Resolve the cause,
+then retry. Earlier verification remains visible, but each new attempt must
+verify again before approval becomes available.
+
+![Home shows the execution failure, Retry, and the earlier verified run](images/execution-failure-after.webp)
 
 ### Answer a question
 
@@ -676,6 +688,8 @@ starts as soon as the run verifies. The daemon:
    across providers. If your overridden model is unavailable, fails the prose completion or
    returns invalid content, Kor uses the issue text and evidence with a clear
    fallback note; it does not select a replacement model.
+   The writer receives code comments and repository URL paths unchanged. Local
+   filesystem paths and credentials are redacted before the diff is encoded.
    Nonvisual changes omit Screenshots; changelog and checklist lines contain only
    the change and acceptance condition. If no Jev route or override can be reused, the
    body says it fell back to the issue text. Linear moves to **In Review**.
@@ -886,6 +900,10 @@ After a plain uninstall the `kor` link is gone, so purge from the checkout:
 ```sh
 node ~/.local/share/kor-code/packages/cli/dist/cli.js uninstall --purge
 ```
+
+Reinstalling preserves the original uninstall backups, so purge still removes
+data Kor created during the earlier installation. Without an install manifest,
+purge removes Kor's known config, state and data directories.
 
 Neither touches the Kor checkout itself, your Linear and TypeSafe key files, the
 gateway's `api-keys` entry or other tools' caches; remove those yourself when you

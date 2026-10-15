@@ -144,7 +144,7 @@ export class MissionApi {
           send(answer.status, { schemaVersion: 1, record: answer.record }); return;
         }
         if (path === "/api/ask") {
-          const body = z.strictObject({ message: message.shape.message, executionId: id.optional() }).parse(input);
+          const body = z.strictObject({ message: message.shape.message.max(2_000), executionId: id.optional() }).parse(input);
           const answer = await services.ask({ message: body.message, ...(body.executionId ? { executionId: body.executionId } : {}) }, this.daemon.status());
           this.daemon.events.publish({ kind: "ask", response: answer }); send(200, answer); return;
         }

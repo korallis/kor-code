@@ -81,7 +81,7 @@ and there is no learned-memory store in the current foundation.
 | `POST /api/runs/:id/approve` | Release a verified execution waiting at the publication gate |
 | `POST /api/runs/:id/request-changes` | Persist feedback, discard approval and verification, and rerun the same issue branch |
 | `POST /api/overrides`, `POST /api/overrides/:id/revert` | Override policy, durable audit and Linear comments. `target` is `route`, `skills`, `playbook`, `tools` or a decision ID; `overBudget: true` accepts a skill plan above the repository budget. A refused override is a 409 carrying its audited record; skill and playbook edits also return `tokens: { before, after }` |
-| `POST /api/ask` | Jev selects a grounded recommendation over the real snapshot; the user invokes its typed action separately |
+| `POST /api/ask` | Jev selects a grounded recommendation over bounded live run summaries; the user invokes its typed action separately |
 | `PUT /api/config`, `PUT /api/projects/:project` | Parse the config schema, write an atomic private backup and replacement, then reload the idle controller |
 | `POST /api/models/:id/probe` | Run the CLI's isolated compatibility probe and persist the result in the same model registry |
 | `POST /api/accounts/:id/pause`, `.../resume` | Resolve the opaque account slot inside the gateway adapter and update its actual management status |
@@ -114,7 +114,10 @@ do not inject text into an already-running Claude session.
 
 Jev's current API returns typed choices and probabilities, not free-form chat.
 Ask Jev reports its selected recommendation and confidence and never executes
-a suggested action on its own.
+a suggested action on its own. `message` accepts up to 2,000 characters. The
+request includes at most 20 run summaries within a 6,000-byte context budget,
+prioritises failures and approval waits, and reports how many runs were omitted.
+Decision history, logs, and verification reports are excluded.
 
 ## Live events
 

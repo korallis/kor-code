@@ -398,7 +398,7 @@ export class KorDaemon {
       return { ...run,
         createdAt: iso(assignment?.createdAt), updatedAt: iso(assignment?.updatedAt), startedAt: iso(assignment?.startedAt), completedAt: iso(assignment?.completedAt),
         ...(verification && attempts ? { verification: { ...verification, attempts } } : {}),
-        verifiedAt: verification?.passed ? attempts?.at(-1)?.completedAt ?? null : null,
+        verifiedAt: attempts?.filter(attempt => !attempt.blockers.length && attempt.checks.every(check => check.status === 'pass') && attempt.findings.length > 0 && attempt.findings.every(finding => finding.status === 'pass')).at(-1)?.completedAt ?? null,
         spend: spend.length || run.attempts === 0 ? live(spend) : unavailable([], "No timestamped provider measurements were recorded for this historical execution"),
         ...(spend.length && spend.every(measurement => measurement.costUsd !== null) ? { costUsd: spend.reduce((sum, measurement) => sum + (measurement.costUsd ?? 0), 0) } : {}),
         stage: ["shipping", "review", "complete"].includes(run.status) ? "synchronise" : run.status === "queued" ? "discover" : run.status === "waiting" ? "verify" : this.stages.get(run.executionId) ?? (verification ? "verify" : "preflight"),
@@ -864,8 +864,8 @@ export class KorDaemon {
       const screenshotCheck = screenshotReadinessCheck({ labels: issue.labels, hasScreenshot: hasScreenshot(issue) });
       if (screenshotCheck.result === "fail") throw new NeedsInputError(screenshotCheck.reason);
       const route = await this.routeFor(id, issue);
-      const previousBranch = this.store.listAssignments().find(assignment => assignment.executionId === id)?.manifest?.branch;
-      const manifest: Execution = { id, issueId: issue.id, repository, worktree: "", branch: previousBranch || `kor/${issue.identifier ?? issue.id}`, status: "running", ...(route ? { route } : {}) };
+      const previous = this.store.listAssignments().find(assignment => assignment.executionId === id)?.manifest;
+      const manifest: Execution = { ...(previous?.verification ? { verification: { ...previous.verification, passed: false } } : {}), id, issueId: issue.id, repository, worktree: previous?.worktree ?? "", branch: previous?.branch || `kor/${issue.identifier ?? issue.id}`, status: "running", ...(route ? { route } : {}) };
       this.store.markRunning(claim, manifest);
       await this.syncLabelOverrides(id, issue.labels);
       if (issue.labels.includes('kor:blocked')) this.store.record(claim, [{ kind: 'label', issueId: issue.id, name: 'kor:blocked', present: false }]);
@@ -891,7 +891,7 @@ export class KorDaemon {
     }
     if (cleanupFailure !== undefined) {
       this.store.clearCancel(claim.assignment.issueId);
-      this.store.failClaim(claim, `session cleanup failed: ${safeMessage(cleanupFailure)}`);
+      this.failExecution(claim, `session cleanup failed: ${safeMessage(cleanupFailure)}`);
     } else if (this.store.isCancelRequested(claim.assignment.issueId)) this.store.cancelClaim(claim);
     else if (this.stopping) this.store.recover(claim.assignment.issueId, "daemon stopped; session stopped; re-queued");
     else if (failure !== undefined) {
@@ -906,10 +906,11 @@ export class KorDaemon {
           { kind: 'label', issueId: manifest.issueId, name: 'kor:blocked', present: true },
         ], { ...manifest, status: 'blocked', verification: failure.report });
       }
-      this.store.failClaim(claim, failure instanceof NeedsInputError ? `Needs input: ${safeMessage(failure)}` : safeMessage(failure), failure instanceof ExecutionVerificationError || failure instanceof NeedsInputError ? "blocked" : "failed");
+      if (failure instanceof NeedsInputError || failure instanceof ExecutionVerificationError) this.store.failClaim(claim, failure instanceof NeedsInputError ? `Needs input: ${safeMessage(failure)}` : safeMessage(failure), "blocked");
+      else this.failExecution(claim, safeMessage(failure));
     }
-    else if (result?.execution.status === "failed" || result?.execution.status === "blocked") this.store.finishClaim(claim, result.execution.status, "execution did not complete", result.execution);
-    else if (result && result.execution.status !== "complete") this.store.failClaim(claim, `Unexpected execution outcome: ${result.execution.status}`);
+    else if (result?.execution.status === "failed" || result?.execution.status === "blocked") this.failExecution(claim, "execution did not complete", result.execution);
+    else if (result && result.execution.status !== "complete") this.failExecution(claim, `Unexpected execution outcome: ${result.execution.status}`);
     else if (this.options.shipping) {
       if (!result?.execution.verification?.passed) this.store.failClaim(claim, 'Shipping requires a passing verification report', 'blocked');
       else {
@@ -925,6 +926,14 @@ export class KorDaemon {
       }
     } else this.store.completeClaim(claim, result?.execution);
     await this.log(id, `execution ${this.store.getAssignment(claim.assignment.issueId).status}${failure ? `: ${safeMessage(failure)}` : ""}`);
+  }
+
+  private failExecution(claim: ExecutionClaim, reason: string, execution?: Execution): void {
+    this.store.finishClaim(claim, execution?.status === "blocked" ? "blocked" : "failed", reason, execution, [
+      { kind: 'comment', id: stableId('kor-progress', `${claim.assignment.executionId}:failed:${claim.token}`), issueId: claim.assignment.issueId,
+        body: `Kor execution failed: ${reason}\nResolve the blocker, then Retry from Home or the run in Mission Control.` },
+      { kind: 'label', issueId: claim.assignment.issueId, name: 'kor:blocked', present: true },
+    ]);
   }
 
   /** An applied override wins; then Jev's preflight (planned once per execution); then the default route. */

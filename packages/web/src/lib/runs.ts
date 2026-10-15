@@ -6,8 +6,8 @@ export const ACTIVE: ReadonlySet<RunLifecycle> = new Set(['evaluating', 'running
 export const FINISHED: ReadonlySet<RunLifecycle> = new Set(['review', 'complete', 'failed', 'canceled']);
 
 export const isActive = (run: MissionRun) => ACTIVE.has(run.status);
-/** Runs that need the owner's answer or direction (blocked or escalated). A run waiting at the ship gate is readyToShip instead. */
-export const needsYou = (run: MissionRun) => run.status === 'blocked' || run.status === 'escalated';
+/** Runs that need the owner's answer or direction (blocked, failed or escalated). A run waiting at the ship gate is readyToShip instead. */
+export const needsYou = (run: MissionRun) => run.status === 'blocked' || run.status === 'escalated' || run.status === 'failed';
 /** The daemon accepts an answer only for a blocked run that asked a question. */
 export const canAnswer = (run: MissionRun) => run.status === 'blocked' && run.needsInput !== null;
 export const readyToShip = (run: MissionRun) => run.status === 'waiting';
@@ -16,7 +16,7 @@ export const modelOf = (run: MissionRun) => run.route?.model;
 export const slotOf = (run: MissionRun) => run.accountSlot.value ?? undefined;
 
 /** Order runs as the Agents list does: needs you, waiting, active, queued, then finished newest first. */
-const RANK: Record<RunLifecycle, number> = { blocked: 0, escalated: 0, waiting: 1, repairing: 2, running: 2, verifying: 2, evaluating: 2, shipping: 2, ready: 3, queued: 4, review: 5, complete: 6, failed: 6, canceled: 7 };
+const RANK: Record<RunLifecycle, number> = { blocked: 0, escalated: 0, waiting: 1, repairing: 2, running: 2, verifying: 2, evaluating: 2, shipping: 2, ready: 3, queued: 4, review: 5, complete: 6, failed: 0, canceled: 7 };
 export function byAttention(a: MissionRun, b: MissionRun): number {
   return RANK[a.status] - RANK[b.status] || (Date.parse(runUpdatedAt(b) ?? '') || 0) - (Date.parse(runUpdatedAt(a) ?? '') || 0);
 }

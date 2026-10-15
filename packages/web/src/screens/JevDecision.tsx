@@ -34,7 +34,7 @@ import { toneOf, toneSolid } from '../ui/tone';
 import { parseDiff } from '../lib/diff';
 import { parseTerminal, toolSteps } from '../lib/terminal';
 import { prob, shortModel, usd } from '../lib/format';
-import { byAttention, decisionsFor, FINISHED, keyOf, latestVerification, prNumber, probabilityOf } from '../lib/runs';
+import { byAttention, decisionsFor, FINISHED, keyOf, latestVerification, needsYou, prNumber, probabilityOf } from '../lib/runs';
 import { clock, useNow } from '../lib/time';
 import { nextStep } from './runText';
 import { OverrideDialog } from './OverrideDialog';
@@ -105,7 +105,7 @@ const styles = stylex.create({
 const fill = stylex.create({ w: (pct: number) => ({ width: `${Math.round(Math.max(0, Math.min(1, pct)) * 100)}%` }) });
 
 type Filter = 'todo' | 'active' | 'review' | 'done';
-const ACTIVE_FILTER = (run: MissionRun) => !FINISHED.has(run.status) && run.status !== 'review';
+const ACTIVE_FILTER = (run: MissionRun) => needsYou(run) || !FINISHED.has(run.status) && run.status !== 'review';
 
 const RISK_LEVELS = [/low/i, /review/i, /high|external/i];
 
@@ -131,6 +131,7 @@ function DecisionPanel({ run, decisions, issue, onRequestChanges }: { run: Missi
   const jevChoseRoute = route !== undefined && run.routeSource === 'jev' && run.route?.model === route.choice;
   const policy = route?.policyChecks ?? [];
   const canApprove = run.status === 'waiting';
+  const canRetry = ['failed', 'blocked', 'canceled', 'escalated'].includes(run.status);
   const riskIndex = risk ? RISK_LEVELS.findIndex(pattern => pattern.test(risk.choice)) : -1;
   const step = nextStep(run);
   const error = action.error;
@@ -229,12 +230,12 @@ function DecisionPanel({ run, decisions, issue, onRequestChanges }: { run: Missi
       </div>
       <div {...stylex.props(styles.actions)}>
         {error && <Notice title={error.message} hint={error instanceof ApiFailure ? error.hint : undefined} />}
-        <div {...stylex.props(styles.approve, !canApprove && styles.disabled)}>
+        {canRetry ? <Button variant="primary" icon={Play} busy={action.isPending} onClick={() => action.mutate({ action: 'retry', executionId: run.executionId })}>Retry the run</Button> : <div {...stylex.props(styles.approve, !canApprove && styles.disabled)}>
           <button type="button" disabled={!canApprove || action.isPending} title={canApprove ? 'Commit, run the delivery gate and open the pull request' : 'Approve is available once the run has verified and waits for you'} onClick={() => action.mutate({ action: 'approve', executionId: run.executionId })} {...stylex.props(styles.approveMain)}>
             <Icon icon={Check} size={16} />{action.isPending && action.variables?.action === 'approve' ? 'Approving…' : 'Approve and ship'}
           </button>
           <button type="button" aria-label="More ship options" aria-expanded={menu} onClick={() => setMenu(open => !open)} {...stylex.props(styles.approveDrop)}><Icon icon={ChevronDown} size={16} /></button>
-        </div>
+        </div>}
         {menu && (
           <div {...stylex.props(styles.menu, animate.fadeInFast)}>
             {run.pullRequestUrl && <Button size="sm" variant="ghost" icon={GitPullRequest} href={run.pullRequestUrl} external>Open {prNumber(run.pullRequestUrl)}</Button>}
@@ -393,7 +394,7 @@ export function JevDecision({ executionId }: { executionId?: string }) {
   const match = (key: string, title: string) => !needle || `${key} ${title}`.toLowerCase().includes(needle);
   const active = projectRuns.filter(ACTIVE_FILTER).filter(run => match(keyOf(run), run.issueTitle ?? ''));
   const review = projectRuns.filter(run => run.status === 'review').filter(run => match(keyOf(run), run.issueTitle ?? ''));
-  const done = projectRuns.filter(run => run.status === 'complete' || run.status === 'failed' || run.status === 'canceled').filter(run => match(keyOf(run), run.issueTitle ?? ''));
+  const done = projectRuns.filter(run => run.status === 'complete' || run.status === 'canceled').filter(run => match(keyOf(run), run.issueTitle ?? ''));
   const intake = config.data?.config.intakeLabel ?? 'kor';
   const runIssues = new Set(runs.map(run => run.issueId));
   const ready = projectIssues.filter(one => isOpen(one) && !runIssues.has(one.id) && one.labels.includes(intake)).filter(one => match(issueKey(one), one.title));

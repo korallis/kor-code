@@ -391,9 +391,9 @@ export class LinearStore {
     const assignment = this.findAssignment(executionId);
     if (!assignment?.manifest || !['waiting', 'review', 'blocked'].includes(assignment.status) || assignment.expiresAt !== undefined) return false;
     if (assignment.manifest.shipping && !['commit', 'review'].includes(assignment.manifest.shipping.stage.kind)) return false;
-    const { shipping: _shipping, verification: _verification, ...previous } = assignment.manifest;
+    const { shipping: _shipping, verification, ...previous } = assignment.manifest;
     return this.transaction(() => this.db.prepare("UPDATE assignments SET status='queued',manifest=?,last_error=NULL,cancel_requested=0,available_at=? WHERE execution_id=? AND token IS NULL AND status IN ('waiting','review','blocked')")
-      .run(JSON.stringify({ ...previous, status: 'queued' }), this.now(), executionId).changes === 1);
+      .run(JSON.stringify({ ...previous, ...(verification ? { verification: { ...verification, passed: false } } : {}), status: 'queued' }), this.now(), executionId).changes === 1);
   }
   recover(issueId: string, message: string): boolean {
     return this.transaction(() => this.db.prepare("UPDATE assignments SET status='queued',token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_pgid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,cancel_requested=0,available_at=?,last_error=? WHERE issue_id=? AND status IN ('running','queued')").run(this.now(), message, issueId).changes === 1);

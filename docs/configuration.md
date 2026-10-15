@@ -242,8 +242,11 @@ Empty parent directories created by installation, including the journal's parent
 and Claude's marketplace directory, are removed when still empty. A fresh-HOME
 install followed by purge leaves no directory leftovers. After normal uninstall,
 a later purge touches retained Kor data only, preserving new Claude settings.
-A subsequent successful install replaces the restored installation's backups;
-failed attempts keep the recovery journal.
+A reinstall carries the original retained-data backups forward instead of treating
+Kor's existing config, state and data as pre-existing files. Purge therefore removes
+data Kor created before the reinstall, while restoring files that predated the
+first installation. Without a manifest, purge removes the known Kor data directories.
+Failed install attempts keep the recovery journal.
 
 Validated with real Claude plugin commands and cockpit loading in a standalone
 sandbox clone with an `opus` user setting: user settings compared equal to the
