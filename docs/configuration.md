@@ -44,8 +44,9 @@ enabled, recorded attempt metrics retain provider-reported costs, which may be u
 `serve` reads the verified registry. Both modes use Jev for acceptance judgments,
 which stay blocked during an outage even though execution uses the default route.
 
-The cockpit posts overrides to `POST /overrides` (`{ executionId, target, choice }`,
-`target` being `route` or a decision ID) and reverts them with
+The cockpit posts overrides to `POST /overrides` (`{ executionId, target, choice, overBudget? }`,
+`target` being `route`, `skills`, `playbook`, `tools` or a decision ID; see
+[skills overrides](skills.md#overrides) for the choices) and reverts them with
 `POST /overrides/<id>/revert`; both accept local JSON requests only. Overrides are
 recorded in the `override_audit` table of `kor.db`. The cockpit reads
 `KOR_STATUS_URL` (default `http://127.0.0.1:8327/status`; `off` reads only the
@@ -309,6 +310,8 @@ calibration:
 ```
 
 `defaultBranch` defaults to `main`, `checks` and `toolAllowlist` default to empty lists, `tools` is derived when omitted, and the default route is `anthropic / claude-sonnet-5-5` with fill-first account selection. Unknown fields and invalid values fail before a configuration reaches the controller.
+
+Each repository can also carry a `skills` block (`always`, `pins`, `never`, `budget`); see [skill selection](skills.md#skill-selection). Mission Control edits it under **Repository settings** and refuses skill names the catalogue does not hold.
 
 `linearTeam` and `linearProject` map a Linear issue to this repository. `linearProject` wins when both match; otherwise Kor uses the team mapping. A repository key that exactly matches the issue's team key or project ID is also accepted for small pilots.
 

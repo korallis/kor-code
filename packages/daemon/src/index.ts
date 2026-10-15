@@ -7,15 +7,15 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import type { DecisionRecord, Execution, GatewayAccountHealth, KorRunSnapshot, KorStatusResponse, KorStatusSnapshot, Labelled, OverrideRecord, Route, RouteSource, RunStatus, SessionProcessIdentity } from "@kor-code/core";
 import { repositoryKeyForIssue, type KorConfig, type KorPaths } from "@kor-code/config";
-import { ExecutionVerificationError, type Controller } from "@kor-code/controller";
+import { ExecutionVerificationError, policyTools, type Controller } from "@kor-code/controller";
 import type { LinearClient, LinearIssue } from "@kor-code/linear";
 import { AgentSessionWriter, LinearStore, flushLinearWrites, hasScreenshot, stableId, workflowMapping, type LinearWrite, type AssignmentRecord, type ExecutionClaim } from "@kor-code/linear";
 import { captureProcess, processExists, processMatches, stopSession } from "./process.js";
 import { OverrideStore } from "./overrides.js";
 import type { ShippingDriver } from "./shipping.js";
-import type { IssuesResponse, LinearSync, MissionRun, Stage } from "@kor-code/mission-control";
+import type { IssuesResponse, LinearSync, MissionRun, SessionOption, SessionPackResponse, Stage } from "@kor-code/mission-control";
 import type { JsonValue } from "@kor-code/core";
-import { redact, runtimeSecrets, screenshotReadinessCheck } from "@kor-code/jev";
+import { DEFAULT_SKILL_BUDGET, SESSION_TARGETS, applySkillOverrides, emptySkillPlan, foldSessionEdits, labelEdits, parseSessionEdit, redact, reviewSessionEdit, runtimeSecrets, screenshotReadinessCheck, sessionEditChoice, type SessionEdit, type SessionEditContext, type SkillCandidate, type SkillTier } from "@kor-code/jev";
 import { ApiFailure, MissionApi } from "./api.js";
 import { MissionEvents } from "./events.js";
 import { MissionServices, atomicPrivateFile, live, unavailable } from "./mission-services.js";
@@ -67,13 +67,15 @@ export interface DaemonOptions {
   webRoot?: string;
   missionServices?: MissionServices;
   probeModel?: (model: string) => Promise<boolean>;
+  /** The skill catalogue and a checkout's stack tags, for validating skill, playbook and tool overrides. */
+  sessionPolicy?: (repositoryPath: string) => Promise<{ catalogue: { hash: string; skills: SkillCandidate[] }; stackTags: string[] }>;
   /** Rebuild the CLI's controller and preflight with new settings, while idle. */
   reconfigure?: (config: KorConfig) => { controller: Controller; chooseRoute: NonNullable<DaemonOptions["chooseRoute"]> };
 }
 export interface RouteChoice { route: Route; source: RouteSource }
 /** What `POST /overrides` accepts from the cockpit. */
-export interface OverrideRequest { executionId: string; target: string; choice: string; decisionId?: string; origin?: string }
-export interface OverrideAnswer { status: number; record?: OverrideRecord; error?: string }
+export interface OverrideRequest { executionId: string; target: string; choice: string; decisionId?: string; origin?: string; overBudget?: boolean }
+export interface OverrideAnswer { status: number; record?: OverrideRecord; error?: string; tokens?: { before: number; after: number } | null }
 interface IssueFacts { key: string; title: string; url?: string; state?: string }
 interface RunFacts { issue?: IssueFacts; route?: Route; routeSource?: RouteSource; decisions: DecisionRecord[] }
 export interface ReconciliationResult { requeued: string[]; killedPids: number[]; orphanedWorktrees: string[] }
@@ -87,12 +89,20 @@ function teamKeys(config: KorConfig): string[] {
   return [...new Set(Object.entries(config.repos).map(([key, repository]) => repository.linearTeam ?? key.split("/", 1)[0] ?? key))].filter(Boolean);
 }
 const FINISHED = new Set<RunStatus["status"]>(["complete", "canceled", "failed"]);
+const LABEL_ORIGIN = "Linear label";
+const SKILL_TIERS: readonly SkillTier[] = ["pinned", "listed", "armed", "hidden"];
+const SESSION_GRAMMAR: Record<typeof SESSION_TARGETS[number], string> = {
+  skills: "Use skill:+NAME, skill:-NAME or skill:NAME=pinned|listed|armed|hidden.",
+  playbook: "Use a playbook name or none.",
+  tools: "Use tool:+NAME or tool:-NAME.",
+};
+const tokenCount = (value: number) => value.toLocaleString("en-US");
 function overrideComment(record: OverrideRecord): string {
   const verb = record.status === "reverted" ? "reverted" : "applied";
   return [
     `**Kor override ${record.id} ${verb}** from the ${record.origin}: \`${record.target}\` → \`${record.choice}\`${record.previous ? ` (was \`${record.previous}\`)` : ""}.`,
     `Execution \`${record.executionId}\`. ${record.reason}`,
-    `Policy: ${record.policyChecks.map(check => `${check.name} ${check.result}`).join("; ") || "none"}.`,
+    `Policy: ${record.policyChecks.map(check => `${check.name} ${check.result}${check.result === "pass" && check.reason ? ` (${check.reason})` : ""}`).join("; ") || "none"}.`,
   ].join("\n\n");
 }
 function runStatus(assignment: AssignmentRecord, observedAt: string, facts: RunFacts = { decisions: [] }): RunStatus {
@@ -583,9 +593,24 @@ export class KorDaemon {
     const decisions = this.overrides.decisions(run.executionId);
     const isRoute = request.target === "route";
     const decision = isRoute ? undefined : decisions.find(one => one.decisionId === (request.decisionId ?? request.target) || one.kind === request.target);
+    const session = SESSION_TARGETS.find(kind => kind === request.target || kind === decision?.kind);
     const checks: OverrideRecord["policyChecks"] = [{ name: "execution not finished", result: FINISHED.has(run.status) ? "fail" : "pass" }];
     let previous: string | undefined;
-    if (isRoute) {
+    let tokens: OverrideAnswer["tokens"];
+    let overBudget = false;
+    if (session) {
+      const edit = parseSessionEdit(session, request.choice);
+      checks.push({ name: `valid ${session} edit`, result: edit ? "pass" : "fail", ...(edit ? {} : { reason: SESSION_GRAMMAR[session] }) });
+      if (edit) {
+        try {
+          const review = reviewSessionEdit(edit, { ...await this.sessionContext(run.executionId, run.repository), ...(request.overBudget ? { overBudget: true } : {}) });
+          checks.push(...review.checks);
+          overBudget = review.needsConfirmation;
+          tokens = review.tokens;
+          previous = review.previous;
+        } catch (error) { checks.push({ name: "skill catalogue available", result: "fail", reason: safeMessage(error) }); }
+      }
+    } else if (isRoute) {
       const verified = this.options.verifiedModels ? await this.options.verifiedModels().catch(() => []) : [];
       checks.push({ name: "model verified by kor models probe", result: verified.includes(request.choice) ? "pass" : "fail" });
       checks.push({ name: "differs from the route in force", result: run.route?.model === request.choice ? "fail" : "pass" });
@@ -596,16 +621,18 @@ export class KorDaemon {
     } else {
       checks.push({ name: "decision recorded for this execution", result: "fail" });
     }
-    const failed = checks.filter(check => check.result === "fail").map(check => check.name);
+    const failed = checks.filter(check => check.result === "fail").map(check => check.reason ? `${check.name} (${check.reason})` : check.name);
     const applied = failed.length === 0;
+    const guidance = tokens ? ` Selected guidance goes from ${tokenCount(tokens.before)} to ${tokenCount(tokens.after)} tokens per turn.` : "";
     const record = this.overrides.record({
       executionId: run.executionId,
       issueId: run.issueId,
-      target: isRoute ? "route" : decision?.decisionId ?? request.target,
+      target: session ?? (isRoute ? "route" : decision?.decisionId ?? request.target),
       choice: request.choice,
       ...(previous ? { previous } : {}),
+      ...(applied && overBudget ? { overBudget: true as const } : {}),
       status: applied ? "applied" : "rejected",
-      reason: applied ? (isRoute ? "Applies from the next attempt; the running session keeps its model." : "Recorded against the decision for the next evaluation.") : `Policy refused it: ${failed.join(", ")}.`,
+      reason: applied ? (session ? `Applies from the next session; the running session keeps its pack.${guidance}` : isRoute ? "Applies from the next attempt; the running session keeps its model." : "Recorded against the decision for the next evaluation.") : `Policy refused it: ${failed.join(", ")}.`,
       policyChecks: checks,
       origin: (request.origin ?? "cockpit").slice(0, 40),
     });
@@ -613,7 +640,94 @@ export class KorDaemon {
     if (applied) await this.flushOverrideComments();
     await this.writeSnapshot();
     const { commentId: _, ...stored } = this.overrides.get(record.id) ?? record;
-    return { status: applied ? 200 : 409, record: stored };
+    return { status: applied ? 200 : 409, record: stored, ...(tokens !== undefined ? { tokens } : {}) };
+  }
+
+  /** Skill names in repository settings that the catalogue does not hold; a session would refuse them. */
+  async unknownRepositorySkills(config: KorConfig): Promise<string[]> {
+    const policy = this.options.sessionPolicy;
+    const unknown = new Set<string>();
+    for (const repository of Object.values(config.repos)) {
+      const names = [...repository.skills?.always ?? [], ...repository.skills?.pins ?? [], ...repository.skills?.never ?? []];
+      if (!policy || !names.length) continue;
+      const { catalogue } = await policy(repository.path);
+      for (const name of names) if (!catalogue.skills.some(skill => skill.name === name)) unknown.add(name);
+    }
+    return [...unknown].sort();
+  }
+
+  /** Skill, playbook and tool edits in force for an execution, oldest first; the controller reads them before every session. */
+  sessionEdits(executionId: string): SessionEdit[] {
+    return this.overrides.sessionOverrides(executionId).filter(record => record.status === "applied").flatMap(record => {
+      const edit = parseSessionEdit(record.target, record.choice);
+      return !edit ? [] : edit.target === "skills" && record.overBudget ? [{ ...edit, overBudget: true }] : [edit];
+    });
+  }
+
+  private async sessionContext(executionId: string, repositoryKey: string | undefined): Promise<SessionEditContext> {
+    const repository = repositoryKey ? this.config.repos[repositoryKey] : undefined;
+    if (!repository) throw new Error("The execution's repository is not known yet");
+    if (!this.options.sessionPolicy) throw new Error("The skill catalogue is not available to this daemon");
+    const { catalogue, stackTags } = await this.options.sessionPolicy(repository.path);
+    const eligibleTools = policyTools({ allowedTools: repository.toolAllowlist, checks: repository.checks, ...(repository.tools ? { tools: repository.tools } : {}) });
+    const planned = this.overrides.sessionPlan(executionId);
+    const budget = repository.skills?.budget ?? DEFAULT_SKILL_BUDGET;
+    return {
+      skills: catalogue.skills,
+      plan: planned.skills ? { ...planned.skills, budget } : emptySkillPlan(catalogue, budget),
+      overrides: foldSessionEdits(this.sessionEdits(executionId)),
+      policy: { stage: "execute", allowedTools: eligibleTools, stackTags, ...repository.skills,
+        ...(this.config.skills ? { bodyBudget: this.config.skills.bodyBudget } : {}) },
+      playbook: planned.playbook ?? null,
+      eligibleTools,
+    };
+  }
+
+  /** The next session's guidance with overrides applied, and what each possible edit would cost or why policy refuses it. */
+  async sessionPack(executionId: string): Promise<SessionPackResponse> {
+    const run = this.missionRun(executionId);
+    let context: SessionEditContext;
+    try { context = await this.sessionContext(run.executionId, run.repository); }
+    catch (error) { throw new ApiFailure(409, "conflict", safeMessage(error), "Start the run once, or check the repository mapping and kor skills doctor"); }
+    const option = (edit: SessionEdit): SessionOption => {
+      const review = reviewSessionEdit(edit, { ...context, overBudget: true });
+      const failed = review.checks.find(check => check.result === "fail");
+      return { choice: sessionEditChoice(edit), tokenDelta: review.tokens ? review.tokens.after - review.tokens.before : null,
+        overBudget: review.needsConfirmation,
+        blocked: failed ? failed.reason ?? failed.name : null };
+    };
+    const effective = applySkillOverrides(context.plan, context.skills, context.overrides, context.policy);
+    const kinds = new Map(context.skills.map(skill => [skill.name, skill.kind]));
+    const playbook = context.overrides.playbook ?? context.playbook ?? "none";
+    return {
+      schemaVersion: 1, executionId: run.executionId, planned: this.overrides.sessionPlan(run.executionId).skills !== undefined,
+      budget: context.plan.budget, tokens: effective.tokens,
+      skills: effective.skills.filter(entry => kinds.get(entry.name) !== "playbook").map(entry => ({
+        name: entry.name, tier: entry.tier, jevTier: context.plan.skills.find(planned => planned.name === entry.name)?.tier ?? "hidden",
+        probability: entry.probability, tokens: entry.tokens, reason: entry.reason,
+        options: SKILL_TIERS.filter(tier => tier !== entry.tier).map(tier => option({ target: "skills", name: entry.name, tier })),
+      })),
+      playbook: { selected: playbook === "none" ? null : playbook, jev: context.playbook,
+        options: ["none", ...context.skills.filter(skill => skill.kind === "playbook").map(skill => skill.name)].filter(name => name !== playbook).map(name => option({ target: "playbook", name })) },
+      tools: { eligible: [...context.eligibleTools], overrides: [...context.overrides.tools].map(([name, present]) => ({ name, present })),
+        options: context.eligibleTools.flatMap(name => [true, false].filter(present => context.overrides.tools.get(name) !== present).map(present => option({ target: "tools", name, present }))) },
+    };
+  }
+
+  /**
+   * Records each `kor:skill/…`, `kor:playbook/…` and `kor:tool/…` label on the issue as an
+   * override, and reverts one whose label was removed. A refused label is judged again at the
+   * next execution start, since the catalogue or repository policy may have changed.
+   */
+  private async syncLabelOverrides(executionId: string, labels: readonly string[]): Promise<void> {
+    const wanted = labelEdits(labels).map(edit => ({ target: edit.target, choice: sessionEditChoice(edit) }));
+    const recorded = this.overrides.sessionOverrides(executionId).filter(record => record.origin === LABEL_ORIGIN);
+    for (const record of recorded) {
+      if (record.status === "applied" && !wanted.some(edit => edit.target === record.target && edit.choice === record.choice)) await this.revertOverride(record.id, `${LABEL_ORIGIN} (removed)`);
+    }
+    for (const edit of wanted) {
+      if (!recorded.some(record => record.status === "applied" && record.target === edit.target && record.choice === edit.choice)) await this.override({ executionId, ...edit, origin: LABEL_ORIGIN });
+    }
   }
 
   async revertOverride(id: string, origin = "cockpit"): Promise<OverrideAnswer> {
@@ -662,7 +776,7 @@ export class KorDaemon {
         const origin = typeof input.origin === "string" ? input.origin : "cockpit";
         if (revert) { const answer = await this.revertOverride(revert[1]!, origin); send(answer.status, answer.record ?? { error: answer.error }); return; }
         if (typeof input.executionId !== "string" || typeof input.target !== "string" || typeof input.choice !== "string" || !input.choice.trim()) { send(400, { error: "executionId, target and choice are required" }); return; }
-        const answer = await this.override({ executionId: input.executionId, target: input.target, choice: input.choice.trim(), origin, ...(typeof input.decisionId === "string" ? { decisionId: input.decisionId } : {}) });
+        const answer = await this.override({ executionId: input.executionId, target: input.target, choice: input.choice.trim(), origin, ...(typeof input.decisionId === "string" ? { decisionId: input.decisionId } : {}), ...(input.overBudget === true ? { overBudget: true } : {}) });
         send(answer.status, answer.record ?? { error: answer.error });
       })().catch(error => send(500, { error: safeMessage(error) }));
     });
@@ -732,6 +846,7 @@ export class KorDaemon {
       const previousBranch = this.store.listAssignments().find(assignment => assignment.executionId === id)?.manifest?.branch;
       const manifest: Execution = { id, issueId: issue.id, repository, worktree: "", branch: previousBranch || `kor/${issue.identifier ?? issue.id}`, status: "running", ...(route ? { route } : {}) };
       this.store.markRunning(claim, manifest);
+      await this.syncLabelOverrides(id, issue.labels);
       if (issue.labels.includes('kor:blocked')) this.store.record(claim, [{ kind: 'label', issueId: issue.id, name: 'kor:blocked', present: false }]);
       if (this.options.shipping) {
         const states = workflowMapping(await this.options.linear.listWorkflowStates(issue.teamKey));

@@ -728,6 +728,56 @@ audited and commented. In the capture the route was switched to
 2026-10-15T00:20:57.944Z override ovr_3a13daf9 reverted
 ```
 
+### Change the next session's skills, playbook and tools
+
+The same dialog has a **Next session** section: Jev's latest skills plan with your
+overrides applied, against the repository's per-turn skill budget.
+
+![The Next session section after hiding one skill, listing one and pinning one over budget](images/mc-next-session.png)
+
+- **Skills.** Each row shows the tier the next session gets (pinned, listed,
+  armed or hidden), Jev's tier when yours differs, and Jev's probability. Each
+  button is another tier with its per-turn token change, for example `listed +671`.
+  **Find a skill** searches the hidden ones.
+- **Playbook.** The procedure the session pins, with Jev's pick beside it when you
+  changed it.
+- **Tools.** `+Tool` and `-Tool` within the repository's tool policy. Jev still
+  decides the tools you do not override.
+
+A button the daemon would refuse is disabled, and its tooltip gives the reason
+(`Denied by repository policy.`, `Not available at this stage.`). An edit that
+would take the plan over the repository budget is amber and stays disabled until
+you tick **Accept over budget**. The edit applies from the next session: the
+next repair attempt, a retry, or **Request changes**. It goes into the audit and
+onto the Linear issue with the token change, and **Revert** under **Your
+overrides** undoes it. The repository's deny list always wins, and no override
+can widen the tool policy or choose a model.
+
+In the capture, the run on LEE-1150 had the label `kor:skill/human-written-code`
+(pinned by the label override). In Mission Control the skill was hidden,
+`principle-build-the-lever` was listed, `principle-type-system-discipline` was
+pinned over the 1,000-token budget, the playbook was switched to `fix-bug` and
+`Bash` was removed. After **Request changes**, the next session started without
+`Bash`, with `Skill` and `kor-skills:principle-build-the-lever` in its tool
+list, and with the `fix-bug` playbook recorded as `source: override`:
+
+```text
+override ovr_e5a19b62 applied: skills -> skill:-human-written-code (... Selected guidance goes from 400 to 0 tokens per turn.)
+override ovr_fa7baba3 applied: skills -> skill:principle-build-the-lever=listed (... from 0 to 671 tokens per turn.)
+override ovr_d77aeeb5 applied: skills -> skill:principle-type-system-discipline=pinned (... from 671 to 1,581 tokens per turn.)
+override ovr_5b4217da applied: playbook -> fix-bug (... from 167 to 182 tokens per turn.)
+override ovr_d0a2f54a applied: tools -> tool:-Bash (Applies from the next session; the running session keeps its pack.)
+override ovr_56b511e0 rejected: tools -> tool:+WebFetch (Policy refused it: allowed by repository policy (WebFetch is outside the repository's tool policy.).)
+```
+
+Per-issue overrides can also come from Linear labels: `kor:skill/NAME`,
+`kor:skill/-NAME`, `kor:skill/NAME=TIER`, `kor:playbook/NAME`, `kor:tool/NAME`
+and `kor:tool/-NAME`. Kor records a new label as an override when the execution
+starts, and reverts it when the label is removed. Repository-wide pins, denies
+and the budget are under **Projects → Repository settings**: **Always load
+skills**, **Pinned skills**, **Never load skills** and **Skill budget**. See
+[skills](skills.md#overrides) for the full rules.
+
 ### Retry or stop a run
 
 - **Retry.** On **Agents** the **Retry** button (or **Retry the run** in the

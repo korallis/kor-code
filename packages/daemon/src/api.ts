@@ -71,10 +71,11 @@ export class MissionApi {
         if (path === "/api/projects") {
           send(200, { schemaVersion: 1, projects: Object.entries(this.daemon.config.repos).map(([key, repository]) => ({ id: key, name: key, repository, runs: this.daemon.missionRuns().filter(run => run.repository === key) })) } satisfies ProjectsResponse); return;
         }
-        const runPath = /^\/api\/runs\/([^/]+)(?:\/(terminal))?$/.exec(path);
+        const runPath = /^\/api\/runs\/([^/]+)(?:\/(terminal|session))?$/.exec(path);
         if (runPath?.[1]) {
           const run = this.daemon.missionRun(decodeURIComponent(runPath[1]));
-          if (runPath[2]) { send(200, { schemaVersion: 1, executionId: run.executionId, ...await this.daemon.readTerminal(run.executionId) }); }
+          if (runPath[2] === "session") send(200, await this.daemon.sessionPack(run.executionId));
+          else if (runPath[2]) { send(200, { schemaVersion: 1, executionId: run.executionId, ...await this.daemon.readTerminal(run.executionId) }); }
           else send(200, { schemaVersion: 1, run });
           return;
         }
@@ -106,6 +107,8 @@ export class MissionApi {
               id.parse(project);
               config = parseKorConfig({ ...this.daemon.config, repos: { ...this.daemon.config.repos, [project]: repositorySchema.parse(input) } }, { home: this.daemon.paths.home });
             }
+            const unknown = await this.daemon.unknownRepositorySkills(config);
+            if (unknown.length) throw new ApiFailure(400, "invalid_request", `Unknown skills in repository settings: ${unknown.join(", ")}`, "Use names from kor skills list");
             await this.daemon.configure(config);
             this.daemon.events.publish({ kind: "config", restartRequired: false });
             send(200, { schemaVersion: 1, config, restartRequired: false } satisfies ConfigResponse);
@@ -128,10 +131,10 @@ export class MissionApi {
           send(200, { schemaVersion: 1, executionId, accepted: true, run: this.daemon.missionRun(executionId), linearSync } satisfies ActionResponse); return;
         }
         if (path === "/api/overrides") {
-          const body = z.strictObject({ executionId: id, target: id, choice: id, decisionId: id.optional() }).parse(input);
-          const answer = await this.daemon.override({ executionId: body.executionId, target: body.target, choice: body.choice, ...(body.decisionId ? { decisionId: body.decisionId } : {}), origin: "Mission Control" });
+          const body = z.strictObject({ executionId: id, target: id, choice: id, decisionId: id.optional(), overBudget: z.boolean().optional() }).parse(input);
+          const answer = await this.daemon.override({ executionId: body.executionId, target: body.target, choice: body.choice, ...(body.decisionId ? { decisionId: body.decisionId } : {}), ...(body.overBudget ? { overBudget: true } : {}), origin: "Mission Control" });
           if (!answer.record) throw new ApiFailure(answer.status, "not_found", "Execution or decision not found");
-          send(answer.status, { schemaVersion: 1, record: answer.record }); return;
+          send(answer.status, { schemaVersion: 1, record: answer.record, ...(answer.tokens !== undefined ? { tokens: answer.tokens } : {}) }); return;
         }
         const revert = /^\/api\/overrides\/([^/]+)\/revert$/.exec(path);
         if (revert?.[1]) {

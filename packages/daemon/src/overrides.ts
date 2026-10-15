@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import type { DecisionRecord, OverrideRecord } from "@kor-code/core";
 import { z } from "zod";
+import { SESSION_TARGETS, playbookPlanSchema, skillPlanSchema, type SkillPlan } from "@kor-code/jev";
 
 type Row = Record<string, unknown>;
 
@@ -49,13 +50,16 @@ export class OverrideStore {
         reason TEXT NOT NULL, policy_checks TEXT NOT NULL, origin TEXT NOT NULL, recorded_at TEXT NOT NULL,
         linear_comment TEXT NOT NULL, comment_id TEXT NOT NULL
       );`);
+    if (!(this.db.prepare("PRAGMA table_info(override_audit)").all() as Row[]).some(column => column.name === "over_budget")) {
+      this.db.exec("ALTER TABLE override_audit ADD COLUMN over_budget INTEGER NOT NULL DEFAULT 0");
+    }
   }
   close(): void { this.db.close(); }
 
   record(input: Omit<OverrideRecord, "id" | "recordedAt" | "linearComment">): OverrideRecord & { commentId: string } {
     const record = { ...input, id: `ovr_${randomUUID().slice(0, 8)}`, recordedAt: new Date(this.now()).toISOString(), linearComment: input.status === "rejected" ? "skipped" as const : "pending" as const, commentId: randomUUID() };
-    this.db.prepare("INSERT INTO override_audit(id,execution_id,issue_id,target,choice,previous,status,reason,policy_checks,origin,recorded_at,linear_comment,comment_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)")
-      .run(record.id, record.executionId, record.issueId, record.target, record.choice, record.previous ?? null, record.status, record.reason, JSON.stringify(record.policyChecks), record.origin, record.recordedAt, record.linearComment, record.commentId);
+    this.db.prepare("INSERT INTO override_audit(id,execution_id,issue_id,target,choice,previous,status,reason,policy_checks,origin,recorded_at,linear_comment,comment_id,over_budget) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+      .run(record.id, record.executionId, record.issueId, record.target, record.choice, record.previous ?? null, record.status, record.reason, JSON.stringify(record.policyChecks), record.origin, record.recordedAt, record.linearComment, record.commentId, record.overBudget ? 1 : 0);
     return record;
   }
 
@@ -83,6 +87,11 @@ export class OverrideStore {
     return row ? this.parse(row) : undefined;
   }
 
+  /** Skill, playbook and tool overrides for an execution in any status, oldest first. */
+  sessionOverrides(executionId: string): Array<OverrideRecord & { commentId: string }> {
+    return (this.db.prepare(`SELECT * FROM override_audit WHERE execution_id=? AND target IN (${SESSION_TARGETS.map(() => "?").join(",")}) ORDER BY recorded_at, rowid`).all(executionId, ...SESSION_TARGETS) as Row[]).map(row => this.parse(row));
+  }
+
   pendingComments(): Array<OverrideRecord & { commentId: string }> {
     return (this.db.prepare("SELECT * FROM override_audit WHERE linear_comment IN ('pending','failed') ORDER BY rowid").all() as Row[]).map(row => this.parse(row));
   }
@@ -99,10 +108,28 @@ export class OverrideStore {
     });
   }
 
+  /** Jev's latest skills plan and playbook for an execution, before any override. */
+  sessionPlan(executionId: string): { skills?: SkillPlan; playbook?: string | null } {
+    let rows: Row[];
+    try { rows = this.db.prepare("SELECT payload FROM decision_audit WHERE instr(payload, ?) > 0 ORDER BY recorded_at, rowid").all(JSON.stringify(executionId)) as Row[]; }
+    catch { return {}; }
+    const plan: { skills?: SkillPlan; playbook?: string | null } = {};
+    for (const row of rows) {
+      let payload: Row;
+      try { payload = JSON.parse(String(row.payload)) as Row; } catch { continue; }
+      const response = z.object({ executionId: z.literal(executionId), plan: skillPlanSchema.optional(), playbookPlan: playbookPlanSchema.optional() }).safeParse(payload.response);
+      if (!response.success) continue;
+      if (response.data.plan) plan.skills = response.data.plan;
+      if (response.data.playbookPlan && response.data.playbookPlan.source !== "override") plan.playbook = response.data.playbookPlan.selected;
+    }
+    return plan;
+  }
+
   private parse(row: Row): OverrideRecord & { commentId: string } {
     return {
       id: String(row.id), executionId: String(row.execution_id), issueId: String(row.issue_id), target: String(row.target), choice: String(row.choice),
       ...(typeof row.previous === "string" ? { previous: row.previous } : {}),
+      ...(row.over_budget === 1 ? { overBudget: true as const } : {}),
       status: row.status as OverrideRecord["status"], reason: String(row.reason), policyChecks: JSON.parse(String(row.policy_checks)) as OverrideRecord["policyChecks"],
       origin: String(row.origin), recordedAt: String(row.recorded_at), linearComment: row.linear_comment as OverrideRecord["linearComment"], commentId: String(row.comment_id),
     };

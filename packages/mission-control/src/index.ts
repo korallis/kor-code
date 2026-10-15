@@ -68,8 +68,28 @@ export interface ConfigResponse { schemaVersion: 1; config: KorConfig; restartRe
 export interface QueueRequest { issueIds: [string, ...string[]] }
 export interface QueueResponse { schemaVersion: 1; runs: MissionRun[] }
 export interface MessageRequest { message: string }
-export interface OverrideRequest { executionId: string; target: string; choice: string; decisionId?: string }
-export interface OverrideResponse { schemaVersion: 1; record: OverrideRecord }
+/** `target` is `route`, `skills`, `playbook`, `tools` or a decision ID. Skill choices are
+ * `skill:+NAME`, `skill:-NAME` or `skill:NAME=pinned|listed|armed|hidden`; a playbook choice
+ * is its name or `none`; tool choices are `tool:+NAME` or `tool:-NAME`. `overBudget` accepts a
+ * skill plan above the repository budget; it never widens the tool policy. */
+export interface OverrideRequest { executionId: string; target: string; choice: string; decisionId?: string; overBudget?: boolean }
+/** `tokens` is the selected guidance per turn before and after a skill or playbook edit. */
+export interface OverrideResponse { schemaVersion: 1; record: OverrideRecord; tokens?: { before: number; after: number } | null }
+/** One edit Mission Control can send: its per-turn token change, or why policy refuses it. */
+export interface SessionOption { choice: string; tokenDelta: number | null; overBudget: boolean; blocked: string | null }
+type SkillTier = "pinned" | "listed" | "armed" | "hidden";
+/** The next session's guidance for an execution: Jev's latest plan with the overrides in force applied. */
+export interface SessionPackResponse {
+  schemaVersion: 1;
+  executionId: string;
+  /** False until Jev records a skills plan for the execution; edits then project onto an empty plan. */
+  planned: boolean;
+  budget: number;
+  tokens: { pinned: number; listed: number; tool: number; total: number };
+  skills: Array<{ name: string; tier: SkillTier; jevTier: SkillTier; probability: number; tokens: number; reason: string; options: SessionOption[] }>;
+  playbook: { selected: string | null; jev: string | null; options: SessionOption[] };
+  tools: { eligible: string[]; overrides: Array<{ name: string; present: boolean }>; options: SessionOption[] };
+}
 /** Pending writes remain durable and are retried by the daemon's Linear poll.
  * The count covers the daemon's entire outbox, including earlier actions. */
 export type LinearSync = { status: "synced" } | { status: "pending"; pendingWrites: number };
@@ -118,6 +138,7 @@ export interface MissionControlApi {
   "GET /api/runs": Endpoint<never, RunsResponse>;
   "GET /api/runs/:id": Endpoint<never, RunResponse>;
   "GET /api/runs/:id/terminal": Endpoint<never, TerminalResponse>;
+  "GET /api/runs/:id/session": Endpoint<never, SessionPackResponse>;
   "GET /api/linear/issues": Endpoint<never, IssuesResponse>;
   "GET /api/github/pulls": Endpoint<never, PullsResponse>;
   "GET /api/models": Endpoint<never, ModelsResponse>;

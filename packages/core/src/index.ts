@@ -123,10 +123,12 @@ export interface OverrideRecord {
   id: string;
   executionId: string;
   issueId: string;
-  /** `route`, or the decision ID it overrides. */
+  /** `route`, `skills`, `playbook`, `tools`, or the decision ID it overrides. */
   target: string;
   choice: string;
   previous?: string;
+  /** The operator confirmed a skill edit that takes the plan over the repository budget. */
+  overBudget?: true;
   status: "applied" | "rejected" | "reverted";
   reason: string;
   policyChecks: DecisionBundle["policyChecks"];

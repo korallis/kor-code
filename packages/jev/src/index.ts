@@ -4,6 +4,7 @@ export * from "./redact.js";
 export * from "./preflight.js";
 export * from "./skills.js";
 export * from "./playbooks.js";
+export * from "./session-overrides.js";
 import { decidePlaybook, playbookPlanSchema, type PlaybookInput, type PlaybookPlan } from "./playbooks.js";
 import { decideSkills, skillPlanSchema, type SkillPlan, type SkillsInput } from "./skills.js";
 import type { CatalogueModel, DecisionBundle, DecisionInput, JsonValue, Route } from "@kor-code/core";

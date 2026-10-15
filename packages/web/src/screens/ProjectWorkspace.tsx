@@ -34,6 +34,9 @@ import { FINISHED, isActive, keyOf, needsYou, prNumber, latestDecision, runUpdat
 import { ago, shortDate, useNow } from '../lib/time';
 import { page, QueryError } from './shared';
 
+// config.yaml's default per-turn guidance budget for a repository.
+const DEFAULT_SKILL_BUDGET = 4_000;
+
 const NARROW = '@media (max-width: 1499px)';
 
 const styles = stylex.create({
@@ -148,8 +151,13 @@ function RepositorySettings({ project }: { project: Project }) {
   const [draft, setDraft] = useState<KorConfig['repos'][string]>(repository);
   const [checks, setChecks] = useState(repository.checks.join('\n'));
   const [tools, setTools] = useState(repository.toolAllowlist.join('\n'));
+  const [always, setAlways] = useState(repository.skills?.always.join('\n') ?? '');
+  const [pins, setPins] = useState(repository.skills?.pins.join('\n') ?? '');
+  const [never, setNever] = useState(repository.skills?.never.join('\n') ?? '');
+  const [budget, setBudget] = useState(String(repository.skills?.budget ?? DEFAULT_SKILL_BUDGET));
   const lines = (value: string) => value.split('\n').map(line => line.trim()).filter(Boolean);
-  const submit = () => save.mutate({ project: project.id, repository: { ...draft, checks: lines(checks), toolAllowlist: lines(tools) } });
+  const submit = () => save.mutate({ project: project.id, repository: { ...draft, checks: lines(checks), toolAllowlist: lines(tools),
+    skills: { always: lines(always), pins: lines(pins), never: lines(never), budget: Number(budget) } } });
   const set = (key: keyof KorConfig['repos'][string]) => (value: string) => setDraft(current => ({ ...current, [key]: value || undefined } as KorConfig['repos'][string]));
   return (
     <div {...stylex.props(styles.form)}>
@@ -162,6 +170,10 @@ function RepositorySettings({ project }: { project: Project }) {
       <Segmented label="Shipping" value={draft.ship} onChange={value => setDraft(current => ({ ...current, ship: value }))} options={[{ value: 'approve', label: 'Wait for my approval' }, { value: 'auto', label: 'Ship automatically' }]} />
       <FieldLabel>Repository checks<br /><span {...stylex.props(text.faint, text.xs)}>one command per line; every run must pass them</span></FieldLabel><TextArea label="Repository checks" value={checks} onChange={setChecks} mono rows={4} />
       <FieldLabel>Tool allowlist<br /><span {...stylex.props(text.faint, text.xs)}>the only tools a session may use</span></FieldLabel><TextArea label="Tool allowlist" value={tools} onChange={setTools} mono rows={5} />
+      <FieldLabel>Always load skills<br /><span {...stylex.props(text.faint, text.xs)}>one name per line; loaded even when Jev is unavailable</span></FieldLabel><TextArea label="Always load skills" value={always} onChange={setAlways} mono rows={2} />
+      <FieldLabel>Pinned skills<br /><span {...stylex.props(text.faint, text.xs)}>pinned whenever Jev plans a session</span></FieldLabel><TextArea label="Pinned skills" value={pins} onChange={setPins} mono rows={2} />
+      <FieldLabel>Never load skills<br /><span {...stylex.props(text.faint, text.xs)}>wins over Jev, pins and overrides</span></FieldLabel><TextArea label="Never load skills" value={never} onChange={setNever} mono rows={2} />
+      <FieldLabel>Skill budget<br /><span {...stylex.props(text.faint, text.xs)}>guidance tokens per turn</span></FieldLabel><TextInput label="Skill budget" type="number" value={budget} onChange={setBudget} mono />
       <span />
       <div {...stylex.props(layout.stackTight)}>
         {save.error && <Notice title={save.error.message} hint={save.error instanceof ApiFailure ? save.error.hint : undefined} />}

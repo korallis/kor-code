@@ -706,11 +706,10 @@ revision includes the current attempt ID. A repair receives check, acceptance
 and policy failure classes plus blockers, so an initial feature procedure can
 switch to `fix-bug` after a failing check.
 
-For override consumers, `JevDecisionCore.selectPlaybook` accepts `override` as a
-catalogue name or `none`. Overrides must pass the same stage, tool, deny and
-budget filters. The session preparation callback accepts `playbookOverride` for
-the next session. This API supports the separate Mission Control override work;
-it does not add an override button or configuration setting here. Repository
+`JevDecisionCore.selectPlaybook` accepts `override` as a catalogue name or
+`none`; an override must pass the same stage, tool, deny and budget filters, and
+the decision records it with `source: override`. Mission Control and Linear
+labels set it for the next session (see [Overrides](#overrides)). Repository
 `skills.always` and `pins` continue to select ordinary skills, while playbooks
 use their own Choice and override. Model and provider selection remain in the
 per-task `route` decision.
@@ -907,3 +906,70 @@ verification outcomes and costs are explicitly synthetic replay observations;
 it is not a live quality or savings benchmark. Output databases and reports stay
 in the supplied directory. A live comparison must additionally run actual
 isolated launcher sessions and report their measured usage and verification.
+## Overrides
+
+Jev's plan is the default, never the last word. Before every session, Kor applies
+the operator's edits on top of it in this order: repository `never` > override >
+repository `always`/`pins` > Jev. An override changes only the **next** session;
+the running session keeps its pack. A repair attempt, a retry or **Request
+changes** is the next session.
+
+Three targets take these choices:
+
+| Target | Choice | Effect |
+| --- | --- | --- |
+| `skills` | `skill:+NAME` | Load the skill the way a repository pin does: pinned when its body fits the per-body limit, otherwise listed |
+| `skills` | `skill:-NAME` | Hide the skill |
+| `skills` | `skill:NAME=pinned\|listed\|armed\|hidden` | Set the tier |
+| `playbook` | `NAME` or `none` | Pin that playbook, or none |
+| `tools` | `tool:+NAME`, `tool:-NAME` | Add or remove a tool; Jev's per-task tool decision covers the rest |
+
+Each edit is judged before it is recorded. The daemon checks that the run is
+not finished, that the choice is well formed, that the skill or playbook is in
+the catalogue under the right target, and that repository policy allows it:
+not denied, available at the stage, required tools inside the repository's tool
+policy, the stack matches and the body fits the tier. An explicit `pinned` tier
+obeys the configured `skills.bodyBudget` as well as the 2,000-token ceiling. A
+tool must be inside the repository's tool policy; an override never widens it.
+The new plan must stay within the repository's `skills.budget` unless the
+operator confirms **over budget**. That confirmation lifts only the soft budget:
+it accepts every skill override in force at that moment and is stored with the
+override; a later unconfirmed edit to a skill withdraws it for that skill. An
+edit that would only apply over budget is refused unless confirmed, and the
+token change Kor reports is the plan the next session will actually get. An edit is judged against the overrides already
+in force, not against Jev's current plan: repeating the same override is refused,
+but hiding a skill Jev has not picked yet is kept for later sessions. Applied and
+refused edits alike go into
+`override_audit` and `kor logs`. Each applied edit, and each revert, is posted
+as a comment on the Linear issue with the per-turn token change, for example
+`Selected guidance goes from 671 to 1,581 tokens per turn.`
+
+Mission Control's **Explore alternatives** dialog shows the next session's plan:
+every skill's tier next to Jev's, the playbook and the tools. Each button shows
+what the edit costs per turn, or why policy refuses it. Edits over budget stay
+disabled until **Accept over budget** is ticked. **Revert** in the same dialog
+puts the previous choice back. `GET /api/runs/:id/session` returns the same view.
+Repository `always`, `pins`, `never` and `budget` can be edited in the project's
+**Repository settings**. Names the catalogue does not hold are refused on save.
+
+A Linear label on the issue sets a per-issue override:
+`kor:skill/NAME` (also `kor:skill/-NAME` and `kor:skill/NAME=TIER`),
+`kor:playbook/NAME`, and `kor:tool/NAME` (also `kor:tool/-NAME`). When an
+execution starts, Kor records each new label as an override from `Linear label`,
+through the same checks, audit and comment. A refused label is judged again at
+the next execution start. A label that is later removed is reverted. Edits made
+later in Mission Control win over labels. A label cannot confirm over budget.
+
+Policy is checked again at session time. A skill edit that is no longer allowed
+keeps Jev's tier, and the plan records `Override not applied:` with the reason.
+Jev plans every session again, so the merged plan is held to the budget again:
+Jev's own pinned and listed picks are hidden first, lowest probability first,
+then the overrides that were not confirmed over budget, latest first, with
+`Override not applied: over the skill budget without confirmation.`, for
+example after the budget is lowered. Armed entries cost nothing at the start and
+are never trimmed, nor are repository `always` and `pins`. Sending the same edit
+again with **Accept over budget** ticked confirms it. A playbook override that is not
+available at the session's stage, for example at repair, is left to Jev's
+Choice. An override can load a skill that outcome learning demoted. Neither
+calibration baseline arm receives overrides. No override can choose a model,
+provider, harness or effort; the route stays Jev's per-task decision.

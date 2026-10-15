@@ -3,11 +3,20 @@ import { relative, resolve, sep } from "node:path";
 
 export const DEFAULT_ALLOWED_TOOLS = ["Read"] as const;
 const SEARCH_TOOLS = ["Glob", "Grep"] as const;
+const UNSAFE_CHECK = /[\r\n$`;&|<>*()]/;
 
 function toolName(permission: string): string { return permission.split("(", 1)[0] ?? permission; }
 
 export function sessionTools(permissions: readonly string[], override?: readonly string[]): string[] {
   return [...new Set(override ?? permissions.map(toolName))].sort();
+}
+
+/** Tool names a repository's policy lets a session use, without resolving script permissions inside a worktree. */
+export function policyTools(input: { allowedTools: readonly string[]; checks: readonly string[]; tools?: readonly string[] }): string[] {
+  const permitted = new Set(input.allowedTools.map(toolName));
+  if (permitted.has("Read")) for (const tool of SEARCH_TOOLS) if (!input.tools || input.tools.includes(tool)) permitted.add(tool);
+  if (input.checks.some(check => check.trim() && !UNSAFE_CHECK.test(check))) permitted.add("Bash");
+  return sessionTools([...permitted], input.tools).filter(tool => permitted.has(tool) && tool !== "Skill");
 }
 
 export async function sessionPermissions(input: { worktree: string; allowedTools: readonly string[]; checks: readonly string[]; tools?: readonly string[] }): Promise<string[]> {
@@ -38,7 +47,7 @@ export async function sessionPermissions(input: { worktree: string; allowedTools
   }
   // Exact, operator-configured simple commands; never synthesize shell wildcards.
   for (const check of input.checks) {
-    if (check.trim() && !/[\r\n$`;&|<>*()]/.test(check)) permissions.add(`Bash(${check})`);
+    if (check.trim() && !UNSAFE_CHECK.test(check)) permissions.add(`Bash(${check})`);
   }
   return [...permissions];
 }

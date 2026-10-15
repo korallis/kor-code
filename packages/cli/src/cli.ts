@@ -15,12 +15,12 @@ import { HttpLinearClient, LinearStore, attachLinearImage } from "@kor-code/line
 import { GitHubShipping, KorDaemon, MissionServices, processMatches, readExecutionStatus, readStatus, type DaemonOptions } from "@kor-code/daemon";
 import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController, type Controller } from "@kor-code/controller";
 import { loadAvailableVerifiedModels, modelProvider, readModelRegistry, writeModelRegistry } from "@kor-code/gateway-adapter";
-import { PersistentDecisionAuditLog } from "@kor-code/jev";
+import { PersistentDecisionAuditLog, foldSessionEdits } from "@kor-code/jev";
 import { CalibrationStore, buildReport, formatReport, buildSkillsReport, formatSkillsReport } from "@kor-code/calibration";
 import type { KorCliError } from "@kor-code/core";
 import { runSkillsInstall, SkillsUsageError, SKILLS_INSTALL_USAGE } from "./skills-install.js";
 import { formatSkillLint, lintSkills } from "./skills-lint.js";
-import { prepareSessionSkills } from "./skills-session.js";
+import { prepareSessionSkills, repositoryStackTags } from "./skills-session.js";
 import { buildSkillsCatalogue, formatSkillsCatalogue, writeSkillsCatalogue } from "./skills-catalogue.js";
 import { guardPrivateSkills, importPrivateSkills, initPrivateSkills, privateSkillsPath } from "./skills-private.js";
 
@@ -226,6 +226,7 @@ async function serve(args: readonly string[]): Promise<number> {
       limits: new ConcurrencyLimiter({ total: config.limits.total, perRepository: config.limits.perRepository, ...(config.limits.perProvider ? { perProvider: config.limits.perProvider } : {}) }),
       defaultRoute: config.defaultRoute,
       jev: routing.jev,
+      sessionOverrides: executionId => foldSessionEdits(daemon.sessionEdits(executionId)),
       ...(calibration ? { calibration: { store: calibration, sampleRate: config.calibration.sampleRate, baselineRoute: config.calibration.baselineRoute } } : {}),
     });
     return { controller, chooseRoute: routing.chooseRoute };
@@ -234,7 +235,12 @@ async function serve(args: readonly string[]): Promise<number> {
   const gateway = await mission.gateway();
   const verifiedModels = async () => (await loadAvailableVerifiedModels(await readModelRegistry(paths.modelsFile), async () => (await mission.gateway()).listModels())).map(model => model.model);
   const webRoot = valueAfter(args, "--ui-dir") ?? fileURLToPath(new URL("../../web/dist", import.meta.url));
-  const daemon = new KorDaemon({ paths, config: loaded.config, store, linear: mission.linear(), ...initial, shipping: new GitHubShipping((file, args, cwd) => mission.shippingCommand(file, args, cwd)), port, gateway, verifiedModels, webRoot, missionServices: mission, reconfigure: runtime });
+  const sessionPolicy: DaemonOptions["sessionPolicy"] = async repositoryPath => {
+    const catalogue = await buildSkillsCatalogue({ config: daemon.config, paths, estimate: true });
+    if (!catalogue.ok) throw new Error("The skill catalogue is invalid; run kor skills doctor");
+    return { catalogue, stackTags: await repositoryStackTags(repositoryPath) };
+  };
+  const daemon = new KorDaemon({ paths, config: loaded.config, store, linear: mission.linear(), ...initial, sessionPolicy, shipping: new GitHubShipping((file, args, cwd) => mission.shippingCommand(file, args, cwd)), port, gateway, verifiedModels, webRoot, missionServices: mission, reconfigure: runtime });
   const handle = await daemon.start();
   process.stdout.write(`kor daemon listening on ${statusUrl}\n`);
   await new Promise<void>(resolve => {
