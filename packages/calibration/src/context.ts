@@ -22,3 +22,16 @@ export const loadEventSchema = z.object({
   firedAt: z.iso.datetime().optional(),
 });
 export type SessionLoadEvent = z.infer<typeof loadEventSchema>;
+
+export const gatewayTelemetrySchema = z.object({
+  desiredAccountPolicy: z.enum(["fill-first", "manual", "least-used"]).nullable(),
+  strategy: z.object({ value: z.string(), observedAt: z.string().datetime() }).nullable(),
+  responses: z.array(z.object({
+    statusCode: z.number().int(),
+    attribution: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("response_trace"), traceId: z.string(), accountSlot: z.string() }),
+      z.object({ kind: z.literal("unavailable") }),
+    ]),
+  })),
+});
+export type SessionGatewayTelemetry = z.infer<typeof gatewayTelemetrySchema>;

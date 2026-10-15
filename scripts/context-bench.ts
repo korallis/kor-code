@@ -10,6 +10,7 @@ import { z } from "zod";
 import { CalibrationStore, buildReport, formatReport, metricFromSession, runSchema } from "../packages/calibration/src/index.js";
 import { loadGatewayEnvironment } from "../packages/config/src/index.js";
 import { SessionLauncher } from "../packages/controller/src/launcher.js";
+import { GatewayAdapter } from "../packages/gateway-adapter/src/index.js";
 
 const execFile = promisify(execFileCallback);
 const sourceRoot = resolve(import.meta.dirname, "..");
@@ -24,7 +25,7 @@ function option(name: string): string | undefined {
 const routeFile = option("--routes");
 const revision = option("--revision");
 if (!routeFile || !revision) throw new Error("Usage: pnpm context:bench --revision COMMIT --routes FILE [--output DIR] [--case ID] [--repeats N] [--launch-profile lean|standard]");
-const launchProfile = z.enum(["lean", "standard"]).parse(option("--launch-profile") ?? "standard");
+const launchProfile = z.enum(["lean", "standard"]).parse(option("--launch-profile") ?? "lean");
 const repeats = Number(option("--repeats") ?? 3);
 if (!Number.isInteger(repeats) || repeats < 1) throw new Error("--repeats must be a positive integer");
 const cases = [
@@ -50,6 +51,7 @@ const gateway = await loadGatewayEnvironment();
 const key = gateway.key;
 if (!key) throw new Error("Gateway runtime credential missing");
 const upstream = new URL(gateway.baseUrl);
+const adapter = new GatewayAdapter();
 if (upstream.username || upstream.password) throw new Error("Gateway URL must not include credentials");
 const store = new CalibrationStore(join(runRoot, "metrics.sqlite"));
 let failures = 0;
@@ -100,7 +102,8 @@ try {
     const startedAt = new Date().toISOString();
     store.beginRun({ executionId: id, pairId: id, issueId: issue.id, arm: "baseline", baseRevision, route, sampled: false, startedAt, status: "running" });
     try {
-      const launcher = new SessionLauncher({ repoRoot: sourceRoot, launchProfile, sandboxRoot: join(directory, "sandbox"), gatewayKey: key, env: { KOR_GATEWAY_URL: `http://127.0.0.1:${address.port}` } });
+      const strategy = await adapter.routingStrategy();
+      const launcher = new SessionLauncher({ repoRoot: sourceRoot, launchProfile, sandboxRoot: join(directory, "sandbox"), gateway: async () => ({ baseUrl: `http://127.0.0.1:${address.port}`, key, strategy }) });
       const session = await launcher.launch({ execution: { id, issueId: issue.id, repository: "bench", worktree: repository, branch: "", status: "running" }, repositoryPath: repository, worktreePath: repository, route,
         allowedTools: ["Read", "Glob", "Grep", "Write", "Edit", "Bash(git status*)", "Bash(git diff*)"],
         prompt: `Issue ${issue.id}: ${issue.title}\n\n${issue.task}\n\nDo not add tests, commit, publish, or access anything outside this scratch repository. Kor runs acceptance checks after the session.`, signal: AbortSignal.timeout(300_000) });
@@ -128,7 +131,7 @@ try {
       const cacheRead = metric.turns?.reduce((sum, turn) => sum + turn.cacheReadTokens, 0) ?? 0;
       const cacheCreation = metric.turns?.reduce((sum, turn) => sum + turn.cacheCreationTokens, 0) ?? 0;
       const cacheReadShare = cacheRead + cacheCreation > 0 ? cacheRead / (cacheRead + cacheCreation) : null;
-      const summary = { id, profile: launchProfile, cacheReadShare, baseRevision, route, startContextTokens: metric.startContextTokens, contextTokenSum: metric.contextTokenSum, turns: metric.turns, loadEvents: metric.loadEvents, costUsd: metric.costUsd, verified, checks, countTokens: counts };
+      const summary = { id, profile: launchProfile, cacheReadShare, baseRevision, route, gateway: metric.gateway, startContextTokens: metric.startContextTokens, contextTokenSum: metric.contextTokenSum, turns: metric.turns, loadEvents: metric.loadEvents, costUsd: metric.costUsd, verified, checks, countTokens: counts };
       await writeFile(join(directory, "summary.json"), JSON.stringify(summary, null, 2), { mode: 0o600 });
       process.stdout.write(`${JSON.stringify(summary)}\n`);
       if (!verified) failures++;

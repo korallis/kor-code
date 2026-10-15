@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
-import type { AccountHealthStatus, GatewayAccountHealth, GatewayCapability, GatewayFacts, GatewayModel, JsonValue, RouteFailureReason, RouteTelemetry } from "@kor-code/core";
+import type { AccountHealthStatus, GatewayAccountHealth, GatewayCapability, GatewayFacts, GatewayModel, GatewayStrategyObservation, JsonValue, RouteFailureReason, RouteTelemetry } from "@kor-code/core";
 import { consumeStream } from "./stream.js";
 import { GatewayError, json, publicJson, readJson, record, runtimeConfig, text, type RuntimeConfig } from "./transport.js";
 import { readModelRegistry, registryCapabilities } from "./registry.js";
@@ -13,6 +13,7 @@ export * from "./models.js";
 const execFileAsync = promisify(execFile);
 const MANAGEMENT_PATHS = ["/v0/management/auth-files", "/v0/management/config", "/v0/management/usage", "/v0/management/api-key-usage"] as const;
 const HEALTH_TTL_MS = 30_000;
+const STRATEGY_TIMEOUT_MS = 5_000;
 
 export interface ModelCatalogue { data?: Array<{ id: string; object?: string; owned_by?: string; capabilities?: Partial<Record<GatewayCapability, boolean>> }>; [key: string]: JsonValue | undefined }
 export interface GatewayAdapterOptions {
@@ -134,6 +135,19 @@ export class GatewayAdapter {
   }
   async accountHealth(): Promise<GatewayAccountHealth[]> { return accountHealthFrom(await this.rawManagement()); }
   async managementAvailable(): Promise<boolean> { return await this.rawManagement() !== null; }
+  async routingStrategy(): Promise<GatewayStrategyObservation | null> {
+    try {
+      const { baseUrl, managementKey, managementUrl } = await this.config();
+      if (!managementKey) return null;
+      const url = new URL("/v0/management/config", this.options.managementUrl ?? managementUrl ?? baseUrl);
+      const response = await this.fetcher(url, { headers: headers(managementKey), redirect: "error", signal: AbortSignal.timeout(STRATEGY_TIMEOUT_MS) });
+      const config = await readJson(response);
+      const routing = record(config) ? config.routing : undefined;
+      const strategy = record(routing) ? routing.strategy : undefined;
+      return typeof strategy === "string" && ["fill-first", "round-robin", "weighted-round-robin"].includes(strategy)
+        ? { value: strategy, observedAt: this.now().toISOString() } : null;
+    } catch { return null; }
+  }
   /** Resolve the opaque public slot internally; never expose credential filenames. */
   async setAccountPaused(id: string, paused: boolean): Promise<void> {
     const { baseUrl, managementKey } = await this.config();

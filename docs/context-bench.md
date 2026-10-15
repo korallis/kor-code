@@ -26,7 +26,7 @@ The default is three repetitions per case. Use `--case contributor-note --repeat
 | `keyboard-focus` | Add button keyboard focus styling. |
 | `finite-compact` | Handle nonfinite compact counts as unavailable. |
 
-Each repetition uses a fresh local clone at the specified commit, the selected launch profile (`standard` by default), and the same allowed tools. Artifacts live outside the checkout in a unique run directory. Keep the revision, route decisions, CLI version, and case set constant when comparing later changes. Cache warmth depends on the upstream provider and is measured rather than assumed.
+Each repetition uses a fresh local clone at the specified commit, the selected launch profile (`lean` by default), and the same allowed tools. Artifacts live outside the checkout in a unique run directory. Keep the revision, route decisions, CLI version, and case set constant when comparing later changes. Cache warmth depends on the upstream provider and is measured rather than assumed.
 
 To compare settings alone, run the same command twice with
 `--launch-profile standard` and `--launch-profile lean`, keeping the tools and
@@ -41,7 +41,7 @@ For back-to-back executions, compare the second repetition of each profile and
 also inspect `turns[0]` to isolate reuse of the starting prefix. These are fresh
 sessions with separate homes, not resumed conversations.
 
-The run directory contains request bodies, a stream recording, summaries, `metrics.sqlite`, and a report. The standalone bench records the selected profile in each summary and uses the baseline arm without sampled pairs. Files have private permissions. Headers and credentials are never recorded. Request bodies and streams can contain repository content, so review artifacts before sharing them. `count_tokens` is called for each captured messages request with its original model, system, tools, messages, and Anthropic feature headers. Its count can differ from billed usage. HTTP failures and timeouts are recorded as unavailable counts.
+The run directory contains request bodies, a stream recording, summaries, `metrics.sqlite`, and a report. The standalone bench records the selected profile in each summary and uses the baseline arm without sampled pairs. Files have private permissions. Only validated `X-CPA-TRACE-ID` response headers are retained in gateway telemetry. Credential headers are never recorded. Request bodies and streams can contain repository content, so review artifacts before sharing them. `count_tokens` is called for each captured messages request with its original model, system, tools, messages, and Anthropic feature headers. Its count can differ from billed usage. HTTP failures and timeouts are recorded as unavailable counts.
 
 The printed `verified` value means that the session completed and the listed file and diff checks passed. These small benchmark checks run the changed parser and formatter, but do not replace Kor's shipping verification or prove that a refactor preserves all behavior. No benchmark session commits or publishes its changes.
 
@@ -134,9 +134,8 @@ launcher prompt content as its explanation, but do not identify the upstream
 cause or establish that the original miss was a one-off warm-up. Cache reuse
 remains variable; the repeatable benefit here is the 605-token startup saving.
 
-`standard` remains the default. `lean` is opt-in while gateway account or shard
-affinity is investigated as a possible explanation for the alternating cache
-hits. The request captures do not establish that upstream cause.
+At that point, `standard` remained the default while gateway account affinity
+was investigated. Those request captures alone did not establish the cause.
 
 After per-execution skill delivery merged, a fresh pair on the same pinned logs
 issue measured 7,588 start tokens with standard and 6,984 with lean: 604 tokens
@@ -146,3 +145,69 @@ Both sessions passed the real CLI checks. This single pair is directional and
 adds no new cache-reuse claim. The existing skill-pack proof also passed with
 lean enabled for empty packs, 3 and 20 listed skills, invocation and pinned
 bodies, confirming that the settings profile preserves skill delivery.
+
+
+## Fill-first cache confirmation
+
+On 2026-10-15, six fresh sandbox sessions at revision `7314258` reused the
+recorded Jev route from the prior profile investigation, unchanged. Claude Code
+2.1.300 ran three standard sessions followed immediately by three lean sessions.
+Each process had a separate HOME and config, the same scratch repository and
+allowed tools, and one identical no-tool task. The gateway management API reported
+`fill-first` with session affinity enabled. No gateway configuration changed.
+
+| Profile | Execution | First-turn cache read | Cache creation | Start context | Reported cost USD | Account |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| standard | 1 | 0 | 7,191 | 7,193 | 0.000907075 | A |
+| standard | 2 | 7,191 | 0 | 7,193 | 0.000080110 | A |
+| standard | 3 | 7,191 | 0 | 7,193 | 0.000080110 | A |
+| lean | 1 | 0 | 6,614 | 6,616 | 0.000834950 | A |
+| lean | 2 | 6,614 | 0 | 6,616 | 0.000074340 | A |
+| lean | 3 | 6,614 | 0 | 6,616 | 0.000074340 | A |
+
+All six sessions returned the exact expected answer in one turn with HTTP 200.
+Their distinct native session IDs were preserved. Within each profile, captured
+system, tools, and messages hashes stayed identical. `X-CPA-TRACE-ID` positively
+attributed every response to the same account, anonymized here as A. The second
+and third executions reused 100% of the cacheable prefix in both profiles. Lean
+saved 577 starting-context tokens, or 8.0%, for this diagnostic tool set.
+
+This confirms the locality condition for making lean the default. The earlier
+functional and skill-delivery evidence above covers task behavior. This short
+no-tool diagnostic isolates cache reuse and does not establish a general cost
+advantage across coding tasks. Cache expiry, account failover, and prompt changes
+can still cause misses. Select `launchProfile: standard` to use the base settings.
+
+Session telemetry now records `gateway.desiredAccountPolicy`,
+`gateway.strategy` with an observation time, and `gateway.responses`. Each
+response has its HTTP status and either `response_trace` attribution with the
+validated trace ID and opaque account slot, or `unavailable` attribution.
+`kor calibrate report --context` shows observed strategy beside desired policy;
+`--json` includes these observations in `gatewayRoutes`. Older metrics have null
+gateway telemetry. Account health predictions remain `health_observation` and
+are never promoted to response attribution.
+
+After adding response telemetry, another six sessions returned the exact expected
+answer and retained second- and third-execution cache hits: 7,192 reads with
+standard and 6,615 with lean, with zero cache creation on those executions.
+All six persisted trace IDs matched independently captured response headers.
+The real CLI reopened their SQLite metrics and reported desired `fill-first`
+beside observed `fill-first`, with response account A throughout.
+
+The existing `scripts/skills-pack-proof.mjs` also passed five real sessions using
+the default launcher: empty, 3 listed skills, 20 listed skills, invocation, and
+pinned guidance. Start contexts were 6,595, 7,404, 8,339, 7,427, and 7,682 tokens.
+Invocation added 1,252 context tokens against a 1,063-token body estimate.
+
+A separate file task succeeded with both explicit standard and the lean default.
+Each session used Read, Write, Edit, and Bash, produced the checked file value,
+and reported zero permission denials. Start contexts were 7,284 and 6,705 tokens;
+reported costs were $0.000873510 and $0.000777765 respectively.
+
+After rebasing onto armed skill delivery, all three existing armed scenarios
+passed under the lean default. The normal and repair sessions each fired
+guidance on turns 2 and 4; the child-session scenario retained one child firing
+and zero main-session armed loads. Two more real sessions forwarded responses
+with the trace header removed or replaced by an unrecognized value. Both
+succeeded, recorded unavailable account attribution, and left the strategy null
+when no management observation was supplied.

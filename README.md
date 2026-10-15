@@ -164,7 +164,7 @@ repos:
     toolAllowlist: [Read, Write, Edit, "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)", "Bash(ls*)", "Bash(cat*)", "Bash(grep*)", "Bash(test*)"]
 limits: { total: 2, perRepository: 1 }
 defaultRoute: { provider: anthropic, model: claude-haiku-5-5, accountPolicy: fill-first, sessionAffinity: true, reasoningLevel: medium }
-launchProfile: standard   # default; opt in to reduced startup context with "lean"
+launchProfile: lean       # default; select "standard" for the base settings
 pollIntervalSeconds: 120
 intakeLabel: kor
 ```
@@ -182,11 +182,12 @@ Jev cannot add a tool outside that cap or grant shell commands. Without Jev,
 or during an outage, optional tools stay off. `kor doctor` prints the configured
 ceiling; the decision audit records the per-task probabilities.
 
-Opt in to `launchProfile: lean` to remove Git instructions and dynamic
+`launchProfile: lean` is the default. It removes Git instructions and dynamic
 system-prompt sections while keeping the cockpit plugin. Both profiles suppress
 Claude Code’s bundled skills as part of per-execution skill delivery.
-`launchProfile: standard` remains the default while gateway cache behaviour is
-investigated. Tool selection is independent of the settings profile. See the
+Set `launchProfile: standard` to retain the base settings. Back-to-back sandbox
+runs confirmed cache reads from the second execution under gateway fill-first.
+Tool selection is independent of the settings profile. See the
 [user guide](docs/user-guide.md#configure-a-repository) for repository setup
 and [configuration](docs/configuration.md#session-launch-profile) for session
 profiles.
@@ -329,8 +330,9 @@ Each job, step by step, is in the
 
 Measure context with `kor calibrate report --context`. Run `pnpm context:proof`
 for the recorded-stream proof, or `pnpm context:bench --revision COMMIT --routes FILE`
-for live sessions at a pinned revision; add `--launch-profile lean` to compare
-the opt-in settings profile. See [Measure session context](docs/context-bench.md)
+for live sessions at a pinned revision; add `--launch-profile standard` to compare
+the base settings with the lean default. The context report shows desired account
+policy beside observed gateway strategy and response-verified account slots. See [Measure session context](docs/context-bench.md)
 for Jev route input, fixed cases, token definitions, and private capture artifacts.
 
 ## The CLI and the Claude Code status line

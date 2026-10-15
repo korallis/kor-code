@@ -12,7 +12,7 @@ import { JevClient } from "@kor-code/jev";
 import { redact, runtimeSecrets } from "@kor-code/jev";
 import { CalibrationStore, buildReport } from "@kor-code/calibration";
 import type { AskRequest, AskResponse, BrainResponse, ConnectRequest, ConnectionsResponse, ModelsResponse, PullsResponse, SuggestedAction } from "@kor-code/mission-control";
-import type { JsonValue, Labelled, KorStatusSnapshot } from "@kor-code/core";
+import type { JsonValue, Labelled, KorStatusSnapshot, GatewayStrategyObservation } from "@kor-code/core";
 
 const exec = promisify(execFile);
 const secret = z.string().min(1).max(8192).regex(/^[^\r\n\0]+$/);
@@ -41,12 +41,13 @@ export class MissionServices {
     catch (error) { if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw new Error("Kor connection credentials are unreadable"); }
   }
   secrets(): string[] { return [...this.gatewaySecrets, this.credentials.linear, this.credentials.github, this.credentials.jev, this.credentials.gateway?.apiKey, this.credentials.gateway?.managementKey].filter((value): value is string => value !== undefined); }
-  async sessionGateway(): Promise<{ baseUrl: string; key: string | undefined }> {
+  async sessionGateway(): Promise<{ baseUrl: string; key: string | undefined; strategy: GatewayStrategyObservation | null }> {
+    const strategy = await (await this.gateway()).routingStrategy();
     const config = this.credentials.gateway;
-    if (config) return { baseUrl: config.baseUrl, key: config.apiKey };
+    if (config) return { baseUrl: config.baseUrl, key: config.apiKey, strategy };
     const environment = await loadGatewayEnvironment(this.paths.gatewayEnvFile);
     this.gatewaySecrets = [environment.key, environment.managementKey].filter((value): value is string => value !== undefined);
-    return environment;
+    return { ...environment, strategy };
   }
   linear(): LinearClient { return new HttpLinearClient({ ...(this.credentials.linear ? { apiKey: this.credentials.linear } : {}), writes: {} }); }
   async gateway(): Promise<GatewayAdapter> {
