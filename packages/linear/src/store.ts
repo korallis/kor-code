@@ -286,7 +286,7 @@ export class LinearStore {
       const attempts = typeof value.attempts === 'number' ? value.attempts : 0;
       const bootId = typeof value.session_boot_id === 'string' ? value.session_boot_id : undefined;
       const startTicks = typeof value.session_start_ticks === 'string' ? value.session_start_ticks : undefined;
-      const processIdentity = sessionPid && sessionPgid && bootId && startTicks ? { pid: sessionPid, pgid: sessionPgid, bootId, startTicks } : undefined;
+      const processIdentity = sessionPid && sessionPgid && bootId && startTicks ? { pid: sessionPid, pgid: sessionPgid, bootId, startTicks, executionId: string(value.execution_id) } : undefined;
       const issueKey = typeof value.issue_key === 'string' ? value.issue_key : undefined;
       const issueTitle = typeof value.issue_title === 'string' ? value.issue_title : undefined;
       const timing = {
@@ -459,7 +459,9 @@ export class LinearStore {
       this.assertLease(claim);
       const previous = this.getAssignment(claim.assignment.issueId);
       if (previous.status === 'complete' || ['complete', 'failed', 'blocked', 'canceled'].includes(status) && previous.status !== 'running') throw new Error('Invalid execution transition');
-      this.db.prepare('UPDATE assignments SET status=?,manifest=COALESCE(?,manifest) WHERE issue_id=?').run(status, manifest ? JSON.stringify(manifest) : null, previous.issueId);
+      const current = manifest ?? this.findAssignment(previous.issueId)?.manifest;
+      const updated = current && status !== 'canceled' ? { ...current, status } : current;
+      this.db.prepare('UPDATE assignments SET status=?,manifest=COALESCE(?,manifest) WHERE issue_id=?').run(status, updated ? JSON.stringify(updated) : null, previous.issueId);
       for (const write of writes) this.db.prepare('INSERT INTO outbox(payload) VALUES(?)').run(JSON.stringify(write));
       if (status !== 'running') this.db.prepare('UPDATE assignments SET token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_pgid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,cancel_requested=0 WHERE issue_id=?').run(previous.issueId);
     });
@@ -483,14 +485,18 @@ export class LinearStore {
     const row = this.db.prepare('SELECT token,expires_at FROM writer WHERE id=1').get();
     if (!row || row.token !== token || number(row.expires_at) <= this.now()) throw new Error('Update writer lease absent, expired or superseded');
   }
-  nextWrite(token: string): PendingWrite | undefined {
+  nextWrite(token: string, afterSequence = 0): PendingWrite | undefined {
     return this.transaction(() => {
       this.assertWriter(token);
       this.db.prepare('UPDATE writer SET expires_at=? WHERE id=1').run(this.now() + 120_000);
-      const row = this.db.prepare('SELECT * FROM outbox ORDER BY sequence LIMIT 1').get();
+      const row = this.db.prepare('SELECT * FROM outbox WHERE sequence>? ORDER BY sequence LIMIT 1').get(afterSequence);
       if (!row) return undefined;
       return { sequence: number(row.sequence), write: parseWrite(JSON.parse(string(row.payload))) };
     });
+  }
+  lastWriteSequence(token: string): number {
+    this.assertWriter(token);
+    return number(this.db.prepare('SELECT COALESCE(MAX(sequence),0) AS sequence FROM outbox').get()?.sequence);
   }
   acknowledgeWrite(token: string, sequence: number): void {
     this.transaction(() => { this.assertWriter(token); this.db.prepare('DELETE FROM outbox WHERE sequence=?').run(sequence); });

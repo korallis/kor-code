@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { open } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { HttpLinearClient, resolveLinearApiKey } from './client.js';
-import { connection, object, stableId, string } from './contract.js';
+import { object, stableId, string } from './contract.js';
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -46,9 +46,22 @@ function plainCaption(value: string): string {
   return value.replace(/[\\[\]`*_<>!]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function imageLines(description: string): { line: string; index: number }[] {
+  let fence: string | undefined;
+  return description.split(/\r?\n/).flatMap((line, index) => {
+    if (fence) {
+      if (new RegExp(`^ {0,3}${fence[0]}{${fence.length},}\\s*$`).test(line)) fence = undefined;
+      return [];
+    }
+    const opening = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (opening) { fence = opening[1]; return []; }
+    return line.startsWith('![') ? [{ line, index }] : [];
+  });
+}
+
 function hasImage(description: string, url: string, caption: string): boolean {
   const suffix = `](${url})`;
-  return description.split(/\r?\n/).some(line =>
+  return imageLines(description).some(({ line }) =>
     line.startsWith('![') && line.endsWith(suffix) && plainCaption(line.slice(2, -suffix.length)) === caption);
 }
 
@@ -59,8 +72,9 @@ function isScreenImage(line: string, screen: string): boolean {
 
 function replaceScreenImage(description: string, screen: string, image: string): string | undefined {
   let found = false;
-  const lines = description.split('\n').flatMap(line => {
-    if (!isScreenImage(line, screen)) return [line];
+  const matches = new Set(imageLines(description).filter(({ line }) => isScreenImage(line, screen)).map(({ index }) => index));
+  const lines = description.split('\n').flatMap((line, index) => {
+    if (!matches.has(index)) return [line];
     if (found) return [];
     found = true;
     return [image];
@@ -69,17 +83,30 @@ function replaceScreenImage(description: string, screen: string, image: string):
 }
 
 async function readImageIssue(client: HttpLinearClient, id: string) {
-  const data = await client.query(`query KorImageIssue($id: String!) {
-    issue(id: $id) { id identifier description attachments(first: 100) { nodes { id title url } pageInfo { hasNextPage } } }
-  }`, { id });
-  const issue = object(data.issue);
+  let cursor: string | null = null;
+  let issue: Record<string, unknown> = {};
+  const attachments: { id: string; title: string; url: string }[] = [];
+  const cursors = new Set<string>();
+  do {
+    const data = await client.query(`query KorImageIssue($id: String!, $after: String) {
+      issue(id: $id) { id identifier description attachments(first: 100, after: $after) { nodes { id title url } pageInfo { hasNextPage endCursor } } }
+    }`, { id, after: cursor });
+    issue = object(data.issue);
+    const page = object(issue.attachments);
+    if (!Array.isArray(page.nodes)) throw new Error('Linear image attachment page is invalid');
+    for (const value of page.nodes) {
+      const attachment = object(value);
+      attachments.push({ id: string(attachment.id), title: string(attachment.title), url: string(attachment.url) });
+    }
+    const info = object(page.pageInfo);
+    if (typeof info.hasNextPage !== 'boolean') throw new Error('Linear image attachment pagination is invalid');
+    cursor = info.hasNextPage ? string(info.endCursor) : null;
+    if (cursor !== null && cursors.has(cursor)) throw new Error('Linear image attachment pagination repeated a cursor');
+    if (cursor !== null) cursors.add(cursor);
+  } while (cursor !== null);
   return {
     id: string(issue.id), identifier: string(issue.identifier),
-    description: issue.description === null ? '' : string(issue.description),
-    attachments: connection(issue.attachments).map(value => {
-      const attachment = object(value);
-      return { id: string(attachment.id), title: string(attachment.title), url: string(attachment.url) };
-    }),
+    description: issue.description === null ? '' : string(issue.description), attachments,
   };
 }
 
@@ -130,7 +157,7 @@ export async function attachLinearImage(input: { issue: string; file: string; al
   const marker = `<!-- kor-screen:${attachmentId} -->`;
   const image = screen ? `![${caption}](${url})` : `${marker}\n![${caption}](${url})`;
   const latest = await readImageIssue(client, issue.id);
-  const screenImages = screen ? latest.description.split(/\r?\n/).filter(line => isScreenImage(line, screen)) : [];
+  const screenImages = screen ? imageLines(latest.description).filter(({ line }) => isScreenImage(line, screen)) : [];
   if (!hasImage(latest.description, url, caption) || screen && screenImages.length !== 1) {
     let description: string;
     const replacement = screen ? replaceScreenImage(latest.description, screen, image) : undefined;
@@ -155,7 +182,7 @@ export async function attachLinearImage(input: { issue: string; file: string; al
     if (object(updated.issueUpdate).success !== true) throw new Error('Linear image description was not saved; rerun the same command to resume');
   }
   const saved = await readImageIssue(client, issue.id);
-  if (screen && saved.description.split(/\r?\n/).filter(line => isScreenImage(line, screen)).length !== 1) throw new Error('Linear screen readback must contain exactly one image for the screen ID');
+  if (screen && imageLines(saved.description).filter(({ line }) => isScreenImage(line, screen)).length !== 1) throw new Error('Linear screen readback must contain exactly one image for the screen ID');
   if (!hasImage(saved.description, url, caption) || !saved.attachments.some(attachment => attachment.id === attachmentId && attachment.url === url && plainCaption(attachment.title) === caption)) {
     throw new Error('Linear image readback failed; inspect the issue before retrying');
   }

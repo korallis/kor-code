@@ -60,6 +60,10 @@ export function fixtureFetcher(seed: LinearIssue = linearIssueFixture): typeof g
       const issueId = comments.get(string(variables.id));
       if (!issueId) return new Response(JSON.stringify({ data: null, errors: [{ extensions: { code: 'INPUT_ERROR' } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
       data = { comment: issueId ? { id: variables.id, issue: { id: issueId } } : null };
+    } else if (query.startsWith('mutation KorAttachment(')) {
+      if (variables.issueId !== issue.id) throw new Error('Invalid fixture attachment');
+      issue.resources.push({ title: typeof variables.title === 'string' ? variables.title : 'GitHub pull request', url: string(variables.url) });
+      data = { attachmentLinkGitHubPR: { success: true } };
     } else {
       const input = object(variables.input);
       if (query.startsWith('mutation KorSession(')) {
@@ -98,10 +102,6 @@ export function fixtureFetcher(seed: LinearIssue = linearIssueFixture): typeof g
         if (!comment) throw new Error('Invalid fixture comment issue');
         issue.comments[index] = { id: comment.id, body: string(input.body) };
         data = { commentUpdate: { success: true } };
-      } else if (query.startsWith('mutation KorAttachment(')) {
-        if (input.issueId !== issue.id) throw new Error('Invalid fixture attachment');
-        issue.resources.push({ title: typeof input.title === 'string' ? input.title : 'GitHub pull request', url: string(input.url) });
-        data = { attachmentLinkGitHubPR: { success: true } };
       } else throw new Error('Unexpected fixture operation');
     }
     return new Response(JSON.stringify({ data }), { status: 200, headers: { 'content-type': 'application/json' } });
