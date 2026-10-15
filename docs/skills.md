@@ -760,9 +760,11 @@ After building, run the live fixture with runtime TypeSafe credentials:
 node scripts/playbooks-proof.mjs /tmp/kor-playbooks-proof
 ```
 
-The 12 tasks cover feature and bug work, structural changes, investigation,
+The 15 tasks cover feature and bug work, structural changes, investigation,
 documentation, prototypes, visual matching, interface sketches, diagnosis,
-project setup, no procedure and repair. The script uses the real catalogue CLI,
+project setup, no procedure, repair, and hard problems involving accuracy, latency
+and model comparison. The hard-problem cases must select `hard-problem-resolution`.
+The script uses the real catalogue CLI,
 live Jev and pack builder, checks replay and policy boundaries, and keeps audit
 and result files outside the checkout. It does not launch execution sessions.
 See [recorded selection evidence](skills-evaluations/playbook-selection.md) for

@@ -62,7 +62,7 @@ export async function decidePlaybook(input: PlaybookInput, client: Pick<JevClien
     decisionId = `${baseId}-retry-${retry}`;
   }
   const request: DecisionRequest = { decisionId, executionId: input.executionId, kind: "playbook",
-    question: "Which single playbook best supports the current task and phase? Use what, not_for and examples to distinguish neighbours. At repair, prioritise the current verification failure over the original task shape. For a failing check, prefer a procedure that finds and fixes its cause; for diagnosis-only work, prefer investigation. Choose none for routine work needing no procedure. Judge task fit only.",
+    question: "Which single playbook best supports the current task and phase? Use what, not_for and examples to distinguish neighbours. At repair, prioritise the current verification failure over the original task shape. For unresolved accuracy, speed or competing technical approaches, prefer research, independent challenge and an evidence-based decision before implementation. For a failing check with no unresolved approach choice, prefer a procedure that finds and fixes its cause; for diagnosis-only work, prefer investigation. Choose none for routine work needing no procedure. Judge task fit only.",
     state, inputs: [{ name: "catalogue-hash", value: input.catalogue.hash }], candidates: Object.keys(criteria), criteria, threshold: 0,
     ...(input.override !== undefined ? { overrides: { choice: input.override } } : {}) };
   let source: PlaybookPlan["source"] = "jev";

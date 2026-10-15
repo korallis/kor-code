@@ -1,7 +1,7 @@
 # Use the bundled principles and playbooks
 
 Kor bundles 22 pstack principles, eight supporting skills, nine session playbooks,
-and two original operational playbooks. They use the same public catalogue as
+and three original operational playbooks. They use the same public catalogue as
 Kor's code, PR, and Linear guidance. Inspect them with the built CLI:
 
 ```sh
@@ -34,6 +34,7 @@ Each entry has `kor.kind: playbook`, stage metadata, triggers, exclusions, and a
 | `sketch-types` | Caller usage, interfaces, and ownership before logic |
 | `diagnose-bug` | A reproduction and supported causal explanation before a fix |
 | `needs-input-protocol` | An evidence-based decision or a concrete open question |
+| `hard-problem-resolution` | Measured research, independent challenge, a Jev decision and verified implementation |
 
 `fix-bug` uses `diagnose-bug` for causal work. A diagnosis-only request ends at
 the report. `needs-input-protocol` distinguishes observable facts and authorized
@@ -43,6 +44,37 @@ blocked state and notification handling to Kor. It grants no new write authority
 
 Shipping, orchestration, session recovery, and cleanup supervision remain in Kor's
 controller and daemon. These playbooks do not prescribe execution settings.
+
+## Resolve hard technical problems
+
+Use `hard-problem-resolution` when accuracy or speed misses a target, competing
+approaches or models need comparison, or a technical blocker has several plausible
+solutions. It ships in the public catalogue without a separate skill or install.
+Inspect it with `kor skills show hard-problem-resolution --estimate`. Jev can
+select it at planning, execution or repair; a routine failing check still fits
+`fix-bug`, and a diagnosis-only request still fits `diagnose-bug` or `investigate`.
+
+The procedure measures real code and representative data, surveys alternatives,
+then requests an independent challenge from a different model family than the
+research pass. Jev chooses the actual participants through its per-task decisions.
+The full evidence goes to Jev for a concrete choice. The session records the
+question, answer and probabilities, requires at least 0.9 for the selected answer,
+and makes one narrower re-ask below that threshold. Unresolved uncertainty calls
+for a discriminating experiment within existing caps; it does not authorize an
+unsupported implementation. After implementation, repeat the baseline measurement
+and report the before/after values and regressions.
+
+The 0.9 threshold governs the technical choice inside this procedure; the existing
+playbook selection policy remains unchanged. User escalation is reserved for
+destructive or irreversible acts requiring authorization, credentials only the
+user holds, or spend beyond existing caps. Unavailable capabilities and exhausted
+limits produce an explicit handoff to Kor, never an invented completed pass.
+This is session guidance: adding it does not add orchestration tools, grant
+permissions, or guarantee that a session has a separate reviewer or Jev tool.
+
+Run the [live selection proof](skills.md#playbook-selection) to check accuracy,
+latency and model-comparison tasks against neighbouring procedures. It verifies
+selection and delivery; it does not establish improvement on a production workload.
 
 ## Principles and supporting skills
 

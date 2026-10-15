@@ -1,6 +1,6 @@
 # Playbook selection evidence
 
-The live 12-task fixture selected the expected procedure for every task. It used
+The original live 12-task fixture selected the expected procedure for every task. It used
 the installed catalogue through `bin/kor skills list --estimate --json`, live
 TypeSafe Choice judgments and the production pack builder. Bodies used the
 catalogue's character-based token estimate.
@@ -59,3 +59,51 @@ The fixture is a small acceptance sample, not a general accuracy benchmark or a
 measurement of execution quality lift. Latency and token usage can change with
 the catalogue and service. This script verifies decisions and packs without
 launching execution sessions.
+
+## Hard-problem selection and delivery
+
+The extended fixture selected the expected procedure for **15/15** tasks. The
+original 12 selections stayed correct. Three outcome-based prompts described
+unknown extraction failure modes, competing latency improvements, and conflicting
+model benchmarks without prescribing a research or review process. All three
+selected `hard-problem-resolution`, pinned at 835 estimated body tokens:
+
+| Task | Choice probability | Selection latency |
+| --- | --- | --- |
+| Extraction accuracy | 0.99 | 233.2 ms |
+| Search latency | 0.91 | 220.6 ms |
+| Model comparison | 0.99 | 213.8 ms |
+
+Median selection latency across all 15 calls was 213.8 ms; reported usage was
+23,339 input and 2,210 output tokens. Replay, fresh repair decisions, overrides,
+fallback and delivery policy checks passed. Catalogue lint reported no diagnostics
+for the new playbook; the existing lint proof passed all 73 planted cases.
+
+A separate isolated Kor session received the selected body through the production
+pack builder and session launcher. Jev chose its execution route from 34 verified
+candidates still present in the live gateway catalogue. The first route judgment
+was unapplied at 0.47 confidence. One narrower question, making measured latency
+the objective, produced an applied route at 0.99; no execution setting was pinned
+in the playbook or selection code.
+
+The session ran a real duplicate-ID fixture with 10,000 rows and 5,000 queries:
+
+| Approach | Correct queries | Query duration |
+| --- | --- | --- |
+| Linear first-match | 5,000/5,000 | 36.080 ms |
+| Indexed last-match | 0/5,000 | 0.411 ms |
+
+Index construction took 0.743 ms. The session identified the correctness cost,
+separated measured results from untried alternatives, and explicitly handed off
+the missing independent challenge and Jev technical choice without implementing
+or inventing probabilities. Session duration was 36,606 ms, reported cost
+$0.0995608, and starting context 2,803 tokens. Two optional shell searches were
+denied; the permitted benchmark executed successfully. The proof wrapper's
+initial zero-denial assertion failed; inspection of actual tool results confirmed
+the benchmark and handoff, retaining both denials as limitations.
+
+This session proves delivery, measurement and honest capability handoff. It does
+not prove a completed cross-family review, a technical choice at 0.9, or a final
+implemented improvement. Those remain requirements of the procedure when Kor
+provides the necessary capabilities. The synthetic fixture is a single observation,
+not a production performance result or an evaluation of outcome improvement.
