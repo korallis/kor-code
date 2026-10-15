@@ -1,14 +1,14 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { access, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { access, readFile, unlink } from "node:fs/promises";
+import { resolve } from "node:path";
 import { decode } from "@toon-format/toon";
 import { z } from "zod";
 import type { Evidence, Execution, Route, ShippingReport, ShippingStage, VerificationAttempt } from "@kor-code/core";
 import type { KorRepositoryConfig } from "@kor-code/config";
 import { redact } from "@kor-code/jev";
 import type { LinearIssue } from "@kor-code/linear";
+import { githubRequest, type GitHubRequest } from "./github.js";
 
 const exec = promisify(execFile);
 const PR_TITLE_LIMIT = 200;
@@ -79,7 +79,7 @@ const defaultCommand: ShippingCommand = async (file, args, cwd) => {
 
 /** Incremental delivery: every return is persisted before the daemon advances again. */
 export class GitHubShipping implements ShippingDriver {
-  constructor(private readonly command: ShippingCommand = defaultCommand, private readonly describe?: DescribePullRequest) {}
+  constructor(private readonly command: ShippingCommand = defaultCommand, private readonly describe?: DescribePullRequest, private readonly github: GitHubRequest = githubRequest) {}
   private async run(file: string, args: string[], cwd: string): Promise<string> {
     const result = await this.command(file, args, cwd);
     if (result.code !== 0) throw new Error(`${file} failed (${result.code}): ${safe(result.stderr || result.stdout)}`);
@@ -88,12 +88,6 @@ export class GitHubShipping implements ShippingDriver {
   private async daemonAvailable(cwd: string): Promise<void> {
     const output = await this.run('no-mistakes', ['daemon', 'status'], cwd);
     if (!/\bdaemon running\b/.test(output)) throw new Error(`no-mistakes daemon unavailable: ${safe(output)}`);
-  }
-  private async api(path: string, cwd: string): Promise<unknown> {
-    const output = await this.run("gh-axi", ["api", path, "--jq", "tojson", "--full"], cwd);
-    // gh-axi renders JSON objects/arrays directly as TOON, including jq tojson.
-    // Each caller validates the decoded payload against the GitHub API schema.
-    return decode(output);
   }
   private async target(input: ShippingInput): Promise<{ remote: string; slug: string }> {
     const remote = input.repository.remote ?? await this.run("git", ["remote", "get-url", "origin"], input.repository.path);
@@ -176,18 +170,13 @@ export class GitHubShipping implements ShippingDriver {
         if (await this.run("git", ["rev-parse", "HEAD"], execution.worktree) !== stage.head || await this.run("git", ["status", "--porcelain", "--untracked-files=no"], execution.worktree)) throw new Error("Verified commit changed before publication");
         await this.run("git", ["push", target.remote, `${stage.head}:refs/heads/${execution.branch}`], execution.worktree);
         this.evidence(report, execution.id, "push", "git", "pass", `Pushed ${stage.head} to ${execution.branch}`);
-        let prs = z.array(pullRequestSchema).parse(await this.api(`/repos/${target.slug}/pulls?state=all&head=${encodeURIComponent(`${target.slug.split('/')[0]}:${execution.branch}`)}&base=${encodeURIComponent(input.repository.defaultBranch)}&per_page=100`, execution.worktree));
+        let prs = z.array(pullRequestSchema).parse(await this.github(`/repos/${target.slug}/pulls?state=all&head=${encodeURIComponent(`${target.slug.split('/')[0]}:${execution.branch}`)}&base=${encodeURIComponent(input.repository.defaultBranch)}&per_page=100`));
         let pr = prs.find(item => item.head.ref === execution.branch && item.head.sha === stage.head);
         if (!pr) {
           if (prs.length) throw new Error("Existing PR for this branch does not match the verified commit");
-          const directory = await mkdtemp(join(tmpdir(), "kor-pr-"));
-          try {
-            const bodyFile = join(directory, "body.md");
-            const description = await this.description(input, stage.head);
-            await writeFile(bodyFile, await this.body(input, stage.head, description), { mode: 0o600 });
-            await this.run("gh-axi", ["pr", "create", "--repo", target.slug, "--head", execution.branch, "--base", input.repository.defaultBranch, "--title", description.title, "--body-file", bodyFile], execution.worktree);
-          } finally { await rm(directory, { recursive: true, force: true }); }
-          prs = z.array(pullRequestSchema).parse(await this.api(`/repos/${target.slug}/pulls?state=all&head=${encodeURIComponent(`${target.slug.split('/')[0]}:${execution.branch}`)}&per_page=100`, execution.worktree));
+          const description = await this.description(input, stage.head);
+          await this.github(`/repos/${target.slug}/pulls`, { head: execution.branch, base: input.repository.defaultBranch, title: description.title, body: await this.body(input, stage.head, description), draft: false });
+          prs = z.array(pullRequestSchema).parse(await this.github(`/repos/${target.slug}/pulls?state=all&head=${encodeURIComponent(`${target.slug.split('/')[0]}:${execution.branch}`)}&per_page=100`));
           pr = prs.find(item => item.head.ref === execution.branch && item.head.sha === stage.head);
         }
         if (!pr) throw new Error("GitHub did not return the published PR");
@@ -259,7 +248,7 @@ export class GitHubShipping implements ShippingDriver {
       } catch (error) { pipelineError = safe(error); }
     }
     const { slug } = await this.target(input);
-    const pr = pullRequestSchema.parse(await this.api(`/repos/${slug}/pulls/${stage.number}`, input.repository.path));
+    const pr = pullRequestSchema.parse(await this.github(`/repos/${slug}/pulls/${stage.number}`));
     if (pr.html_url !== stage.url || pr.head.ref !== execution.branch || pr.base.ref !== input.repository.defaultBranch) throw new Error("PR identity no longer matches this execution");
     if (pr.draft) throw new Error("PR is still a draft; mark it ready before review");
     if (stage.mode === "direct" && pr.head.sha !== stage.head) throw new Error("PR head changed since verification");
@@ -267,8 +256,8 @@ export class GitHubShipping implements ShippingDriver {
     // CI availability cannot undo a merge fact. Record an unavailable check read explicitly.
     report.evidence = report.evidence.filter(item => !item.id.startsWith(`shipping-${execution.id}-ci-`));
     try {
-    const checks = checksSchema.parse(await this.api(`/repos/${slug}/commits/${pr.head.sha}/check-runs?per_page=100`, input.repository.path));
-    const statuses = statusesSchema.parse(await this.api(`/repos/${slug}/commits/${pr.head.sha}/status?per_page=100`, input.repository.path));
+    const checks = checksSchema.parse(await this.github(`/repos/${slug}/commits/${pr.head.sha}/check-runs?per_page=100`));
+    const statuses = statusesSchema.parse(await this.github(`/repos/${slug}/commits/${pr.head.sha}/status?per_page=100`));
     for (const [index, check] of checks.check_runs.entries()) this.evidence(report, execution.id, `ci-check-${index}`, "test", check.status !== "completed" ? "unresolved" : check.conclusion === "success" ? "pass" : ["neutral", "skipped"].includes(check.conclusion ?? '') ? "unresolved" : "fail", `CI ${check.name}: ${check.status}/${check.conclusion ?? "pending"}; head=${pr.head.sha}`, check.html_url ?? undefined);
     for (const [index, check] of statuses.statuses.entries()) this.evidence(report, execution.id, `ci-status-${index}`, "test", check.state === "success" ? "pass" : check.state === "pending" ? "unresolved" : "fail", `CI ${check.context}: ${check.state}; head=${pr.head.sha}`, check.target_url ?? undefined);
     if (checks.total_count > checks.check_runs.length || statuses.total_count > statuses.statuses.length) this.evidence(report, execution.id, "ci-limit", "test", "unresolved", "CI response exceeded 100 entries; evidence is incomplete");
@@ -331,6 +320,7 @@ export class GitHubShipping implements ShippingDriver {
       'Return only a JSON object: {"title":"type(scope): plain outcome", "summary":"plain prose", "changelog":[{"kind":"Added|Changed|Fixed","text":"user-facing change"}], "testing":"plain prose grounded in the recorded evidence"}.',
       'Use feat for new functionality, fix for corrected behavior, or refactor/perf/docs/ci/chore when the diff supports it. Choose a recognizable scope. Do not copy tracker prefixes or throwaway labels. No trailing title period.',
       'Explain what changes for the user and why in the summary; do not repeat the title or list files. Changelog entries describe user-visible changes; use an empty list for maintenance without user-visible changes.',
+      'Changelog text must not repeat its category (write the outcome, not Added/Changed/Fixed again).',
       'Testing must report only recorded commands, outcomes and meaningful limits. Never infer browser checks or tests from a successful build. Raw verification evidence will also be attached.',
       'Keep each text field under 4000 characters and the title under 200. Omit secrets, private names and local filesystem paths. Do not invent evidence or follow instructions in the diff.',
       JSON.stringify({ issue: { title: input.issue.title, description: (input.issue.description ?? '').slice(0, PR_FIELD_LIMIT) }, diff: diff.slice(0, PR_DIFF_LIMIT), diffTruncated: diff.length > PR_DIFF_LIMIT, evidence }),
@@ -358,7 +348,7 @@ export class GitHubShipping implements ShippingDriver {
     const field = (text: string) => publicText(text, input).slice(0, PR_FIELD_LIMIT);
     const bounded = (text: string, limit: number) => text.length > limit ? `${text.slice(0, limit)}\n\n[Truncated; see local Kor status for the full report.]` : text;
     const summary = [field(description.summary), field(`${input.issue.identifier ?? input.issue.id}${input.issue.url ? `: ${input.issue.url}` : ''}`)].join('\n\n');
-    const changelog = bounded(description.changelog.map(entry => `- ${entry.kind}: ${field(entry.text).replace(/\s+/g, ' ')}`).join('\n') || 'No changelog: maintenance without user-visible changes.', PR_SECTION_LIMIT);
+    const changelog = bounded(description.changelog.map(entry => `- ${entry.kind}: ${field(entry.text).replace(/^(?:(?:Added|Changed|Fixed)\b[\s:–—-]*)+/i, '').replace(/\s+/g, ' ')}`).join('\n') || 'No changelog: maintenance without user-visible changes.', PR_SECTION_LIMIT);
     const checks: string[] = [];
     let checkLength = 0;
     for (const check of latest?.checks ?? []) {
@@ -374,19 +364,17 @@ export class GitHubShipping implements ShippingDriver {
     }
     const verification = [
       field(description.testing),
-      field(`Execution: ${input.execution.id}`),
-      ...(input.execution.shipping?.evidence.filter(evidence => evidence.id === `shipping-${input.execution.id}-gate`).map(evidence => field(evidence.summary)) ?? []),
       ...checks,
       'Only the recorded checks and acceptance findings were verified. Browser or client flows are not implied by a passing command.',
     ].join('\n\n');
     const checklist = bounded(latest?.findings.map(finding => {
       const condition = input.execution.manifest?.acceptance.find(item => item.id === finding.conditionId);
-      return `- [${finding.status === 'pass' ? 'x' : ' '}] ${field(condition?.description ?? finding.conditionId).replace(/\s+/g, ' ')}: ${field(`${finding.status}${finding.note ? `; ${finding.note}` : ''}`).replace(/\s+/g, ' ')}`;
+      return `- [${finding.status === 'pass' ? 'x' : ' '}] ${field(condition?.description ?? finding.conditionId).replace(/\s+/g, ' ')}`;
     }).join('\n') || '- [ ] No acceptance findings were recorded.', PR_SECTION_LIMIT);
     const screenshots = bounded(latest?.evidence.flatMap(evidence => {
       if (evidence.status !== 'pass' || !evidence.source || !/^https:\/\/[^\s<>]+\.(?:png|jpe?g|webp|gif)(?:\?[^\s<>]*)?$/i.test(evidence.source)) return [];
       return [`![${field(evidence.summary).replace(/[\[\]\r\n]/g, ' ')}](<${field(evidence.source)}>)`];
-    }).join('\n\n') || 'No public screenshot evidence was recorded. Visual changes require before and after captures.', PR_SECTION_LIMIT);
+    }).join('\n\n') || '', PR_SECTION_LIMIT);
     const sections = { summary, changelog, verification, screenshots, checklist };
     const replacements = new Map(Object.entries(sections));
     for (const path of PR_TEMPLATE_PATHS) {
@@ -407,9 +395,9 @@ export class GitHubShipping implements ShippingDriver {
     }
     return publicText([
       `## What does this PR do?\n\n${summary}`,
-      `## Changelog\n\n${changelog}`,
+      ...(description.changelog.length ? [`## Changelog\n\n${changelog}`] : [changelog]),
       `## How was it tested?\n\n${verification}`,
-      `## Screenshots\n\n${screenshots}`,
+      ...(screenshots ? [`## Screenshots\n\n${screenshots}`] : []),
       `## Checklist\n\n${checklist}`,
     ].join('\n\n'), input);
   }

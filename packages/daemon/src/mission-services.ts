@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import { decode } from "@toon-format/toon";
+import { githubRequest } from "./github.js";
 import { loadGatewayEnvironment, type KorPaths } from "@kor-code/config";
 import { GatewayAdapter, readModelRegistry } from "@kor-code/gateway-adapter";
 import { HttpLinearClient, type LinearClient } from "@kor-code/linear";
@@ -78,15 +78,16 @@ export class MissionServices {
     this.credentials = parsed;
     this.gatewayAdapter = undefined;
   }
-  private async github(args: string[], cwd?: string): Promise<string> {
-    const result = await exec("gh-axi", args, { ...(cwd ? { cwd } : {}), env: { ...process.env, ...(this.credentials.github ? { GH_TOKEN: this.credentials.github } : {}) }, timeout: 20_000, maxBuffer: 2_000_000 });
-    return result.stdout;
+  github(path: string, body?: unknown, environment: NodeJS.ProcessEnv = process.env): Promise<unknown> {
+    return githubRequest(path, body, { ...environment, ...(this.credentials.github ? { GH_TOKEN: this.credentials.github } : {}) });
   }
   shippingEnvironment(environment: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = { ...environment, ...(this.credentials.github ? { GH_TOKEN: this.credentials.github } : {}), GIT_TERMINAL_PROMPT: "0" };
     const entries: [string, string][] = [];
     if (env.GH_TOKEN || env.GITHUB_TOKEN) entries.push(["credential.https://github.com.helper", ""]);
-    entries.push(["credential.https://github.com.helper", "!gh auth git-credential"]);
+    entries.push(["credential.https://github.com.helper", env.GH_TOKEN || env.GITHUB_TOKEN
+      ? '!f() { if [ "$1" = get ]; then printf "%s\\n" "username=x-access-token" "password=${GH_TOKEN:-$GITHUB_TOKEN}"; fi; }; f'
+      : "!gh auth git-credential"]);
     const count = Number(env.GIT_CONFIG_COUNT ?? 0);
     if (!Number.isSafeInteger(count) || count < 0) throw new Error("Invalid GIT_CONFIG_COUNT");
     for (const [offset, [key, value]] of entries.entries()) {
@@ -115,7 +116,7 @@ export class MissionServices {
   jev(): JevClient { return new JevClient(this.credentials.jev ? { apiKey: this.credentials.jev } : {}); }
   async connections(): Promise<ConnectionsResponse> {
     const [linear, github, gateway, jev] = await Promise.allSettled([
-      this.linear().listIssues("KOR", 1), this.github(["api", "/user", "--jq", ".login"]), this.gateway().then(adapter => adapter.listModels()), this.jevApiKey(),
+      this.linear().listIssues("KOR", 1), this.github("/user"), this.gateway().then(adapter => adapter.listModels()), this.jevApiKey(),
     ]);
     return { schemaVersion: 1, connections: [
       { id: "linear", status: linear.status === "fulfilled" ? "connected" : "unavailable", reason: linear.status === "fulfilled" ? null : "Linear credentials or API unavailable" },
@@ -144,7 +145,7 @@ export class MissionServices {
       const remote = repository.remote ?? (await exec("git", ["remote", "get-url", "origin"], { cwd: repository.path, timeout: 5_000 })).stdout.trim();
       const slug = /(?:github\.com[:/])([\w.-]+\/[\w.-]+?)(?:\.git)?$/.exec(remote)?.[1];
       if (!slug) throw new Error("No GitHub repository");
-      const values = pullsSchema.parse(decode(await this.github(["api", `/repos/${slug}/pulls?state=all&per_page=100`, "--jq", "tojson", "--full"], repository.path)));
+      const values = pullsSchema.parse(await this.github(`/repos/${slug}/pulls?state=all&per_page=100`));
       return { schemaVersion: 1, bounded: true, pulls: live(values.map(pr => ({ number: pr.number, title: pr.title, url: pr.html_url, state: pr.state, draft: pr.draft, merged: pr.merged_at !== null, head: pr.head.sha }))) };
     } catch { return { schemaVersion: 1, bounded: true, pulls: unavailable([], "GitHub pull requests unavailable") }; }
   }

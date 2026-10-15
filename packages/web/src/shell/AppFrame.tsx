@@ -221,7 +221,7 @@ function SideBar({ active, project }: { active: Screen; project?: string }) {
       <div {...stylex.props(styles.spacer)} />
       <a href={href('settings')} {...stylex.props(styles.conn)} aria-label="Connections">
         {connRow('linear', 'Linear', <BrandMark brand="linear" size={14} style={styles.connIcon} />, 'connected')}
-        {connRow('github', 'GitHub', <BrandMark brand="github" size={14} style={styles.connIcon} />, 'gh-axi')}
+        {connRow('github', 'GitHub', <BrandMark brand="github" size={14} style={styles.connIcon} />, 'GitHub API')}
         {connRow('gateway', 'Gateway', <Icon icon={Network} size={14} style={styles.connIcon} />, 'CLIProxyAPI')}
       </a>
       <a href={href('brain')} {...stylex.props(styles.jev)}>

@@ -6,11 +6,13 @@ from `no-mistakes axi status` in that worktree:
 
 - An initialized repository uses `no-mistakes axi run --intent … --no-publish-intent --base-branch … --wait 1s`.
 - Only the explicit **repo not initialized** response permits the direct
-  `git push` and `gh-axi pr create` fallback.
+  `git push` and GitHub API PR creation fallback.
 - An unavailable binary, daemon, invalid response, approval gate, or failed pipeline
   keeps delivery blocked. None permits a fallback or a merge.
 
-The adapter supports the TOON contract exposed by no-mistakes 1.84 and gh-axi.
+The adapter supports the TOON contract exposed by no-mistakes 1.84. GitHub
+reads and PR creation use the REST API with `GH_TOKEN`, `GITHUB_TOKEN`, a token
+saved in Settings, or the token from `gh auth login`. `gh-axi` is optional.
 It never initializes, restarts, updates, or stops the shared no-mistakes daemon.
 It does not pass `--yes`, skip steps, answer reviewer questions, or approve findings.
 An operator handles a gate in the execution worktree with the commands printed by
@@ -33,7 +35,10 @@ not copied into the generated public Intent section.
 
 ## Pull request format
 
-Direct publication reuses the run's recorded, applied Jev route for PR writing.
+Direct publication reuses the run's effective task route for PR writing. An
+applied owner override keeps its override ID and all effective route settings;
+the PR writer uses that route without asking Jev again or claiming inherited
+Jev confidence. Otherwise, the recorded, applied Jev route is reused.
 The selected model receives a bounded, redacted diff at the verified head, the
 issue, repository check results, and acceptance findings. Its structured answer
 supplies the title, plain-prose summary, user-facing changelog, and testing summary.
@@ -47,7 +52,8 @@ judgment. Retries reuse this audit row. A source must belong to the same run,
 be applied without escalation, and match the run's model and verified provider.
 Legacy separate PR-route decisions are not used.
 
-If the run has no reusable applied Jev decision, Kor creates the standard layout
+If the run has neither an applied owner override nor a reusable applied Jev
+decision, Kor creates the standard layout
 from issue text and recorded verification evidence, with a visible
 `PR prose fallback` note requesting review of the summary and changelog. Its title
 keeps a conventional issue title or uses `chore(task): <issue title>`; it does not
@@ -63,17 +69,19 @@ The bundled `pr-standard` layout appears in this order:
 2. `Changelog` uses `Added:`, `Changed:`, or `Fixed:` for each user-visible change,
    or a no-changelog note for maintenance.
 3. `How was it tested?` summarizes the actual evidence and limits, then includes
-   recorded commands, exit codes, output, and the
-   direct-delivery gate result. It does not claim unrecorded browser checks.
+   recorded commands, exit codes and output. Execution IDs and delivery gate
+   narration stay in local status evidence. It does not claim unrecorded browser
+   checks.
 4. `Screenshots` links passing verification evidence with a public HTTPS image
    source ending in `.png`, `.jpg`, `.jpeg`, `.webp`, or `.gif`. Kor does not upload
-   local files. Without a source, it says that screenshot evidence is missing.
+   local files. Without a source, the default layout omits this section.
 5. `Checklist` contains acceptance findings, using manifest descriptions where
-   available. Only passing findings are ticked.
+   available. Only passing findings are ticked. Checkbox lines omit internal
+   probabilities and finding notes.
 
-The generated default keeps all five sections even when screenshot evidence is
-missing. Large command output is omitted at whole-block boundaries so the
-checklist stays visible and code fences stay closed.
+Changelog category prefixes are rendered once. Maintenance omits the Changelog
+heading and uses a brief no-changelog note. Large command output is omitted at
+whole-block boundaries so the checklist stays visible and code fences stay closed.
 
 The generated title uses `type(scope): plain outcome`, matching the diff rather
 than tracker labels. The supported types are `feat`, `fix`, `refactor`, `perf`,
@@ -97,7 +105,7 @@ placeholders insert generated content at the chosen position:
 | `{{summary}}` | Plain-prose outcome and tracker reference |
 | `{{changelog}}` | User-facing Added/Changed/Fixed lines or maintenance note |
 | `{{verification}}` | Commands, results, and verification limits |
-| `{{screenshots}}` | Public image evidence or a missing-evidence note |
+| `{{screenshots}}` | Public image evidence, empty when unavailable |
 | `{{checklist}}` | Acceptance findings |
 
 When a template omits verification, checklist, or screenshot placeholders, Kor
@@ -158,8 +166,11 @@ polls. An interruption after removal is safe to resume.
 ## Configuration and operation
 
 Install dependencies and build with `pnpm install --frozen-lockfile` and `pnpm build`.
-The daemon host needs Git, authenticated `gh-axi`, and no-mistakes. Repository
-configuration supplies a GitHub URL in `remote` (or a GitHub `origin` URL), the
+The daemon host needs Git, GitHub authentication, and no-mistakes. Kor can use
+a GitHub CLI login or a runtime token without `gh` or `gh-axi`. `kor doctor`
+checks the API repository write permission as well as Git push access; token
+pull request write permission is still enforced by GitHub when opening the PR.
+Repository configuration supplies a GitHub URL in `remote` (or a GitHub `origin` URL), the
 default branch, repository checks, and the session tool allowlist. Linear and
 TypeSafe credentials use the existing runtime loaders.
 

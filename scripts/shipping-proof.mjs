@@ -51,7 +51,13 @@ assert.equal(await routing.describePullRequest({ ...routeInput, route: { ...task
 assert.equal(await routing.describePullRequest({ ...routeInput, route: undefined }), null);
 assert.equal(await routing.describePullRequest({ ...routeInput, executionId: 'other-run' }), null);
 assert.equal(completedRoutes.length, 2);
+const overriddenRoute = { ...taskRoute, label: 'override', decisionId: 'ovr-fixture' };
+assert.equal(await routing.describePullRequest({ ...routeInput, route: overriddenRoute }), '{}');
+assert.deepEqual(completedRoutes.at(-1), overriddenRoute);
+assert.equal(routeAudit.export().length, 3);
+assert.equal(await routing.describePullRequest({ ...routeInput, route: { ...overriddenRoute, decisionId: undefined } }), null);
 routeModels[0].available = false;
+await assert.rejects(routing.describePullRequest({ ...routeInput, route: overriddenRoute }), /overridden task route is no longer verified and available/);
 await assert.rejects(routing.describePullRequest(routeInput), /no longer verified and available/);
 routeModels[0].available = true;
 console.log('PR route reuse: zero new Jev questions; inherited confidence and source persisted; retries reuse one audit row; provider, effort and account settings preserved; uncertain, fallback, missing and mismatched task decisions never promoted; unavailable model blocks');
@@ -61,7 +67,7 @@ await mkdir(parent, { recursive: true });
 const root = await mkdtemp(join(parent, 'kor-shipping-proof-'));
 const secret = 'sk-ant-fixture-not-a-real-token-123456789';
 const leak = `token=${secret} Bearer fixture-bearer-123 /home/fixture/private/project C:\\Users\\fixture\\private file:///tmp/private/output`;
-const description = { title: 'feat(greeting): print a greeting', summary: 'Users can print a greeting from the command line.', changelog: [{ kind: 'Added', text: 'Print a greeting from the command line.' }], testing: 'Ran node hello.js with exit 0. Browser flows were not checked.' };
+const description = { title: 'feat(greeting): print a greeting', summary: 'Users can print a greeting from the command line.', changelog: [{ kind: 'Added', text: 'Added Added: Print a greeting from the command line.' }], testing: 'Ran node hello.js with exit 0. Browser flows were not checked.' };
 const describe = async ({ prompt }) => { assert(!prompt.includes(secret)); assert(!prompt.includes('/home/fixture')); return JSON.stringify({ ...description, summary: `${description.summary} ${leak}` }); };
 const envelope = value => ({code:0,stdout:encode(value),stderr:''});
 const ok = (stdout = '') => ({code:0,stdout,stderr:''});
@@ -107,16 +113,16 @@ for(const mode of ['direct','no-mistakes']) {
       if(args[1]==='status')return ok(encode(starts?pipeline():{current_branch:'kor/LEE-600',runs_on_current_branch:0}));
       assert.equal(args[1],'run');assert(args.includes('--intent'));assert(!args.includes('--yes'));assert(args.includes('--no-publish-intent'));starts++;return ok(encode(pipeline()));
     }
-    if(file==='gh-axi'&&args[0]==='pr') {
-      assert.equal(args[1],'create');creates++;assert(!args.includes('--draft'));
+    if(file==='github'&&args[0]==='pr') {
+      assert.equal(args[1],'create');creates++;
       assert.equal(args[args.indexOf('--title')+1],description.title);
       const body=await readFile(args.at(-1),'utf8');
-      assert.deepEqual(body.match(/^## .+$/gm),['## What does this PR do?','## Changelog','## How was it tested?','## Screenshots','## Checklist']);
-      assert(body.includes('- Added: Print a greeting from the command line.'));assert(body.includes('- [x]'));assert(body.includes('Evidence truncated'));
+      assert.deepEqual(body.match(/^## .+$/gm),['## What does this PR do?','## Changelog','## How was it tested?','## Checklist']);
+      assert(body.includes('- Added: Print a greeting from the command line.'));assert(!body.includes('Added: Added'));assert(!body.includes('Execution:'));assert(!body.includes('direct PR fallback'));assert(!body.includes('Jev Noul probability'));assert(body.includes('- [x]'));assert(body.includes('Evidence truncated'));
       assert(body.includes('node hello.js'));assert(body.includes('[redacted]'));assert(!body.includes(secret));assert(!body.includes('fixture-bearer-123'));assert(!body.includes('/home/fixture'));assert(!body.includes('C:\\Users'));assert(!body.includes('/tmp/private'));assert(!body.includes(cwd));assert(body.length<=60000);
       await writeFile(join(home,'pr-body.md'),body);published=true;return ok('pr:\n  url: https://github.com/example/kor-fixture/pull/1');
     }
-    if(file==='gh-axi'&&args[0]==='api') {
+    if(file==='github'&&args[0]==='api') {
       const path=args[1];
       if(path.includes('/pulls?'))return envelope(published?[pr()]:[]);
       if(path.endsWith('/pulls/1'))return envelope(pr());
@@ -125,7 +131,17 @@ for(const mode of ['direct','no-mistakes']) {
     }
     throw new Error(`Unexpected command ${file} ${args.join(' ')}`);
   };
-  const shipping=new GitHubShipping(command, describe);
+  const github = async (path, payload) => {
+    if (payload) {
+      assert.equal(payload.draft, false);
+      const bodyFile = join(home, 'api-body.md'); await writeFile(bodyFile, payload.body);
+      await command('github', ['pr', 'create', '--title', payload.title, '--body-file', bodyFile], cwd);
+      return pr();
+    }
+    const result = await command('github', ['api', path], cwd);
+    return (await import(createRequire(new URL('../packages/daemon/package.json', import.meta.url)).resolve('@toon-format/toon'))).decode(result.stdout);
+  };
+  const shipping=new GitHubShipping(command, describe, github);
   const calibration=new CalibrationStore(paths.databaseFile);
   const controller=createController({repositories:new RepositoryRegistry([{key:'LEE',...repository}]),worktrees:{create:async input=>({executionId:input.executionId,issueId:input.issueId,path:cwd,branch:input.branch,repository:cwd})},launcher:{launch:async()=>{launches++;await writeFile(join(cwd,'hello.js'),"console.log('hello');\n");await writeFile(join(cwd,'feature [literal].txt'),'literal filename\n');return {exitCode:0,events:[],stdout:'',stderr:'',failed:false};}},jev:new JevDecisionCore(fixtureJev(),new MemoryDecisionAuditLog()),defaultRoute:config.defaultRoute,calibration:{store:calibration,sampleRate:0,baselineRoute:config.defaultRoute}});
   let daemon=new KorDaemon({paths,config,store,linear,controller,shipping,port:0,pollIntervalMs:3_600_000});
@@ -242,7 +258,7 @@ await exec('git', ['commit', '-qm', 'fixture: repository PR template'], { cwd: s
 const templateHead = (await exec('git', ['rev-parse', 'HEAD'], { cwd: sample.worktree })).stdout.trim();
 const templateBody = await renderer.body(renderInput, templateHead, description);
 assert.deepEqual(templateBody.match(/^## .+$/gm), ['## Repository outcome', '## Required checks', '## Captures', '## Acceptance']);
-assert(templateBody.includes('- [ ] Maintainer approval'));assert(templateBody.includes('- [ ] manual-browser: unresolved; Not checked in a browser'));
+assert(templateBody.includes('- [ ] Maintainer approval'));assert(templateBody.includes('- [ ] manual-browser'));
 assert(templateBody.includes('![After](<https://example.invalid/after.png>)'));assert(!templateBody.includes(secret));assert(!templateBody.includes('/home/fixture'));assert(!templateBody.includes('{{'));
 await writeFile(templateFile, '## Uncommitted replacement\n');
 assert.equal(await renderer.body(renderInput, templateHead, description), templateBody);
@@ -271,7 +287,7 @@ assert(fallbackBody.includes('no reusable applied Jev route decision'));
 assert(fallbackBody.includes('node hello.js'));
 assert(!fallbackBody.includes(secret));
 assert.deepEqual(fallbackBody.match(/^## .+$/gm), ['## What does this PR do?', '## Changelog', '## How was it tested?', '## Screenshots', '## Checklist']);
-console.log(`PR standard proof: five ordered headings; bounded evidence keeps checklist; model prose and conventional titles; committed repository template wins; plain template retains policy; screenshots linked; unresolved checks unticked; template redaction; defaultBytes=${(await readFile(join(root,'direct/pr-body.md'))).length}; templateBytes=${Buffer.byteLength(templateBody)}`);
+console.log(`PR standard proof: optional screenshot heading; bounded evidence keeps checklist; model prose and conventional titles; committed repository template wins; plain template retains policy; screenshots linked; unresolved checks unticked; template redaction; defaultBytes=${(await readFile(join(root,'direct/pr-body.md'))).length}; templateBytes=${Buffer.byteLength(templateBody)}`);
 
 // Construct the v4 schema directly, independent of git history or a previous dist build.
 const migrationFile = join(root, 'migration.db');

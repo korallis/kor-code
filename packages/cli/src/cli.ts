@@ -253,7 +253,7 @@ async function serve(args: readonly string[]): Promise<number> {
     if (!catalogue.ok) throw new Error("The skill catalogue is invalid; run kor skills doctor");
     return { catalogue, stackTags: await repositoryStackTags(repositoryPath) };
   };
-  const daemon = new KorDaemon({ paths, config: loaded.config, store, linear: mission.linear(), ...initial, sessionPolicy, shipping: new GitHubShipping((file, args, cwd) => mission.shippingCommand(file, args, cwd), input => describePullRequest(input)), port, gateway, verifiedModels, webRoot, missionServices: mission, reconfigure: runtime });
+  const daemon = new KorDaemon({ paths, config: loaded.config, store, linear: mission.linear(), ...initial, sessionPolicy, shipping: new GitHubShipping((file, args, cwd) => mission.shippingCommand(file, args, cwd), input => describePullRequest(input), (path, body) => mission.github(path, body)), port, gateway, verifiedModels, webRoot, missionServices: mission, reconfigure: runtime });
   const handle = await daemon.start();
   process.stdout.write(`kor daemon listening on ${statusUrl}\n`);
   await new Promise<void>(resolve => {

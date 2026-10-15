@@ -60,6 +60,10 @@ export function createServeRouting(options: {
     if (!options.complete) throw new Error('PR model completion is unavailable');
     const models = [...await options.models()];
     if (!models.length) throw new Error('PR writing requires a verified model; run kor models probe');
+    if (route?.label === 'override' && route.decisionId) {
+      if (!models.some(model => model.model === route.model && model.provider === route.provider && model.available !== false)) throw new Error('The overridden task route is no longer verified and available; restore it before retrying PR writing');
+      return options.complete(prompt, route);
+    }
     if (route?.label !== 'jev' || !route.decisionId) return null;
     const source = options.audit.get(route.decisionId);
     if (!source || source.request.executionId !== executionId || source.response.kind !== 'route') return null;

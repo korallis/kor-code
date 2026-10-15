@@ -931,7 +931,7 @@ export class KorDaemon {
   private async routeFor(executionId: string, issue: LinearIssue): Promise<Route | undefined> {
     const defaultRoute = this.options.config.defaultRoute;
     const override = this.overrides.activeRoute(executionId);
-    if (override) return { ...defaultRoute, model: override.choice };
+    if (override) return { ...defaultRoute, model: override.choice, label: "override", decisionId: override.id };
     if (this.options.chooseRoute) {
       // The planner replays its durable audit on retry, preserving provider,
       // provenance and decision id instead of reconstructing only a model.
