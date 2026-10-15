@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { access, readFile, realpath } from "node:fs/promises";
@@ -84,19 +85,27 @@ async function checkCommand(name: string, file: string, args: readonly string[],
   } catch { return { name, status: "error", detail: "unavailable" }; }
 }
 
-async function checkShipping(key: string, repository: KorRepositoryConfig, command: DoctorCommand): Promise<DoctorCheck[]> {
+async function checkShipping(key: string, repository: KorRepositoryConfig, command: DoctorCommand, mission: MissionServices, environment: NodeJS.ProcessEnv): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
   const git = async (args: string[]) => (await command("git", ["-C", repository.path, ...args])).stdout.trim();
   const remote = repository.remote ?? await git(["remote", "get-url", "origin"]).catch(() => undefined);
-  const github = remote && /^(?:https:\/\/github\.com\/|git@github\.com:)([\w.-]+\/[\w.-]+?)(?:\.git)?$/.test(remote);
-  checks.push({ name: `repo ${key} shipping target`, status: github ? "ok" : "error", detail: github ? "github.com" : "Shipping needs a github.com repository. Set origin with `git remote set-url origin https://github.com/OWNER/REPO.git` (use `git remote add origin` if missing), or set this repo's remote in config.yaml." });
+  const slug = remote && /^(?:https:\/\/github\.com\/|git@github\.com:)([\w.-]+\/[\w.-]+?)(?:\.git)?$/.exec(remote)?.[1];
+  checks.push({ name: `repo ${key} shipping target`, status: slug ? "ok" : "error", detail: slug ? "github.com" : "Shipping needs a github.com repository. Set origin with `git remote set-url origin https://github.com/OWNER/REPO.git` (use `git remote add origin` if missing), or set this repo's remote in config.yaml." });
   const missingIdentity: string[] = [];
   for (const field of ["user.name", "user.email"]) {
     try { if (!await git(["config", "--get", field])) missingIdentity.push(field); }
     catch { missingIdentity.push(field); }
   }
   checks.push({ name: `repo ${key} git identity`, status: missingIdentity.length ? "error" : "ok", detail: missingIdentity.length ? `Missing ${missingIdentity.join(" and ")}. In this repository run ${missingIdentity.map(field => `\`git config ${field} "${field === "user.name" ? "Your Name" : "you@example.com"}"\``).join(" and ")}.` : "user.name and user.email configured" });
-  if (github && remote) {
+  if (slug && remote) {
+    try {
+      const result = await mission.github(`/repos/${slug}`, undefined, environment);
+      const access = z.object({ permissions: z.object({ push: z.literal(true) }) }).safeParse(result);
+      if (!access.success) throw new Error("No repository write access");
+      checks.push({ name: `repo ${key} GitHub API`, status: "ok", detail: "authenticated with repository write access; PR publication uses the API" });
+    } catch {
+      checks.push({ name: `repo ${key} GitHub API`, status: "error", detail: "Run gh auth login --hostname github.com, set GH_TOKEN or GITHUB_TOKEN with repository write and pull request access, or save a token in Settings. gh-axi is optional." });
+    }
     try {
       const probeRef = `HEAD:refs/heads/kor/doctor-${randomBytes(8).toString("hex")}`;
       await git(["push", "--dry-run", "--no-verify", "--porcelain", remote, probeRef]);
@@ -110,7 +119,7 @@ async function checkShipping(key: string, repository: KorRepositoryConfig, comma
   return checks;
 }
 
-async function checkRepositories(config: Awaited<ReturnType<typeof loadKorConfig>>, command: DoctorCommand): Promise<DoctorCheck[]> {
+async function checkRepositories(config: Awaited<ReturnType<typeof loadKorConfig>>, command: DoctorCommand, mission: MissionServices, environment: NodeJS.ProcessEnv): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
   for (const [key, repository] of Object.entries(config.config.repos).sort(([left], [right]) => left.localeCompare(right))) {
     let detail = "path is unavailable";
@@ -131,7 +140,7 @@ async function checkRepositories(config: Awaited<ReturnType<typeof loadKorConfig
       const permitted = sessionTools(permissions);
       const tools = sessionTools(permissions, repository.tools).filter(tool => permitted.includes(tool));
       checks.push({ name: `repo ${key}`, status: "ok", detail: `${repository.path} (${repository.defaultBranch})` });
-      checks.push(...await checkShipping(key, repository, command));
+      checks.push(...await checkShipping(key, repository, command, mission, environment));
       checks.push({ name: `repo ${key} tools`, status: "ok", detail: `${tools.join(", ") || "none"} (${repository.tools ? "tools override intersected with policy" : "effective permission base names; automatic search requires unscoped Read"}); Jev selects optional tools per task; availability does not grant command permissions` });
     } catch {
       // Never forward git stderr: a configured remote can contain credentials.
@@ -174,7 +183,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     await checkCommand("no-mistakes daemon", "no-mistakes", ["daemon", "status"], command),
   ];
   if (config) {
-    checks.push(...await checkRepositories(config, command));
+    checks.push(...await checkRepositories(config, command, mission, environment));
     if (Object.keys(config.config.repos).length === 0) checks.push({ name: "Repositories", status: "error", detail: "none configured" });
   }
   return { checks, ok: checks.every(check => check.status === "ok") };

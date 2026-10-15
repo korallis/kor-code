@@ -167,6 +167,11 @@ kor ui
 | GitHub | a `gh auth login --hostname github.com` login, `GH_TOKEN` / `GITHUB_TOKEN`, or a token saved in Settings |
 
 Kor never prints a credential and never copies one from the environment to disk.
+GitHub connections, PR lists and PR publication use the GitHub API. `gh-axi`
+is optional. Without a token, Kor reads your GitHub CLI login with `gh auth token`;
+with `GH_TOKEN`, `GITHUB_TOKEN`, or a token saved in Settings, neither GitHub CLI
+wrapper is required. Tokens need repository contents write and pull request write
+access. Doctor checks API repository access separately from Git push access.
 It supplies the GitHub credential helper for shipping itself, so
 `gh auth setup-git` is unnecessary.
 
@@ -255,6 +260,7 @@ FAIL no-mistakes daemon: not running
 PASS repo pilot: /tmp/kor-rf/pilot (main)
 PASS repo pilot shipping target: github.com
 PASS repo pilot git identity: user.name and user.email configured
+PASS repo pilot GitHub API: authenticated with repository write access; PR publication uses the API
 PASS repo pilot push access: push dry run passed; no remote refs changed
 PASS repo pilot tools: Bash, Edit, Glob, Grep, Read, Write (effective permission base names; automatic search requires unscoped Read); Jev selects optional tools per task; availability does not grant command permissions
 FAIL doctor: one or more checks failed. Hint: fix the reported checks and rerun `kor doctor`
@@ -272,6 +278,7 @@ FAIL doctor: one or more checks failed. Hint: fix the reported checks and rerun 
 | `repo <name>` | that repository | `path` must be the checkout root, the default branch must exist, and `origin` must match `remote` if set. |
 | `repo <name> shipping target` | shipping | Set `origin` to a github.com HTTPS or SSH URL. |
 | `repo <name> git identity` | shipping | `git config user.name "Your Name"` and `git config user.email "you@example.com"` in the checkout (or with `--global`). |
+| `repo <name> GitHub API` | PR publication and Mission Control | Log in with `gh auth login --hostname github.com` or set a token with repository contents write and pull request write access. Checks authentication and repository write permission; no PR is created. `gh-axi` is optional. |
 | `repo <name> push access` | shipping | Log in with `gh auth login --hostname github.com`, or set `GH_TOKEN` with write access. The check is a `git push --dry-run --no-verify` that changes nothing; it cannot predict branch protection or CI. |
 | `repo <name> tools` | sessions | The tool ceiling from `toolAllowlist` and `tools`. |
 
@@ -309,7 +316,7 @@ saved here wins over the files and environment. The right-hand side holds the
 intake label, poll interval, run limits and projects; **Save configuration**
 applies them without a restart, once no work is running.
 
-![Settings with Linear, GitHub, the gateway and Jev connected](images/mc-settings.webp)
+![Settings connections with GitHub using a standard login or token](images/github-auth-after.webp)
 
 Every screen has the same frame: **Ask Jev** and a `LIVE` / `STALE` / `OFFLINE`
 pill in the top bar, a bell counting runs that need you, the screens and your
@@ -659,7 +666,12 @@ starts as soon as the run verifies. The daemon:
 3. Pushes the branch and opens a pull request. The title and body follow the
    bundled [PR standard](../skills/pr-standard/SKILL.md), or the repository's own
    PR template if it has one, written from the verified diff and the recorded
-   checks by the run's own Jev-routed model. If no Jev route can be reused, the
+   checks by the run's effective task route, including your applied route override
+   across providers. If your overridden model is unavailable, fails the prose completion or
+   returns invalid content, Kor uses the issue text and evidence with a clear
+   fallback note; it does not select a replacement model.
+   Nonvisual changes omit Screenshots; changelog and checklist lines contain only
+   the change and acceptance condition. If no Jev route or override can be reused, the
    body says it fell back to the issue text. Linear moves to **In Review**.
 4. Waits. When you merge, Kor moves Linear to **Done**, marks the run `complete`
    and removes its clean worktree.

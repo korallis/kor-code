@@ -47,8 +47,15 @@ Any failed check, unmet criterion or permission denial stops the run as
   webhook or Linear app to install.
 - A TypeSafe API key, for Jev.
 - To ship: a GitHub `origin`, Git `user.name` and `user.email`, GitHub write
-  access through `gh auth login` or a token, and a running `no-mistakes` daemon,
-  which tells Kor whether the repository has a delivery pipeline.
+  access through GitHub CLI (`gh auth login`) or `GH_TOKEN` / `GITHUB_TOKEN`,
+  and a running `no-mistakes` daemon, which tells Kor whether the repository has
+  a delivery pipeline. `gh-axi` is
+  optional: GitHub connections, pull request lists and PR creation use the API.
+  Tokens need repository contents write and pull request write access.
+
+PR writing reuses the task route, including a cross-provider override. If the
+overridden model cannot write the PR, Kor publishes an evidence-based fallback
+with a clear note; it does not select a replacement model.
 
 ## Install
 
@@ -123,6 +130,7 @@ FAIL no-mistakes daemon: not running
 PASS repo pilot: /tmp/kor-rf/pilot (main)
 PASS repo pilot shipping target: github.com
 PASS repo pilot git identity: user.name and user.email configured
+PASS repo pilot GitHub API: authenticated with repository write access; PR publication uses the API
 PASS repo pilot push access: push dry run passed; no remote refs changed
 PASS repo pilot tools: Bash, Edit, Glob, Grep, Read, Write (effective permission base names; automatic search requires unscoped Read); Jev selects optional tools per task; availability does not grant command permissions
 FAIL doctor: one or more checks failed. Hint: fix the reported checks and rerun `kor doctor`
