@@ -355,7 +355,7 @@ export class LinearStore {
   requestCancel(issueId: string): boolean {
     return this.transaction(() => {
       const row = this.db.prepare('SELECT status FROM assignments WHERE issue_id=?').get(issueId) as { status?: unknown } | undefined;
-      if (!row || !['queued', 'running', 'blocked', 'waiting', 'shipping', 'review'].includes(String(row.status))) return false;
+      if (!row || !['queued', 'running', 'failed', 'blocked', 'waiting', 'shipping', 'review'].includes(String(row.status))) return false;
       if (row.status !== 'running') return this.db.prepare("UPDATE assignments SET status='canceled',cancel_requested=0,token=NULL,owner=NULL,expires_at=NULL WHERE issue_id=?").run(issueId).changes === 1;
       return this.db.prepare('UPDATE assignments SET cancel_requested=1 WHERE issue_id=?').run(issueId).changes === 1;
     });
@@ -386,14 +386,14 @@ export class LinearStore {
   operatorMessages(executionId: string): Array<{ kind: string; message: string }> {
     return this.db.prepare('SELECT kind,message FROM run_messages WHERE execution_id=? ORDER BY rowid').all(executionId).flatMap(row => typeof row.kind === 'string' && typeof row.message === 'string' ? [{ kind: row.kind, message: row.message }] : []);
   }
-  /** Discard approval and verification before rerunning changes on the same issue branch. */
+  /** Invalidate approval and verification before rerunning changes on the same issue branch. */
   requestChanges(executionId: string): boolean {
     const assignment = this.findAssignment(executionId);
     if (!assignment?.manifest || !['waiting', 'review', 'blocked'].includes(assignment.status) || assignment.expiresAt !== undefined) return false;
     if (assignment.manifest.shipping && !['commit', 'review'].includes(assignment.manifest.shipping.stage.kind)) return false;
-    const { shipping: _shipping, verification: _verification, ...previous } = assignment.manifest;
+    const { shipping: _shipping, verification, ...previous } = assignment.manifest;
     return this.transaction(() => this.db.prepare("UPDATE assignments SET status='queued',manifest=?,last_error=NULL,cancel_requested=0,available_at=? WHERE execution_id=? AND token IS NULL AND status IN ('waiting','review','blocked')")
-      .run(JSON.stringify({ ...previous, status: 'queued' }), this.now(), executionId).changes === 1);
+      .run(JSON.stringify({ ...previous, ...(verification ? { verification: { ...verification, passed: false } } : {}), status: 'queued' }), this.now(), executionId).changes === 1);
   }
   recover(issueId: string, message: string): boolean {
     return this.transaction(() => this.db.prepare("UPDATE assignments SET status='queued',token=NULL,owner=NULL,expires_at=NULL,session_pid=NULL,session_pgid=NULL,session_boot_id=NULL,session_start_ticks=NULL,heartbeat_at=NULL,cancel_requested=0,available_at=?,last_error=? WHERE issue_id=? AND status IN ('running','queued')").run(this.now(), message, issueId).changes === 1);

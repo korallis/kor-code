@@ -15,6 +15,9 @@ import type { AskRequest, AskResponse, BrainResponse, LearningsReport, ConnectRe
 import type { JsonValue, Labelled, KorStatusSnapshot, GatewayStrategyObservation } from "@kor-code/core";
 
 const exec = promisify(execFile);
+const ASK_RUN_LIMIT = 20;
+const ASK_CONTEXT_BYTES = 6_000;
+const ASK_FIELD_LIMIT = 200;
 const secret = z.string().min(1).max(8192).regex(/^[^\r\n\0]+$/);
 const credentialsSchema = z.strictObject({ linear: secret.optional(), github: secret.optional(), jev: secret.optional(), gateway: z.strictObject({ baseUrl: z.string().url(), apiKey: secret, managementKey: secret.optional() }).optional() });
 type Credentials = z.infer<typeof credentialsSchema>;
@@ -177,17 +180,28 @@ export class MissionServices {
   /** Jev selects an explicitly grounded recommendation; the UI invokes it only
    * after the user clicks. Jev's choice API cannot produce free-form prose. */
   async ask(input: AskRequest, snapshot: KorStatusSnapshot): Promise<AskResponse> {
-    const actions: SuggestedAction[] = snapshot.runs.filter(run => !input.executionId || run.executionId === input.executionId).flatMap((run): SuggestedAction[] => {
-      const label = run.issueKey ?? run.issueId;
+    const attention = (status: string) => ["failed", "blocked", "escalated", "waiting"].includes(status) ? 0 : 1;
+    const runs = snapshot.runs.filter(run => !input.executionId || run.executionId === input.executionId).reverse().sort((a, b) => attention(a.status) - attention(b.status));
+    const context: Array<{ executionId: string; issue: string; status: string; nextStep: string; pullRequestUrl: string | null }> = [];
+    for (const run of runs) {
+      if (context.length === ASK_RUN_LIMIT) break;
+      const summary = { executionId: run.executionId, issue: (run.issueKey ?? run.issueId).slice(0, ASK_FIELD_LIMIT), status: run.status,
+        nextStep: (run.error ?? (run.status === "waiting" ? "Review verification, then approve publication" : run.pullRequestUrl ? "Review the pull request" : run.phase ?? run.status)).slice(0, ASK_FIELD_LIMIT), pullRequestUrl: run.pullRequestUrl?.slice(0, ASK_FIELD_LIMIT) ?? null };
+      if (Buffer.byteLength(JSON.stringify([...context, summary])) > ASK_CONTEXT_BYTES) break;
+      context.push(summary);
+    }
+    const included = new Set(context.map(run => run.executionId));
+    const actions: SuggestedAction[] = runs.filter(run => included.has(run.executionId)).flatMap((run): SuggestedAction[] => {
+      const label = (run.issueKey ?? run.issueId).slice(0, ASK_FIELD_LIMIT);
       if (run.pullRequestUrl) return [{ kind: "open-pr", url: run.pullRequestUrl, label: `Open ${label}'s pull request` }];
       if (["failed", "blocked", "canceled"].includes(run.status)) return [{ kind: "retry", executionId: run.executionId, label: `Retry ${label} after resolving its blockers` }];
       if (run.status === "waiting") return [{ kind: "approve", executionId: run.executionId, label: `Approve verified ${label} for publication` }];
       return [];
-    }).slice(0, 20);
+    }).slice(0, ASK_RUN_LIMIT);
     actions.push({ kind: "navigate", screen: "agents", label: "Inspect the agents and their current blockers" }, { kind: "navigate", screen: "models", label: "Inspect model availability and quota" }, { kind: "navigate", screen: "projects", label: "Choose a Linear issue to queue" });
     const candidates = Object.fromEntries(actions.map((action, index) => [`action-${index}`, action.label]));
     const client = this.jev();
-    const result = await client.evaluate({ message: input.message, snapshot }, { recommendation: { type: "choice", instructions: "Choose the recommendation that best answers the user's message using only the supplied live snapshot. Do not claim to execute the action.", criteria: candidates } });
+    const result = await client.evaluate({ message: input.message, runs: context, totalRuns: runs.length, omittedRuns: runs.length - context.length }, { recommendation: { type: "choice", instructions: "Choose the recommendation that best answers the user's message using only the supplied bounded run summaries. omittedRuns counts runs outside this context. Do not claim to execute the action.", criteria: candidates } });
     const answer = result.answers.recommendation;
     if (!answer || answer.type !== "choice") throw new Error("Jev recommendation unavailable");
     const action = actions[Number(answer.choice.slice("action-".length))];

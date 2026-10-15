@@ -275,7 +275,16 @@ export async function installKor(options: { scope: InstallScope; pilot?: string;
   const manifest: InstallManifest = { version: 1, phase: "preparing", scope: options.scope, pilot, claudeConfigDir: configDir, systemd: options.systemd, backupDir, entries: [], createdDirectories: old?.createdDirectories ?? [] };
   await mkdirRecorded(manifest, backupDir);
   // Retained roots are snapshotted before anything inside them is initialized.
-  for (const path of [paths.configDir, paths.stateDir, paths.shareDir]) await remember(manifest, path, "retained");
+  for (const path of [paths.configDir, paths.stateDir, paths.shareDir]) {
+    const original = old?.entries.find(entry => entry.path === path && entry.policy === "retained");
+    if (!original) { await remember(manifest, path, "retained"); continue; }
+    const backup = join(backupDir, String(manifest.entries.length));
+    if (original.before !== null) {
+      if (await fingerprint(original.backup) !== original.before) throw new Error(`Missing or damaged install backup: ${original.backup}`);
+      await cp(original.backup, backup, { recursive: true, verbatimSymlinks: true, preserveTimestamps: true });
+    }
+    manifest.entries.push({ path, backup, before: original.before, policy: "retained" });
+  }
   for (const path of [cliLink, serviceFile, ...(exclude ? [exclude] : [])]) await remember(manifest, path);
   for (const path of settings) await remember(manifest, path, "settings");
   for (const path of [marketplaceDir, pluginCache]) await remember(manifest, path, "owned");
@@ -340,6 +349,13 @@ export async function uninstallKor(options: { purge: boolean }): Promise<{ outpu
   if (!manifest && options.purge) {
     await stopLocalDaemon();
     await purgeKorWorktrees();
+    const paths = runtimePaths(environment);
+    for (const path of [paths.configDir, paths.stateDir, paths.shareDir]) {
+      await rejectSymlinkParents(path);
+      if (contains(path, root) || contains(path, process.cwd()) || contains(path, paths.home)) throw new Error("Kor data must be separate from checkouts and the home directory");
+    }
+    for (const path of [paths.configDir, paths.stateDir, paths.shareDir]) await rm(path, { recursive: true, force: true });
+    output = "Kor data purged (no install manifest)";
   }
   if (manifest) {
     if (manifest.phase !== "restored" || options.purge) await undo(manifest, environment, options.purge);
