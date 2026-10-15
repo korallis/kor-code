@@ -89,6 +89,9 @@ if [ -n "$pilot" ]; then
 fi
 say 'Installing dependencies and building Kor Code and Mission Control…'
 corepack pnpm install --frozen-lockfile
+# Workspace build scripts call `pnpm` too. Supply a checkout-local shim even
+# when Corepack's global pnpm shims have never been enabled.
+corepack enable pnpm --install-directory "$KOR_HOME/node_modules/.bin" || fail 'Could not create the local pnpm shim; check permissions in KOR_HOME/node_modules.'
 corepack pnpm build
 # A user manager is optional (containers and some WSL installations have none).
 if [ -z "$systemd" ]; then

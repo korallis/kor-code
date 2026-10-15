@@ -60,7 +60,7 @@ In practice:
 
 ## Install
 
-Requirements: Linux with Node 24+, pnpm and Git; Claude Code 2.1.299 or newer; a
+Requirements: Linux with Node 24+, Corepack and Git; Claude Code 2.1.299 or newer; a
 browser; a running [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI); a
 Linear personal API key; a TypeSafe API key. (Where each key goes is in
 [Credentials](docs/user-guide.md#credentials-and-the-gateway).)
