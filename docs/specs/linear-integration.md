@@ -105,7 +105,12 @@ A change across several projects uses linked issues. Each repository gets its ow
 execution outbox. It uploads a PNG through `fileUpload`, supplies every returned
 header on the signed PUT, creates a stable-ID file attachment and embeds the
 private asset in the issue's Screens section. It verifies both references and
-authenticated image bytes before reporting success. Read [the CLI contract](../cli-contract.md)
+authenticated image bytes before reporting success. With `--screen ID`, a stable
+`screen:ID` caption identifies one screen/state/viewport across revisions. The
+command replaces that inline entry, collapses duplicate entries carrying the
+same ID, and verifies that exactly one remains. Other IDs and unrelated content
+are preserved; old file attachments remain as history. Unkeyed images retain
+the existing append/reuse behavior. Read [the CLI contract](../cli-contract.md)
 and [usage and retry limits](../skills.md#linear-skills-and-png-uploads).
 
 The public `using-linear` and `writing-linear-tickets` skills cover operations

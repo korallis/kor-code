@@ -252,11 +252,11 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
   const command = cleanArgs[0] ?? "help";
   try {
     if (command === "linear") {
-      const imageUsage = 'kor linear attach-image ISSUE FILE --alt "SCREEN ROUTE STATE" [--json]';
+      const imageUsage = 'kor linear attach-image ISSUE FILE --alt "SCREEN ROUTE STATE" [--screen ID] [--json]';
       const usage = `${linearLintUsage} | ${imageUsage}`;
       const linearArgs = cleanArgs.slice(1);
       if (linearArgs.includes("--help") || linearArgs.includes("-h")) {
-        print(`Usage: ${usage}\nlint: read-only acceptance, dependency and UI screenshot checks.\nattach-image: uploads a PNG (up to 20 MiB), adds it to Screens and attachments, then verifies the saved bytes. Requires Linear read/write access.`, false);
+        print(`Usage: ${usage}\nlint: read-only acceptance, dependency and UI screenshot checks.\nattach-image: uploads a PNG (up to 20 MiB), adds it to Screens and attachments, then verifies the saved bytes. Use --screen ID to replace that screen in place. Requires Linear read/write access.`, false);
         return 0;
       }
       if (linearArgs[0] === "lint") {
@@ -270,15 +270,23 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
       if (linearArgs[0] !== "attach-image") usageFailure(usage);
       const [, issue, file, ...flags] = linearArgs;
       let alt: string | undefined;
+      let screen: string | undefined;
       for (let index = 0; index < flags.length; index++) {
         const flag = flags[index];
         if (flag === "--json") continue;
-        if (flag !== "--alt" || alt !== undefined) usageFailure(usage);
-        alt = flags[++index];
-        if (!alt || alt.startsWith("--")) usageFailure(usage);
+        if (flag !== "--alt" && flag !== "--screen") usageFailure(usage);
+        const value = flags[++index];
+        if (!value || value.startsWith("--")) usageFailure(usage);
+        if (flag === "--alt") {
+          if (alt !== undefined) usageFailure(usage);
+          alt = value;
+        } else {
+          if (screen !== undefined) usageFailure(usage);
+          screen = value;
+        }
       }
       if (!issue || issue.startsWith("-") || !file || file.startsWith("-") || !alt) usageFailure(usage);
-      const result = await attachLinearImage({ issue, file, alt });
+      const result = await attachLinearImage({ issue, file, alt, ...(screen !== undefined ? { screen } : {}) });
       print(jsonFlag(linearArgs) ? result : `${result.issue}: image verified (${result.bytes} bytes, sha256 ${result.sha256})`, jsonFlag(linearArgs));
       return 0;
     }
@@ -440,7 +448,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     if (debug && error instanceof Error && error.stack) process.stderr.write(`${error.stack}\n`);
     return failure instanceof CliFailure ? failure.exitCode : 1;
   }
-  process.stdout.write("Usage: kor linear attach-image ISSUE FILE --alt CAPTION [--json] | kor skills init [--json] | kor skills import --from DIRECTORY [--dry-run] [--json] | kor skills guard [DIRECTORY] [--json] | kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json] | kor skills add|update --help | kor ui | kor serve [--ui-dir DIST] [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--context] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor linear lint ISSUE-ID [--json] | kor linear lint --project PROJECT-ID [--json] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list | kor models probe [--family family] [--model model]\n");
+  process.stdout.write("Usage: kor linear attach-image ISSUE FILE --alt CAPTION [--screen ID] [--json] | kor skills init [--json] | kor skills import --from DIRECTORY [--dry-run] [--json] | kor skills guard [DIRECTORY] [--json] | kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json] | kor skills add|update --help | kor ui | kor serve [--ui-dir DIST] [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--context] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor linear lint ISSUE-ID [--json] | kor linear lint --project PROJECT-ID [--json] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list | kor models probe [--family family] [--model model]\n");
   return 0;
 }
 

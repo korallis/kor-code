@@ -7,6 +7,9 @@ import { connection, object, stableId, string } from './contract.js';
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_SCREEN_ID_LENGTH = 128;
+const MAX_CAPTION_LENGTH = 500;
+const SCREEN_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 async function readPng(file: string): Promise<Buffer> {
   const handle = await open(file, 'r');
@@ -49,6 +52,22 @@ function hasImage(description: string, url: string, caption: string): boolean {
     line.startsWith('![') && line.endsWith(suffix) && plainCaption(line.slice(2, -suffix.length)) === caption);
 }
 
+function isScreenImage(line: string, screen: string): boolean {
+  const image = /^!\[([^\]\n]*)\]\([^\n)]*\)\s*$/.exec(line);
+  return image?.[1] !== undefined && plainCaption(image[1]).startsWith(`screen:${screen} | `);
+}
+
+function replaceScreenImage(description: string, screen: string, image: string): string | undefined {
+  let found = false;
+  const lines = description.split('\n').flatMap(line => {
+    if (!isScreenImage(line, screen)) return [line];
+    if (found) return [];
+    found = true;
+    return [image];
+  });
+  return found ? lines.join('\n') : undefined;
+}
+
 async function readImageIssue(client: HttpLinearClient, id: string) {
   const data = await client.query(`query KorImageIssue($id: String!) {
     issue(id: $id) { id identifier description attachments(first: 100) { nodes { id title url } pageInfo { hasNextPage } } }
@@ -64,12 +83,16 @@ async function readImageIssue(client: HttpLinearClient, id: string) {
   };
 }
 
-export async function attachLinearImage(input: { issue: string; file: string; alt: string }) {
+export async function attachLinearImage(input: { issue: string; file: string; alt: string; screen?: string }) {
   const png = await readPng(input.file);
   const alt = input.alt.trim();
-  if (!alt || alt.length > 500 || /[\r\n\x00-\x1f]/.test(alt)) throw new Error('Image caption must be 1..500 characters on one line');
-  const caption = plainCaption(alt);
-  if (!caption) throw new Error('Image caption must contain visible text');
+  if (!alt || alt.length > MAX_CAPTION_LENGTH || /[\r\n\x00-\x1f]/.test(alt)) throw new Error('Image caption must be 1..500 characters on one line');
+  const normalized = plainCaption(alt);
+  if (!normalized) throw new Error('Image caption must contain visible text');
+  const screen = input.screen;
+  if (screen !== undefined && (screen.length > MAX_SCREEN_ID_LENGTH || !SCREEN_ID.test(screen))) throw new Error('Screen ID must be 1..128 lowercase letters, digits and single hyphens');
+  const caption = screen ? `screen:${screen} | ${normalized}` : normalized;
+  if (caption.length > MAX_CAPTION_LENGTH) throw new Error('Screen ID and image caption must fit within 500 characters');
   const apiKey = await resolveLinearApiKey();
   const client = new HttpLinearClient({ apiKey });
   const issue = await readImageIssue(client, input.issue);
@@ -105,12 +128,16 @@ export async function attachLinearImage(input: { issue: string; file: string; al
   }
   url = assetUrl(url);
   const marker = `<!-- kor-screen:${attachmentId} -->`;
-  const image = `${marker}\n![${caption}](${url})`;
+  const image = screen ? `![${caption}](${url})` : `${marker}\n![${caption}](${url})`;
   const latest = await readImageIssue(client, issue.id);
-  if (!hasImage(latest.description, url, caption)) {
+  const screenImages = screen ? latest.description.split(/\r?\n/).filter(line => isScreenImage(line, screen)) : [];
+  if (!hasImage(latest.description, url, caption) || screen && screenImages.length !== 1) {
     let description: string;
-    const markerPosition = latest.description.indexOf(marker);
-    if (markerPosition >= 0) {
+    const replacement = screen ? replaceScreenImage(latest.description, screen, image) : undefined;
+    const markerPosition = screen ? -1 : latest.description.indexOf(marker);
+    if (replacement !== undefined) {
+      description = replacement;
+    } else if (markerPosition >= 0) {
       const tailPosition = markerPosition + marker.length;
       const oldImage = /^\s*!\[[^\n]*?\]\([^\n)]*\)/.exec(latest.description.slice(tailPosition));
       if (!oldImage) throw new Error('Linear image marker has no image; inspect the issue before retrying');
@@ -128,6 +155,7 @@ export async function attachLinearImage(input: { issue: string; file: string; al
     if (object(updated.issueUpdate).success !== true) throw new Error('Linear image description was not saved; rerun the same command to resume');
   }
   const saved = await readImageIssue(client, issue.id);
+  if (screen && saved.description.split(/\r?\n/).filter(line => isScreenImage(line, screen)).length !== 1) throw new Error('Linear screen readback must contain exactly one image for the screen ID');
   if (!hasImage(saved.description, url, caption) || !saved.attachments.some(attachment => attachment.id === attachmentId && attachment.url === url && plainCaption(attachment.title) === caption)) {
     throw new Error('Linear image readback failed; inspect the issue before retrying');
   }
@@ -150,5 +178,5 @@ export async function attachLinearImage(input: { issue: string; file: string; al
     }
   } finally { await reader.cancel(); }
   if (size !== png.length || hash.digest('hex') !== digest) throw new Error('Linear image bytes did not match the uploaded PNG');
-  return { schemaVersion: 1, issue: saved.identifier, attachmentId, bytes: size, sha256: digest, verified: true };
+  return { schemaVersion: 1, issue: saved.identifier, attachmentId, ...(screen ? { screen } : {}), bytes: size, sha256: digest, verified: true };
 }
