@@ -735,7 +735,9 @@ when it ends, for example:
 actually given (tier, per-turn tokens, and whether Jev, your override or the
 repository chose it), its playbook, and the guidance tokens per turn. Kor records
 this when each session launches, so you can check afterwards that an override
-reached the session. A calibration session without skills records no pack.
+reached the session, including a session you stopped or that failed before it
+ended (its cost then stays unknown). A calibration session without skills records
+no pack.
 
 ![Sessions received: attempt 1 with Jev's listed skill, attempt 2 with the skill pinned by an override](images/mc-sessions-received.png)
 

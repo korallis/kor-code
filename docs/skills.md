@@ -883,8 +883,10 @@ overrides, repository policy and the skill budget: each delivered skill with its
 tier, per-turn tokens and source (`jev`, `override` or `repository`), the pinned
 playbook with its body tokens, and the per-turn token totals. The record is the
 attempt's `skillPack` in `run_metrics`, and the same value appears on the run's
-`spend` records in Mission Control (**Plan → Sessions received**). Sessions without
-skills, such as the no-skills baseline, record `null`.
+`spend` records in Mission Control (**Plan → Sessions received**). It is captured
+when the session spawns, so a session stopped or failed before it ends keeps its
+pack, with its cost unknown. Sessions without skills, such as the no-skills
+baseline, record `null`.
 
 ### Paired no-skills baseline
 
