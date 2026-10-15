@@ -107,3 +107,6 @@ recommendations from supplied facts. It does not establish end-to-end feature
 success, visual parity, generated-tool correctness, or automatic skill selection.
 A zero lift on three scenarios means no observed regression in this sample;
 it does not establish improvement or performance on other tasks.
+
+The [recorded results](skills-evaluations/pstack-results.md) include per-item
+verdicts, session telemetry, acceptance checks, and the limits of this sample.

@@ -4,7 +4,7 @@ description: "Diagnoses causal failures. Use when a bug report needs reproductio
 license: MIT
 metadata:
   kor.kind: "playbook"
-  kor.stages: "plan,repair"
+  kor.stages: "plan,execute,repair"
   kor.triggers: "a bug report needs reproduction and evidence before a fix"
   kor.anti: "implementation after a cause has already been established"
   kor.visibility: "public"

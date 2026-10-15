@@ -26,7 +26,7 @@ for (const entry of lock.adaptations) {
   if (sha256(await readFile(join(skill, "SKILL.md"))) !== entry.installedSha256) throw new Error(`Adaptation changed: ${entry.name}`);
   if (sha256(await readFile(join(skill, "LICENSE.upstream"))) !== lock.licenseSha256) throw new Error(`License changed: ${entry.name}`);
 }
-for (const evaluation of fixtures.evaluations) {
+for (const evaluation of evaluations) {
   const route = routes[evaluation.skill];
   if (!route || route.label !== "jev" || !route.decisionId || !route.model || !route.provider) throw new Error(`Supply a recorded Jev route for ${evaluation.skill}`);
   if (evaluation.cases.length !== 3) throw new Error(`Three cases required: ${evaluation.skill}`);
