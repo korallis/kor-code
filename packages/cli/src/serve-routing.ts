@@ -2,9 +2,7 @@ import { createHash } from "node:crypto";
 import { hasScreenshot } from "@kor-code/linear";
 import type { CatalogueModel, Route } from "@kor-code/core";
 import { NeedsInputError, type DaemonOptions, type DescribePullRequest } from "@kor-code/daemon";
-import { JevClient, JevDecisionCore, JevUnavailableError, MemoryDecisionAuditLog, redact, planPreflight, preflightRequests, routeFromDecision, type DecisionAuditLog } from "@kor-code/jev";
-
-const PR_ROUTE_ATTEMPTS = 2;
+import { JevClient, JevDecisionCore, JevUnavailableError, redact, planPreflight, preflightRequests, routeFromDecision, type DecisionAuditLog } from "@kor-code/jev";
 
 /** One persistent decision core for serve's preflight and acceptance judgments. */
 export function createServeRouting(options: {
@@ -58,36 +56,30 @@ export function createServeRouting(options: {
     }
     return { route, source: route.label === "jev" ? "jev" : "fallback" };
   };
-  const describePullRequest: DescribePullRequest = async ({ executionId, head, prompt }) => {
+  const describePullRequest: DescribePullRequest = async ({ executionId, head, prompt, route }) => {
     if (!options.complete) throw new Error('PR model completion is unavailable');
     const models = [...await options.models()];
     if (!models.length) throw new Error('PR writing requires a verified model; run kor models probe');
-    const baseId = `route-pr-${executionId}-${head}`;
-    let decisionId = baseId;
-    for (let revision = 1; options.audit.get(decisionId); revision++) {
-      const saved = options.audit.replay(decisionId);
-      if (saved.applied && !saved.escalated && models.some(model => model.model === saved.choice)) {
-        return options.complete(prompt, routeFromDecision(saved, models, { accountPolicy: 'fill-first', sessionAffinity: true, label: 'jev', decisionId }));
-      }
-      decisionId = `${baseId}-retry-${revision}`;
+    if (route?.label !== 'jev' || !route.decisionId) return null;
+    const source = options.audit.get(route.decisionId);
+    if (!source || source.request.executionId !== executionId || source.response.kind !== 'route') return null;
+    const decision = options.audit.replay(route.decisionId);
+    if (!decision.applied || decision.escalated || decision.choice !== route.model) return null;
+    if (!models.some(model => model.model === route.model && model.provider === route.provider && model.available !== false)) {
+      throw new Error('The recorded task route is no longer verified and available; restore it before retrying PR writing');
     }
-    for (let attempt = 0; attempt < PR_ROUTE_ATTEMPTS; attempt++) {
-      const pending = new MemoryDecisionAuditLog();
-      const decision = await new JevDecisionCore(client, pending).selectRoute({
-        decisionId, executionId, kind: 'route',
-        question: attempt === 0
-          ? 'Select a verified model route to write accurate, concise PR prose from this diff and verification evidence.'
-          : 'Select a verified route only to write a title, summary, changelog and testing text. Coding and verification are already complete; no repository changes are needed.',
-        state: attempt === 0 ? { task: 'pull request description', prompt } : { task: 'write short PR prose from supplied evidence', promptCharacters: prompt.length },
-        inputs: [{ name: 'verified commit', value: head, source: 'git' }],
-        candidates: [...models.map(model => model.model), "clarification"], nonApplyingCandidates: ["clarification"],
-        criteria: { ...Object.fromEntries(models.map(model => [model.model, { provider: model.provider, capabilities: model.capabilities.map(capability => ({ ...capability })), costUsd: model.costUsd ?? null, durationMs: model.durationMs ?? null }])), clarification: "No supplied route is suitable for this PR-writing task." },
+    const decisionId = `route-pr-${executionId}-${head}-${route.decisionId}`;
+    if (!options.audit.get(decisionId)) {
+      const question = 'Reuse the recorded task route for PR writing without a separate Jev route question.';
+      const inputs = [{ name: 'task route decision', value: route.decisionId, source: 'decision audit' }, { name: 'verified commit', value: head, source: 'git' }];
+      const evidenceRefs = [...decision.evidenceRefs, route.decisionId, head];
+      options.audit.append({
+        request: { ...source.request, decisionId, question, state: { sourceDecisionId: route.decisionId, head, route: { ...route } }, inputs, evidenceRefs },
+        response: { ...decision, decisionId, question, inputs, evidenceRefs, reasons: [`Reused task route decision ${route.decisionId} for PR writing; confidence is inherited, not a new judgment.`] },
+        recordedAt: new Date().toISOString(),
       });
-      if (!decision.applied || decision.escalated || !models.some(model => model.model === decision.choice)) continue;
-      options.audit.append(pending.explain(decisionId));
-      return options.complete(prompt, routeFromDecision(decision, models, { accountPolicy: 'fill-first', sessionAffinity: true, label: 'jev', decisionId }));
     }
-    return null;
+    return options.complete(prompt, { ...route, decisionId });
   };
   return { jev, chooseRoute, describePullRequest };
 }

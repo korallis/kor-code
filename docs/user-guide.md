@@ -187,16 +187,18 @@ Configure repository mapping, checks and toolAllowlist; run kor doctor before st
 After verification, a repository with `ship: approve` posts its checks and
 acceptance results to Linear and waits for approval in Mission Control. Distinct
 block reasons appear as separate comments, so a later retry preserves earlier
-failures. Direct PR publication uses a Jev-routed model pass to explain the verified
-change, classify its changelog, and summarize the recorded testing. A low-confidence
-route answer is not saved for reuse: Jev gets one narrower prose-only request. If
-it remains uncertain, the PR uses issue text and recorded evidence in the standard
-layout, with a `PR prose fallback` note asking you to review the summary and
-changelog. If PR creation needs retrying, Jev can be asked again for the same
-commit. Existing PR descriptions are left unchanged. Service,
-registry, completion, or invalid-content failures still require resolving the
-reported problem and retrying shipping; the verified coding session does not run
-again. See [shipping](specs/shipping.md).
+failures. Direct PR publication uses the run's recorded, applied Jev route to
+explain the verified change, classify its changelog, and summarize the recorded
+testing. It preserves the provider and route settings without asking a separate
+PR-writing route question. The decision audit links the PR pass to the task's
+source decision and explicitly marks the reused confidence as inherited. The
+run's own below-threshold handling is unchanged: an unapplied decision is never
+promoted for PR writing. If no reusable applied Jev decision exists, the PR uses
+issue text and recorded evidence with a `PR prose fallback` note asking you to
+review the summary and changelog. Shipping retries reuse that source decision;
+existing PR descriptions are left unchanged. Registry, completion or invalid-content
+failures still require resolving the reported problem and retrying shipping; the
+verified coding session does not run again. See [shipping](specs/shipping.md).
 
 ## Credentials and the gateway
 
@@ -784,8 +786,14 @@ run exercised **Approve and ship** in Mission Control against a private scratch
 repository: two coding sessions each passed two checks and three acceptance
 criteria, then opened a ready PR through direct delivery. Both PRs were closed
 without merging. Linear posted the approval-wait comments and preserved two distinct
-shipping block reasons. Jev selected each PR-writing route; the generated prose and
-recorded command results were read back from GitHub. The initialized pipeline, CI,
+shipping block reasons. Those earlier runs asked Jev for separate PR-writing
+routes; the generated prose and recorded command results were read back from GitHub.
+A subsequent live CLI run verified the current reuse path: three checks and four
+acceptance conditions passed, and Mission Control approval opened a ready PR with
+a `feat(greet)` title, an explanatory summary and an `Added:` changelog. The durable
+audit linked the PR pass to the task route at 0.90 inherited confidence, with no
+separate PR-route question. That scratch PR was also closed without merging.
+The initialized pipeline, CI,
 and merge cleanup still rely on the replay described in the
 [shipping specification](specs/shipping.md).
 

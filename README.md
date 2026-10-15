@@ -70,12 +70,16 @@ verification evidence to write `type(scope): outcome` titles and the bundled
 [PR standard](skills/pr-standard/SKILL.md), with recorded checks, acceptance
 checkboxes, and public screenshot evidence. A committed repository PR template
 takes precedence. See [shipping templates](docs/specs/shipping.md#pull-request-format)
-for supported locations and optional placeholders. If Jev is uncertain about the
-PR-writing route, Kor asks once more with a narrower prose-only task. Continued
-uncertainty produces the standard layout from issue text and recorded evidence,
+for supported locations and optional placeholders. PR writing reuses the run's
+recorded, applied Jev route decision, preserving its provider and route settings.
+The decision audit links the PR-writing pass to that source decision and labels
+its confidence as inherited; there is no separate route question or confidence
+bar for prose. The run's own below-threshold handling still applies. If the run
+has no reusable applied Jev decision, Kor uses issue text and recorded evidence
 with a visible fallback note asking you to review the summary and changelog.
-Rejected routes are not reused on shipping retries. Linear receives a comment when
-verification is waiting for approval, and a new comment for each distinct block
+Unavailable models, completion failures and invalid content block shipping for
+retry. Linear receives a comment when verification is waiting for approval, and a
+new comment for each distinct block
 reason, preserving the history across retries.
 
 ## Install

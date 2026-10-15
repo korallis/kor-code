@@ -33,21 +33,25 @@ not copied into the generated public Intent section.
 
 ## Pull request format
 
-Direct publication asks Jev to route a PR-writing pass among the live verified
-models. The selected model receives a bounded, redacted diff at the verified head,
-the issue, repository check results, and acceptance findings. Its structured answer
+Direct publication reuses the run's recorded, applied Jev route for PR writing.
+The selected model receives a bounded, redacted diff at the verified head, the
+issue, repository check results, and acceptance findings. Its structured answer
 supplies the title, plain-prose summary, user-facing changelog, and testing summary.
-Only applied route decisions are recorded under `route-pr-<execution>-<head>`
-and reused for that commit. A low-confidence or clarification answer is discarded,
-then Jev is asked once more with a narrower prose-only task. If the second answer
-is still unapplied, Kor creates the standard layout from issue text and recorded
-verification evidence, with a visible `PR prose fallback` note requesting review
-of the summary and changelog. Its title keeps a conventional issue title or uses
-`chore(task): <issue title>`; it does not guess the change type. No model is chosen
-by the fallback. If PR creation needs retrying, Jev can be asked again for the
-same commit; existing PR bodies are still left unchanged.
-Legacy rejected audit records are ignored; a new applied decision uses a retry
-suffix instead of replaying the rejection.
+There is no separate PR route question. The task's confidence threshold and
+below-threshold handling remain unchanged.
+
+The PR pass is recorded under `route-pr-<execution>-<head>-<source-decision>`.
+Its state identifies the source decision, verified commit and preserved route
+settings; its reason states that the confidence is inherited rather than a new
+judgment. Retries reuse this audit row. A source must belong to the same run,
+be applied without escalation, and match the run's model and verified provider.
+Legacy separate PR-route decisions are not used.
+
+If the run has no reusable applied Jev decision, Kor creates the standard layout
+from issue text and recorded verification evidence, with a visible
+`PR prose fallback` note requesting review of the summary and changelog. Its title
+keeps a conventional issue title or uses `chore(task): <issue title>`; it does not
+guess the change type or choose a model. Existing PR bodies are left unchanged.
 
 An empty verified-model registry, unavailable service, failed completion, or
 invalid generated content still blocks PR creation for retry. The branch may have
@@ -217,14 +221,23 @@ unchanged. The PR route decisions were present in the durable audit, and the fin
 PR preserved relative source paths in recorded check commands while redacting local
 absolute paths and secrets in the replay.
 
-The PR-route recovery replay checks low/high confidence, two uncertain answers,
-retrying the same commit, accepted-route reuse, and legacy rejected audit rows.
-A separate live run forwarded real Jev calls while fault-injecting two
-below-threshold confidences. It passed two checks and three acceptance criteria,
-then opened a ready PR with the standard fallback note; zero rejected PR-route
-rows were persisted. A later live description request for the exact same commit
-selected a route at 0.80 confidence and completed the model-written prose. That
-scratch PR was closed without merging.
+The shipping replay checks that PR writing asks zero new Jev route questions,
+preserves provider, effort and account settings, persists the source decision and
+inherited confidence, and reuses one audit row on retry. Unapplied, fallback,
+missing and mismatched task decisions never reach completion; an unavailable
+selected model blocks shipping. Earlier live runs exercised the now-removed
+separate PR-route question and its labelled fallback.
+
+The current reuse path was also exercised through the real CLI, a real coding
+session and Mission Control approval on a private scratch repository. The session
+passed three repository checks and four acceptance conditions in one attempt
+(15 seconds from execution start to waiting; recorded coding cost $0.00229949).
+The ready PR used `feat(greet): add farewell helper`, a summary explaining the
+helper and its purpose, and an `Added:` changelog. The durable audit contained one
+source task route and one PR reuse record, both at 0.90 confidence, with the source
+ID and inherited-confidence reason retained. No extra Jev route question was sent.
+An initial sandbox GitHub authentication failure was corrected before publication;
+the verified coding session did not rerun. The PR was closed without merging.
 
 The initialized no-mistakes pipeline, configured GitHub CI, merge observation, and
 cleanup remain replay coverage; the live scratch repository had no CI and no
