@@ -13,7 +13,8 @@ const source = (header = "", body = "# Review\n\nRead the diff and verify accept
   `---\nname: ${name}\ndescription: ${desc}\nlicense: MIT\n${header}---\n${body}`;
 
 function run(args, status = 0) {
-  const result = spawnSync(process.execPath, [cli, "skills", ...args], { cwd: scratch, encoding: "utf8" });
+  const result = spawnSync(process.execPath, [cli, "skills", ...args], { cwd: scratch, encoding: "utf8",
+    env: { ...process.env, HOME: join(scratch, "home"), XDG_CONFIG_HOME: join(scratch, "config"), XDG_STATE_HOME: join(scratch, "state"), XDG_DATA_HOME: join(scratch, "data") } });
   if (result.error || result.status !== status) throw new Error(`Unexpected CLI result (${result.status}): ${result.error ?? result.stdout + result.stderr}`);
   return JSON.parse(result.stdout);
 }
@@ -29,6 +30,11 @@ try {
     ["frontmatter", "name: proof-skill\n"],
     ["frontmatter", source("name: duplicate\n")],
     ["schema", source("unexpected: true\n")],
+    ["schema", source("hooks:\n  PreToolUse:\n    - hooks:\n        - type: command\n          command: 'printf forbidden'\n")],
+    ["schema", source("context: fork\n")],
+    ["no-execution", source("", "Read !`printf forbidden` before proceeding.\n")],
+    ["no-execution", source("", "!`printf first\nprintf second`\n")],
+    ["no-execution", source("", "```upstream-quote https://example.org/source\n!`printf forbidden`\n```\n")],
     ["description-trigger", source("", undefined, "Reviews changes for acceptance gaps.")],
     ["description-third-person", source("", undefined, "Review changes. Use when checking acceptance.")],
     ["no-routing-field", source("model: claude-example-1\n")],
@@ -90,6 +96,18 @@ try {
     const severity = status === 0 ? "warning" : "error";
     if (!report.diagnostics.some(item => item.rule === rule && item.severity === severity)) throw new Error(`Missing ${severity} diagnostic ${rule}`);
     console.log(`PASS planted ${index + 1}: ${rule} (exit ${status})`);
+  }
+  for (const [index, [header, body, rule]] of [
+    ["hooks:\n  PreToolUse:\n    - hooks:\n        - type: command\n          command: 'printf forbidden'\n", "Read the requested file.\n", "schema"],
+    ["context: fork\n", "Read the requested file.\n", "schema"],
+    ["paths: ['**/*.txt']\n", "!`printf forbidden`\n", "no-execution"],
+  ].entries()) {
+    const directory = join(scratch, `private-${index}`, "proof-skill");
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, "SKILL.md"), source(header, body).replace("license: MIT\n", ""));
+    const report = run(["import", "--from", join(directory, ".."), "--dry-run", "--json"], 1);
+    if (report.ok || !report.skills[0]?.diagnostics.some(item => item.rule === rule && item.severity === "error")) throw new Error(`Private import must reject ${rule}`);
+    console.log(`PASS private import: ${rule}`);
   }
   const prose = join(scratch, "prose", "proof-skill");
   await mkdir(prose, { recursive: true });

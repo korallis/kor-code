@@ -129,6 +129,9 @@ export async function importPrivateSkills(options: { config: KorConfig; paths: K
           result.status = "conflict";
           result.diagnostics.push({ severity: "error", rule: "public-name", message: "Identical to the public bundle; no private copy is needed" });
         }
+        if (bundled.skills.some(publicSkill => publicSkill.name === result.name && publicSkill.hash !== skill.hash) && skill.header.metadata?.["kor.overrides"] !== "public") {
+          result.diagnostics.push({ severity: "warning", rule: "name-collision", message: "Bundled public skill remains active; set metadata.kor.overrides: public in the private skill to replace it" });
+        }
         if (await exists(join(destination, result.name))) {
           result.status = "conflict";
           result.diagnostics.push({ severity: "error", rule: "destination-exists", message: "Destination exists; import never overwrites" });
@@ -181,13 +184,13 @@ export async function guardPrivateSkills(options: { privatePath: string; publicP
   const names = new Set<string>();
   if (await exists(privatePath)) {
     const publicFiles = await skillFiles(publicPath);
-    const publicHashes = new Map(await Promise.all(publicFiles.map(async file => {
+    const publicNames = new Set(await Promise.all(publicFiles.map(async file => {
       const skill = await readSkillBundle(file, "public");
-      return [skill.header.name, skill.hash] satisfies [string, string];
+      return skill.header.name;
     })));
     for (const file of await skillFiles(privatePath)) {
       const skill = await readSkillBundle(file, "private");
-      if (publicHashes.get(skill.header.name) !== skill.hash) names.add(basename(dirname(file)).toLowerCase());
+      if (!publicNames.has(skill.header.name)) names.add(basename(dirname(file)).toLowerCase());
     }
     try {
       for (const line of (await readFile(join(privatePath, "deny.txt"), "utf8")).split(/\r?\n/)) {

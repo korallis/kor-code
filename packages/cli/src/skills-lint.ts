@@ -39,14 +39,29 @@ export const skillFrontmatterSchema = z.strictObject({
   "allowed-tools": z.string().optional(),
   "disable-model-invocation": z.boolean().optional(),
   "user-invocable": z.boolean().optional(),
+  hooks: z.never().optional(),
+  context: z.never().optional(),
   metadata: z.record(z.string(), z.string()).optional(),
 });
 
+const korMetadataSchema = z.record(z.string(), z.string());
 export const privateSkillMetadataSchema = z.record(z.string(), z.unknown()).superRefine((value, context) => {
   for (const [key, entry] of Object.entries(value)) {
     if (key.startsWith("kor.") && typeof entry !== "string") context.addIssue({ code: "custom", path: [key], message: "Kor metadata must be a string" });
   }
-}).transform(value => Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string")));
+  if (value.kor === undefined) return;
+  const nested = korMetadataSchema.safeParse(value.kor);
+  if (!nested.success) {
+    context.addIssue({ code: "custom", path: ["kor"], message: "Nested Kor metadata must contain string values" });
+    return;
+  }
+  for (const [key, entry] of Object.entries(nested.data)) {
+    if (value[`kor.${key}`] !== undefined && value[`kor.${key}`] !== entry) context.addIssue({ code: "custom", path: [`kor.${key}`], message: "Flat and nested Kor metadata must agree" });
+  }
+}).transform(value => ({
+  ...Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string")),
+  ...Object.fromEntries(Object.entries(value.kor === undefined ? {} : korMetadataSchema.parse(value.kor)).map(([key, entry]) => [`kor.${key}`, entry])),
+}));
 
 const privateFrontmatterSchema = skillFrontmatterSchema.extend({
   license: z.string().optional(), metadata: privateSkillMetadataSchema.optional(),
@@ -113,6 +128,10 @@ export async function lintSkills(root: string, options: { private?: boolean; nam
   }
 
   function checkText(file: string, text: string, startLine = 1): void {
+    for (const match of text.matchAll(/!`[^`]+`/g)) {
+      const line = startLine + text.slice(0, match.index).split("\n").length - 1;
+      add(file, line, "error", "no-execution", "Remove shell interpolation; scripts must run through repository-approved tools.");
+    }
     let fence: string | undefined;
     let upstreamQuote = false;
     for (const [index, line] of lines(text).entries()) {
