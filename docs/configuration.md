@@ -56,6 +56,33 @@ The CLI freshness threshold is the configured poll interval multiplied by two un
 
 `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, and `XDG_DATA_HOME` override those roots. `KOR_GATEWAY_KEY`, `KOR_GATEWAY_URL`, and the other supported environment variables override values in `gateway.env` for one process. Kor never edits CLIProxyAPI configuration. Install prints only a newly generated key for manual provisioning; it never prints existing credential values.
 
+## Session launch profile
+
+Set the top-level `launchProfile` in `config.yaml` to `standard` (the default) or
+`lean`, then restart `kor serve` to use it for subsequent sessions.
+
+```yaml
+launchProfile: lean
+```
+
+Both profiles retain Jev’s per-task tool selection within the repository ceiling,
+disable automatic memory and repository instruction discovery, and load the
+cockpit plugin. Per-execution skill delivery suppresses Claude Code’s bundled
+skills in both profiles with `disableBundledSkills: true` and the existing built-in plugin and
+skill overrides. `lean` additionally sets `includeGitInstructions: false` in
+Claude Code’s `--settings` JSON and passes
+`--exclude-dynamic-system-prompt-sections`. This removes built-in commit/PR
+guidance and stabilizes the system prefix across execution homes. `standard`
+retains the current base launcher settings for
+A/B measurement and stays the default while gateway cache behaviour is
+investigated. Use `launchProfile: lean` to opt in. These flags apply only to
+isolated execution sessions.
+
+The settings profile does not select tools or change Jev’s per-task route.
+Embedders can pass the same `launchProfile` option to `SessionLauncher`; an
+explicit `args` override still replaces the generated Claude arguments. See [Measure session context](context-bench.md)
+for repeatable comparisons and cache measurements.
+
 ## Install and uninstall
 
 Build with `pnpm install --frozen-lockfile && pnpm build`, then run
@@ -105,9 +132,10 @@ also permits equivalent direct invocations of explicitly allowed `bash`/`sh`
 scripts when they are executable, use the same shebang interpreter, and resolve
 inside the isolated execution worktree. These aliases preserve the configured
 script and argument scope; they do not enable general shell or network commands.
-By default Kor passes `--tools` with the deduplicated, sorted base tool names
-from these effective permissions. For example,
-`Bash(git diff*)` contributes `Bash`, while its command restriction stays in
+Kor derives the tool ceiling from the deduplicated, sorted base tool names
+in these effective permissions. The controller narrows that ceiling using Jev’s
+capability decisions before the launcher passes the selected set to `--tools`.
+For example, `Bash(git diff*)` contributes `Bash`, while its command restriction stays in
 `--allowedTools`. When `toolAllowlist` includes unscoped `Read`, Kor also
 pre-approves `Glob` and `Grep` for file search. A scoped `Read(...)` or empty
 allowlist does not receive automatic search tools or search permissions. To

@@ -46,6 +46,7 @@ export interface SessionLauncherOptions {
   onOutput?: (executionId: string, channel: "stdout" | "stderr", text: string) => void;
   gateway?: () => Promise<{ baseUrl: string; key: string | undefined }>;
   sandboxRoot?: string;
+  launchProfile?: "lean" | "standard";
   prepareSkills?: (input: SessionLaunch & { allowedTools: readonly string[] }) => Promise<SessionSkillPack>;
 }
 
@@ -54,6 +55,7 @@ const CONTEXT_SETTINGS = {
   enabledPlugins: { "cc-plugin-plugin-authoring@builtin": false },
   skillOverrides: { design: "off", doctor: "off" },
 };
+const LEAN_SETTINGS = { ...CONTEXT_SETTINGS, includeGitInstructions: false };
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : undefined;
@@ -234,7 +236,9 @@ export class SessionLauncher implements SessionLauncherLike {
       ...(input.route?.model ? ["--model", input.route.model] : []),
       ...(input.route?.reasoningLevel ? ["--effort", input.route.reasoningLevel] : []),
     ];
-    const commandArgs = this.options.args ?? ["claude", "-p", prompt, ...routeArgs, "--plugin-dir", resolve(this.repoRoot, "packages/claude-plugin"), ...(skills?.pluginDir ? ["--plugin-dir", skills.pluginDir] : []), "--tools", tools.join(","), "--no-session-persistence", "--permission-mode", "dontAsk", "--allowedTools", ...toolArgs, "--output-format", "stream-json", "--verbose", "--setting-sources", "", "--settings", JSON.stringify(CONTEXT_SETTINGS)];
+    const lean = this.options.launchProfile === "lean";
+    const settingsArgs = ["--settings", JSON.stringify(lean ? LEAN_SETTINGS : CONTEXT_SETTINGS), ...(lean ? ["--exclude-dynamic-system-prompt-sections"] : [])];
+    const commandArgs = this.options.args ?? ["claude", "-p", prompt, ...routeArgs, "--plugin-dir", resolve(this.repoRoot, "packages/claude-plugin"), ...(skills?.pluginDir ? ["--plugin-dir", skills.pluginDir] : []), "--tools", tools.join(","), "--no-session-persistence", "--permission-mode", "dontAsk", "--allowedTools", ...toolArgs, "--output-format", "stream-json", "--verbose", "--setting-sources", "", ...settingsArgs];
     const args = ["--run", ...commandArgs];
     const tool = commandArgs[0] ?? "claude";
     const toolDir = tool.includes("/") ? dirname(tool) : this.findToolDir(tool);

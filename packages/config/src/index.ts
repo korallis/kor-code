@@ -44,6 +44,7 @@ export const korConfigSchema = z.strictObject({
     perProvider: positiveInteger.optional(),
   }).prefault({}),
   defaultRoute: routeSchema.prefault({}),
+  launchProfile: z.enum(["lean", "standard"]).default("standard"),
   pollIntervalSeconds: positiveInteger.default(60),
   intakeLabel: nonempty.default("kor"),
   calibration: calibrationSchema.prefault({}),
