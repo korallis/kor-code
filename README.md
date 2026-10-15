@@ -208,7 +208,8 @@ the acceptance criteria in Linear, add any missing detail, then retry, or answer
 in Mission Control to ask Jev again. Once an execution is ready, **Request changes**,
 operator answers and adding the configured intake label keep that verdict while
 the underlying issue and eligible models stay unchanged. A label that also
-requires a screenshot (`UI`) still triggers that check.
+requires a screenshot (`UI`) still triggers that check. The intake label
+matches regardless of letter case.
 
 ### Work in Mission Control
 

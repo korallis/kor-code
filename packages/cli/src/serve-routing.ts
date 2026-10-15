@@ -4,7 +4,7 @@ import type { CatalogueModel, Route } from "@kor-code/core";
 import { NeedsInputError, type DaemonOptions, type DescribePullRequest } from "@kor-code/daemon";
 import { JevClient, JevDecisionCore, JevUnavailableError, redact, planPreflight, preflightRequests, routeFromDecision, type DecisionAuditLog } from "@kor-code/jev";
 
-const routingLabels = (labels: readonly string[], intakeLabel: string) => labels.filter(label => label !== "kor:blocked" && (label !== intakeLabel || label.trim().toLowerCase() === "ui")).sort();
+const routingLabels = (labels: readonly string[], intakeLabel: string) => labels.filter(label => label !== "kor:blocked" && (label.toLowerCase() !== intakeLabel.toLowerCase() || label.trim().toLowerCase() === "ui")).sort();
 
 /** One persistent decision core for serve's preflight and acceptance judgments. */
 export function createServeRouting(options: {

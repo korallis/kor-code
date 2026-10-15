@@ -432,7 +432,8 @@ stay unchanged. Jev judges whether essential scope is missing, rather than
 implementation difficulty; concrete file, input and behavior requirements can
 suffice without an unrelated build setup. The threshold remains 0.70 and all
 deterministic readiness checks still apply. An intake label that also means
-`UI` retains its screenshot requirement.
+`UI` retains its screenshot requirement. The intake label matches regardless
+of letter case.
 
 The Claude Code status line counts overrides only for the execution it follows.
 Jev Brain and `kor calibrate report` list operator-routed runs under `override`,
