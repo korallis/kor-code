@@ -279,18 +279,16 @@ export class SessionLauncher implements SessionLauncherLike {
       });
     });
     if (skills?.pluginDir && result.telemetry) {
-      let source: string | undefined;
-      try { source = await readFile(join(skills.pluginDir, "armed-firings.json"), "utf8"); }
-      catch (error) { if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error; }
-      if (source) {
-        const firings = loadEventSchema.omit({ turn: true }).array().max(2).parse(JSON.parse(source));
+      try {
+        const firings = loadEventSchema.omit({ turn: true }).array().max(2).parse(JSON.parse(await readFile(join(skills.pluginDir, "armed-firings.json"), "utf8")));
         const loads = result.telemetry.loadEvents ?? [];
-        const armed = firings.map(firing => {
+        const armed = firings.flatMap(firing => {
           const event = loads.find(event => event.kind === "tool" && event.toolUseId === firing.toolUseId);
-          if (!event) throw new Error("Armed skill firing has no matching session tool event");
-          return { ...firing, turn: event.turn };
+          return event ? [{ ...firing, turn: event.turn }] : [];
         });
         result.telemetry.loadEvents = [...loads, ...armed];
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) collector.add("stderr", "Kor armed skill telemetry unavailable.");
       }
     }
     return result;

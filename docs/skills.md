@@ -409,7 +409,10 @@ timestamp. The hook serializes concurrent events and writes state before
 emitting context. The launcher joins firings to the corresponding tool turn
 in `telemetry.loadEvents` with `source: "armed"`; existing calibration storage
 retains these records for outcome learning. A firing records delivery, not
-evidence that the session followed the guidance. Hook failures emit a diagnostic
+evidence that the session followed the guidance. Subagent firings stay in the
+pack's firing file; only firings with a matching main-session tool turn enter
+calibration telemetry. Missing or invalid optional firing records do not discard
+a completed session. Hook failures emit a diagnostic
 and no guidance. A lock left by an interrupted hook prevents further injections
 in that pack; preparing a fresh pack clears it.
 
@@ -426,6 +429,8 @@ checkout:
 node scripts/skills-pack-proof.mjs /tmp/jev-route.json /tmp/kor-skills-proof
 # Repeat only mid-run arming after a hook change:
 node scripts/skills-pack-proof.mjs /tmp/jev-route.json /tmp/kor-arming-proof --arming-only
+# Verify a trigger fired inside a real subagent:
+node scripts/skills-pack-proof.mjs /tmp/jev-route.json /tmp/kor-subagent-proof --subagent-only
 ```
 
 The proof reads gateway credentials at runtime, invokes the real catalogue CLI
@@ -437,6 +442,8 @@ matching tool result. The armed runs check
 nonmatching and repeated reads, the two-injection cap, command triggers, factual
 framing, firing records in calibration storage and fresh state on a subsequent
 session. Eight concurrent matching hook processes also check one-time delivery.
+The subagent case checks delivery to a child session and successful completion
+when its firing has no main-session turn.
 Captures, streams and measured
 context counts remain in the output directory. No real harness configuration
 is modified.
