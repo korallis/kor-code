@@ -309,6 +309,8 @@ Secondary routes to the same daemon. Every command prints JSON for scripts with
 | Preview Jev's plan | `kor plan LEE-123` |
 | Check your setup | `kor doctor` |
 | Attach and verify a ticket screenshot | `kor linear attach-image APP-123 ./screen.png --alt "/settings — error — desktop" [--json]` |
+| Create or import a private skill pack | `kor skills init`, `kor skills import --from DIRECTORY [--dry-run] [--json]` |
+| Check public skills for private content | `kor skills guard [DIRECTORY] [--json]` |
 | Validate public skills | `kor skills lint` (`[DIRECTORY] [--json]`) |
 | Build or inspect the skill catalogue | `kor skills index`, `list`, `show NAME`, `doctor` (`[--from DIRECTORY]... [--estimate] [--json]`) |
 | Open Mission Control | `kor ui` |
@@ -355,7 +357,7 @@ the same as an object.
 
 ## Documentation
 
-- [Public skills](docs/skills.md): bundled code and PR standards, Linear operations
+- [Skills](docs/skills.md): bundled code and PR standards, Linear operations
   and ticket-writing guidance, authoring schema, lint, catalogue commands, private
   and configured sources, routing guardrails and token costs. Lint runs locally
   without credentials or a daemon, scans every bundled text file for explicit
@@ -365,8 +367,11 @@ the same as an object.
   sources without writing. Use repeated `--from DIRECTORY` for an explicit local
   scan and `--estimate` for reproducible costs without a gateway.
   `kor linear attach-image` uploads a PNG, embeds it in the ticket and verifies
-  the saved bytes using runtime Linear credentials. Session selection and
-  delivery are separate work.
+  the saved bytes using runtime Linear credentials. `kor skills init` creates a
+  private pack; `import --from` copies local skills without changing the source
+  (`--dry-run` previews). `kor skills guard` checks the public tier against private
+  skill names and the local `deny.txt`. `local-only` entries expose only a name
+  and fixed label to Jev. Session selection and delivery are separate work.
 
 - [User guide](docs/user-guide.md): install, credentials, configuration, Linear
   setup, Mission Control job by job, the CLI and status line, recovery,

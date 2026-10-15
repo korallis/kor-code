@@ -20,6 +20,7 @@ import { CalibrationStore, buildReport, formatReport } from "@kor-code/calibrati
 import type { CatalogueModel, KorCliError } from "@kor-code/core";
 import { formatSkillLint, lintSkills } from "./skills-lint.js";
 import { buildSkillsCatalogue, formatSkillsCatalogue, writeSkillsCatalogue } from "./skills-catalogue.js";
+import { guardPrivateSkills, importPrivateSkills, initPrivateSkills, privateSkillsPath } from "./skills-private.js";
 
 class CliFailure extends Error {
   constructor(readonly code: string, message: string, readonly hint: string, readonly exitCode = 1) { super(message); }
@@ -284,6 +285,48 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
       const skillArgs = cleanArgs.slice(1);
       const catalogueCommands = ["index", "list", "show", "doctor"];
       const action = skillArgs[0];
+      if (action === "init" || action === "import" || action === "guard") {
+        const usage = action === "import" ? "kor skills import --from DIRECTORY [--dry-run] [--json]"
+          : `kor skills ${action}${action === "guard" ? " [DIRECTORY]" : ""} [--json]`;
+        if (skillArgs.includes("--help") || skillArgs.includes("-h")) { print(`Usage: ${usage}`, false); return 0; }
+        let from: string | undefined;
+        let directory: string | undefined;
+        let dryRun = false;
+        for (let index = 1; index < skillArgs.length; index++) {
+          const arg = skillArgs[index];
+          if (arg === "--json") continue;
+          if (action === "import" && arg === "--dry-run" && !dryRun) { dryRun = true; continue; }
+          if (action === "import" && arg === "--from" && from === undefined) {
+            from = skillArgs[++index];
+            if (!from || from.startsWith("-")) usageFailure(usage);
+          } else if (action === "guard" && arg && !arg.startsWith("-") && directory === undefined) directory = arg;
+          else usageFailure(usage);
+        }
+        const paths = runtimePaths();
+        const { config } = await loadKorConfig(paths.configFile, { home: paths.home });
+        const privatePath = privateSkillsPath(config, paths);
+        if (action === "init") {
+          await initPrivateSkills(privatePath);
+          print(jsonFlag(skillArgs) ? { schemaVersion: 1, ok: true, path: privatePath } : privatePath, jsonFlag(skillArgs));
+          return 0;
+        }
+        if (action === "import") {
+          if (!from) usageFailure(usage);
+          const report = await importPrivateSkills({ config, paths, from, dryRun });
+          print(jsonFlag(skillArgs) ? report : [
+            ...report.skills.map(skill => `${skill.name}: ${skill.status}; suggested visibility ${skill.suggestedVisibility}`),
+            ...report.diagnostics.map(item => `${item.severity.toUpperCase()} [${item.rule}] ${item.message}`),
+            `${report.ok ? "PASS" : "FAIL"} ${dryRun ? "dry-run" : "import"}: ${report.skills.length} skills, ${report.duplicates} duplicates, ${report.bytes} bytes; ${report.destination}`,
+          ].join("\n"), jsonFlag(skillArgs));
+          return report.ok ? 0 : 1;
+        }
+        const report = await guardPrivateSkills({ privatePath, publicPath: directory ?? fileURLToPath(new URL("../../../skills", import.meta.url)) });
+        print(jsonFlag(skillArgs) ? report : [
+          ...report.diagnostics.map(item => `ERROR [${item.rule}] ${item.file}: ${item.message}`),
+          `${report.ok ? "PASS" : "FAIL"} skills guard: ${report.files} public files, ${report.privateNames} private names or deny entries`,
+        ].join("\n"), jsonFlag(skillArgs));
+        return report.ok ? 0 : 1;
+      }
       if (action && catalogueCommands.includes(action)) {
         const usage = `kor skills ${action}${action === "show" ? " NAME" : ""} [--from DIRECTORY]... [--estimate] [--json]`;
         if (skillArgs.includes("--help") || skillArgs.includes("-h")) { print(`Usage: ${usage}`, false); return 0; }
@@ -315,7 +358,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
         }
         return catalogue.ok ? 0 : 1;
       }
-      const usage = "kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json]";
+      const usage = "kor skills init [--json] | kor skills import --from DIRECTORY [--dry-run] [--json] | kor skills guard [DIRECTORY] [--json] | kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json]";
       if (skillArgs[0] === "--help" || skillArgs[0] === "-h" || skillArgs[0] === "lint" && skillArgs.includes("--help")) {
         print(`Usage: ${usage}\nLint checks the public tier. Catalogue commands merge bundled, private and configured skills; show requires NAME. --from replaces those sources for a read-only scan. No daemon required.`, false);
         return 0;
@@ -389,7 +432,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     if (debug && error instanceof Error && error.stack) process.stderr.write(`${error.stack}\n`);
     return failure instanceof CliFailure ? failure.exitCode : 1;
   }
-  process.stdout.write("Usage: kor linear attach-image ISSUE FILE --alt CAPTION [--json] | kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json] | kor ui | kor serve [--ui-dir DIST] [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--context] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor linear lint ISSUE-ID [--json] | kor linear lint --project PROJECT-ID [--json] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list | kor models probe [--family family] [--model model]\n");
+  process.stdout.write("Usage: kor linear attach-image ISSUE FILE --alt CAPTION [--json] | kor skills init [--json] | kor skills import --from DIRECTORY [--dry-run] [--json] | kor skills guard [DIRECTORY] [--json] | kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json] | kor ui | kor serve [--ui-dir DIST] [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--context] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor linear lint ISSUE-ID [--json] | kor linear lint --project PROJECT-ID [--json] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list | kor models probe [--family family] [--model model]\n");
   return 0;
 }
 

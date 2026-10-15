@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { z } from "zod";
 import { gatewayUrl, readRuntimeEnvFile, type KorConfig, type KorPaths } from "@kor-code/config";
-import { lintSkills, skillFrontmatterSchema } from "./skills-lint.js";
+import { lintSkills, privateSkillMetadataSchema, skillFrontmatterSchema } from "./skills-lint.js";
 
 const CHARS_PER_TOKEN = 3.7;
 const MAX_BODY_LINES = 500;
@@ -19,11 +19,7 @@ const SKIP_DIRECTORIES = new Set([".git", "node_modules"]);
 const headerSchema = skillFrontmatterSchema.pick({ name: true, description: true, metadata: true, "disable-model-invocation": true })
   .extend({
     license: z.string().optional(),
-    metadata: z.record(z.string(), z.unknown()).superRefine((value, context) => {
-      for (const [key, entry] of Object.entries(value)) {
-        if (key.startsWith("kor.") && typeof entry !== "string") context.addIssue({ code: "custom", path: [key], message: "Kor metadata must be a string" });
-      }
-    }).transform(value => Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"))).optional(),
+    metadata: privateSkillMetadataSchema.optional(),
   }).loose();
 const countSchema = z.object({ input_tokens: z.number().int().nonnegative() });
 
@@ -40,6 +36,7 @@ export interface CatalogueSkill {
   triggers: string[];
   anti: string[];
   requires: string[];
+  visibility: "public" | "local-only";
   jevVisible: "full" | "names-only";
   cost: { listingTokens: number; bodyTokens: number; referencesMaxTokens: number; method: "count_tokens" | "estimate" };
   hash: string;
@@ -78,7 +75,7 @@ function compare(a: string, b: string): number { return a < b ? -1 : a > b ? 1 :
 function split(value: string | undefined): string[] { return value?.split(/[,;]/).map(item => item.trim()).filter(Boolean) ?? []; }
 function missing(error: unknown): boolean { return error instanceof Error && "code" in error && error.code === "ENOENT"; }
 
-async function skillFiles(root: string): Promise<string[]> {
+export async function skillFiles(root: string): Promise<string[]> {
   const seen = new Set<string>();
   async function visit(path: string): Promise<string[]> {
     const canonical = await realpath(path);
@@ -183,8 +180,8 @@ export async function buildSkillsCatalogue(options: { config: KorConfig; paths: 
       diagnostics.push({ severity: "error", rule: "source", path: source.path, message: "Cannot read skills source" });
       continue;
     }
-    if (source.tier === "public") {
-      const lint = await lintSkills(source.path);
+    if (source.tier === "public" || source.tier === "private" && files.length > 0) {
+      const lint = await lintSkills(source.path, { private: source.tier === "private" });
       diagnostics.push(...lint.diagnostics.map(item => ({ severity: item.severity, rule: item.rule, path: join(source.path, item.file), message: item.message })));
     }
     for (const path of files) {
@@ -212,7 +209,8 @@ export async function buildSkillsCatalogue(options: { config: KorConfig; paths: 
     const origins = group.map(item => item.origin);
     if (group.length > 1) duplicates.push({ hash: contentHash, names: [...new Set(group.map(item => item.header.name))].sort(compare), origins });
     const privateText = group.some(item => item.header.metadata?.["kor.visibility"] === "local-only" || item.origin.tier === "private" && config.skills?.jev !== "full" || item.origin.tier === "from");
-    const listing = header["disable-model-invocation"] ? "" : `${header.name}: ${header.description}`;
+    const summary = privateText ? "Private guidance (local-only)." : header.description.slice(0, SUMMARY_CHARS);
+    const listing = header["disable-model-invocation"] ? "" : `${header.name}: ${privateText ? summary : header.description}`;
     const cost = await count([listing, body, ...references], privateText);
     const bodyTokens = cost.tokens[1] ?? 0;
     const bodyBudget = /^\d+$/.test(metadata["kor.budget"] ?? "") ? Number(metadata["kor.budget"]) : budgets.body;
@@ -221,8 +219,9 @@ export async function buildSkillsCatalogue(options: { config: KorConfig; paths: 
     if (bodyLines > MAX_BODY_LINES) diagnostics.push({ severity: "warning", rule: "body-lines", path: candidate.origin.path, message: `${header.name}: ${bodyLines} body lines exceed ${MAX_BODY_LINES}` });
     skills.push({
       name: header.name, tier: candidate.origin.tier, kind: metadata["kor.kind"] ?? "skill", stages: split(metadata["kor.stages"]),
-      summary: privateText ? "Private guidance (local-only)." : header.description.slice(0, SUMMARY_CHARS),
+      summary,
       triggers: privateText ? [] : split(metadata["kor.triggers"]), anti: privateText ? [] : split(metadata["kor.anti"]), requires: split(metadata["kor.requires"]),
+      visibility: privateText ? "local-only" : "public",
       jevVisible: privateText ? "names-only" : "full",
       cost: { listingTokens: cost.tokens[0] ?? 0, bodyTokens, referencesMaxTokens: cost.tokens.slice(2).reduce((sum, value) => sum + value, 0), method: cost.method },
       hash: contentHash, source: { license: header.license ?? null, ...(metadata["kor.source"] ? { url: metadata["kor.source"] } : {}), ...(metadata["kor.commit"] ? { commit: metadata["kor.commit"] } : {}) },
@@ -265,7 +264,7 @@ export async function writeSkillsCatalogue(catalogue: SkillsCatalogue, paths: Ko
 
 export function formatSkillsCatalogue(catalogue: SkillsCatalogue): string {
   return [
-    ...catalogue.skills.map(skill => `${skill.name} [${skill.tier}, ${skill.jevVisible}]: listing ${skill.cost.listingTokens}, body ${skill.cost.bodyTokens}, references ${skill.cost.referencesMaxTokens} tokens (${skill.cost.method})`),
+    ...catalogue.skills.map(skill => `${skill.name} [${skill.tier}, ${skill.visibility}, ${skill.jevVisible}]: listing ${skill.cost.listingTokens}, body ${skill.cost.bodyTokens}, references ${skill.cost.referencesMaxTokens} tokens (${skill.cost.method})`),
     ...catalogue.duplicates.map(group => `DUPLICATE ${group.names.join(", ")}: ${group.origins.length} copies, ${group.hash}`),
     ...catalogue.diagnostics.map(item => `${item.severity.toUpperCase()} [${item.rule}] ${item.path}: ${item.message}`),
     `${catalogue.ok ? "PASS" : "FAIL"} catalogue: ${catalogue.totals.skills} skills, ${catalogue.totals.duplicates} duplicates, ${catalogue.totals.listingTokens}/${catalogue.budgets.listing} listing tokens; ${catalogue.hash}`,

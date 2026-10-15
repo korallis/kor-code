@@ -27,6 +27,7 @@ const ROUTING_TEXT = [
   /\b(?:use|choose|select|prefer|pin|set|run with)\s+(?:none|minimal|low|medium|high|xhigh|max|ultra)\s+(?:(?:reasoning[ -])?effort|reasoning[ -]level)\b/i,
 ];
 const ROUTING_KEY = /^(?:model|models|effort|agent|agents|provider|harness|reasoning[-_]?level)$/i;
+const PRIVATE_AUTHORING_RULES = new Set(["description-trigger", "description-third-person", "overlap-anti", "reference-toc", "nested-reference", "body-lines"]);
 const STAGES = new Set(["plan", "execute", "repair", "review", "ship", "project-setup"]);
 
 export const skillFrontmatterSchema = z.strictObject({
@@ -39,6 +40,16 @@ export const skillFrontmatterSchema = z.strictObject({
   "user-invocable": z.boolean().optional(),
   metadata: z.record(z.string(), z.string()).optional(),
 });
+
+export const privateSkillMetadataSchema = z.record(z.string(), z.unknown()).superRefine((value, context) => {
+  for (const [key, entry] of Object.entries(value)) {
+    if (key.startsWith("kor.") && typeof entry !== "string") context.addIssue({ code: "custom", path: [key], message: "Kor metadata must be a string" });
+  }
+}).transform(value => Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string")));
+
+const privateFrontmatterSchema = skillFrontmatterSchema.extend({
+  license: z.string().optional(), metadata: privateSkillMetadataSchema.optional(),
+}).loose();
 
 export interface SkillLintDiagnostic {
   file: string;
@@ -80,7 +91,7 @@ function localLinks(text: string): string[] {
   return [...new Set(targets)].filter(target => target && !/^(?:[a-z][a-z0-9+.-]*:|#)/i.test(target));
 }
 
-export async function lintSkills(root: string): Promise<SkillLintReport> {
+export async function lintSkills(root: string, options: { private?: boolean } = {}): Promise<SkillLintReport> {
   root = resolve(root);
   const diagnostics: SkillLintDiagnostic[] = [];
   const skills: SkillLintReport["skills"] = [];
@@ -139,7 +150,8 @@ export async function lintSkills(root: string): Promise<SkillLintReport> {
     catch { add(skillFile, 1, "error", "frontmatter", "Frontmatter must be valid YAML with unique keys and no aliases."); continue; }
     for (const field of routingFields(raw)) add(skillFile, 1, "error", "no-routing-field", `Remove routing field ${field}; Jev owns routing.`);
     checkText(skillFile, header, 2);
-    const parsed = skillFrontmatterSchema.safeParse(raw);
+    const schema = options.private ? privateFrontmatterSchema : skillFrontmatterSchema;
+    const parsed = schema.safeParse(raw);
     if (!parsed.success) {
       for (const issue of parsed.error.issues) add(skillFile, 1, "error", "schema", `${issue.path.join(".") || "frontmatter"}: ${issue.message}`);
     }
@@ -160,7 +172,7 @@ export async function lintSkills(root: string): Promise<SkillLintReport> {
       if (!TRIGGER.test(description.slice(0, EARLY_TRIGGER_CHARS))) add(skillFile, 3, "warning", "trigger-late", `Put the use trigger within the first ${EARLY_TRIGGER_CHARS} characters.`);
       const kind = metadata["kor.kind"];
       if (kind !== undefined && !["skill", "standard", "playbook"].includes(kind)) add(skillFile, 1, "error", "metadata", "kor.kind must be skill, standard or playbook.");
-      if (metadata["kor.visibility"] !== undefined && metadata["kor.visibility"] !== "public") add(skillFile, 1, "error", "metadata", "Public tier visibility must be public.");
+      if (metadata["kor.visibility"] !== undefined && !((options.private ? ["public", "local-only"] : ["public"]).includes(metadata["kor.visibility"]))) add(skillFile, 1, "error", "metadata", "Visibility must be public, or local-only in the private tier.");
       if (metadata["kor.stages"]?.split(",").some(stage => !STAGES.has(stage.trim()))) add(skillFile, 1, "error", "metadata", "kor.stages contains an unknown stage.");
       const budget = metadata["kor.budget"] === undefined ? DEFAULT_BODY_BUDGET : Number(metadata["kor.budget"]);
       if (!Number.isInteger(budget) || budget <= 0) add(skillFile, 1, "error", "metadata", "kor.budget must be a positive integer token count.");
@@ -200,7 +212,8 @@ export async function lintSkills(root: string): Promise<SkillLintReport> {
     }
   }
   if (!entries.some(entry => entry.isDirectory())) add(root, 1, "error", "empty-tier", "No skill directories found.");
-  return { schemaVersion: 1, ok: !diagnostics.some(item => item.severity === "error"), root, tokenMethod: "characters/3.7 estimate", skills, diagnostics };
+  const findings = options.private ? diagnostics.filter(item => !PRIVATE_AUTHORING_RULES.has(item.rule)) : diagnostics;
+  return { schemaVersion: 1, ok: !findings.some(item => item.severity === "error"), root, tokenMethod: "characters/3.7 estimate", skills, diagnostics: findings };
 }
 
 export function formatSkillLint(report: SkillLintReport): string {
