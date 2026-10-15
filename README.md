@@ -163,8 +163,9 @@ intakeLabel: kor
 ```
 
 `checks` decide whether a result is accepted. `toolAllowlist` grants tool and
-command permissions; Kor also enables `Glob` and `Grep` for file search. Sessions
-load only the allowlist's base tool names plus those search tools, reducing
+command permissions; unscoped `Read` also enables `Glob` and `Grep` for file
+search. Scoped Read policies require explicit search permissions. Sessions
+load only the effective permissions' base tool names, reducing
 startup context. Optional per-repository `tools: [Read, Edit, Write, Bash, Glob, Grep]`
 replaces that available set without granting shell permissions. `kor doctor`
 prints the effective set. Every field is explained in the

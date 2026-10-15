@@ -7,7 +7,7 @@ export interface Repository {
   defaultBranch?: string;
   /** Claude Code tool patterns permitted for sessions in this repository. */
   allowedTools?: readonly string[];
-  /** Available tool schemas; omitted derives a lean set from permissions plus search. */
+  /** Available tool schemas; omitted derives a lean set from effective permissions. */
   tools?: readonly string[];
   /** Shell commands Kor must run before an execution can complete. */
   checks?: readonly string[];

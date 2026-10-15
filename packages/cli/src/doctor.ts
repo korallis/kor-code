@@ -100,10 +100,10 @@ async function checkRepositories(config: Awaited<ReturnType<typeof loadKorConfig
         const remote = (await command("git", ["-C", repository.path, "remote", "get-url", "origin"])).stdout.trim();
         if (remote !== repository.remote) throw new Error();
       }
-      checks.push({ name: `repo ${key}`, status: "ok", detail: `${repository.path} (${repository.defaultBranch})` });
       const permissions = await sessionPermissions({ worktree: repository.path, allowedTools: repository.toolAllowlist, checks: repository.checks, ...(repository.tools ? { tools: repository.tools } : {}) });
       const tools = sessionTools(permissions, repository.tools);
-      checks.push({ name: `repo ${key} tools`, status: "ok", detail: `${tools.join(", ") || "none"} (${repository.tools ? "tools override" : "allowlist base names plus Glob, Grep"}); availability does not grant command permissions` });
+      checks.push({ name: `repo ${key}`, status: "ok", detail: `${repository.path} (${repository.defaultBranch})` });
+      checks.push({ name: `repo ${key} tools`, status: "ok", detail: `${tools.join(", ") || "none"} (${repository.tools ? "tools override" : "effective permission base names; automatic search requires unscoped Read"}); availability does not grant command permissions` });
     } catch {
       // Never forward git stderr: a configured remote can contain credentials.
       checks.push({ name: `repo ${key}`, status: "error", detail });

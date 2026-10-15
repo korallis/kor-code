@@ -253,14 +253,15 @@ intakeLabel: kor
   setups.
 - **`checks`** are shell commands run in the worktree after each attempt. A
   non-zero exit means the attempt is not verified.
-- **`toolAllowlist`** grants tool and command permissions. Kor also pre-approves
-  `Glob` and `Grep` for file search. Sessions run in Claude Code's `dontAsk` mode:
-  commands outside the effective permissions are denied, and **a single denial
-  fails the attempt**. Add the commands your project's agents
-  actually run; see [Troubleshooting](#troubleshooting) for the denial this
-  captured.
+- **`toolAllowlist`** grants tool and command permissions. Unscoped `Read` also
+  pre-approves `Glob` and `Grep` for file search; scoped Read policies require
+  explicit search permissions. Sessions run in Claude Code's `dontAsk` mode:
+  calls outside the effective permissions are denied. Required work must still
+  pass verification; an optional inspection denial alone need not fail the
+  attempt. Add the commands your project's agents actually run; see
+  [Troubleshooting](#troubleshooting) for examples.
 - **`tools`** (optional) replaces the available tool set. By default Kor loads
-  only the base names in the effective permissions plus `Glob` and `Grep`,
+  only the base names in the effective permissions,
   reducing startup context. For example, `tools: [Read, Glob, Grep]` exposes only
   inspection tools; `tools: []` exposes none. Availability does not grant command
   permission. `kor doctor` shows the effective set; see the

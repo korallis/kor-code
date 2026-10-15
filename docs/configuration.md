@@ -106,11 +106,13 @@ scripts when they are executable, use the same shebang interpreter, and resolve
 inside the isolated execution worktree. These aliases preserve the configured
 script and argument scope; they do not enable general shell or network commands.
 By default Kor passes `--tools` with the deduplicated, sorted base tool names
-from these effective permissions plus `Glob` and `Grep`. For example,
+from these effective permissions. For example,
 `Bash(git diff*)` contributes `Bash`, while its command restriction stays in
-`--allowedTools`. File search is also pre-approved, so repositories do not need
-to list `Glob` and `Grep` themselves. An empty allowlist still permits file search;
-it does not enable file edits or general shell access.
+`--allowedTools`. When `toolAllowlist` includes unscoped `Read`, Kor also
+pre-approves `Glob` and `Grep` for file search. A scoped `Read(...)` or empty
+allowlist does not receive automatic search tools or search permissions. To
+permit search with a scoped policy, configure explicit scoped `Glob(...)` and
+`Grep(...)` permissions in `toolAllowlist`.
 
 Set `tools:` within a repository to replace the available tool set:
 
@@ -123,7 +125,8 @@ Values must be base tool names, not permission patterns (`Bash`, not
 exposes no tools. An override can deliberately omit search. Adding `Bash` or
 another tool here exposes its schema without granting permission to use it;
 command permissions still come from `toolAllowlist` and exact simple checks.
-Only available search tools receive automatic search permission. The override
+Automatic search permission still requires unscoped `Read` and an available
+search tool; a `tools` override alone never grants search permission. The override
 applies to initial and repair attempts. `kor doctor` prints each repository's
 effective set and whether it came from an override. Executable-script aliases
 are resolved again in the actual execution worktree.

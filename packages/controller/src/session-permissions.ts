@@ -7,13 +7,15 @@ const SEARCH_TOOLS = ["Glob", "Grep"] as const;
 function toolName(permission: string): string { return permission.split("(", 1)[0] ?? permission; }
 
 export function sessionTools(permissions: readonly string[], override?: readonly string[]): string[] {
-  return [...new Set(override ?? [...permissions.map(toolName), ...SEARCH_TOOLS])].sort();
+  return [...new Set(override ?? permissions.map(toolName))].sort();
 }
 
 export async function sessionPermissions(input: { worktree: string; allowedTools: readonly string[]; checks: readonly string[]; tools?: readonly string[] }): Promise<string[]> {
   const permissions = new Set(input.allowedTools);
-  for (const tool of SEARCH_TOOLS) {
-    if (!input.tools || input.tools.includes(tool)) permissions.add(tool);
+  if (permissions.has("Read")) {
+    for (const tool of SEARCH_TOOLS) {
+      if (!input.tools || input.tools.includes(tool)) permissions.add(tool);
+    }
   }
   const root = await realpath(input.worktree);
   for (const pattern of input.allowedTools) {
