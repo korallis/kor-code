@@ -284,7 +284,9 @@ export function fromStatus(fetched: Fetched, now: number): CockpitData {
       }, observedAt)
     : part({ records: [], writes: [] })
 
-  const overrideValues: Override[] = list(pick(payload, 'overrides') ?? pick(exec, 'overrides')).map(object).filter((one): one is Json => one !== undefined).map(one => ({
+  const ownOverrides = pick(exec, 'overrides')
+  const overrideValues: Override[] = list(ownOverrides ?? pick(payload, 'overrides')).map(object).filter((one): one is Json => one !== undefined)
+    .filter(one => ownOverrides !== undefined || text(pick(one, 'executionId')) === execution.value?.id).map(one => ({
     id: text(pick(one, 'id', 'overrideId'), '?'),
     decisionId: text(pick(one, 'target', 'decisionId')),
     action: text(pick(one, 'action'), 'override'),

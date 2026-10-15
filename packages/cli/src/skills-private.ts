@@ -88,7 +88,7 @@ async function copyBundle(source: string, destination: string): Promise<number> 
 
 type ImportDiagnostic = { rule: string; severity: "error" | "warning"; message: string };
 type ImportStatus = "pending" | "would-copy" | "copied" | "invalid" | "skipped" | "conflict" | "duplicate" | "not-copied";
-type ImportResult = { name: string; status: ImportStatus; suggestedVisibility: "local-only"; diagnostics: ImportDiagnostic[] };
+type ImportResult = { name: string; status: ImportStatus; diagnostics: ImportDiagnostic[] };
 
 export async function importPrivateSkills(options: { config: KorConfig; paths: KorPaths; from: string; dryRun: boolean; skipInvalid?: boolean }) {
   const destination = await physicalPath(resolve(privateSkillsPath(options.config, options.paths)));
@@ -106,7 +106,7 @@ export async function importPrivateSkills(options: { config: KorConfig; paths: K
   await mkdir(staging, { recursive: true, mode: 0o700 });
   try {
     for (const file of await skillFiles(source)) {
-      const result: ImportResult = { name: basename(dirname(file)), status: "pending", suggestedVisibility: "local-only", diagnostics: [] };
+      const result: ImportResult = { name: basename(dirname(file)), status: "pending", diagnostics: [] };
       report.skills.push(result);
       try {
         const skill = await readSkillBundle(file, "private");

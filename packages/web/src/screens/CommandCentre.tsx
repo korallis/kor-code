@@ -191,7 +191,7 @@ function NeedsYou({ run, now, linearUrl }: { run: MissionRun | undefined; now: n
       </div>
       <div {...stylex.props(styles.askQ)}>
         <JevOrb size={18} />
-        <div><b {...stylex.props(text.strong)}>{answerable ? 'Jev asks:' : 'Blocked:'}</b> {run.needsInput?.reason ?? run.error ?? 'This run stopped and needs your direction before it can continue.'}</div>
+        <div>{(run.needsInput?.reason ?? run.error ?? 'This run stopped and needs your direction before it can continue.').replace(/^Needs input:\s*/, '')}</div>
       </div>
       {answerable ? (
         <>

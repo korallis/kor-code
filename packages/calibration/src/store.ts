@@ -11,7 +11,7 @@ const count = z.number().int().nonnegative();
 const measurement = z.number().nonnegative().nullable();
 const route = z.object({ provider: z.string(), model: z.string(), accountPolicy: z.enum(["fill-first", "manual", "least-used"]), sessionAffinity: z.boolean(), reasoningLevel: z.enum(["low", "medium", "high"]).optional(), label: z.enum(["jev", "fallback", "escalated", "override"]).optional(), decisionId: z.string().optional() });
 export const runSchema = z.object({
-  purpose: z.enum(["route", "skills"]).optional(), executionId: z.string(), pairId: z.string(), issueId: z.string(), arm: z.enum(["jev", "baseline", "fallback"]),
+  purpose: z.enum(["route", "skills"]).optional(), executionId: z.string(), pairId: z.string(), issueId: z.string(), arm: z.enum(["jev", "baseline", "fallback", "override"]),
   baseRevision: z.string(), route, sampled: z.boolean(), startedAt: z.string().datetime(),
   status: z.enum(["running", "verified", "failed", "interrupted", "escalated"]), finishedAt: z.string().datetime().optional(),
 });
@@ -85,9 +85,9 @@ export class CalibrationStore implements DecisionAuditLog {
     const run = this.run(executionId);
     if (!run || run.status === "running") return;
     const currentRoute = route ?? run.route;
-    const arm = run.arm === "baseline" ? "baseline" : currentRoute.label === "jev" ? "jev" : "fallback";
+    const arm = run.arm === "baseline" ? "baseline" : currentRoute.label === "jev" ? "jev" : currentRoute.label === "override" ? "override" : "fallback";
     this.transaction(() => {
-      this.db.prepare("UPDATE calibration_runs SET arm=?, started_at=?, payload=? WHERE execution_id=?").run(arm, startedAt, JSON.stringify({ ...run, route: currentRoute, arm, sampled: arm !== "fallback" && run.sampled, status: "running", startedAt, finishedAt: undefined }), executionId);
+      this.db.prepare("UPDATE calibration_runs SET arm=?, started_at=?, payload=? WHERE execution_id=?").run(arm, startedAt, JSON.stringify({ ...run, route: currentRoute, arm, sampled: (arm === "jev" || arm === "baseline") && run.sampled, status: "running", startedAt, finishedAt: undefined }), executionId);
       // A retried execution is no longer terminal. Keep attempt history, but do
       // not score the new attempt against the previous abandoned/rejected state.
       this.db.prepare("DELETE FROM run_outcomes WHERE execution_id=?").run(executionId);

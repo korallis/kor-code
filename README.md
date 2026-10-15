@@ -34,8 +34,10 @@ skills and playbook the session gets, and whether each acceptance criterion is m
 
 In the runs behind these screenshots, each attempt at a small documentation
 change took 14 to 18 seconds from start to verified and cost under one cent.
-Any failed check, unmet criterion or permission denial stops the run as
-`blocked` with a reason.
+Failed checks and unmet criteria go through verification and bounded repair.
+If repair cannot resolve them, the run stops as `blocked` with a reason. Jev
+judges recorded permission denials alongside the diff and tool results; a
+recovered denial does not automatically block a verified change.
 
 ## Requirements
 
@@ -196,12 +198,18 @@ label a Todo issue `kor` and let the daemon pick it up on its next poll.
 
 ![The Queue an issue dialog](docs/images/mc-queue.webp)
 
+Jev judges whether essential scope is missing, rather than implementation
+difficulty. Concrete file, input and behavior requirements can suffice without
+an unrelated build setup; all readiness checks and the 0.70 threshold still apply.
+
 A confidence-only readiness refusal is reported as `uncertain`, with Jev's score
 and the required threshold. All deterministic checks pass in that case; review
 the acceptance criteria in Linear, add any missing detail, then retry, or answer
-in Mission Control to ask Jev again. Once an execution is ready, **Request changes**
-and operator answers keep that verdict while the issue and eligible models stay
-unchanged.
+in Mission Control to ask Jev again. Once an execution is ready, **Request changes**,
+operator answers and adding the configured intake label keep that verdict while
+the underlying issue and eligible models stay unchanged. A label that also
+requires a screenshot (`UI`) still triggers that check. The intake label
+matches regardless of letter case.
 
 ### Work in Mission Control
 
@@ -255,9 +263,12 @@ By default (`skills.jev: full`), Jev sees private skill descriptions and selecti
 hints through TypeSafe so it can choose your skills automatically; bodies and
 references stay local. Opt out in `config.yaml` with `skills: { jev: names-only }`,
 or mark an individual skill `metadata.kor.visibility: local-only`. You can still
-pin private skills per repository with `skills.pins`. Imported skills can reach
-sessions without adding a license or removing unrelated frontmatter. Hooks, forked execution and shell interpolation
-are refused; bundled scripts must use the session's permitted tools. The inline
+pin private skills per repository with `skills.pins`. Import reports copy status
+without suggesting a visibility override. Doctor reports each body-budget
+warning once; skills over the 2,000-token pin limit can still be listed.
+Imported skills can reach sessions without adding a license or removing
+unrelated frontmatter. Hooks, forked execution and shell interpolation are
+refused; bundled scripts must use the session's permitted tools. The inline
 interpolation marker must start a line or follow whitespace; ordinary Markdown
 non-null assertions and template literals ending in `!` pass. Fenced commands
 introduced by three backticks followed by `!` are also refused.
@@ -290,6 +301,10 @@ Repository deny lists and tool policy always win.
 
 Linear labels do the same per issue: `kor:skill/NAME`, `kor:skill/-NAME`,
 `kor:playbook/NAME`, `kor:tool/NAME`, `kor:tool/-NAME`.
+
+The Claude Code status line counts overrides for the run it follows. Jev Brain
+reports operator-routed runs under `override`; they do not enter the Jev versus
+baseline paired comparison.
 
 ### Ship
 
@@ -341,8 +356,9 @@ external key files and the gateway's key entry stay; remove them yourself.
 - **`FAIL <command>: … Hint: …`.** Every failure is one line with the next step.
 - **`HTTP 401` from the gateway.** CLIProxyAPI does not have Kor's key in `api-keys` yet.
 - **`route: no-verified-route`.** No model has passed `kor models probe`.
-- **`Session failed: 1 permission denial`.** The session needed a command outside
-  `toolAllowlist`. Add it and retry.
+- **A permission denial.** Jev checks whether the session recovered with allowed
+  tools. If a required command is missing from `toolAllowlist`, add its narrow
+  permission, restart the daemon and retry.
 - **A run is `blocked` with a `kor:blocked` label.** Missing criteria, an
   unfinished dependency or a readiness refusal; the Linear comment says which.
   Fix the issue, then retry.

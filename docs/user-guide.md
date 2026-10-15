@@ -426,8 +426,20 @@ It exits `1` when readiness is `blocked` or `uncertain`, a decision is escalated
 or the route is a fallback. For `uncertain`, all deterministic readiness checks
 pass: review the acceptance criteria in Linear, add any missing detail, then retry,
 or use **Send and retry** in Mission Control to answer and ask Jev again.
-Request changes and operator answers retain an execution's ready verdict while
-the underlying issue and eligible models stay unchanged.
+Request changes, operator answers and adding the configured intake label retain
+an execution's ready verdict while the underlying issue and eligible models
+stay unchanged. Jev judges whether essential scope is missing, rather than
+implementation difficulty; concrete file, input and behavior requirements can
+suffice without an unrelated build setup. The threshold remains 0.70 and all
+deterministic readiness checks still apply. An intake label that also means
+`UI` retains its screenshot requirement. The intake label matches regardless
+of letter case.
+
+The Claude Code status line counts overrides only for the execution it follows.
+Jev Brain and `kor calibrate report` list operator-routed runs under `override`,
+including older records previously filed as fallback. They do not enter the
+Jev versus baseline paired comparison. `kor status --json` exits quietly when
+a downstream reader such as `head` closes its pipe.
 
 ## Work in Mission Control
 
@@ -639,16 +651,22 @@ prompt), **listed** (the session can load it), **armed** (injected when a
 matching file, tool or command event happens) or hidden. If Jev is down, only the
 repository's `always` skills load.
 
+Import reports each skill's copy status without recommending a visibility
+override. The default remains `skills.jev: full`: descriptions reach Jev, bodies
+stay local. `kor skills doctor` reports each body-budget warning once. Skills
+over the 2,000-token pin limit can still be listed; importing them does not
+guarantee they can be pinned.
+
 Keep your own guidance in a private pack outside any repository:
 
 ```text
 $ kor skills init
 /tmp/kor-rf/home/.config/kor/skills
 $ kor skills import --from ./my-skills --dry-run --skip-invalid
-team-style: would-copy; suggested visibility local-only
+team-style: would-copy
 PASS dry-run: 1 would copy, 0 skipped, 0 duplicates, 216 bytes; /tmp/kor-rf/home/.config/kor/skills
 $ kor skills import --from ./my-skills --skip-invalid
-team-style: copied; suggested visibility local-only
+team-style: copied
 PASS import: 1 copied, 0 skipped, 0 duplicates, 216 bytes; /tmp/kor-rf/home/.config/kor/skills
 $ kor skills guard
 PASS skills guard: 112 public files, 1 private names or deny entries
@@ -810,8 +828,11 @@ session. Kor comments on the Linear issue and adds `kor:blocked`. Answer in
 Mission Control, or fix the issue and retry; Kor removes the label when the run
 resumes.
 
-**A permission denial.** `Session failed: 1 permission denial` means the session
-tried a command outside `toolAllowlist`. Add the command (for example
+**A permission denial.** The session tried a command outside `toolAllowlist`.
+Jev judges recorded denials with the diff and tool results: a session that
+recovers using allowed commands can still verify. Unrecognised denial records
+or missing semantic verification block completion. If a required command is
+missing from your allowlist, add its narrow permission (for example
 `"Bash(npm test*)"`), restart the daemon so it rereads the config, and retry.
 
 **Retry and cancel from the CLI:**

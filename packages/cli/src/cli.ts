@@ -132,7 +132,7 @@ async function runIssue(args: readonly string[]): Promise<number> {
       const mission = new MissionServices(paths);
       await mission.initialize();
       const audit = new PersistentDecisionAuditLog({ read: id => store.readDecisionAudit(id), write: (id, at, payload) => store.writeDecisionAudit(id, at, payload), update: (id, at, payload) => store.updateDecisionAudit(id, at, payload) });
-      const routing = createServeRouting({ audit, defaultRoute: loaded.config.defaultRoute, client: { evaluate: (state, questions) => mission.jev().evaluate(state, questions) }, models: async () =>
+      const routing = createServeRouting({ audit, intakeLabel: loaded.config.intakeLabel, defaultRoute: loaded.config.defaultRoute, client: { evaluate: (state, questions) => mission.jev().evaluate(state, questions) }, models: async () =>
         (await loadAvailableVerifiedModels(await readModelRegistry(paths.modelsFile), async () => (await mission.gateway()).listModels())).map(result => ({ provider: modelProvider(result.model, result.provider), model: result.model, capabilities: Object.entries(result.capabilities).map(([name, supported]) => ({ name, supported: supported === true })), ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) })),
       });
       const route = override ? { ...loaded.config.defaultRoute, model: override.choice } : (await routing.chooseRoute({ executionId, issue: await mission.linear().getIssue(issue.id) })).route;
@@ -236,7 +236,7 @@ async function serve(args: readonly string[]): Promise<number> {
   let describePullRequest: DescribePullRequest;
   const runtime = (config: KorConfig): { controller: Controller; chooseRoute: NonNullable<DaemonOptions["chooseRoute"]> } => {
     const repositories = new RepositoryRegistry(Object.entries(config.repos).map(([key, repository]) => ({ key, path: repository.path, defaultBranch: repository.defaultBranch, allowedTools: repository.toolAllowlist, checks: repository.checks, ...(repository.tools ? { tools: repository.tools } : {}) })));
-    const routing = createServeRouting({ audit, defaultRoute: config.defaultRoute, client: { evaluate: (state, questions) => mission.jev().evaluate(state, questions) }, models: async () => {
+    const routing = createServeRouting({ audit, intakeLabel: config.intakeLabel, defaultRoute: config.defaultRoute, client: { evaluate: (state, questions) => mission.jev().evaluate(state, questions) }, models: async () => {
       const registry = await readModelRegistry(paths.modelsFile);
       return (await loadAvailableVerifiedModels(registry, async () => (await mission.gateway()).listModels())).map(result => ({ provider: modelProvider(result.model, result.provider), model: result.model, capabilities: Object.entries(result.capabilities).map(([name, supported]) => ({ name, supported: supported === true })), ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) }));
     }, complete: async (prompt, route) => (await mission.gateway()).streamCompletion(prompt, route.model, { provider: route.provider, ...(route.decisionId ? { decisionId: route.decisionId } : {}) }) });
@@ -374,7 +374,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
           if (!from) usageFailure(usage);
           const report = await importPrivateSkills({ config, paths, from, dryRun, skipInvalid });
           print(jsonFlag(skillArgs) ? report : [
-            ...report.skills.map(skill => `${skill.name}: ${skill.status}; suggested visibility ${skill.suggestedVisibility}`),
+            ...report.skills.map(skill => `${skill.name}: ${skill.status}`),
             ...report.diagnostics.map(item => `${item.severity.toUpperCase()} [${item.rule}] ${item.message}`),
             `${report.ok ? "PASS" : "FAIL"} ${dryRun ? "dry-run" : "import"}: ${report.skills.filter(skill => skill.status === "copied" || skill.status === "would-copy").length} ${dryRun ? "would copy" : "copied"}, ${report.skills.filter(skill => skill.status === "skipped").length} skipped, ${report.duplicates} duplicates, ${report.bytes} bytes; ${report.destination}`,
           ].join("\n"), jsonFlag(skillArgs));
@@ -511,4 +511,10 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
 }
 
 const entrypoint = process.argv[1] ? realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]) : false;
-if (entrypoint) process.exitCode = await main();
+if (entrypoint) {
+  process.stdout.on("error", error => {
+    if (error.code === "EPIPE") process.exit(0);
+    throw error;
+  });
+  process.exitCode = await main();
+}
