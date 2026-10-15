@@ -19,12 +19,22 @@ export async function planSessionTools(input: {
   permissions: readonly string[];
   tools?: readonly string[];
   jev?: JevDecisionCore;
+  /** Operator edits by tool name; they apply within repository policy only. */
+  overrides?: ReadonlyMap<string, boolean>;
 }): Promise<{ tools: string[]; decisions: AppliedDecision[]; fallback: boolean }> {
   const permitted = sessionTools(input.permissions);
   const eligible = sessionTools(input.permissions, input.tools).filter(tool => permitted.includes(tool));
   const lean = eligible.filter(tool => !WEB_TOOLS.includes(tool) && tool !== "Agent" && !browserTool(tool));
   const jev = input.jev;
-  if (!jev) return { tools: lean, decisions: [], fallback: true };
+  const overridden = (tools: Iterable<string>) => {
+    const result = new Set(tools);
+    for (const [tool, present] of input.overrides ?? []) {
+      if (!present) result.delete(tool);
+      else if (eligible.includes(tool)) result.add(tool);
+    }
+    return [...result].sort();
+  };
+  if (!jev) return { tools: overridden(lean), decisions: [], fallback: true };
   const revision = createHash("sha256").update(JSON.stringify({ task: input.task, permissions: [...input.permissions].sort(), eligible })).digest("hex").slice(0, 16);
   const requests: DecisionRequest[] = CAPABILITIES.map(capability => {
     const tools = eligible.filter(tool => capability.name === "shell" ? tool === "Bash"
@@ -64,5 +74,5 @@ export async function planSessionTools(input: {
     const candidates = request?.inputs.find(input => input.name === "eligibleTools")?.value;
     if (Array.isArray(candidates)) for (const tool of candidates) if (typeof tool === "string" && eligible.includes(tool)) tools.add(tool);
   }
-  return { tools: [...tools].sort(), decisions, fallback };
+  return { tools: overridden(tools), decisions, fallback };
 }

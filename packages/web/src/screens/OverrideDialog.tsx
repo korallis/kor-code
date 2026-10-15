@@ -1,6 +1,7 @@
 // Explore alternatives: every decision Jev made for the run, each candidate a
 // button that asks the daemon to override (policy checks decide; refusals are
-// shown with their reason). The route can move to any verified model.
+// shown with their reason). The route can move to any verified model, and the
+// next session's skills, playbook and tools can be edited.
 import * as stylex from '@stylexjs/stylex';
 import { Check, GitCompareArrows, Undo2 } from 'lucide-react';
 import type { MissionRun } from '@kor-code/mission-control';
@@ -15,6 +16,10 @@ import { Pill } from '../ui/pill';
 import { layout } from '../ui/layout';
 import { text } from '../ui/text';
 import { prob } from '../lib/format';
+import { SessionPackEditor } from './SessionPackEditor';
+
+// The route and the next session's skills, playbook and tools have their own editors.
+const EDITED_KINDS = new Set(['route', 'skills', 'playbook', 'tools']);
 
 const styles = stylex.create({
   group: { display: 'flex', flexDirection: 'column', gap: space.s2, paddingBlock: space.s3, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine },
@@ -46,7 +51,8 @@ export function OverrideDialog({ run, decisions, onClose }: { run: MissionRun; d
           {verified.length === 0 && <span {...stylex.props(styles.reasons)}>{models.error ? `Models unavailable: ${models.error.message}` : 'No verified models: run a probe on the Models screen first.'}</span>}
         </div>
       </div>
-      {[...latestByKind.values()].filter(decision => decision.kind !== 'route').map(decision => (
+      <SessionPackEditor executionId={run.executionId} />
+      {[...latestByKind.values()].filter(decision => !EDITED_KINDS.has(decision.kind)).map(decision => (
         <div key={decision.decisionId} {...stylex.props(styles.group)}>
           <div {...stylex.props(layout.row)}><span {...stylex.props(styles.kind)}>{decision.kind}</span><span {...stylex.props(text.mono, text.sm)}>{decision.choice}</span><span {...stylex.props(text.mono, text.muted, text.xs)}>{prob(decision.confidence)}</span></div>
           <span {...stylex.props(styles.reasons)}>{decision.reasons.join(' · ')}</span>

@@ -70,6 +70,8 @@ async function send<T>(method: Method, url: string, body?: unknown): Promise<T> 
   const text = await response.text();
   let parsed: unknown = undefined;
   try { parsed = text ? JSON.parse(text) : undefined; } catch { /* non-JSON error body */ }
+  // A refused override is a 409 that still carries its audited record and reason.
+  if (response.status === 409 && typeof parsed === 'object' && parsed !== null && 'record' in parsed) return parsed as T;
   if (!response.ok || isApiError(parsed)) {
     if (isApiError(parsed)) throw new ApiFailure(parsed.error.code, parsed.error.message, parsed.error.hint, response.status);
     throw new ApiFailure(response.status === 401 ? 'unauthorized' : 'internal_error', `The daemon answered ${response.status}.`, response.status === 401 ? 'Open Mission Control with `kor ui` to get a fresh session.' : 'Check `kor logs` for the daemon error.', response.status);

@@ -314,6 +314,18 @@ puts Jev's choice back.
 
 ![Explore alternatives after switching the route, with Revert available](docs/images/mc-override.webp)
 
+**Change the next session's guidance.** The same dialog shows the skills, playbook
+and tools the next session will get, with the per-turn token cost of every
+change: pin, list, arm or hide a skill, switch the playbook, add or remove a tool.
+Policy checks every edit: the repository's deny list, its tool policy and its
+skill budget, which only an explicit **Accept over budget** can exceed. Each edit
+is audited and commented on the Linear issue. Labels such as
+`kor:skill/human-written-code` on a Linear issue do the same per issue. Repository
+pins, denies and the budget are in **Repository settings**. The model stays Jev's
+per-task route decision.
+
+![The next session's skills, playbook and tools with live token costs](docs/images/mc-next-session.png)
+
 **Models and accounts.** Every account slot and its health, quota resets, the
 verified-model table with **Probe**, and the routing policy.
 

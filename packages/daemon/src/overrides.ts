@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import type { DecisionRecord, OverrideRecord } from "@kor-code/core";
 import { z } from "zod";
+import { SESSION_TARGETS, playbookPlanSchema, skillPlanSchema, type SkillPlan } from "@kor-code/jev";
 
 type Row = Record<string, unknown>;
 
@@ -83,6 +84,11 @@ export class OverrideStore {
     return row ? this.parse(row) : undefined;
   }
 
+  /** Skill, playbook and tool overrides for an execution in any status, oldest first. */
+  sessionOverrides(executionId: string): Array<OverrideRecord & { commentId: string }> {
+    return (this.db.prepare(`SELECT * FROM override_audit WHERE execution_id=? AND target IN (${SESSION_TARGETS.map(() => "?").join(",")}) ORDER BY recorded_at, rowid`).all(executionId, ...SESSION_TARGETS) as Row[]).map(row => this.parse(row));
+  }
+
   pendingComments(): Array<OverrideRecord & { commentId: string }> {
     return (this.db.prepare("SELECT * FROM override_audit WHERE linear_comment IN ('pending','failed') ORDER BY rowid").all() as Row[]).map(row => this.parse(row));
   }
@@ -97,6 +103,23 @@ export class OverrideStore {
       const decision = typeof row.payload === "string" ? decisionFrom(row.payload) : undefined;
       return decision && decision.executionId === executionId ? [decision] : [];
     });
+  }
+
+  /** Jev's latest skills plan and playbook for an execution, before any override. */
+  sessionPlan(executionId: string): { skills?: SkillPlan; playbook?: string | null } {
+    let rows: Row[];
+    try { rows = this.db.prepare("SELECT payload FROM decision_audit WHERE instr(payload, ?) > 0 ORDER BY recorded_at, rowid").all(JSON.stringify(executionId)) as Row[]; }
+    catch { return {}; }
+    const plan: { skills?: SkillPlan; playbook?: string | null } = {};
+    for (const row of rows) {
+      let payload: Row;
+      try { payload = JSON.parse(String(row.payload)) as Row; } catch { continue; }
+      const response = z.object({ executionId: z.literal(executionId), plan: skillPlanSchema.optional(), playbookPlan: playbookPlanSchema.optional() }).safeParse(payload.response);
+      if (!response.success) continue;
+      if (response.data.plan) plan.skills = response.data.plan;
+      if (response.data.playbookPlan && response.data.playbookPlan.source !== "override") plan.playbook = response.data.playbookPlan.selected;
+    }
+    return plan;
   }
 
   private parse(row: Row): OverrideRecord & { commentId: string } {

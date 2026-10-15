@@ -1,5 +1,5 @@
 import type { CatalogueModel, Evidence, Execution, Route, SessionSpend } from "@kor-code/core";
-import { JevDecisionCore, redact, routeFromDecision } from "@kor-code/jev";
+import { JevDecisionCore, redact, routeFromDecision, type SessionOverrides } from "@kor-code/jev";
 import type { LinearClient, LinearIssue, WorkflowMapping, ExecutionClaim } from "@kor-code/linear";
 import { AgentSessionWriter, DurableQueue, ExecutionLease, LinearStore, SnapshotReader } from "@kor-code/linear";
 import { randomUUID } from "node:crypto";
@@ -46,6 +46,8 @@ export interface ControllerOptions {
   onStage?: (executionId: string, stage: "context" | "execute" | "verify") => void;
   onSpend?: (executionId: string, spend: SessionSpend) => void;
   calibration?: { store: CalibrationStore; sampleRate?: number; baselineRoute?: Route };
+  /** Operator skill, playbook and tool overrides for an execution; never applied to a calibration baseline. */
+  sessionOverrides?: (executionId: string) => SessionOverrides;
 }
 export interface ControllerRunResult {
   execution: Execution;
@@ -162,8 +164,9 @@ class ExecutionController implements Controller {
       const context = await (heartbeat ? Promise.race([contextBuild, heartbeat.failed]) : contextBuild);
       const initialPrompt = String(redact(taskPrompt)) + contextPrompt(context);
       const settings = verificationSettings(this.options.verificationOptions);
+      const sessionOverrides = this.options.sessionOverrides;
       const { session, latest, verificationReport } = await runVerifiedSessions({ execution, repository, initialPrompt, baseRevision,
-        launcher: this.options.launcher, settings, reserveAttempt: this.reserveAttempt, ...(this.options.onStage ? { onStage: this.options.onStage } : {}), ...(this.options.onSpend ? { onSpend: this.options.onSpend } : {}), ...(this.options.jev ? { jev: this.options.jev } : {}),
+        launcher: this.options.launcher, settings, reserveAttempt: this.reserveAttempt, ...(sessionOverrides ? { overrides: () => sessionOverrides(input.id) } : {}), ...(this.options.onStage ? { onStage: this.options.onStage } : {}), ...(this.options.onSpend ? { onSpend: this.options.onSpend } : {}), ...(this.options.jev ? { jev: this.options.jev } : {}),
         ...(this.options.calibration && calibrationRoute ? { calibration: this.options.calibration.store } : {}),
         ...(decisionId ? { decisionId } : {}),
         ...(heartbeat ? { leaseFailure: heartbeat.failed } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}), ...(input.signal ? { signal: input.signal } : {}) });

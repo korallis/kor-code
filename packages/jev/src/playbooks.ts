@@ -4,7 +4,7 @@ import { z } from "zod";
 import { JevUnavailableError, type JevClient } from "./client.js";
 import { parseResponse, type JevJsonValue } from "./contracts.js";
 import type { AppliedDecision, DecisionAuditLog, DecisionRequest } from "./index.js";
-import type { SkillsInput } from "./skills.js";
+import type { SkillCandidate, SkillsInput } from "./skills.js";
 
 const NONE = "none";
 const MAX_CANDIDATES = 12;
@@ -24,15 +24,21 @@ export const playbookPlanSchema = z.object({
 });
 export type PlaybookPlan = z.infer<typeof playbookPlanSchema>;
 
-export async function decidePlaybook(input: PlaybookInput, client: Pick<JevClient, "evaluate">, audit: DecisionAuditLog): Promise<AppliedDecision & { playbookPlan: PlaybookPlan }> {
+/** Why a catalogue entry cannot be this session's playbook, or undefined when it can. */
+export function playbookProblem(skill: SkillCandidate, input: Pick<PlaybookInput, "stage" | "allowedTools" | "stackTags" | "never">): string | undefined {
+  if (skill.kind !== "playbook") return "Not a playbook.";
+  if (input.never?.includes(skill.name)) return "Denied by repository policy.";
+  if (skill.stages.length && !skill.stages.includes(input.stage)
+    && !(input.stage === "execute" && skill.stages.some(stage => stage === "plan" || stage === "project-setup"))) return "Not available at this stage.";
   const tools = new Set(input.allowedTools.map(tool => tool.split("(")[0]));
-  const eligible = input.catalogue.skills.filter(skill => skill.kind === "playbook"
-    && !input.never?.includes(skill.name)
-    && (!skill.stages.length || skill.stages.includes(input.stage)
-      || input.stage === "execute" && skill.stages.some(stage => stage === "plan" || stage === "project-setup"))
-    && skill.requires.every(tool => tools.has(tool))
-    && (!skill.stackTags?.length || skill.stackTags.some(tag => input.stackTags?.includes(tag)))
-    && skill.cost.bodyTokens <= PLAYBOOK_BODY_BUDGET);
+  if (skill.requires.some(tool => !tools.has(tool))) return "Requires unavailable tools.";
+  if (skill.stackTags?.length && !skill.stackTags.some(tag => input.stackTags?.includes(tag))) return "Repository stack does not match.";
+  if (skill.cost.bodyTokens > PLAYBOOK_BODY_BUDGET) return `Body exceeds ${PLAYBOOK_BODY_BUDGET} tokens.`;
+  return undefined;
+}
+
+export async function decidePlaybook(input: PlaybookInput, client: Pick<JevClient, "evaluate">, audit: DecisionAuditLog): Promise<AppliedDecision & { playbookPlan: PlaybookPlan }> {
+  const eligible = input.catalogue.skills.filter(skill => !playbookProblem(skill, input));
   if (new Set(eligible.map(skill => skill.name)).size !== eligible.length || eligible.some(skill => skill.name === NONE)) throw new Error("Duplicate or reserved playbook name");
   if (input.override !== undefined && input.override !== NONE && !eligible.some(skill => skill.name === input.override)) throw new Error("Playbook override is unavailable under current policy");
   const relevance = (skill: typeof eligible[number]) => [...skill.triggers, skill.name.replaceAll("-", " ")]

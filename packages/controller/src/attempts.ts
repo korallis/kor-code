@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Execution, SessionSpend, VerificationAttempt } from "@kor-code/core";
-import type { JevDecisionCore } from "@kor-code/jev";
+import type { JevDecisionCore, SessionOverrides } from "@kor-code/jev";
 import { metricFromSession, type CalibrationStore } from "@kor-code/calibration";
 import type { Repository } from "./repository.js";
 import type { SessionLauncherLike, SessionResult } from "./launcher.js";
@@ -28,6 +28,8 @@ export async function runVerifiedSessions(input: {
   signal?: AbortSignal;
   onStage?: (executionId: string, stage: "execute" | "verify") => void;
   onSpend?: (executionId: string, spend: SessionSpend) => void;
+  /** Operator overrides in force, read before every session so an edit reaches the next one. */
+  overrides?: () => SessionOverrides;
 }) {
   const { execution, repository, settings } = input;
   const attempts: VerificationAttempt[] = [];
@@ -42,17 +44,19 @@ export async function runVerifiedSessions(input: {
     try {
       input.onStage?.(execution.id, "execute");
       const prompt = previous ? repairPrompt(input.initialPrompt, previous) : input.initialPrompt;
+      const overrides = input.overrides?.();
       const permissions = await race(sessionPermissions({ worktree: execution.worktree, allowedTools: repository.allowedTools ?? DEFAULT_ALLOWED_TOOLS,
         checks: repository.checks ?? [], ...(repository.tools ? { tools: repository.tools } : {}) }));
       const pairedTools = input.pairedTools?.[repair] ?? input.pairedTools?.at(-1);
       const toolPlan = pairedTools ? { tools: pairedTools } : await race(planSessionTools({ executionId: execution.id, task: prompt, permissions,
-        ...(repository.tools ? { tools: repository.tools } : {}), ...(input.jev ? { jev: input.jev } : {}) }));
+        ...(repository.tools ? { tools: repository.tools } : {}), ...(input.jev ? { jev: input.jev } : {}), ...(overrides ? { overrides: overrides.tools } : {}) }));
       session = await race(input.launcher.launch({ attemptId, ...(previous ? { playbookFailure: {
         classes: [...(previous.checks.some(check => check.status !== "pass") ? ["check-failure"] : []),
           ...(previous.findings.some(finding => finding.status !== "pass") ? ["acceptance-failure"] : []),
           ...(previous.evidence.some(item => item.kind === "policy" && item.status !== "pass") ? ["policy-denial"] : [])],
         blockers: previous.blockers,
-      } } : {}), skillStage: previous ? "repair" : "execute", execution, repositoryPath: repository.path, worktreePath: execution.worktree,
+      } } : {}), ...(overrides?.playbook !== undefined ? { playbookOverride: overrides.playbook } : {}), ...(overrides?.skills.size ? { skillOverrides: overrides.skills } : {}),
+        skillStage: previous ? "repair" : "execute", execution, repositoryPath: repository.path, worktreePath: execution.worktree,
         prompt, tools: toolPlan.tools,
         ...(input.skillsDisabled ? { skillsDisabled: true } : {}),
         ...(execution.route ? { route: execution.route } : {}), ...(repository.allowedTools ? { allowedTools: repository.allowedTools } : {}), ...(repository.checks ? { checks: repository.checks } : {}), ...(input.onSpawn ? { onSpawn: input.onSpawn } : {}), ...(input.signal ? { signal: input.signal } : {}) }));

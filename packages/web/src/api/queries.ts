@@ -23,6 +23,7 @@ export const useModels = () => useQuery({ queryKey: ['models'], staleTime: 60_00
 export const usePool = () => useQuery({ queryKey: ['pool'], refetchInterval: 60_000, queryFn: () => get('GET /api/pool', path('GET /api/pool', '/api/pool')) });
 export const useBrain = () => useQuery({ queryKey: ['brain'], staleTime: 60_000, queryFn: () => get('GET /api/brain', path('GET /api/brain', '/api/brain')) });
 export const useConfig = () => useQuery({ queryKey: ['config'], queryFn: () => get('GET /api/config', path('GET /api/config', '/api/config')) });
+export const useSessionPack = (id: string) => useQuery({ queryKey: ['session', id], queryFn: () => get('GET /api/runs/:id/session', path('GET /api/runs/:id/session', '/api/runs/:id/session', { id })) });
 export const useConnections = () => useQuery({ queryKey: ['connections'], refetchInterval: 60_000, queryFn: () => get('GET /api/connections', path('GET /api/connections', '/api/connections')) });
 
 const refresh = (...keys: string[][]) => Promise.all(keys.map(queryKey => queryClient.invalidateQueries({ queryKey })));
@@ -56,10 +57,10 @@ export function useRunMessage() {
 }
 
 export function useOverride() {
-  return useMutation({ mutationFn: (body: OverrideRequest) => post('POST /api/overrides', '/api/overrides', body), onSuccess: data => { upsertOverride(data.record); return refresh(['runs'], ['status'], ['brain']); } });
+  return useMutation({ mutationFn: (body: OverrideRequest) => post('POST /api/overrides', '/api/overrides', body), onSuccess: data => { upsertOverride(data.record); return refresh(['runs'], ['status'], ['brain'], ['session']); } });
 }
 export function useRevertOverride() {
-  return useMutation({ mutationFn: (id: string) => post('POST /api/overrides/:id/revert', path('POST /api/overrides/:id/revert', '/api/overrides/:id/revert', { id }), {}), onSuccess: data => { upsertOverride(data.record); return refresh(['runs'], ['status'], ['brain']); } });
+  return useMutation({ mutationFn: (id: string) => post('POST /api/overrides/:id/revert', path('POST /api/overrides/:id/revert', '/api/overrides/:id/revert', { id }), {}), onSuccess: data => { upsertOverride(data.record); return refresh(['runs'], ['status'], ['brain'], ['session']); } });
 }
 
 export function useAsk() {
