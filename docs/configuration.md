@@ -65,19 +65,20 @@ Set the top-level `launchProfile` in `config.yaml` to `standard` (the default) o
 launchProfile: lean
 ```
 
-Both profiles use the repository tool policy, disable automatic memory and
-repository instruction discovery, and load the cockpit plugin. `lean` additionally
-sets `includeGitInstructions: false` and `disableBundledSkills: true` in Claude
-Code’s `--settings` JSON and passes `--exclude-dynamic-system-prompt-sections`.
+Both profiles retain Jev’s per-task tool selection within the repository ceiling,
+disable automatic memory and repository instruction discovery, and load the
+cockpit plugin. `lean` additionally sets `includeGitInstructions: false` and
+`disableBundledSkills: true` in Claude Code’s `--settings` JSON and passes
+`--exclude-dynamic-system-prompt-sections`.
 This removes built-in commit/PR guidance and bundled skills and stabilizes the
 system prefix across execution homes. `standard` retains the P1-1 settings for
 A/B measurement and stays the default while gateway cache behaviour is
 investigated. Use `launchProfile: lean` to opt in. These flags apply only to
 isolated execution sessions.
 
-The profile does not change Jev’s per-task route. Embedders can pass the same
-`launchProfile` option to `SessionLauncher`; an explicit `args` override still
-replaces the generated Claude arguments. See [Measure session context](context-bench.md)
+The settings profile does not select tools or change Jev’s per-task route.
+Embedders can pass the same `launchProfile` option to `SessionLauncher`; an
+explicit `args` override still replaces the generated Claude arguments. See [Measure session context](context-bench.md)
 for repeatable comparisons and cache measurements.
 
 ## Install and uninstall
@@ -129,9 +130,10 @@ also permits equivalent direct invocations of explicitly allowed `bash`/`sh`
 scripts when they are executable, use the same shebang interpreter, and resolve
 inside the isolated execution worktree. These aliases preserve the configured
 script and argument scope; they do not enable general shell or network commands.
-By default Kor passes `--tools` with the deduplicated, sorted base tool names
-from these effective permissions. For example,
-`Bash(git diff*)` contributes `Bash`, while its command restriction stays in
+Kor derives the tool ceiling from the deduplicated, sorted base tool names
+in these effective permissions. The controller narrows that ceiling using Jev’s
+capability decisions before the launcher passes the selected set to `--tools`.
+For example, `Bash(git diff*)` contributes `Bash`, while its command restriction stays in
 `--allowedTools`. When `toolAllowlist` includes unscoped `Read`, Kor also
 pre-approves `Glob` and `Grep` for file search. A scoped `Read(...)` or empty
 allowlist does not receive automatic search tools or search permissions. To

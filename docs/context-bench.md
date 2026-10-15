@@ -31,7 +31,9 @@ Each repetition uses a fresh local clone at the specified commit, the selected l
 To compare settings alone, run the same command twice with
 `--launch-profile standard` and `--launch-profile lean`, keeping the tools and
 route file constant. `standard` uses the P1-1 settings, not the original full
-tool set. Both profiles keep the cockpit plugin. Each summary includes
+tool set. Both profiles keep the cockpit plugin. The benchmark fixes the same
+tool list for both profiles to isolate settings; production controller sessions independently
+apply Jev’s capability selection within repository policy. Each summary includes
 `startContextTokens` and `cacheReadShare`, calculated across the session as
 `cache_read / (cache_read + cache_creation)` (null when both are zero).
 For back-to-back executions, compare the second repetition of each profile and
