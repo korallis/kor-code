@@ -1,6 +1,7 @@
-import type { SessionTurn, SessionLoadEvent } from "./context.js";
+import type { SessionTurn, SessionLoadEvent, SessionGatewayTelemetry } from "./context.js";
 import type { Route } from "@kor-code/core";
 export interface SessionTelemetryLike {
+  gateway?: SessionGatewayTelemetry;
   permissionDenials: number;
   turns?: readonly SessionTurn[];
   startContextTokens?: number;
@@ -71,6 +72,7 @@ export function metricFromSession(input: SessionMetricInput): RunMetric {
     contextTokenSum: telemetry?.contextTokenSum ?? null,
     turns: telemetry?.turns ?? null,
     loadEvents: telemetry?.loadEvents ?? null,
+    gateway: telemetry?.gateway ?? null,
     wallClockMs: elapsed(input.startedAt, input.finishedAt),
     sessionDurationMs: telemetry?.durationMs ?? null,
     // Claude's result event exposes the upstream API status when a provider
@@ -101,6 +103,7 @@ export interface CalibrationReport {
   arms: ArmSummary[];
   pairedDeltas: Record<MetricName, Estimate>;
   confidence: ConfidenceBin[];
+  gatewayRoutes: { executionId: string; attempt: number; gateway: SessionGatewayTelemetry }[];
   note: string;
 }
 const mean = (values: number[]): number | null => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
@@ -195,7 +198,9 @@ export function buildReport(store: CalibrationStore, since?: string): Calibratio
       confidence.push({ kind, bin: `${lower.toFixed(1)}–${upper.toFixed(1)}`, n: bin.length, mean: mean(bin.map(value => value.probability)), success: mean(bin.map(value => value.success)), brier: mean(bin.map(value => (value.probability - value.success) ** 2)) });
     }
   }
-  return { since: date, pairedSampleSize: pairs.length, arms, pairedDeltas, confidence,
+  const gatewayRoutes = metrics.flatMap(metric => metric.gateway && runs.some(run => run.executionId === metric.executionId)
+    ? [{ executionId: metric.executionId, attempt: metric.attempt, gateway: metric.gateway }] : []);
+  return { since: date, pairedSampleSize: pairs.length, arms, pairedDeltas, confidence, gatewayRoutes,
     note: pairs.length < 20 ? "Directional: fewer than 20 completed pairs; insufficient evidence to conclude routing wins." : "Compare paired success and cost per successful issue before changing routes." };
 }
 function fixed(value: number | null): string { return value === null ? "unavailable" : value.toFixed(4); }
@@ -210,7 +215,13 @@ export function formatReport(report: CalibrationReport, options: { context?: boo
     ...metricNames.map(name => `${name}\t${columns.map(arm => cell(arm.metrics[name])).join("\t")}\t${cell(report.pairedDeltas[name])}`),
     ...(options.context ? ["", "Context medians per completed run (all attempts; start = first attempt)",
       `Metric\t${columns.map(arm => arm.arm).join("\t")}`,
-      ...contextNames.map(name => `${name}\t${columns.map(arm => cell(arm.context[name])).join("\t")}`)] : []),
+      ...contextNames.map(name => `${name}\t${columns.map(arm => cell(arm.context[name])).join("\t")}`),
+      "", "Gateway routing observations (account slots verified by response_trace)",
+      "Execution\tAttempt\tDesired account policy\tObserved gateway strategy\tObserved at\tResponse accounts",
+      ...report.gatewayRoutes.map(({ executionId, attempt, gateway }) => {
+        const accounts = gateway.responses.map(response => response.attribution.kind === "response_trace" ? response.attribution.accountSlot : "unavailable");
+        return `${executionId}\t${attempt}\t${gateway.desiredAccountPolicy ?? "unavailable"}\t${gateway.strategy?.value ?? "unavailable"}\t${gateway.strategy?.observedAt ?? "unavailable"}\t${accounts.join(", ") || "unavailable"}`;
+      })] : []),
     "", "Confidence calibration against terminal merge success (outcome proxy, not decision-correctness probability)",
     "Kind\tBin\tN\tMean signal\tObserved success\tBrier (proxy)",
     ...report.confidence.filter(row => row.n > 0 || row.bin === "0.0–0.2" && !report.confidence.some(other => other.kind === row.kind && other.n > 0)).map(row => `${row.kind}\t${row.n > 0 ? row.bin : "all"}\t${row.n}\t${fixed(row.mean)}\t${fixed(row.success)}\t${fixed(row.brier)}`),

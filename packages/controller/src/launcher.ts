@@ -3,8 +3,9 @@ import { dirname, join, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadEventSchema } from "@kor-code/calibration";
-import type { SessionTurn, SessionLoadEvent } from "@kor-code/calibration";
-import type { Execution, Route } from "@kor-code/core";
+import type { SessionTurn, SessionLoadEvent, SessionGatewayTelemetry } from "@kor-code/calibration";
+import type { Execution, Route, GatewayStrategyObservation } from "@kor-code/core";
+import { sessionGateway } from "./session-gateway.js";
 import { EventCollector, type SessionEvent } from "./events.js";
 import { redact } from "@kor-code/jev";
 import { DEFAULT_ALLOWED_TOOLS, permissionGuidance, sessionPermissions, sessionTools } from "./session-permissions.js";
@@ -13,6 +14,7 @@ export interface SessionLaunch { skillsDisabled?: boolean; attemptId?: string; p
 export interface PermissionDenial { toolName: string; toolUseId: string; input: string }
 export interface ToolResult { toolName: string; toolUseId: string; input: string; output: string; isError: boolean }
 export interface SessionTelemetry {
+  gateway?: SessionGatewayTelemetry;
   turns?: readonly SessionTurn[];
   startContextTokens?: number;
   contextTokenSum?: number;
@@ -48,7 +50,7 @@ export interface SessionLauncherOptions {
   /** Where the daemon publishes status, so the cockpit inside the session reads it rather than the session's own sandbox home. */
   cockpit?: { statusUrl: string; stateDir: string };
   onOutput?: (executionId: string, channel: "stdout" | "stderr", text: string) => void;
-  gateway?: () => Promise<{ baseUrl: string; key: string | undefined }>;
+  gateway?: () => Promise<{ baseUrl: string; key: string | undefined; strategy?: GatewayStrategyObservation | null }>;
   sandboxRoot?: string;
   launchProfile?: "lean" | "standard";
   prepareSkills?: (input: SessionLaunch & { allowedTools: readonly string[] }) => Promise<SessionSkillPack>;
@@ -240,18 +242,21 @@ export class SessionLauncher implements SessionLauncherLike {
       ...(input.route?.model ? ["--model", input.route.model] : []),
       ...(input.route?.reasoningLevel ? ["--effort", input.route.reasoningLevel] : []),
     ];
-    const lean = this.options.launchProfile === "lean";
+    const lean = this.options.launchProfile !== "standard";
     const settingsArgs = ["--settings", JSON.stringify(lean ? LEAN_SETTINGS : CONTEXT_SETTINGS), ...(lean ? ["--exclude-dynamic-system-prompt-sections"] : [])];
     const commandArgs = this.options.args ?? ["claude", "-p", prompt, ...routeArgs, "--plugin-dir", resolve(this.repoRoot, "packages/claude-plugin"), ...(skills?.pluginDir ? ["--plugin-dir", skills.pluginDir] : []), "--tools", tools.join(","), "--no-session-persistence", "--permission-mode", "dontAsk", "--allowedTools", ...toolArgs, "--output-format", "stream-json", "--verbose", "--setting-sources", "", ...settingsArgs];
     const args = ["--run", ...commandArgs];
     const tool = commandArgs[0] ?? "claude";
     const toolDir = tool.includes("/") ? dirname(tool) : this.findToolDir(tool);
     const gateway = await this.options.gateway?.();
-    const gatewayKey = gateway?.key ?? this.options.gatewayKey ?? this.options.env?.KOR_GATEWAY_KEY ?? process.env.KOR_GATEWAY_KEY ?? "";
+    let gatewayKey = gateway?.key ?? this.options.gatewayKey ?? this.options.env?.KOR_GATEWAY_KEY ?? process.env.KOR_GATEWAY_KEY ?? "";
     const gatewayKeyFile = this.options.env?.KOR_GATEWAY_KEY_FILE ?? process.env.KOR_GATEWAY_KEY_FILE;
     const gatewayUrl = gateway?.baseUrl ?? this.options.env?.KOR_GATEWAY_URL ?? process.env.KOR_GATEWAY_URL;
-    const env = { ...this.options.env, KOR_SANDBOX_ROOT: resolve(this.options.sandboxRoot ?? join(this.repoRoot, ".sandbox")), KOR_EXECUTION_ID: input.execution.id, KOR_WORKTREE: input.worktreePath, KOR_ROUTE_MODEL: input.route?.model ?? "", KOR_CLAUDE_BIN_DIR: toolDir, KOR_GATEWAY_KEY: gatewayKey, ...(gatewayKeyFile ? { KOR_GATEWAY_KEY_FILE: gatewayKeyFile } : {}), ...(gatewayUrl ? { KOR_GATEWAY_URL: gatewayUrl } : {}), ...(this.options.cockpit ? { KOR_STATUS_URL: this.options.cockpit.statusUrl, KOR_STATE_DIR: this.options.cockpit.stateDir } : {}) };
-    const result: SessionResult = await new Promise((resolvePromise, reject) => {
+    if (!gatewayKey && gatewayKeyFile) gatewayKey = (await readFile(gatewayKeyFile, "utf8")).trim();
+    const gatewayTelemetry: SessionGatewayTelemetry = { desiredAccountPolicy: input.route?.accountPolicy ?? null, strategy: gateway?.strategy ?? null, responses: [] };
+    const relay = await sessionGateway({ baseUrl: gatewayUrl ?? "http://127.0.0.1:8317", key: gatewayKey, telemetry: gatewayTelemetry });
+    const env = { ...this.options.env, KOR_SANDBOX_ROOT: resolve(this.options.sandboxRoot ?? join(this.repoRoot, ".sandbox")), KOR_EXECUTION_ID: input.execution.id, KOR_WORKTREE: input.worktreePath, KOR_ROUTE_MODEL: input.route?.model ?? "", KOR_CLAUDE_BIN_DIR: toolDir, KOR_GATEWAY_KEY: relay.key, KOR_GATEWAY_URL: relay.baseUrl, ...(this.options.cockpit ? { KOR_STATUS_URL: this.options.cockpit.statusUrl, KOR_STATE_DIR: this.options.cockpit.stateDir } : {}) };
+    const result: SessionResult = await new Promise<SessionResult>((resolvePromise, reject) => {
       const child = spawn(this.options.command ?? "bash", [script, ...args], { cwd: input.worktreePath, env: this.isolatedEnv(env), stdio: ["ignore", "pipe", "pipe"], detached: true, signal: input.signal });
       if (child.pid) input.onSpawn?.(child.pid);
       let stdout = ""; let stderr = "";
@@ -275,11 +280,12 @@ export class SessionLauncher implements SessionLauncherLike {
         if (stderrBuffer) { collector.line("stderr", stderrBuffer); this.options.onOutput?.(input.execution.id, "stderr", stderrBuffer); }
         collector.add("exited", exitCode);
         const actualExitCode = exitCode ?? 1;
-        const telemetry = parseResultEvent(collector.events);
+        const telemetry = parseResultEvent(collector.events) ?? (gatewayTelemetry.responses.length ? { result: "", isError: true, permissionDenials: 0 } : undefined);
+        if (telemetry) telemetry.gateway = gatewayTelemetry;
         const reasons = failureReasons(actualExitCode, telemetry, collector.events.some(event => event.kind === "json" && record(event.value)?.type === "result"));
         resolvePromise({ tools: availableTools, ...(skills?.decisionId ? { skillDecisionId: skills.decisionId } : {}), exitCode: actualExitCode, ...(signal ? { signal } : {}), events: collector.events, stdout, stderr, ...(telemetry ? { telemetry } : {}), failed: reasons.length > 0, ...(reasons.length > 0 ? { failureReasons: reasons } : {}) });
       });
-    });
+    }).finally(() => relay.close());
     if (skills?.pluginDir && result.telemetry) {
       try {
         const firings = loadEventSchema.omit({ turn: true }).array().max(2).parse(JSON.parse(await readFile(join(skills.pluginDir, "armed-firings.json"), "utf8")));

@@ -49,6 +49,7 @@ export type ShippingStage =
 export interface ShippingReport { stage: ShippingStage; evidence: Evidence[]; cleanup: "pending" | "removed"; error?: string }
 export interface Execution { id: string; issueId: string; repository: string; worktree: string; branch: string; status: ExecutionStatus; route?: Route; manifest?: ExecutionManifest; verification?: VerificationReport; shipping?: ShippingReport }
 export type AccountPolicy = "fill-first" | "manual" | "least-used";
+export interface GatewayStrategyObservation { value: string; observedAt: string }
 export type ReasoningLevel = "low" | "medium" | "high";
 export interface Route { provider: string; model: string; accountPolicy: AccountPolicy; sessionAffinity: boolean; reasoningLevel?: ReasoningLevel; label?: "jev" | "fallback" | "escalated"; decisionId?: string }
 export interface CatalogueCapability { name: string; supported: boolean; details?: string }

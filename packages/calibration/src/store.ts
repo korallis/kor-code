@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { JsonValue } from "@kor-code/core";
 import { MemoryDecisionAuditLog, redact, type AppliedDecision, type DecisionAuditLog, type DecisionAuditRecord } from "@kor-code/jev";
-import { turnSchema, loadEventSchema } from "./context.js";
+import { turnSchema, loadEventSchema, gatewayTelemetrySchema } from "./context.js";
 
 const count = z.number().int().nonnegative();
 const measurement = z.number().nonnegative().nullable();
@@ -23,6 +23,7 @@ export const metricSchema = z.object({
   inputTokens: measurement, outputTokens: measurement, cacheReadTokens: measurement, cacheCreationTokens: measurement,
   startContextTokens: measurement.default(null), contextTokenSum: measurement.default(null),
   turns: z.array(turnSchema).nullable().default(null), loadEvents: z.array(loadEventSchema).nullable().default(null),
+  gateway: gatewayTelemetrySchema.nullable().default(null),
   wallClockMs: z.number().nonnegative(), sessionDurationMs: measurement,
   failovers: measurement, apiErrorStatus: z.number().nullable(), policyBlocks: measurement, clarifications: measurement,
   verificationFailures: count, verified: z.boolean(),

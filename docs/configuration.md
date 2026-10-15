@@ -58,8 +58,8 @@ The CLI freshness threshold is the configured poll interval multiplied by two un
 
 ## Session launch profile
 
-Set the top-level `launchProfile` in `config.yaml` to `standard` (the default) or
-`lean`, then restart `kor serve` to use it for subsequent sessions.
+Set the top-level `launchProfile` in `config.yaml` to `lean` (the default) or
+`standard`, then restart `kor serve` to use it for subsequent sessions.
 
 ```yaml
 launchProfile: lean
@@ -73,15 +73,30 @@ skill overrides. `lean` additionally sets `includeGitInstructions: false` in
 Claude Code’s `--settings` JSON and passes
 `--exclude-dynamic-system-prompt-sections`. This removes built-in commit/PR
 guidance and stabilizes the system prefix across execution homes. `standard`
-retains the current base launcher settings for
-A/B measurement and stays the default while gateway cache behaviour is
-investigated. Use `launchProfile: lean` to opt in. These flags apply only to
+retains the base launcher settings for comparison or rollback. Back-to-back
+sandbox executions confirmed cache reuse from execution two under gateway
+fill-first. These flags apply only to
 isolated execution sessions.
 
 The settings profile does not select tools or change Jev’s per-task route.
 Embedders can pass the same `launchProfile` option to `SessionLauncher`; an
 explicit `args` override still replaces the generated Claude arguments. See [Measure session context](context-bench.md)
 for repeatable comparisons and cache measurements.
+
+Execution requests pass through an authenticated, per-session loopback relay. It
+preserves request bodies and session headers, and records each Messages response
+status and valid `X-CPA-TRACE-ID`. Its opaque account index is verified response
+attribution (`response_trace`), distinct from adapter `health_observation` guesses.
+Missing or unrecognized trace headers leave attribution unavailable.
+
+With management access, Kor reads the gateway strategy before launch.
+`kor calibrate report --context` shows it beside the route’s desired account
+policy, with its observation time. JSON reports retain the response trace IDs.
+Unavailable management access leaves the observed strategy unavailable and does
+not block execution. Kor never changes gateway configuration or enforces the
+desired policy through this observation. Failover, cache expiry, and prompt
+changes can still cause misses. Telemetry is retained in calibration attempt
+payloads when calibration is enabled.
 
 ## Install and uninstall
 
