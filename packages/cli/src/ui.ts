@@ -7,6 +7,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { readManifest } from "./install-journal.js";
 import { z } from "zod";
 import { runtimePaths } from "@kor-code/config";
+import { LinearStore } from "@kor-code/linear";
+import { processMatches } from "@kor-code/daemon";
 import { ensureUiToken } from "@kor-code/daemon";
 
 const exec = promisify(execFile);
@@ -14,7 +16,12 @@ const addressSchema = z.object({ pid: z.number().int().positive(), url: z.string
 async function liveUiUrl(token: string): Promise<string | undefined> {
   try {
     const paths = runtimePaths();
-    const { url } = addressSchema.parse(JSON.parse(await readFile(join(paths.stateDir, "ui-address.json"), "utf8")));
+    const { url, pid } = addressSchema.parse(JSON.parse(await readFile(join(paths.stateDir, "ui-address.json"), "utf8")));
+    const store = new LinearStore(paths.databaseFile);
+    try {
+      const owner = store.daemonOwner();
+      if (owner?.process.pid !== pid || !processMatches(owner.process)) return undefined;
+    } finally { store.close(); }
     const response = await fetch(`${url}api/status`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(1_000), redirect: "error" });
     await response.body?.cancel();
     return response.ok ? url : undefined;
@@ -71,9 +78,10 @@ export async function openUi(args: readonly string[]): Promise<number> {
 /** An active daemon owns cancellation fencing and publication retries. */
 export async function daemonQueueAction(input: { executionId: string; action: "cancel" | "retry" }): Promise<void> {
   const paths = runtimePaths();
-  const address = addressSchema.parse(JSON.parse(await readFile(join(paths.stateDir, "ui-address.json"), "utf8")));
   const token = await ensureUiToken(paths);
-  const response = await fetch(`${address.url}api/runs/${encodeURIComponent(input.executionId)}/${input.action}`, {
+  const url = await liveUiUrl(token);
+  if (!url) throw new Error("Kor daemon is not running; start kor serve before changing the queue");
+  const response = await fetch(`${url}api/runs/${encodeURIComponent(input.executionId)}/${input.action}`, {
     method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: "{}", signal: AbortSignal.timeout(20_000), redirect: "error",
   });
   const payload: unknown = await response.json();

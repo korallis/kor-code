@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
@@ -17,9 +17,10 @@ const TRIGGER = /\buse (?:when|whenever|for)\b/i;
 const ROUTING_TEXT = [
   /\bxhigh\b/i,
   /\b(?:claude|gpt|grok|gemini|kimi|o[134])-[a-z0-9][a-z0-9._-]*\b/i,
+  /\b(?:gpt|gemini)\s+\d+(?:\.\d+)*(?:\s+(?:pro|flash))?\b/i,
   /--(?:model|agents|provider|harness|effort|reasoning[-_](?:effort|level))\b/i,
   /\b(?:model|provider|harness|effort|reasoning[ _-](?:level|effort))["']?\s*[:=]/i,
-  /\b(?:use|choose|select|prefer|pin|switch to|run with)\s+(?:the\s+)?(?:opus|sonnet|haiku|fable|o[134]\s+model|Claude Code|Codex|Cursor)\b/i,
+  /\b(?:use|choose|select|prefer|pin|switch to|run with|delegate to)\s+(?:the\s+)?(?:opus|sonnet|haiku|fable|o[134]\s+model|Claude Code|Codex|Cursor)\b/i,
   /\b(?:on|with|using|via|under)\s+(?:the\s+)?(?:model\s+)?(?:opus|sonnet|haiku|fable|o[134]\s+model|Claude Code|Codex|Cursor)\b/i,
   /\b(?:use|choose|select|prefer|pin|switch to|run with)\s+(?:the\s+)?(?:OpenAI|Anthropic|Google|xAI|Moonshot)\s+(?:model|provider|harness|for|over)\b/i,
   /\b(?:set|pin|switch)\s+(?:the\s+)?(?:model|provider|harness)\s+to\b/i,
@@ -127,7 +128,7 @@ export async function lintSkills(root: string, options: { private?: boolean; nam
       const number = startLine + index;
       if (ROUTING_TEXT.some(pattern => pattern.test(line))) add(file, number, "error", "no-routing", "Remove routing text; Jev owns the per-task route decision.");
       if (/\b\d{4}-\d{2}-\d{2}\b|\b(?:currently|nowadays|as of|latest version)\b/i.test(line)) add(file, number, "warning", "time-sensitive", "Replace time-sensitive guidance with a stable condition or pinned source.");
-      if (/(?:[A-Za-z]:\\|\b[\w.-]+\\[\w.-]+(?:\\[\w.-]+)*)/.test(line)) add(file, number, "error", "forward-slash-paths", "Use forward slashes in paths.");
+      if (/(?:[A-Za-z]:\\|\b(?:[\w.-]+\\){2,}[\w.-]+|\b[\w.-]+\\[\w.-]+\.[a-z0-9]+|\b(?:src|docs|scripts|references|assets|packages|node_modules)\\[\w.-]+)/i.test(line)) add(file, number, "error", "forward-slash-paths", "Use forward slashes in paths.");
       if (/\b(?:JEV|jev|play-book|skillset)\b/.test(line)) add(file, number, "warning", "terminology", "Use the canonical terms: Jev, playbook, skill pack.");
     }
     if (upstreamQuote) add(file, lines(text).length, "error", "upstream-quote", "Close the upstream quotation fence.");
@@ -137,9 +138,10 @@ export async function lintSkills(root: string, options: { private?: boolean; nam
   for (const entry of entries) {
     const directory = resolve(root, entry.name);
     if (entry.isSymbolicLink()) { add(directory, 1, "error", "symlink", "Public skills must not be symlinks."); continue; }
-    if (!entry.isDirectory()) continue;
+    if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "node_modules") continue;
     const files = await bundleFiles(directory);
     const skillFile = resolve(directory, "SKILL.md");
+    if (!files.includes(skillFile) && options.private) continue;
     if (!files.includes(skillFile)) { add(skillFile, 1, "error", "skill-file", "Each skill directory needs SKILL.md."); continue; }
     const source = (await readFile(skillFile, "utf8")).replace(/\r\n/g, "\n");
     const frontmatter = /^---\n([\s\S]*?)\n---(?:\n|$)/.exec(source);
@@ -184,11 +186,19 @@ export async function lintSkills(root: string, options: { private?: boolean; nam
       let text = body;
       if (file !== skillFile) {
         const content = await readFile(file);
-        if (content.includes(0)) continue;
-        text = content.toString("utf8");
+        if (content[0] === 0xff && content[1] === 0xfe) text = content.subarray(2).toString("utf16le");
+        else if (content[0] === 0xfe && content[1] === 0xff) {
+          if (content.length % 2) { add(file, 1, "error", "binary-text", "UTF-16 guidance must contain complete code units."); continue; }
+          text = Buffer.from(content.subarray(2)).swap16().toString("utf16le");
+        }
+        else if (content.includes(0)) {
+          if ((await stat(file)).mode & 0o111 || /\.(?:[cm]?[jt]sx?|sh|py|rb|ps1|toml|html?|md|txt|ya?ml|json)$/i.test(file)) add(file, 1, "error", "binary-text", "Text and executable guidance must use UTF-8 or BOM-marked UTF-16 without embedded NUL bytes.");
+          continue;
+        } else text = content.toString("utf8");
       }
+      if (text.includes("\0")) { add(file, 1, "error", "binary-text", "Decoded guidance must not contain embedded NUL bytes."); continue; }
       checkText(file, text, file === skillFile ? bodyStart : 1);
-      if (!file.endsWith(".md")) continue;
+      if (!/\.md$/i.test(file)) continue;
       if (file !== skillFile && lines(text).length > REFERENCE_TOC_LINES && !/^#{1,6}\s+(?:table of )?contents\b/im.test(text)) add(file, 1, "error", "reference-toc", `References over ${REFERENCE_TOC_LINES} lines need a Contents heading.`);
       for (const target of localLinks(text)) {
         const path = target.split(/[?#]/)[0] ?? "";

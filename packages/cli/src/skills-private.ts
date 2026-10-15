@@ -2,9 +2,10 @@ import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { KorConfig, KorPaths } from "@kor-code/config";
-import { buildSkillsCatalogue, skillFiles } from "./skills-catalogue.js";
+import { buildSkillsCatalogue, readSkillBundle, skillFiles } from "./skills-catalogue.js";
 import { lintSkills } from "./skills-lint.js";
 
 const git = promisify(execFile);
@@ -44,7 +45,7 @@ async function assertPrivateLocation(path: string): Promise<void> {
   let directory = path;
   while (!await exists(directory)) directory = dirname(directory);
   let worktree: string;
-  try { worktree = (await git("git", ["-C", directory, "rev-parse", "--show-toplevel"])).stdout.trim(); }
+  try { worktree = (await git("git", ["-C", directory, "rev-parse", "--show-toplevel"], { env: { ...process.env, LC_ALL: "C" } })).stdout.trim(); }
   catch (error) {
     if (error instanceof Error && "stderr" in error && String(error.stderr).includes("not a git repository")) return;
     throw new Error("Cannot verify the private pack's Git location");
@@ -101,7 +102,14 @@ export async function importPrivateSkills(options: { config: KorConfig; paths: K
     report.ok = false;
     report.diagnostics.push({ severity: "error", rule: "empty-import", message: "No skills found in the explicit source" });
   }
+  const bundled = await buildSkillsCatalogue({ ...options, from: [fileURLToPath(new URL("../../../skills", import.meta.url))], estimate: true });
   for (const skill of report.skills) {
+    const imported = catalogue.skills.find(candidate => candidate.name === skill.name);
+    if (bundled.skills.some(publicSkill => publicSkill.name === skill.name && publicSkill.hash === imported?.hash)) {
+      report.ok = false;
+      skill.status = "conflict";
+      report.diagnostics.push({ severity: "error", rule: "public-name", message: `${skill.name}: identical to the public bundle; no private copy is needed` });
+    }
     if (await exists(join(destination, skill.name))) {
       report.ok = false;
       skill.status = "conflict";
@@ -139,8 +147,17 @@ export async function guardPrivateSkills(options: { privatePath: string; publicP
   try { await assertPrivateLocation(privatePath); }
   catch (error) { diagnostics.push({ rule: "private-location", file: "", message: error instanceof Error ? error.message : "Cannot verify private pack location" }); }
   const denied = new Set<string>();
+  const names = new Set<string>();
   if (await exists(privatePath)) {
-    for (const file of await skillFiles(privatePath)) denied.add(basename(dirname(file)).toLowerCase());
+    const publicFiles = await skillFiles(publicPath);
+    const publicHashes = new Map(await Promise.all(publicFiles.map(async file => {
+      const skill = await readSkillBundle(file, "public");
+      return [skill.header.name, skill.hash] satisfies [string, string];
+    })));
+    for (const file of await skillFiles(privatePath)) {
+      const skill = await readSkillBundle(file, "private");
+      if (publicHashes.get(skill.header.name) !== skill.hash) names.add(basename(dirname(file)).toLowerCase());
+    }
     try {
       for (const line of (await readFile(join(privatePath, "deny.txt"), "utf8")).split(/\r?\n/)) {
         if (line.trim() && !line.trim().startsWith("#")) denied.add(line.trim().toLowerCase());
@@ -148,6 +165,7 @@ export async function guardPrivateSkills(options: { privatePath: string; publicP
     } catch (error) { if (!missing(error)) throw error; }
   }
   let files = 0;
+  const namePatterns = [...names].map(name => new RegExp(`(?<![a-z0-9_-])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![a-z0-9_-])`, "i"));
   async function scan(directory: string): Promise<void> {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const path = join(directory, entry.name);
@@ -158,12 +176,12 @@ export async function guardPrivateSkills(options: { privatePath: string; publicP
       }
       if (entry.isDirectory()) await scan(path);
       const text = `${file}\n${entry.isFile() ? await readFile(path, "utf8") : ""}`;
-      const privateMatch = [...denied].some(value => text.toLowerCase().includes(value));
+      const privateMatch = namePatterns.some(pattern => pattern.test(text)) || [...denied].some(value => text.toLowerCase().includes(value));
       if (privateMatch) diagnostics.push({ rule: "private-string", file: "[redacted]", message: "Public path or content matches a private name or deny.txt entry" });
       if (/(?:\/home\/[^/\s]+|\/Users\/[^/\s]+|[A-Z]:[\\/]Users[\\/][^\\/\s]+)/i.test(text)) diagnostics.push({ rule: "home-path", file: privateMatch ? "[redacted]" : file, message: "Public tier contains an absolute home path" });
       if (entry.isFile()) files++;
     }
   }
   await scan(publicPath);
-  return { schemaVersion: 1, ok: diagnostics.length === 0, files, privateNames: denied.size, diagnostics };
+  return { schemaVersion: 1, ok: diagnostics.length === 0, files, privateNames: names.size, diagnostics };
 }

@@ -20,7 +20,7 @@ import { CalibrationStore, buildReport, formatReport, buildSkillsReport, formatS
 import type { KorCliError } from "@kor-code/core";
 import { runSkillsInstall, SkillsUsageError, SKILLS_INSTALL_USAGE } from "./skills-install.js";
 import { formatSkillLint, lintSkills } from "./skills-lint.js";
-import { prepareSessionSkills, repositoryStackTags } from "./skills-session.js";
+import { prepareSessionSkills, repositoryStackTags, validateSessionSkills } from "./skills-session.js";
 import { buildSkillsCatalogue, formatSkillsCatalogue, writeSkillsCatalogue } from "./skills-catalogue.js";
 import { guardPrivateSkills, importPrivateSkills, initPrivateSkills, privateSkillsPath } from "./skills-private.js";
 
@@ -161,15 +161,24 @@ async function logs(args: readonly string[]): Promise<number> {
   const paths = runtimePaths();
   let content = "";
   try { content = await readFile(join(paths.logsDir, basename(executionId) + ".log"), "utf8"); }
-  catch (error) { if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error; }
+  catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") throw new CliFailure("logs_unavailable", `No log is available for execution ${executionId}`, "check the execution ID; logs are created when the daemon starts processing the execution");
+    throw error;
+  }
   print(jsonFlag(args) ? { executionId, content } : content.trimEnd(), jsonFlag(args));
   return 0;
 }
 
 async function calibrationReport(args: readonly string[]): Promise<number> {
-  if (args[0] !== "report") throw new Error("Usage: kor calibrate report [--since ISO-8601] [--context] [--json]");
+  const usage = "kor calibrate report [--since ISO-8601] [--context] [--json]";
+  if (args.includes("--help") || args.includes("-h")) { print(`Usage: ${usage}`, false); return 0; }
+  if (args[0] !== "report") usageFailure(usage);
+  for (let index = 1; index < args.length; index++) {
+    if (args[index] === "--context" || args[index] === "--json") continue;
+    if (args[index] !== "--since" || !args[++index] || args[index]?.startsWith("-")) usageFailure(usage);
+  }
   const since = valueAfter(args, "--since");
-  if (since !== undefined && !Number.isFinite(Date.parse(since))) throw new Error("--since must be an ISO-8601 timestamp");
+  if (since !== undefined && !Number.isFinite(Date.parse(since))) throw new CliFailure("invalid_arguments", "--since must be an ISO-8601 timestamp", `use ${usage}`, 2);
   const store = new CalibrationStore(runtimePaths().databaseFile);
   try {
     const report = buildReport(store, since);
@@ -191,7 +200,7 @@ async function serve(args: readonly string[]): Promise<number> {
   const calibrationEnabled = !args.includes("--no-calibration");
   const sampleRateValue = valueAfter(args, "--calibration-rate");
   const sampleRate = sampleRateValue === undefined ? loaded.config.calibration.sampleRate : Number(sampleRateValue);
-  if (!Number.isFinite(sampleRate) || sampleRate < 0 || sampleRate > 1) throw new Error("--calibration-rate must be between 0 and 1");
+  if (!Number.isFinite(sampleRate) || sampleRate < 0 || sampleRate > 1) throw new CliFailure("invalid_arguments", "--calibration-rate must be between 0 and 1", "use kor serve --calibration-rate RATE with RATE between 0 and 1", 2);
   const baselineModel = valueAfter(args, "--baseline-model");
   const calibrationConfig = { ...loaded.config.calibration, sampleRate, baselineRoute: { ...loaded.config.calibration.baselineRoute, ...(baselineModel ? { model: baselineModel } : {}) } };
   const mission: MissionServices = new MissionServices(paths, async model => {
@@ -208,6 +217,7 @@ async function serve(args: readonly string[]): Promise<number> {
     const models = (await loadAvailableVerifiedModels(await readModelRegistry(paths.modelsFile), () => gatewayAdapter.listModels())).filter(model => model.capabilities.streaming && model.capabilities.tool_calls);
     if (models.length === 0) throw new Error("--jev requires at least one verified gateway model");
   }
+  await validateSessionSkills(loaded.config, paths);
   const store = new LinearStore(paths.databaseFile);
   const audit = calibration ?? new PersistentDecisionAuditLog({ read: id => store.readDecisionAudit(id), write: (id, at, payload) => store.writeDecisionAudit(id, at, payload), update: (id, at, payload) => store.updateDecisionAudit(id, at, payload) });
   const runtime = (config: KorConfig): { controller: Controller; chooseRoute: NonNullable<DaemonOptions["chooseRoute"]> } => {
@@ -385,13 +395,13 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
           const result = { schemaVersion: 1, catalogueHash: catalogue.hash, skill };
           print(jsonFlag(skillArgs) ? result : JSON.stringify(result, null, 2), jsonFlag(skillArgs));
         } else {
-          if (action === "index" && catalogue.ok) await writeSkillsCatalogue(catalogue, paths);
+          if (action === "index" && catalogue.ok && !from.length) await writeSkillsCatalogue(catalogue, paths);
           print(jsonFlag(skillArgs) ? catalogue : formatSkillsCatalogue(catalogue), jsonFlag(skillArgs));
         }
         return catalogue.ok ? 0 : 1;
       }
       const usage = `kor skills report [--since ISO-8601] [--json] | kor skills init [--json] | kor skills import --from DIRECTORY [--dry-run] [--json] | kor skills guard [DIRECTORY] [--json] | kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json] | ${SKILLS_INSTALL_USAGE}`;
-      if (skillArgs[0] === "--help" || skillArgs[0] === "-h" || ["lint", "add", "update"].includes(skillArgs[0] ?? "") && skillArgs.includes("--help")) {
+      if (skillArgs[0] === "--help" || skillArgs[0] === "-h" || ["lint", "add", "update"].includes(skillArgs[0] ?? "") && (skillArgs.includes("--help") || skillArgs.includes("-h"))) {
         print(`Usage: ${usage}\nLint checks the public tier. Catalogue commands merge bundled, private and configured skills; show requires NAME. --from replaces those sources for a read-only scan. add requires a pinned commit; update defaults to --check across both tiers. No daemon required.`, false);
         return 0;
       }
@@ -400,7 +410,13 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
           const result = await runSkillsInstall(skillArgs);
           print(jsonFlag(skillArgs) ? result.report : result.output, jsonFlag(skillArgs));
           return result.ok ? 0 : 1;
-        } catch (error) { if (error instanceof SkillsUsageError) usageFailure(SKILLS_INSTALL_USAGE); throw error; }
+        } catch (error) {
+          if (error instanceof SkillsUsageError) {
+            if (error.message === SKILLS_INSTALL_USAGE) usageFailure(SKILLS_INSTALL_USAGE);
+            throw new CliFailure("invalid_arguments", error.message, `use ${SKILLS_INSTALL_USAGE}`, 2);
+          }
+          throw error;
+        }
       }
       const directories = skillArgs.slice(1).filter(arg => arg !== "--json");
       if (skillArgs[0] !== "lint" || directories.length > 1 || directories.some(arg => arg.startsWith("-"))) usageFailure(usage);
@@ -471,7 +487,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     if (debug && error instanceof Error && error.stack) process.stderr.write(`${error.stack}\n`);
     return failure instanceof CliFailure ? failure.exitCode : 1;
   }
-  process.stdout.write("Usage: kor linear attach-image ISSUE FILE --alt CAPTION [--screen ID] [--json] | kor skills report [--since ISO-8601] [--json] | kor skills init [--json] | kor skills import --from DIRECTORY [--dry-run] [--json] | kor skills guard [DIRECTORY] [--json] | kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json] | kor skills add|update --help | kor ui | kor serve [--ui-dir DIST] [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--context] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor linear lint ISSUE-ID [--json] | kor linear lint --project PROJECT-ID [--json] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list | kor models probe [--family family] [--model model]\n");
+  process.stdout.write("Usage: kor linear attach-image ISSUE FILE --alt CAPTION [--screen ID] [--json] | kor skills report [--since ISO-8601] [--json] | kor skills init [--json] | kor skills import --from DIRECTORY [--dry-run] [--json] | kor skills guard [DIRECTORY] [--json] | kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json] | kor skills add|update --help | kor ui | kor serve [--ui-dir DIST] [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--context] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor linear lint ISSUE-ID [--json] | kor linear lint --project PROJECT-ID [--json] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--no-systemd] | kor uninstall [--purge] | kor models list [--all] | kor models probe [--family family] [--model model]\n");
   return 0;
 }
 

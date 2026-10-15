@@ -6,7 +6,7 @@ function isCredentialKey(name: string): boolean {
   const last = words.at(-1);
   if (!last) return false;
   if (["token", "secret", "password", "authorization", "credential", "credentials", "jwt"].includes(last)) return true;
-  if (last === "key" && words.slice(0, -1).some(word => ["api", "private", "secret"].includes(word))) return true;
+  if (last === "key" && words.slice(0, -1).some(word => ["api", "private", "secret", "gateway"].includes(word))) return true;
   return ["apikey", "accesstoken", "refreshtoken", "clientsecret"].includes(words.join(""));
 }
 // Anchor keys to a run boundary so a long word run is scanned once, and only
@@ -35,7 +35,7 @@ export function redact(value: unknown, secrets: readonly string[] = runtimeSecre
   if (typeof value === "string") {
     let text = value;
     for (const secret of [...secrets].sort((a, b) => b.length - a.length)) if (secret) text = text.split(secret).join("[redacted]");
-    return redactAssignments(text.replace(/Bearer\s+[^\s"']+/gi, "Bearer [redacted]"));
+    return redactAssignments(text.replace(/(Bearer|Basic)\s+[^\s"']+/gi, "$1 [redacted]").replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi, "$1[redacted]@"));
   }
   if (Array.isArray(value)) return value.map(item => redact(item, secrets));
   if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, isCredentialKey(name) ? "[redacted]" : redact(item, secrets)]));

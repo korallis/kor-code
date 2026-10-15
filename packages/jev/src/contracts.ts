@@ -42,7 +42,7 @@ export function parseResponse(raw: unknown, questions: Record<string, JevQuestio
     const keys = question.type === "choice" ? Object.keys(question.criteria).sort() : question.type === "score" ? question.criteria.map((_, index) => String(index)).sort() : [];
     if (JSON.stringify(Object.keys(answer.probabilities).sort()) !== JSON.stringify(keys)) throw new Error(`Jev probability keys mismatch for ${id}`);
     const sum = Object.values(answer.probabilities).reduce((total, value) => total + value, 0);
-    if (Math.abs(sum - 1) > 0.01 + 1e-9) throw new Error(`Jev probabilities do not sum to 1 for ${id}`);
+    if (sum <= 0 || Math.abs(sum - 1) > Math.max(0.01, keys.length * 0.005) + 1e-9) throw new Error(`Jev probabilities do not sum to 1 for ${id}`);
     if (answer.type === "choice") {
       const selected = answer.probabilities[answer.choice];
       if (selected === undefined || selected < Math.max(...Object.values(answer.probabilities))) throw new Error(`Jev chose an invalid candidate for ${id}`);

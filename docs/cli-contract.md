@@ -354,7 +354,7 @@ $ kor run LEE-999999 --json
 
 | Field | Meaning |
 | --- | --- |
-| `error.code` | A stable machine-readable code: `invalid_arguments` and `unknown_command` (exit `2`), `execution_not_found`, `not_accepted`, `invalid_port`, `install_failed`, `uninstall_failed`, or the catch-all `command_failed` (exit `1`). `kor status` adds its own unavailable codes, listed above. |
+| `error.code` | A stable machine-readable code: `invalid_arguments` and `unknown_command` (exit `2`), `execution_not_found`, `logs_unavailable`, `not_accepted`, `invalid_port`, `install_failed`, `uninstall_failed`, or the catch-all `command_failed` (exit `1`). `kor status` adds its own unavailable codes, listed above. |
 | `error.message` | One line. Credentials, issue text and upstream response bodies are never included. |
 | `error.hint` | What to do next. |
 
@@ -367,7 +367,8 @@ error in `kor status` is the ordinary bare error object.
 
 `doctor --json` prints the checks as one object and exits `1` when any check
 failed. Each reachable repository also has a `repo <key> tools` check describing
-the effective available tool set and its source (derived or overridden).
+the configured tool ceiling and its source (derived or overridden). Per-task
+Jev decisions determine the actual optional tools.
 A failed check is not a command error, so there is no `error` object and
 no stderr line:
 
@@ -421,3 +422,7 @@ accept local JSON requests only. See [configuration](configuration.md).
 ## Calibration context report
 
 `kor calibrate report [--since ISO-8601] [--context] [--json]` reads the local calibration database. `--context` adds per-arm context medians to text output. JSON output includes arm context estimates with observation counts. See [Measure session context](context-bench.md) for definitions and the live bench.
+
+`kor logs` exits 1 with `logs_unavailable` when no execution log exists, including
+unknown IDs and queued runs that have not started. `kor calibrate --help` prints
+the report syntax; invalid report options and timestamps exit 2.

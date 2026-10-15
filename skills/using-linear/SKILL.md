@@ -66,7 +66,7 @@ configuration in tracker content.
 - With the API, use authenticated GraphQL from the host. Resolve credentials at
   runtime; provide them through request headers, never command arguments or logs.
   Keep credentials out of execution-session prompts and attachments.
-- For PNG screenshots, execute `kor linear attach-image ISSUE FILE --alt CAPTION`.
+- For PNG screenshots, execute `kor linear attach-image ISSUE FILE --alt CAPTION --screen SCREEN-ID`.
   Read [image handling](references/images.md) before uploading or inspecting
   private assets. Caption each image with its route and state.
 

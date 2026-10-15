@@ -116,6 +116,11 @@ export async function stageSkill(options: { repository: string; staging: string;
   const subpath = subpathSchema.parse(options.subpath);
   const name = skillNameSchema.parse(subpath.split("/").at(-1));
   const source = join(options.repository, subpath);
+  try { await lstat(source); }
+  catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") throw new Error(`Skill ${name} no longer exists upstream at ${subpath}; choose its new subpath with kor skills add`);
+    throw error;
+  }
   await rejectLinks(source, options.repository);
   await validateBundle(source);
   let licenseFile: string | undefined;

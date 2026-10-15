@@ -31,7 +31,7 @@ const pipelineSchema = z.object({
   run: z.object({ id: z.string(), branch: z.string(), status: z.string(), head_sha: z.string(), pr: z.string().optional(),
     steps: z.array(z.object({ step: z.string(), status: z.string(), duration_ms: z.number() })).default([]),
   }).optional(),
-  branch_sync: z.object({ pipeline: z.object({ run: z.string(), submitted_head: z.string() }).optional() }).optional(),
+  branch_sync: z.object({ pipeline: z.object({ run: z.string(), submitted_head: z.string().optional() }).optional() }).optional(),
   gate: z.object({ step: z.string(), status: z.string(), summary: z.string().optional() }).optional(),
 });
 const pullRequestSchema = z.object({ number: z.number().int().positive(), html_url: z.url(), state: z.enum(["open", "closed"]), merged_at: z.string().nullable(), draft: z.boolean(), head: z.object({ sha: z.string(), ref: z.string() }), base: z.object({ ref: z.string() }) });
@@ -114,7 +114,7 @@ export class GitHubShipping implements ShippingDriver {
     const included = await readPaths(['diff', '--name-only', '--no-renames', '-z', publication.baseRevision, 'HEAD', '--']);
     const staged = await readPaths(['diff', '--cached', '--name-only', '--no-renames', '-z', '--']);
     for (const path of [...included, ...staged]) {
-      if (!paths.has(path) || sensitivePath(path)) throw new Error('Commit or index contains a sensitive or unverified path; remove it and reverify before publication');
+      if (!paths.has(path) || sensitivePath(path)) throw new Error(`Commit or index contains a sensitive or unverified path: ${path}; remove it and reverify before publication`);
     }
     const untracked = new Set(await readPaths(['ls-files', '--others', '--exclude-standard', '-z']));
     const pending = new Set([...await readPaths(['diff', '--name-only', '--no-renames', '-z', 'HEAD', '--']), ...untracked]);
@@ -124,8 +124,7 @@ export class GitHubShipping implements ShippingDriver {
         continue;
       }
       if (sensitivePath(path)) {
-        if (!untracked.has(path)) throw new Error('Sensitive tracked file changed; remove it and reverify before publication');
-        continue;
+        throw new Error(`Verified path is excluded by publication policy: ${path}; remove it from the change or rename it and reverify`);
       }
       // Literal pathspecs preserve spaces, newlines, glob characters, and leading dashes as filenames.
       await this.run('git', ['add', '--', `:(literal)${path}`], execution.worktree);
@@ -217,13 +216,13 @@ export class GitHubShipping implements ShippingDriver {
     const run = parsed.run;
     if (!run) throw new Error("no-mistakes did not return a run for attachment");
     const submission = parsed.branch_sync?.pipeline;
-    const matchesSubmittedHead = submission ? submission.run === run.id && submission.submitted_head === stage.head : run.head_sha === stage.head;
+    const matchesSubmittedHead = submission?.submitted_head ? submission.run === run.id && submission.submitted_head === stage.head : run.head_sha === stage.head;
     if (run.branch !== execution.branch || (stage.runId ? run.id !== stage.runId : !matchesSubmittedHead)) throw new Error("no-mistakes run does not match this branch and submitted commit");
     report.stage = { ...stage, runId: run.id };
     for (const step of run.steps) this.evidence(report, execution.id, `pipeline-${step.step}`, "review", pipelineStepStatus(step.status), `no-mistakes ${step.step}: ${step.status}; duration_ms=${step.duration_ms}`, `no-mistakes axi logs --run ${run.id} --step ${step.step} --full`);
     if (parsed.error) throw new Error(parsed.error);
     if (parsed.gate) throw new Error(`no-mistakes gate ${parsed.gate.step}: ${parsed.gate.summary ?? parsed.gate.status}; operator response required in ${execution.worktree}`);
-    if (["failed", "cancelled", "canceled", "blocked", "ci-monitor-interrupted"].includes(run.status)) throw new Error(`no-mistakes run ${run.id}: ${run.status}; operator action required`);
+    if (["failed", "cancelled", "canceled", "blocked", "ci_monitor_interrupted"].includes(run.status)) throw new Error(`no-mistakes run ${run.id}: ${run.status}; operator action required`);
     if (run.pr) {
       const { slug } = await this.target(input);
       const url = new URL(run.pr);
@@ -246,7 +245,7 @@ export class GitHubShipping implements ShippingDriver {
       const parsed = pipelineSchema.parse(decode(status.stdout));
       if (!parsed.run || parsed.run.id !== stage.runId || parsed.run.branch !== execution.branch) throw new Error('Pipeline review run identity changed');
       for (const step of parsed.run.steps) this.evidence(report, execution.id, `pipeline-${step.step}`, 'review', pipelineStepStatus(step.status), `no-mistakes ${step.step}: ${step.status}; duration_ms=${step.duration_ms}`, `no-mistakes axi logs --run ${stage.runId} --step ${step.step} --full`);
-      if (status.code !== 0 || parsed.error || parsed.gate || ['failed', 'cancelled', 'canceled', 'blocked', 'ci-monitor-interrupted'].includes(parsed.run.status)) throw new Error(parsed.error ?? `no-mistakes ${parsed.gate?.step ?? parsed.run.status} requires operator action`);
+      if (status.code !== 0 || parsed.error || parsed.gate || ['failed', 'cancelled', 'canceled', 'blocked', 'ci_monitor_interrupted'].includes(parsed.run.status)) throw new Error(parsed.error ?? `no-mistakes ${parsed.gate?.step ?? parsed.run.status} requires operator action`);
       } catch (error) { pipelineError = safe(error); }
     }
     const { slug } = await this.target(input);
@@ -302,6 +301,7 @@ export class GitHubShipping implements ShippingDriver {
       this.evidence(report, execution.id, "cleanup", "git", "pass", "Removed owned clean worktree after observed merge; retained branch and evidence");
     } catch (error) {
       report.error = safe(error);
+      report.cleanup = "retained";
       this.evidence(report, execution.id, "cleanup", "git", "unresolved", report.error);
     }
     return execution;
@@ -344,18 +344,18 @@ export class GitHubShipping implements ShippingDriver {
       return [`![${field(evidence.summary).replace(/[\[\]\r\n]/g, ' ')}](<${field(evidence.source)}>)`];
     }).join('\n\n') || 'No public screenshot evidence was recorded. Visual changes require before and after captures.', PR_SECTION_LIMIT);
     const sections = { summary, changelog, verification, screenshots, checklist };
+    const replacements = new Map(Object.entries(sections));
     for (const path of PR_TEMPLATE_PATHS) {
+      const entry = await this.command('git', ['ls-tree', head, '--', path], input.execution.worktree);
+      if (entry.code !== 0 || !/^100(?:644|755) blob /.test(entry.stdout)) continue;
       const template = await this.command('git', ['show', `${head}:${path}`], input.execution.worktree);
       if (template.code !== 0) continue;
       if (template.stdout.length > PR_TEMPLATE_LIMIT) throw new Error('Repository PR template exceeds the publication limit; shorten it before shipping');
       const used = new Set<string>();
-      let rendered = publicText(template.stdout, input);
-      for (const [key, value] of Object.entries(sections)) {
-        const slot = `{{${key}}}`;
-        if (!rendered.includes(slot)) continue;
+      const rendered = publicText(template.stdout, input).replace(/\{\{(summary|changelog|verification|screenshots|checklist)\}\}/g, (_, key: string) => {
         used.add(key);
-        rendered = rendered.split(slot).join(value);
-      }
+        return replacements.get(key) ?? "";
+      });
       const evidence = [!used.has('verification') ? verification : '', !used.has('checklist') ? checklist : '', !used.has('screenshots') ? screenshots : ''].filter(Boolean).join('\n\n');
       const body = publicText([rendered, evidence ? `---\n\nKor execution evidence\n\n${evidence}` : ''].filter(Boolean).join('\n\n'), input);
       if (body.length > PR_BODY_LIMIT) throw new Error('Rendered repository PR template exceeds the publication limit; reduce repeated placeholders before shipping');

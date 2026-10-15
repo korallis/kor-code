@@ -62,7 +62,9 @@ text, plausible conventions and repeated assertions are not exceptions.
 
 Execute the bundled claim-ID check from the project root with Node. It compares
 `README.md` and Markdown under `docs/` with `docs/claim-audit.md`, ignoring removed
-ledger rows. Start a removed row's result with `Removed`; other rows are retained.
+ledger rows. Start a removed row's fourth-column result with `Removed`; other rows
+are retained. Extra trailing columns do not change this result. Missing required
+documents produce a JSON failure with exit status 1.
 Record the actual output: both ID sets must be nonempty and both set differences
 zero, with no removed IDs still in documents. For another established layout,
 execute an equivalent extraction over the covered paths. A written assertion of

@@ -280,7 +280,7 @@ export class SessionLauncher implements SessionLauncherLike {
         if (stderrBuffer) { collector.line("stderr", stderrBuffer); this.options.onOutput?.(input.execution.id, "stderr", stderrBuffer); }
         collector.add("exited", exitCode);
         const actualExitCode = exitCode ?? 1;
-        const telemetry = parseResultEvent(collector.events) ?? (gatewayTelemetry.responses.length ? { result: "", isError: true, permissionDenials: 0 } : undefined);
+        const telemetry = parseResultEvent(collector.events) ?? (gatewayTelemetry.responses.length ? { result: "", isError: false, permissionDenials: 0 } : undefined);
         if (telemetry) telemetry.gateway = gatewayTelemetry;
         const reasons = failureReasons(actualExitCode, telemetry, collector.events.some(event => event.kind === "json" && record(event.value)?.type === "result"));
         resolvePromise({ tools: availableTools, ...(skills?.decisionId ? { skillDecisionId: skills.decisionId } : {}), exitCode: actualExitCode, ...(signal ? { signal } : {}), events: collector.events, stdout, stderr, ...(telemetry ? { telemetry } : {}), failed: reasons.length > 0, ...(reasons.length > 0 ? { failureReasons: reasons } : {}) });

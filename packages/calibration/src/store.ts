@@ -136,9 +136,10 @@ export class CalibrationStore implements DecisionAuditLog {
     memory.importSerialized(`[${payloadRow.parse(row).payload}]`);
     return memory.explain(decisionId);
   }
-  decisions(): DecisionAuditRecord[] {
+  decisions(kind?: DecisionAuditRecord["response"]["kind"]): DecisionAuditRecord[] {
     const memory = new MemoryDecisionAuditLog();
-    memory.importSerialized(`[${this.db.prepare("SELECT payload FROM decision_audit ORDER BY recorded_at").all().map(row => payloadRow.parse(row).payload).join(",")}]`);
+    const rows = kind ? this.db.prepare("SELECT payload FROM decision_audit WHERE json_extract(payload, '$.response.kind')=? ORDER BY recorded_at").all(kind) : this.db.prepare("SELECT payload FROM decision_audit ORDER BY recorded_at").all();
+    memory.importSerialized(`[${rows.map(row => payloadRow.parse(row).payload).join(",")}]`);
     return memory.export();
   }
   explain(decisionId: string): DecisionAuditRecord { const record = this.get(decisionId); if (!record) throw new Error(`Decision not found: ${decisionId}`); return record; }

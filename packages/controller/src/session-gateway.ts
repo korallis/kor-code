@@ -27,7 +27,7 @@ export async function sessionGateway(input: { baseUrl: string; key: string; tele
         const traceId = response.headers["x-cpa-trace-id"];
         const account = typeof traceId === "string" ? TRACE_ID.exec(traceId)?.[1] : undefined;
         input.telemetry.responses.push({ statusCode, attribution: account && typeof traceId === "string"
-          ? { kind: "response_trace", traceId, accountSlot: `account-${account.toLowerCase()}` }
+          ? { kind: "response_trace", traceId, accountSlot: `account-trace-${account.toLowerCase()}` }
           : { kind: "unavailable" } });
       }
       outgoing.writeHead(statusCode, response.headers);

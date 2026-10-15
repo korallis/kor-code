@@ -789,8 +789,8 @@ skills**, **Pinned skills**, **Never load skills** and **Skill budget**. See
   In the capture, stopping LEE-1126 moved it to `canceled`.
 
 Neither touches Linear's workflow state: a stopped run's issue stays **In
-Progress** until you move it. Retries also replay the preflight audit while the
-issue and the eligible models are unchanged.
+Progress** until you move it. Retries replay healthy preflight decisions while the
+issue and the eligible models are unchanged. Outage fallbacks are retried with Jev.
 
 ### Open the pull request
 
@@ -1141,8 +1141,8 @@ section, finish the dependency, or state the clarified intent in the issue
 description), then run `kor retry`. When execution resumes, Kor removes
 `kor:blocked`.
 
-A retry with unchanged input replays the recorded preflight audit instead of
-deciding again. Clarified intent, or a change to the eligible models, creates a
+A retry with unchanged input replays a healthy preflight audit. An outage
+fallback is retained for inspection and retried with Jev under a new audit ID. Clarified intent, or a change to the eligible models, creates a
 fresh immutable decision revision. Earlier decisions stay in the audit. With
 calibration enabled, recorded attempt metrics show provider-reported costs when
 available; a provider cost may be unknown.

@@ -46,7 +46,7 @@ export type ShippingStage =
   | { kind: "pipeline"; head: string; runId?: string }
   | { kind: "publish"; head: string }
   | { kind: "review" | "merged" | "closed"; mode: "no-mistakes" | "direct"; head: string; url: string; number: number; runId?: string };
-export interface ShippingReport { stage: ShippingStage; evidence: Evidence[]; cleanup: "pending" | "removed"; error?: string }
+export interface ShippingReport { stage: ShippingStage; evidence: Evidence[]; cleanup: "pending" | "removed" | "retained"; error?: string }
 export interface Execution { id: string; issueId: string; repository: string; worktree: string; branch: string; status: ExecutionStatus; route?: Route; manifest?: ExecutionManifest; verification?: VerificationReport; shipping?: ShippingReport }
 export type AccountPolicy = "fill-first" | "manual" | "least-used";
 export interface GatewayStrategyObservation { value: string; observedAt: string }
@@ -73,7 +73,7 @@ export interface Labelled<T> { value: T; provenance: Provenance; observedAt?: st
 /** Stable read-only shape consumed by the cockpit and `kor status --json`. */
 export type RunLifecycle = ExecutionStatus | "canceled";
 /** Linux process identity plus the detached process group Kor created for it. */
-export interface SessionProcessIdentity { pid: number; bootId: string; startTicks: string; pgid?: number }
+export interface SessionProcessIdentity { pid: number; bootId: string; startTicks: string; pgid?: number; executionId?: string }
 export interface RunStatus {
   executionId: string;
   issueId: string;

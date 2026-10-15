@@ -55,7 +55,7 @@ const controller = createController({
   repositories: new RepositoryRegistry([{ key: "proof", path: repositoryPath, defaultBranch: "main", checks: config.repos.proof?.checks ?? [] }]),
   worktrees: new GitWorktreeManager(paths.worktreesDir),
   launcher: { async launch(input: SessionLaunch): Promise<SessionResult> {
-    assert.equal(input.route?.label, input.execution.id.endsWith("-baseline") ? undefined : fallback ? "fallback" : "jev");
+    assert.equal(input.route?.label, input.execution.id.endsWith("-baseline") && !input.skillsDisabled ? undefined : fallback ? "fallback" : "jev");
     if (!input.execution.id.endsWith("-baseline") && ++primaryAttempts === 1 && !fallback) throw new Error("transient launcher crash");
     await writeFile(join(input.worktreePath, "hello.txt"), "hello\n");
     return { exitCode: 0, events: [], stdout: "proof wrote hello.txt", stderr: "", telemetry: { result: "proof", isError: false, permissionDenials: 0, totalCostUsd: 0.04, durationMs: 12, model: input.route?.model ?? "unknown", usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 50, cache_creation_input_tokens: 10 } } };

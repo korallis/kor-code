@@ -288,7 +288,11 @@ export class KorDaemon {
     await this.refreshAccounts();
     await this.flushOverrideComments();
     try {
-      if (this.options.linear) await flushLinearWrites(this.store, this.options.linear);
+      let writeError: unknown;
+      if (this.options.linear) {
+        try { await flushLinearWrites(this.store, this.options.linear); }
+        catch (error) { writeError = error; }
+      }
       await this.advanceShipping();
       if (this.now() - this.lastQuotaAt >= 60_000) void this.refreshQuota();
       let found = 0;
@@ -303,7 +307,8 @@ export class KorDaemon {
         }
       }
       this.lastPollAt = new Date(this.now()).toISOString();
-      this.lastError = undefined;
+      if (writeError) await this.reportError(writeError);
+      else this.lastError = undefined;
       return found;
     } catch (error) {
       this.lastPollAt = new Date(this.now()).toISOString();
@@ -318,6 +323,7 @@ export class KorDaemon {
     for (const assignment of this.store.listAssignments()) {
       const previous = assignment.manifest;
       if (this.stopping || !previous?.shipping) continue;
+      if (previous.shipping.stage.kind === 'closed' || previous.shipping.stage.kind === 'merged' && previous.shipping.cleanup !== 'pending') continue;
       if (!['shipping', 'review', 'blocked', 'complete', 'failed'].includes(assignment.status)) continue;
       this.shippingActive.add(assignment.executionId);
       try {
@@ -328,11 +334,11 @@ export class KorDaemon {
         const states = workflowMapping(await linear.listWorkflowStates(issue.teamKey));
         if (!states.review) throw new Error(`Linear team ${issue.teamKey} has no In Review state`);
         const writer = new AgentSessionWriter(this.store, linear, states);
-        await writer.flush();
+        try { await writer.flush(); } catch (error) { await this.reportError(error); }
         let execution = await shipping.advance({ execution: previous, issue, repository });
         const report = execution.shipping;
         if (!report) throw new Error('Shipping driver lost its durable report');
-        const changed = previous.shipping.stage.kind !== report.stage.kind || previous.status !== execution.status || previous.shipping.error !== report.error;
+        const changed = previous.shipping.stage.kind !== report.stage.kind || previous.status !== execution.status || previous.shipping.error !== report.error || JSON.stringify(previous.shipping.evidence) !== JSON.stringify(report.evidence);
         const writes: LinearWrite[] = [];
         if (changed) {
           writes.push({ kind: 'label', issueId: issue.id, name: 'kor:blocked', present: execution.status === 'blocked' });
@@ -348,7 +354,7 @@ export class KorDaemon {
           this.options.controller?.recordTerminalOutcome(execution.id, { status: report.stage.kind === 'merged' ? 'merged' : 'rejected', recordedAt: new Date(this.now()).toISOString(), source: 'shipping.github-observed' });
         }
         this.store.updateShipping(execution, writes);
-        await writer.flush();
+        try { await writer.flush(); } catch (error) { await this.reportError(error); }
         if (report.stage.kind === 'merged' && report.cleanup !== 'removed' && this.store.counts().pendingWrites === 0) {
           if (resolve(execution.worktree) !== join(resolve(this.options.paths.worktreesDir), execution.id)) throw new Error('Cleanup path is outside this execution worktree');
           execution = await shipping.cleanup({ execution, issue, repository });
@@ -818,7 +824,7 @@ export class KorDaemon {
     }, Math.max(25, Math.floor(this.leaseTtlMs / 3)));
     const onSpawn = (pid: number) => {
       this.setStage(id, "supervise");
-      const captured = captureProcess(pid);
+      const captured = { ...captureProcess(pid), executionId: id };
       identity = captured;
       this.store.setSessionPid(claim, pid, captured);
       abort.signal.throwIfAborted();
@@ -840,9 +846,9 @@ export class KorDaemon {
       // The configured mapping (linearProject, then linearTeam) names the checkout.
       const repository = repositoryKeyForIssue(issue, this.options.config);
       this.setStage(id, "preflight");
-      const route = await this.routeFor(id, issue);
       const screenshotCheck = screenshotReadinessCheck({ labels: issue.labels, hasScreenshot: hasScreenshot(issue) });
       if (screenshotCheck.result === "fail") throw new NeedsInputError(screenshotCheck.reason);
+      const route = await this.routeFor(id, issue);
       const previousBranch = this.store.listAssignments().find(assignment => assignment.executionId === id)?.manifest?.branch;
       const manifest: Execution = { id, issueId: issue.id, repository, worktree: "", branch: previousBranch || `kor/${issue.identifier ?? issue.id}`, status: "running", ...(route ? { route } : {}) };
       this.store.markRunning(claim, manifest);

@@ -88,13 +88,26 @@ export async function flushLinearWrites(store: LinearStore, client: LinearClient
     const token = store.claimWriter();
     if (!token) return 0;
     let count = 0;
+    let sequence = 0;
+    let failure: unknown;
+    const blocked = new Set<string>();
+    const issues = new Map(store.listAssignments().map(assignment => [assignment.sessionId, assignment.issueId]));
     try {
-      for (; count < maximum; count++) {
-        const pending = store.nextWrite(token);
-        if (!pending) break;
-        await client.apply(pending.write);
-        store.acknowledgeWrite(token, pending.sequence);
+      const lastSequence = store.lastWriteSequence(token);
+      while (count < maximum) {
+        const pending = store.nextWrite(token, sequence);
+        if (!pending || pending.sequence > lastSequence) break;
+        sequence = pending.sequence;
+        const write = pending.write;
+        const issue = write.kind === 'session' ? write.session.issueId : 'issueId' in write ? write.issueId : issues.get(write.sessionId) ?? write.sessionId;
+        if (blocked.has(issue)) continue;
+        try {
+          await client.apply(write);
+          store.acknowledgeWrite(token, pending.sequence);
+          count++;
+        } catch (error) { blocked.add(issue); failure ??= error; }
       }
+      if (blocked.size) throw failure;
       return count;
     } finally { store.releaseWriter(token); }
 }
@@ -134,10 +147,13 @@ export class WebhookReceiver {
     const age = Math.abs((this.options.now ?? Date.now)() - timestampMs(event.webhookTimestamp));
     if (age > 60_000) throw new WebhookError(400, 'stale webhook timestamp');
     const data = typeof event.data === 'object' && event.data !== null ? event.data as Record<string, unknown> : {};
-    const issueId = typeof data.id === 'string' ? data.id : typeof data.issueId === 'string' ? data.issueId : undefined;
+    const issueId = event.type === 'Issue' && typeof data.id === 'string' ? data.id : event.type === 'Comment' && typeof data.issueId === 'string' ? data.issueId : undefined;
     const digest = createHash('sha256').update(rawBody).digest('hex');
     try { return { accepted: this.options.store.acceptEvent({ id: eventId, digest, ...(issueId ? { issueId } : {}) }) === 'accepted' }; }
-    catch { throw new WebhookError(409, 'webhook delivery conflicts with a previous payload'); }
+    catch (error) {
+      if (error instanceof Error && error.message === 'Webhook delivery ID conflicts with its stored payload') throw new WebhookError(409, 'webhook delivery conflicts with a previous payload');
+      throw error;
+    }
   }
 }
 

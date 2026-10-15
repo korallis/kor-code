@@ -1,4 +1,4 @@
-import { access, mkdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { execFile as execFileCallback } from "node:child_process";
@@ -30,7 +30,13 @@ export class GitWorktreeManager implements WorktreeManager {
       await rm(path, { recursive: true, force: true });
     }
     const branchExists = await execFile("git", ["-C", input.repository.path, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`]).then(() => true).catch(() => false);
-    const addArgs = branchExists ? ["worktree", "add", path, branch] : ["worktree", "add", "-b", branch, path, input.repository.defaultBranch ?? "HEAD"];
+    const registered = (await execFile("git", ["-C", input.repository.path, "worktree", "list", "--porcelain"])).stdout;
+    const stale = registered.split(/\n\n/).some(record => record.split("\n").includes(`worktree ${path}`) && record.split("\n").includes(`branch refs/heads/${branch}`) && /^prunable(?: |$)/m.test(record));
+    if (stale) {
+      const marker = JSON.parse(await readFile(`${path}.kor-worktree.json`, "utf8"));
+      if (marker.executionId !== input.executionId || marker.issueId !== input.issueId || resolve(marker.repository) !== resolve(input.repository.path)) throw new Error("Stale worktree ownership does not match this execution");
+    }
+    const addArgs = branchExists ? ["worktree", "add", ...(stale ? ["--force"] : []), path, branch] : ["worktree", "add", "-b", branch, path, input.repository.defaultBranch ?? "HEAD"];
     await execFile("git", ["-C", input.repository.path, ...addArgs]);
     await writeFile(join(resolve(this.root), `${input.executionId}.kor-worktree.json`), `${JSON.stringify({ executionId: input.executionId, issueId: input.issueId, path, repository: input.repository.path })}\n`, { mode: 0o600 });
     return { executionId: input.executionId, issueId: input.issueId, path, branch, repository: input.repository.path };

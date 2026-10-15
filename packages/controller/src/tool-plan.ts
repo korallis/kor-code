@@ -4,8 +4,8 @@ import { sessionTools } from "./session-permissions.js";
 
 const TOOL_THRESHOLD = 0.8;
 const WEB_TOOLS = ["WebFetch", "WebSearch"];
-const BROWSER_PREFIXES = ["mcp__chrome_devtools__", "mcp__playwright__", "mcp__browser__"];
-function browserTool(tool: string): boolean { return BROWSER_PREFIXES.some(prefix => tool.startsWith(prefix)); }
+const BROWSER_PREFIXES = ["mcp__chrome_devtools__", "mcp__playwright__", "mcp__browser__", "mcp__claude_in_chrome__", "mcp__plugin_playwright_"];
+function browserTool(tool: string): boolean { return BROWSER_PREFIXES.some(prefix => tool.replaceAll("-", "_").startsWith(prefix)); }
 const CAPABILITIES = [
   { name: "shell", question: "Does this task require shell commands beyond read-only git inspection?", yes: "Building, running checks, installing dependencies or executing a script is necessary.", no: "Reading and editing files with ordinary repository inspection suffices." },
   { name: "browser", question: "Does this task require interacting with a live browser?", yes: "The task requires rendering pages, interacting with a UI or capturing browser screenshots.", no: "Repository edits or fetching source documents suffice; no browser interaction is required." },
@@ -44,7 +44,7 @@ export async function planSessionTools(input: {
     return {
       decisionId: `tools-${input.executionId}-${revision}-${capability.name}`, executionId: input.executionId,
       kind: "tools", answerType: "noul", question: capability.question,
-      state: { task: input.task, capability: capability.name, eligibleTools: tools },
+      state: { capability: capability.name, eligibleTools: tools },
       inputs: [{ name: "capability", value: capability.name }, { name: "eligibleTools", value: tools, source: "repository-policy" }],
       candidates: ["yes", "no"], criteria: { true: capability.yes, false: capability.no }, threshold: TOOL_THRESHOLD,
       policyChecks: [{ name: "tools-allowed", result: tools.length ? "pass" : "fail", reason: tools.length ? "Repository policy permits this capability." : "Repository policy provides no tools for this capability." }],
@@ -53,13 +53,22 @@ export async function planSessionTools(input: {
   const decisions: AppliedDecision[] = [];
   const pending: DecisionRequest[] = [];
   for (const request of requests) {
-    try { decisions.push(jev.replay(request.decisionId)); }
+    const baseId = request.decisionId;
+    try {
+      let previous = jev.replay(request.decisionId);
+      for (let retry = 1; previous.policyChecks.some(check => check.name === "jev-available" && check.result === "fail"); retry++) {
+        request.decisionId = `${baseId}-retry-${retry}`;
+        previous = jev.replay(request.decisionId);
+      }
+      decisions.push(previous);
+    }
     catch (error) {
       if (!(error instanceof Error) || !error.message.startsWith("Decision not found:")) throw error;
       pending.push(request);
     }
   }
   let fallback = false;
+  if (pending[0]) pending[0].state = { task: input.task, capability: pending[0].state };
   try { decisions.push(...(await jev.preflight(pending)).decisions); }
   catch (error) {
     if (!(error instanceof JevUnavailableError)) throw error;

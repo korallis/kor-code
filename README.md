@@ -227,7 +227,7 @@ kor ui    # starts the daemon if needed and opens Mission Control, already signe
 ```
 
 `kor ui` starts the installed user service, or a background daemon on hosts without
-a user manager. It waits for live status, finds the daemon's port, adds a one-time session token to the URL
+a user manager. It waits for live status, finds the daemon's port, adds the persistent local UI token to the URL
 fragment (it never prints it) and opens your default browser, including the Windows
 browser under WSL. It always prints the local URL; if a browser cannot open, visit
 that URL and connect with the token file below. A browser without a
@@ -394,6 +394,13 @@ Claude Code shows a one-line Kor status line under the prompt, and `/kor` draws 
 view of the same daemon's status, once the installer's `kor-cockpit` plugin is
 active. See [the status line](docs/user-guide.md#the-claude-code-status-line).
 
+Review follow-up behaviour is documented in [the review inventory](docs/review-followups.md).
+Explicit `kor skills index --from DIR` scans are read-only; normal indexing uses up to
+8 concurrent token-count requests. `kor serve` validates skill policy before accepting
+work, and retries ask Jev again after an outage while retaining the failed audit.
+`kor models list --all` includes failed probes with verification status and errors.
+Screen attachments paginate beyond 100 entries; history remains available.
+
 ## When something stops
 
 Kor's queue is durable: I killed the daemon (`SIGKILL`) in the middle of a run and
@@ -413,6 +420,7 @@ the same as an object.
 
 ## Documentation
 
+- [Review follow-ups](docs/review-followups.md): audit dispositions, recovery fixes and measured validation.
 - [Principles and playbooks](docs/pstack-playbooks.md): 22 portable principles,
   eight supporting skills, and 11 session playbooks, with pinned MIT attribution
   and a runnable paired-evaluation proof.

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir, mkdtemp, writeFile, readFile, unlink } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile, readFile, unlink, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -92,7 +92,7 @@ for(const mode of ['direct','no-mistakes']) {
   };
   const shipping=new GitHubShipping(command);
   const calibration=new CalibrationStore(paths.databaseFile);
-  const controller=createController({repositories:new RepositoryRegistry([{key:'LEE',...repository}]),worktrees:{create:async input=>({executionId:input.executionId,issueId:input.issueId,path:cwd,branch:input.branch,repository:cwd})},launcher:{launch:async()=>{launches++;await writeFile(join(cwd,'hello.js'),"console.log('hello');\n");await writeFile(join(cwd,'.env.local'),`token=${secret}\n`);await writeFile(join(cwd,'feature [literal].txt'),'literal filename\n');return {exitCode:0,events:[],stdout:'',stderr:'',failed:false};}},jev:new JevDecisionCore(fixtureJev(),new MemoryDecisionAuditLog()),defaultRoute:config.defaultRoute,calibration:{store:calibration,sampleRate:0,baselineRoute:config.defaultRoute}});
+  const controller=createController({repositories:new RepositoryRegistry([{key:'LEE',...repository}]),worktrees:{create:async input=>({executionId:input.executionId,issueId:input.issueId,path:cwd,branch:input.branch,repository:cwd})},launcher:{launch:async()=>{launches++;await writeFile(join(cwd,'hello.js'),"console.log('hello');\n");await writeFile(join(cwd,'feature [literal].txt'),'literal filename\n');return {exitCode:0,events:[],stdout:'',stderr:'',failed:false};}},jev:new JevDecisionCore(fixtureJev(),new MemoryDecisionAuditLog()),defaultRoute:config.defaultRoute,calibration:{store:calibration,sampleRate:0,baselineRoute:config.defaultRoute}});
   let daemon=new KorDaemon({paths,config,store,linear,controller,shipping,port:0,pollIntervalMs:3_600_000});
   let handle=await daemon.start();
   try {
@@ -100,7 +100,8 @@ for(const mode of ['direct','no-mistakes']) {
   assert.equal((await linear.getIssue(issue.id)).stateId,workflowMappingFixture.running.id);
   await new Promise(r=>setTimeout(r,150));
   assert.equal((await readStatus(paths)).snapshot.runs[0].status,'shipping');
-  // Add an unrelated safe file after verification; it is not in the verified path manifest.
+  // Files created after verification stay outside the publication manifest.
+  await writeFile(join(cwd,'.env.local'),`token=${secret}\n`);
   await writeFile(join(cwd,'unrelated.txt'),'not part of this change\n');
   const verified=daemon.store.listAssignments()[0].manifest;
   verified.verification.attempts.at(-1).checks.push(...Array.from({length:20},()=>({command:`node hello.js # ${leak}`,exitCode:0,status:'pass',output:`${leak}\n${cwd}\n`+'bounded output '.repeat(2000)})));
@@ -135,7 +136,13 @@ for(const mode of ['direct','no-mistakes']) {
     closed=true;await daemon.pollOnce();assert.equal(daemon.status().runs[0].status,'failed');assert.equal((await linear.getIssue(issue.id)).stateId,workflowMappingFixture.review.id);assert.equal(removed,0);
   } else {
     merged=true;dirty=true;await daemon.pollOnce();assert.equal(daemon.status().runs[0].status,'complete');assert.equal((await linear.getIssue(issue.id)).stateId,workflowMappingFixture.complete.id);assert.equal(removed,0);assert.match(daemon.status().runs[0].shipping.error,/uncommitted/);
+    assert.equal(daemon.status().runs[0].shipping.cleanup,'retained');
+    await daemon.pollOnce();assert.equal(removed,0);
+    const retained=daemon.store.listAssignments()[0].manifest;
+    daemon.store.updateShipping({...retained,shipping:{...retained.shipping,cleanup:'pending'}});
     dirty=false;mismatched=true;await daemon.pollOnce();assert.equal(removed,0);assert.match(daemon.status().runs[0].shipping.error,/branch changed/);
+    const changed=daemon.store.listAssignments()[0].manifest;
+    daemon.store.updateShipping({...changed,shipping:{...changed.shipping,cleanup:'pending'}});
     mismatched=false;await unlink(join(cwd,'.env.local'));await unlink(join(cwd,'unrelated.txt'));await daemon.pollOnce();assert.equal(removed,1);assert.equal(daemon.status().runs[0].shipping.cleanup,'removed');
     await daemon.pollOnce();assert.equal(removed,1);
   }
@@ -172,12 +179,20 @@ const unsafeDriver = new GitHubShipping(async(file, args, cwd) => {
   throw new Error('Unsafe commit reached external publication');
 });
 const unsafeInput = { execution, issue: { id: sample.issueId, title: 'hello' }, repository: { path: sample.worktree, remote: 'https://github.com/example/kor-fixture.git', defaultBranch: 'main' } };
+await writeFile(join(sample.worktree, 'id_helper.ts'), 'export const value = 1;\n');
+const excludedInput = structuredClone(unsafeInput);
+excludedInput.execution.verification.attempts.at(-1).publication.paths.push('id_helper.ts');
+const excluded = await unsafeDriver.advance(excludedInput);
+assert.equal(excluded.status, 'blocked');
+assert.match(excluded.shipping.error, /id_helper\.ts/);
+await unlink(join(sample.worktree, 'id_helper.ts'));
 await exec('git', ['add', '--', '.env.local'], { cwd: sample.worktree });
 assert.equal((await unsafeDriver.advance(unsafeInput)).status, 'blocked');
 await exec('git', ['commit', '-qm', 'fixture: precommitted credential must block publication'], { cwd: sample.worktree });
 assert.equal((await unsafeDriver.advance(unsafeInput)).status, 'blocked');
 assert.equal(unsafePublications, 0);
 console.log('sensitive-path proof: staged and session-committed .env.local blocked before publication');
+console.log('excluded-path proof: verified id_helper.ts blocked explicitly before publication');
 
 const renderer = new GitHubShipping(real);
 const renderInput = { execution: structuredClone(execution), issue: { id: sample.issueId, title: `fix(shipping): retain evidence.\n${leak}` }, repository: { path: sample.worktree, defaultBranch: 'main' } };
@@ -198,12 +213,21 @@ assert(templateBody.includes('- [ ] Maintainer approval'));assert(templateBody.i
 assert(templateBody.includes('![After](<https://example.invalid/after.png>)'));assert(!templateBody.includes(secret));assert(!templateBody.includes('/home/fixture'));assert(!templateBody.includes('{{'));
 await writeFile(templateFile, '## Uncommitted replacement\n');
 assert.equal(await renderer.body(renderInput, templateHead), templateBody);
+const literalInput = structuredClone(renderInput);
+literalInput.execution.verification.attempts.at(-1).checks[0].output = 'Literal {{checklist}} remains evidence';
+assert((await renderer.body(literalInput, templateHead)).includes('Literal {{checklist}} remains evidence'));
 await writeFile(join(root, 'template-body.md'), templateBody);
 await writeFile(templateFile, '## Custom policy\n\n- [ ] Human checks the client\n');
 await exec('git', ['add', '--', '.github/pull_request_template.md'], { cwd: sample.worktree });
 await exec('git', ['commit', '-qm', 'fixture: plain repository template'], { cwd: sample.worktree });
 const plainBody = await renderer.body(renderInput, (await exec('git', ['rev-parse', 'HEAD'], { cwd: sample.worktree })).stdout.trim());
 assert(plainBody.startsWith('## Custom policy\n\n- [ ] Human checks the client\n'));assert(plainBody.includes('Kor execution evidence'));assert(plainBody.includes('node hello.js'));assert(plainBody.includes('- [ ] manual-browser'));
+await unlink(templateFile);
+await symlink('../README.md', templateFile);
+await exec('git', ['add', '--', '.github/pull_request_template.md'], { cwd: sample.worktree });
+await exec('git', ['commit', '-qm', 'fixture: symlink template'], { cwd: sample.worktree });
+const symlinkBody = await renderer.body(renderInput, (await exec('git', ['rev-parse', 'HEAD'], { cwd: sample.worktree })).stdout.trim());
+assert(symlinkBody.startsWith('## What does this PR do?'));
 console.log(`PR standard proof: five ordered headings; bounded evidence keeps checklist; conventional titles; committed repository template wins; plain template retains policy; screenshots linked; unresolved checks unticked; template redaction; defaultBytes=${(await readFile(join(root,'direct/pr-body.md'))).length}; templateBytes=${Buffer.byteLength(templateBody)}`);
 
 // Construct the v4 schema directly, independent of git history or a previous dist build.
