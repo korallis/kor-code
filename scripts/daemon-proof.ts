@@ -66,7 +66,7 @@ lifecycleIssue.labels = ["kor"];
 const lifecycleLinear = new FakeLinearClient([lifecycleIssue]);
 const lifecycleConfig = parseKorConfig({ repos: { LEE: { path: lifecycleRoot } }, pollIntervalSeconds: 60, intakeLabel: "kor" }, { home: lifecycleRoot });
 let invocations = 0;
-const lifecycleDaemon = new KorDaemon({ paths: lifecyclePaths, config: lifecycleConfig, linear: lifecycleLinear, leaseTtlMs: 200, pollIntervalMs: 60_000, runner: async ({ onSpawn }) => {
+const lifecycleDaemon = new KorDaemon({ paths: lifecyclePaths, config: lifecycleConfig, linear: lifecycleLinear, port: 0, leaseTtlMs: 200, pollIntervalMs: 60_000, runner: async ({ onSpawn }) => {
   invocations += 1;
   const child = spawn("sleep", ["10"], { stdio: "ignore", detached: true });
   if (!child.pid) throw new Error("lifecycle child did not start");
@@ -84,7 +84,7 @@ const cancelPaths = runtimePaths({ HOME: cancelRoot, XDG_CONFIG_HOME: join(cance
 const cancelIssue = fakeIssue("LEE-59"); cancelIssue.stateType = "unstarted"; cancelIssue.labels = ["kor"];
 const cancelLinear = new FakeLinearClient([cancelIssue]);
 const cancelConfig = parseKorConfig({ repos: { LEE: { path: cancelRoot } }, pollIntervalSeconds: 60, intakeLabel: "kor" }, { home: cancelRoot });
-const queuedDaemon = new KorDaemon({ paths: cancelPaths, config: cancelConfig, linear: cancelLinear, pollIntervalMs: 60_000, runner: async () => { throw new Error("queued cancellation should not launch"); } });
+const queuedDaemon = new KorDaemon({ paths: cancelPaths, config: cancelConfig, linear: cancelLinear, port: 0, pollIntervalMs: 60_000, runner: async () => { throw new Error("queued cancellation should not launch"); } });
 queuedDaemon.store.enqueue(cancelIssue.id);
 if (!queuedDaemon.cancel(cancelIssue.id) || queuedDaemon.status().runs[0]?.status !== "canceled") throw new Error("queued cancellation was not terminal");
 await queuedDaemon.start();
@@ -92,7 +92,7 @@ if (queuedDaemon.status().runs[0]?.status !== "canceled") throw new Error("queue
 await queuedDaemon.stop();
 
 let canceledInvocations = 0;
-const runningDaemon = new KorDaemon({ paths: cancelPaths, config: cancelConfig, linear: cancelLinear, leaseTtlMs: 200, pollIntervalMs: 60_000, runner: async ({ onSpawn, signal }) => {
+const runningDaemon = new KorDaemon({ paths: cancelPaths, config: cancelConfig, linear: cancelLinear, port: 0, leaseTtlMs: 200, pollIntervalMs: 60_000, runner: async ({ onSpawn, signal }) => {
   canceledInvocations += 1;
   const child = spawn("sleep", ["10"], { stdio: "ignore", detached: true });
   if (!child.pid) throw new Error("cancel child did not start");
@@ -113,7 +113,7 @@ const failureIssue = fakeIssue("LEE-60"); failureIssue.stateType = "unstarted"; 
 const failureLinear = new FakeLinearClient([failureIssue]);
 const failureConfig = parseKorConfig({ repos: { LEE: { path: failureRoot } }, pollIntervalSeconds: 60, intakeLabel: "kor" }, { home: failureRoot });
 let failures = 0;
-const failureDaemon = new KorDaemon({ paths: failurePaths, config: failureConfig, linear: failureLinear, pollIntervalMs: 60_000, runner: async () => { failures += 1; throw new Error("proof failure"); } });
+const failureDaemon = new KorDaemon({ paths: failurePaths, config: failureConfig, linear: failureLinear, port: 0, pollIntervalMs: 60_000, runner: async () => { failures += 1; throw new Error("proof failure"); } });
 await failureDaemon.start();
 await waitFor(() => failureDaemon.status().runs.some(run => run.status === "failed"));
 if (failures !== 1 || !failureDaemon.retry(failureIssue.id) || failureDaemon.status().runs[0]?.status !== "queued") throw new Error("failed run did not become retryable");
