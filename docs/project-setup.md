@@ -52,6 +52,7 @@ docs/
   cli-contract.md or api-contract.md
   implementation-plan.md
   open-questions.md
+  claim-audit.md
 ```
 
 Existing repository paths win. Requirements have stable IDs and observable
@@ -60,6 +61,18 @@ record context, decision, consequences and actual status. Open questions carry
 an owner, proposed default and blocked work. Before an app exists, screenshots
 remain explicitly pending. Once it runs, README and user guide use real captures.
 An absent interface is accounted for with an N/A reason in the contract document.
+
+Every rule, invariant and constraint carries an authoritative source citation and
+a claim ID. `docs/claim-audit.md` lists each claim, its document locations, the
+source wording and the comparison result. Check meaning as well as source
+existence: remove or correct assertions that the source does not support. The
+audit records corrections. The skill's bundled `scripts/check-claim-ids.mjs`
+runs with Node from the generated project's root and compares README and `docs/`
+claim IDs against retained ledger rows, failing on empty or mismatched sets.
+Use an equivalent executed check for established document layouts elsewhere.
+This checks bookkeeping; comparing each assertion with its source still requires
+review. Unsourced or unchecked claims prevent completion. Missing product decisions
+remain owned open questions, with proposed defaults labelled as proposals.
 
 ## Readiness and verification
 

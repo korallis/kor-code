@@ -7,6 +7,7 @@ metadata:
   kor.stages: project-setup,plan,execute,review
   kor.triggers: write project docs; document architecture; update requirements; document changed behaviour
   kor.anti: orchestrating repository setup; rendering mockups; publishing tracker issues
+  kor.requires: Bash
   kor.visibility: public
   kor.budget: "1500"
 ---
@@ -43,6 +44,12 @@ explicit proposals or an owned open question.
 
 ## Write from evidence
 
+Read [claim traceability](references/claim-traceability.md) before writing.
+Every rule, invariant and constraint needs a cited authoritative source beside
+it and a row in `docs/claim-audit.md`. Check each claim against that source;
+delete or correct claims without support. Existing docs are candidates to audit,
+not authority for their own assertions. A general review is not this check.
+
 - Assign stable `REQ-001` style IDs and observable acceptance to requirements.
   Carry those IDs into specs, interfaces and planned work. On a change, follow
   the IDs through affected docs, screens and tickets; record stale downstream
@@ -70,8 +77,13 @@ Read the written files. Check that each brief constraint has a requirement or an
 explicit non-goal, each requirement has acceptance and planned work, and contracts,
 specs, architecture and glossary agree. Verify local links and screenshot files
 exist; inspect real images when claiming screenshots. Remove template prompts and
-empty sections. Missing facts belong in open questions with a proposed default,
-not invented documentation.
+empty sections. Finish the claim ledger: enumerate every rule-like statement,
+check its cited source and record the result and any correction. Reconcile the
+document claim IDs with the ledger; no unsourced or unchecked claim may remain.
+Run [the claim-ID check](scripts/check-claim-ids.mjs) with Node from the project
+root; a nonzero exit blocks completion. It checks README and `docs/`; use an
+equivalent executed check for other established layouts.
+Missing facts belong in open questions with a proposed default.
 
 Finish with the document list, observed checks, unverified commands and remaining
 decisions. Documentation completeness does not establish implementation or

@@ -42,8 +42,10 @@ inapplicable interfaces or unresolved architecture, document that status and its
 reason rather than inventing an interface or claiming a decision is accepted.
 
 Exit: each document has substantive project content, stable requirement IDs,
-consistent terms and explicit planned versus implemented behaviour. Follow
-requirement IDs across specs, contracts, risks and planned work to check agreement.
+consistent terms and explicit planned versus implemented behaviour. The claim
+audit traces every rule, invariant and constraint to its source, with no
+unsupported claims remaining. Follow requirement IDs across specs, contracts,
+risks and planned work to check agreement.
 
 ## 3. Inventory screens and render mockups
 
