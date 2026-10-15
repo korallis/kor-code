@@ -33,6 +33,8 @@ try {
     ["schema", source("hooks:\n  PreToolUse:\n    - hooks:\n        - type: command\n          command: 'printf forbidden'\n")],
     ["schema", source("context: fork\n")],
     ["no-execution", source("", "Read !`printf forbidden` before proceeding.\n")],
+    ["no-execution", source("", "!`git status`\n")],
+    ["no-execution", source("", "```!\ngit status\n```\n")],
     ["no-execution", source("", "!`printf first\nprintf second`\n")],
     ["no-execution", source("", "```upstream-quote https://example.org/source\n!`printf forbidden`\n```\n")],
     ["description-trigger", source("", undefined, "Reviews changes for acceptance gaps.")],
@@ -112,6 +114,10 @@ try {
   const prose = join(scratch, "prose", "proof-skill");
   await mkdir(prose, { recursive: true });
   const ordinary = [
+    "The tells are `!`, a cast or a throw.",
+    "```tsx",
+    "showNotification(`Added ${product.name}!`)",
+    "```",
     "Use the domain model to name things.",
     "Make minimal effort to cut scope.",
     "Prefer the Anthropic style guide.",

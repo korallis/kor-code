@@ -243,7 +243,10 @@ kor skills doctor                                       # the merged catalogue a
 Private skills are `local-only` by default: Jev sees only their names, never
 their content. Imported skills can reach sessions without adding a license or
 removing unrelated frontmatter. Hooks, forked execution and shell interpolation
-are refused; bundled scripts must use the session's permitted tools.
+are refused; bundled scripts must use the session's permitted tools. The inline
+interpolation marker must start a line or follow whitespace; ordinary Markdown
+non-null assertions and template literals ending in `!` pass. Fenced commands
+introduced by three backticks followed by `!` are also refused.
 If a private skill shares a bundled name, Kor
 keeps the bundled skill active and warns. To use your version, add this to the
 private skill's frontmatter:

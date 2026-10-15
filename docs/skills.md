@@ -96,9 +96,11 @@ Errors fail the command:
 - Backslash paths. Write portable forward-slash paths.
 - Routing content, as described below.
 - `hooks` or `context` frontmatter, and shell interpolation using an exclamation
-  mark followed by a backtick-delimited command. These can execute outside tool
-  permissions, so both public and private skills reject them. The interpolation
-  check also applies inside code fences and attributed quotations.
+  mark at the start of a line or after whitespace, followed by a backtick-delimited
+  command, or a command fence opened with three backticks followed by `!`.
+  These execution features can bypass tool permissions, so both public and private
+  skills reject them, including inside code fences and attributed quotations.
+  Ordinary inline non-null assertions and template literals ending in `!` pass.
 
 Warnings identify a trigger after the first 120 description characters, estimated
 body cost above `kor.budget`, uppercase MUST/NEVER/REQUIRED/ALWAYS rules after body

@@ -128,7 +128,7 @@ export async function lintSkills(root: string, options: { private?: boolean; nam
   }
 
   function checkText(file: string, text: string, startLine = 1): void {
-    for (const match of text.matchAll(/!`[^`]+`/g)) {
+    for (const match of text.matchAll(/(?<=^|\s)!`[^`]+`|^\s{0,3}`{3}!/gm)) {
       const line = startLine + text.slice(0, match.index).split("\n").length - 1;
       add(file, line, "error", "no-execution", "Remove shell interpolation; scripts must run through repository-approved tools.");
     }
