@@ -8,6 +8,8 @@ import { loadKorConfig, parseDotEnv, readRuntimeEnvFile, runtimePaths } from "@k
 import { z } from "zod";
 import { checkRestore, fingerprint, mkdirRecorded, missing, pruneDirectories, readManifest, recordAfter, remember, restoreManifest, saveManifest, type InstallManifest } from "./install-journal.js";
 
+import { stopLocalDaemon } from "./daemon-lifecycle.js";
+
 import { addKorSettings, installedPluginSchema, PLUGIN_ID, readObject, writeObject } from "./install-json.js";
 
 const execFileAsync = promisify(execFile);
@@ -80,6 +82,13 @@ async function scaffoldConfig(pilot: string, environment: NodeJS.ProcessEnv): Pr
 async function scaffoldGateway(environment: NodeJS.ProcessEnv): Promise<string | undefined> {
   const { gatewayEnvFile } = runtimePaths(environment);
   const existing = await readRuntimeEnvFile(gatewayEnvFile, { private: true });
+  const baseUrl = environment.KOR_GATEWAY_URL || environment.CPA_BASE_URL;
+  if (baseUrl && baseUrl !== (existing.KOR_GATEWAY_URL || existing.CPA_BASE_URL)) {
+    const url = new URL(baseUrl);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error("KOR_GATEWAY_URL must be an HTTP(S) URL without credentials, query or fragment");
+    const previous = await readFile(gatewayEnvFile, "utf8").catch(error => { if (missing(error)) return ""; throw error; });
+    await writeFile(gatewayEnvFile, `${previous}${previous.endsWith("\n") || !previous ? "" : "\n"}KOR_GATEWAY_URL=${JSON.stringify(baseUrl)}\n`, { mode: 0o600 });
+  }
   if (existing.KOR_GATEWAY_KEY || existing.CPA_API_KEY) return undefined;
   if (environment.KOR_GATEWAY_KEY || environment.CPA_API_KEY || environment.KOR_GATEWAY_KEY_FILE) {
     if (!await exists(gatewayEnvFile)) await writeFile(gatewayEnvFile, "# Supply KOR_GATEWAY_KEY at runtime or add it here (mode 0600).\n", { mode: 0o600 });
@@ -154,6 +163,7 @@ async function undo(manifest: InstallManifest, environment: NodeJS.ProcessEnv, p
     await command("systemctl", ["--user", "stop", "kor.service"], environment, root);
     await command("systemctl", ["--user", "disable", "kor.service"], environment, root);
   }
+  await stopLocalDaemon();
   manifest.phase = manifest.phase === "restored" || manifest.phase === "purging" ? "purging" : "restoring";
   await saveManifest(journalPath(environment), manifest);
   await restoreManifest(manifest, purge);
@@ -162,12 +172,54 @@ async function undo(manifest: InstallManifest, environment: NodeJS.ProcessEnv, p
   await saveManifest(journalPath(environment), manifest);
 }
 
+/** Refresh installed artifacts while keeping the original uninstall journal and credentials. */
+async function refreshKor(manifest: InstallManifest, options: { scope: InstallScope; pilot?: string; systemd: boolean }): Promise<{ output: string }> {
+  const paths = runtimePaths();
+  if (manifest.scope !== options.scope || manifest.claudeConfigDir !== resolve(process.env.CLAUDE_CONFIG_DIR || join(paths.home, ".claude")) || options.pilot && await realpath(resolve(options.pilot.replace(/^~\//, `${paths.home}/`))) !== manifest.pilot) {
+    throw new Error("Installation scope, Claude directory or pilot changed; uninstall before changing these options");
+  }
+  if (await realpath(join(paths.home, ".local/bin/kor")) !== join(root, "packages/cli/dist/cli.js")) throw new Error("Kor is installed from another checkout; rerun its installer instead");
+  await chmod(join(root, "packages/cli/dist/cli.js"), 0o755);
+  await checkRestore(manifest, false);
+  if (manifest.systemd) await command("systemctl", ["--user", "stop", "kor.service"], process.env, root);
+  await stopLocalDaemon();
+  const refreshDir = join(manifest.backupDir, "refresh");
+  if (await exists(refreshDir)) throw new Error(`Interrupted update backup at ${refreshDir}; recover it before retrying`);
+  const rollback: InstallManifest = { ...manifest, backupDir: join(refreshDir, "rollback"), phase: "preparing", entries: [], createdDirectories: [] };
+  await mkdir(rollback.backupDir, { recursive: true, mode: 0o700 });
+  const marketplace = join(paths.shareDir, "marketplace");
+  const stage = join(refreshDir, "staging");
+  try {
+    for (const entry of manifest.entries) {
+      if (entry.policy !== "retained" && !contains(manifest.backupDir, entry.path)) {
+        await rejectSymlinkParents(entry.path);
+        await remember(rollback, entry.path, "owned");
+      }
+    }
+    await saveManifest(join(refreshDir, "manifest.json"), rollback);
+    await rm(marketplace, { recursive: true, force: true });
+    await rm(join(manifest.claudeConfigDir, "plugins/cache/kor"), { recursive: true, force: true });
+    await prepareMarketplace(marketplace, manifest.scope === "local" ? manifest.pilot : undefined);
+    await installCockpit(manifest, marketplace, stage, process.env);
+    await recordAfter(manifest);
+    await saveManifest(journalPath(process.env), manifest);
+  } catch (error) {
+    try { await restoreManifest(rollback, true); }
+    catch { throw new Error(`Update failed; rollback backup retained at ${refreshDir}`); }
+    await rm(refreshDir, { recursive: true, force: true });
+    throw error;
+  }
+  await rm(refreshDir, { recursive: true, force: true });
+  return { output: "Kor updated; configuration, credentials and original uninstall backups retained.\nDaemon stopped for the update; run kor ui to launch Mission Control.\nCLIProxyAPI addition: existing credential retained (value not printed)." };
+}
+
 export async function installKor(options: { scope: InstallScope; pilot?: string; systemd: boolean }): Promise<{ output: string }> {
   const environment = process.env;
   const paths = runtimePaths(environment);
   const manifestPath = journalPath(environment);
   const old = await readManifest(manifestPath);
-  if (old && old.phase !== "restored") throw new Error("An install manifest already exists; run kor uninstall before changing scope or reinstalling");
+  if (old?.phase === "installed") return refreshKor(old, options);
+  if (old && old.phase !== "restored") throw new Error("An incomplete install manifest exists; run kor uninstall before reinstalling");
   if (options.scope === "local" && !options.pilot) throw new Error("--pilot is required for a local install");
   const pilot = await realpath(resolve(options.pilot?.replace(/^~\//, `${paths.home}/`) ?? root));
   const gitRoot = await command("git", ["rev-parse", "--show-toplevel"], environment, pilot);

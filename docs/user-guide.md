@@ -79,7 +79,9 @@ You need:
 | A TypeSafe API key | For the Jev planning and acceptance judgments. |
 | For delivery: a GitHub `origin`, authenticated `gh-axi`, and a running `no-mistakes` daemon | To commit, push and open the pull request. |
 
-Clone, build and install:
+For a one-line installation (including the web app), see the
+[README Install section](../README.md#install). It also documents Corepack,
+custom install paths, private mirrors and updates. The manual route is:
 
 ```sh
 git clone https://github.com/korallis/kor-code.git
@@ -319,7 +321,9 @@ whether `gh-axi` or a pasted token can reach it.
 
 ## Start the daemon and open Mission Control
 
-Start the daemon. With the service installed that is
+Run `kor ui` to start the daemon if needed and open Mission Control. It uses the
+installed user service when available and a detached process otherwise. For a
+foreground daemon, use the command below. With the service installed that is
 `systemctl --user enable --now kor`; from a terminal in the `kor-code` checkout:
 
 ```sh
@@ -352,8 +356,10 @@ Opened Kor Code Mission Control in your browser.
 browser at that address with a session token in the URL fragment. The page reads
 the token, clears it from the address bar and keeps it for the tab; the token is
 never printed. Under WSL it opens the Windows browser. If the daemon is not
-running, `kor ui` fails with `Kor daemon address unavailable; start kor serve
-first`.
+running, `kor ui` starts it and waits for an authenticated status response. The
+command prints the local URL. If the browser cannot open, visit that URL and
+connect using the token file below. Background output goes to
+`~/.local/state/kor/logs/serve.log`; service output goes to the user journal.
 
 A browser that has no session, for instance one you opened by typing the address,
 shows the connect screen. Paste the token from `~/.local/state/kor/ui-token`
@@ -1093,7 +1099,7 @@ issue back to Todo (or cancel it) in Linear yourself.
 | `route: no-verified-route`, readiness `blocked` | No model has passed `kor models probe`. Probe one and set `defaultRoute.model` to it. |
 | `jev: unavailable (TypeSafe API key not found …)` | Set `TYPESAFE_API_KEY`. Until then routes are labelled `fallback` and acceptance stays blocked. |
 | Mission Control shows the connect screen, or the pill says `SIGNED OUT` | This browser holds no valid session. Run `kor ui`, or paste the token from `~/.local/state/kor/ui-token` (the daemon creates it on first start). |
-| `FAIL ui: Kor daemon address unavailable; start kor serve first. Hint: …` (or `Kor daemon unavailable; …`) | The daemon is not running, or did not answer. Start `kor serve` (or the service) and run `kor ui` again. |
+| `FAIL ui: Kor daemon did not become ready …` | Check the reported log or user journal, ensure port 8327 is free, then rerun `kor ui`. |
 | `OFFLINE` pill, and a banner saying the daemon is not answering | The event stream closed. Start `kor serve`, then press **Reconnect**. Values on screen are the last ones Kor reported. |
 | A sidebar light shows `connect` | That connection is missing or failing. Open **Settings**, read the reason on its row, and connect it. GitHub needs `gh auth login` or a token. |
 | **Approve and ship** is greyed out | The run is not waiting. It must be verified under `ship: approve`; a blocked or running run is not approvable. |
@@ -1126,49 +1132,28 @@ issue back to Todo (or cancel it) in Linear yourself.
 
 ## Update and uninstall
 
-To update, pull and rebuild, then **reinstall**. Building updates the checkout, but
-the installer copied the status-line plugin into Kor's marketplace and Claude's plugin
-cache, and neither copy follows the source (Mission Control is served from the
-checkout's `packages/web/dist`, so `pnpm build` and restarting the daemon refresh it). The installer also refuses to run over
-an existing installation, so uninstall first. Use the same options you installed
-with (`--pilot …` or `--scope user`):
+To update, rerun the [one-line installer](../README.md#install), then `kor ui`.
+It only fast-forwards a clean checkout, builds Mission Control and the CLI, stops
+the previous daemon, and refreshes both installed cockpit copies. Your config,
+gateway key, state and original uninstall backups are retained. A purge after
+these updates can still restore the state from before the original installation.
+
+For a manual checkout, use the same pilot and scope as the original install:
 
 ```sh
 cd kor-code
-git pull
-pnpm install --frozen-lockfile
-pnpm build
-kor uninstall
-node packages/cli/dist/cli.js install --pilot ~/code/my-project
-systemctl --user enable --now kor     # uninstall disabled the service; or run `kor serve`
+git pull --ff-only
+corepack pnpm install --frozen-lockfile
+corepack pnpm build
+node packages/cli/dist/cli.js install --pilot ~/code/my-project --no-systemd
+kor ui
 ```
 
-The uninstall keeps your config, gateway key and state, and the reinstall reuses
-them (it prints `existing credential retained`). I checked this by adding a marker
-line to the plugin source and running `pnpm build`: the installed copy did not
-have it until the reinstall, and `gateway.env` was byte-identical afterwards:
+Changing the pilot, scope or Claude configuration directory requires uninstalling
+first. On an interrupted refresh, the error identifies the retained rollback
+backup; save it before attempting recovery.
 
-```text
-$ kor uninstall && node packages/cli/dist/cli.js install --pilot /tmp/kor-t15/fresh4-pilot --no-systemd
-Kor uninstalled; config and state retained
-Backups: /tmp/kor-t15/fresh4/.local/state/kor-install/backups/1792003406272-aac9bb9d
-Kor installed (scope: local)
-CLI: /tmp/kor-t15/fresh4/.local/bin/kor
-Config: /tmp/kor-t15/fresh4/.config/kor/config.yaml
-Service: /tmp/kor-t15/fresh4/.config/systemd/user/kor.service (not started; systemd control skipped)
-Cockpit: kor-cockpit@kor only when Claude starts in /tmp/kor-t15/fresh4-pilot (linked worktrees disabled)
-Manifest: /tmp/kor-t15/fresh4/.local/state/kor-install/manifest.json
-CLIProxyAPI addition: existing credential retained; add its api-keys line manually if needed (value not printed).
-Configure repository mapping, checks and toolAllowlist; run kor doctor before starting the service.
-```
-
-One consequence: `kor uninstall --purge` after a reinstall restores the config and
-state as they were just before the *latest* install, which includes what the earlier
-installation created, so a purge after an update cycle leaves those files in place.
-Delete `~/.config/kor`, `~/.local/state/kor` and `~/.local/share/kor` by hand if you
-want them gone.
-
-To remove Kor, run `kor uninstall`. It stops and disables the service, restores
+To remove Kor, run `kor uninstall`. It stops the daemon (and disables an installed service), restores
 every file it changed from its backups, and removes the status-line plugin and
 marketplace, while keeping your config, state and the backups. `kor uninstall
 --purge` also removes the config, state and data Kor created, and restores
