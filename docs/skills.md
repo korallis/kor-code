@@ -283,3 +283,78 @@ concurrent description editing: Linear description writes have no conditional
 update guard. Existing text is preserved from the latest read, but simultaneous
 writers can still overwrite one another. The command verifies storage and ticket
 references; viewing images automatically inside execution sessions is separate.
+
+## Private pack
+
+Create the pack, preview an explicit source, then copy it:
+
+```sh
+kor skills init
+kor skills import --from ./existing-skills --dry-run
+kor skills import --from ./existing-skills
+kor skills doctor --estimate
+kor skills guard
+```
+
+The destination is `XDG_CONFIG_HOME/kor/skills` (default
+`~/.config/kor/skills`), or `skills.privatePath` from configuration. `init`
+prints the path, sets directory mode `0700`, and creates a `0600` `deny.txt`
+and `.gitignore` guard note without replacing existing files. Put one private
+literal string per line in `deny.txt`; blank lines and lines starting with `#`
+are ignored. Do not put this list in the public repository. A private directory
+inside a Git worktree must already be ignored and contain no tracked files;
+initialization and import refuse other worktree locations.
+
+Import only reads the explicitly supplied source. It discovers skills in the
+same way as `index --from`, copies regular files (including references, scripts
+and assets), and never links, runs bundled scripts or writes back to the source.
+Links used to discover a bundle resolve to their physical source; links inside
+bundles fail. `.git` and `node_modules` are excluded. New directories have mode
+`0700`; files have `0600`, or `0700` when the source has owner execute permission.
+Existing destination names fail rather than being replaced. Exact duplicates in
+the source are copied once. The report includes duplicate count, byte count,
+conflicts, lint findings and a `local-only` suggestion for each imported skill.
+
+`--dry-run` performs discovery, stages copies and runs validation in Kor state;
+it leaves the source and destination unchanged and deletes the staging directory.
+Import validates format, local references and the same no-routing rules as public
+lint. Private imports accept missing licenses, extra top-level fields and non-string
+non-Kor metadata, and do
+not impose public description wording, overlap, reference layout or body-length
+rules. Unknown routing fields still fail. Invalid imports leave the destination
+unchanged; a filesystem failure during final copying may leave a partial new
+bundle. Remove that incomplete bundle before retrying. No existing bundle is
+replaced. Private content remains subject to repository permissions when delivered.
+
+Set the visibility on guidance that must stay out of Jev's request:
+
+```yaml
+metadata:
+  kor.visibility: local-only
+```
+
+Import preserves source bytes, so it suggests this metadata rather than adding
+it. Private guidance defaults to `skills.jev: names-only` even without the field.
+An explicit `local-only` remains restricted when `skills.jev: full` is configured.
+Restricted catalogue rows record effective `visibility: local-only` and
+`jevVisible: names-only`, use
+`Private guidance (local-only).` as the summary, omit triggers and anti-triggers,
+and estimate costs locally. Bodies and references are absent from every catalogue
+row; consumers must use `jevVisible` to send only the name and label for restricted
+rows. `doctor` prints each row's origin tier, visibility and Jev visibility so both
+tiers are visible together. Private sources also run the private import lint rules.
+
+`kor skills guard [DIRECTORY] [--json]` checks the bundled public `skills/` by
+default, or an explicit public directory. It fails on a literal case-insensitive
+match of any private skill directory name or `deny.txt` entry in a public path or
+file, an absolute home path, a symlink, overlapping tiers, an unignored private
+pack in a worktree, or tracked private files. Private matches are redacted from
+its diagnostics. Because names are guarded too, a private override sharing a
+public name is reported even though the catalogue permits that override.
+
+CI runs guard with its isolated private configuration. CI cannot know an owner's
+local deny list: run it locally before publication as well. This literal scan
+cannot establish that arbitrary material is public-safe; review the content and
+licensing before publishing it. `init`, `import` and `guard` require no daemon or
+credentials, support `--json`, and use exit `0` for success, `1` for failed checks
+or I/O, and `2` for invalid arguments.

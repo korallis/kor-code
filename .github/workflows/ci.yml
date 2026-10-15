@@ -42,7 +42,7 @@ jobs:
       - name: Prepare
         run: pnpm install --frozen-lockfile && pnpm build
       - name: Lint public skills and prove rejection rules
-        run: bin/kor skills lint && node scripts/skills-lint-proof.mjs
+        run: bin/kor skills lint && bin/kor skills guard && node scripts/skills-lint-proof.mjs
       - name: Typecheck and validate plugin
         run: pnpm typecheck
       - name: Offline proofs
