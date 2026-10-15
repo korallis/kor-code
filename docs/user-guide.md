@@ -404,8 +404,10 @@ $ kor linear attach-image LEE-1166 ./connect.png --screen connect-desktop --alt 
 LEE-1166: image verified (994489 bytes, sha256 d61cf0b6…)
 ```
 
-`kor plan` runs the full Jev preflight without queueing anything. It comments on
-the issue only when it needs your input:
+`kor plan` runs the full Jev preflight without queueing anything. It posts a preflight
+report on the issue for policy failures or other escalations. A confidence-only
+readiness refusal prints `uncertain`, the score and threshold, and the next step;
+it does not post a comment unless another decision needs input:
 
 ```text
 $ kor plan LEE-1165
@@ -417,11 +419,14 @@ complexity: small bounded change (0.00); confidence=1.00; status=applied
 risk: low operational risk (0.00); confidence=1.00; status=applied
 route: claude-haiku-5-5; confidence=1.00; status=applied
 agent: generalist; confidence=1.00; status=applied
-linear: no clarification needed
+linear: no comment written
 ```
 
-It exits `1` when readiness is `blocked`, a decision is escalated or the route is
-a fallback.
+It exits `1` when readiness is `blocked` or `uncertain`, a decision is escalated
+or the route is a fallback. For `uncertain`, all deterministic readiness checks
+pass: review the acceptance criteria in Linear, add any missing detail, then retry.
+Request changes and operator answers retain an execution's ready verdict while
+the underlying issue and eligible models stay unchanged.
 
 ## Work in Mission Control
 

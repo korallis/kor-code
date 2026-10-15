@@ -136,7 +136,7 @@ export async function decideSkills(input: SkillsInput, client: Pick<JevClient, "
     const pinned = (skill: SkillCandidate) => input.always?.includes(skill.name) || input.pins?.includes(skill.name);
     return Number(Boolean(pinned(b))) - Number(Boolean(pinned(a))) || relevance(b) - relevance(a) || a.name.localeCompare(b.name);
   }).slice(0, MAX_CANDIDATES);
-  // Paths and private descriptions never cross the decision boundary.
+  // Paths and skill bodies never cross the decision boundary.
   const history = Object.fromEntries(candidates.filter(skill => learning[skill.name]).slice(0, MAX_HISTORY).map(skill => [skill.name, learning[skill.name]!]));
   const state = { ...(Object.keys(history).length ? { history } : {}), task: input.task, stage: input.stage, catalogueHash: input.catalogue.hash, stackTags: [...input.stackTags ?? []].sort() };
   const criteria: Record<string, JevJsonValue> = {};

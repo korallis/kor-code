@@ -27,7 +27,11 @@ export function createServeRouting(options: {
     };
     const state = preflightRequests(input)[0]?.state;
     const original = options.audit.get(`route-${executionId}`);
-    const fingerprint = (value: unknown) => createHash('sha256').update(JSON.stringify(redact(value), (key, field: unknown) => key === 'labels' && Array.isArray(field) ? routingLabels(field) : field) ?? 'null').digest('hex').slice(0, 16);
+    const fingerprint = (value: unknown) => createHash('sha256').update(JSON.stringify(redact(value), (key, field: unknown) => {
+      if (key === 'labels' && Array.isArray(field)) return routingLabels(field);
+      if (key === 'description' && typeof field === 'string') return field.split('\n\nOperator guidance:\n')[0];
+      return field;
+    }) ?? 'null').digest('hex').slice(0, 16);
     let decisionRevision = original && fingerprint(original.request.state) !== fingerprint(state) ? fingerprint(state) : undefined;
     const baseRevision = decisionRevision;
     for (let retry = 1; ; retry++) {

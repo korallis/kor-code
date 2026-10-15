@@ -462,8 +462,8 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
         const { plan } = result;
         process.stdout.write(`${JSON.stringify({ schemaVersion: 1, planId: plan.executionId, ready: !blocked, route: plan.route, fallback: plan.fallback, ...(plan.outage ? { outage: plan.outage } : {}), decisions: plan.decisions.map(decision => ({ kind: decision.kind, choice: decision.choice, confidence: decision.confidence, applied: decision.applied, escalated: decision.escalated, policyChecks: decision.policyChecks, reasons: decision.reasons })), commentWritten: result.commentWritten })}\n`);
       } else {
-        process.stdout.write(`${result.output}\n${result.commentWritten ? "linear: clarification comment written" : "linear: no clarification needed"}\n`);
-        if (blocked) process.stderr.write("FAIL plan: preflight did not produce a ready route. Hint: resolve the reported decisions or provide a healthy Jev response, then retry\n");
+        process.stdout.write(`${result.output}\n${result.commentWritten ? "linear: preflight report written" : "linear: no comment written"}\n`);
+        if (blocked) process.stderr.write("FAIL plan: preflight needs attention. Hint: follow the readiness guidance and resolve any other reported decisions, then retry\n");
       }
       return blocked ? 1 : 0;
     }

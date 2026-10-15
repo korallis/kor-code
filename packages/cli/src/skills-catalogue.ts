@@ -212,10 +212,10 @@ export async function buildSkillsCatalogue(options: { config: KorConfig; paths: 
       const metadata = header.metadata ?? {};
       const origins = group.map(item => item.origin);
       if (group.length > 1) duplicates.push({ hash: contentHash, names: [...new Set(group.map(item => item.header.name))].sort(compare), origins });
-      const privateText = metadata["kor.visibility"] === "local-only" || candidate.origin.tier === "private" && config.skills?.jev !== "full" || candidate.origin.tier === "from";
+      const privateText = metadata["kor.visibility"] === "local-only" || candidate.origin.tier === "private" && config.skills?.jev === "names-only" || candidate.origin.tier === "from";
       const summary = privateText ? "Private guidance (local-only)." : header.description.slice(0, SUMMARY_CHARS);
       const listing = header["disable-model-invocation"] ? "" : `${header.name}: ${privateText ? summary : header.description}`;
-      const cost = await count([listing, body, ...references], privateText);
+      const cost = await count([listing, body, ...references], privateText || candidate.origin.tier !== "public");
       const bodyTokens = cost.tokens[1] ?? 0;
       const bodyBudget = /^\d+$/.test(metadata["kor.budget"] ?? "") ? Number(metadata["kor.budget"]) : budgets.body;
       if (bodyTokens > bodyBudget) diagnostics.push({ severity: "warning", rule: "body-budget", path: candidate.origin.path, message: `${header.name}: ${bodyTokens} body tokens exceed ${bodyBudget}` });

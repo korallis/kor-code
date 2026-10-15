@@ -15,7 +15,8 @@ function formatPlan(plan: PreflightPlan): string {
   if (plan.outage) lines.push(`jev: unavailable (${plan.outage})`);
   for (const decision of plan.decisions) {
     const value = decision.answerType === "noul" ? `${decision.choice} (${decision.noul?.toFixed(2) ?? "0.00"})` : decision.answerType === "score" ? `${decision.choice} (${decision.score?.toFixed(2) ?? "0.00"})` : decision.choice;
-    lines.push(`${decision.kind}: ${value}; confidence=${decision.confidence.toFixed(2)}; status=${decision.applied ? "applied" : "blocked"}`);
+    lines.push(`${decision.kind}: ${value}; confidence=${decision.confidence.toFixed(2)}; status=${decision.applied ? "applied" : decision.choice === "uncertain" ? "uncertain" : "blocked"}`);
+    if (decision.kind === "readiness" && decision.choice === "uncertain") lines.push(...decision.reasons);
     if (decision.kind === "readiness") lines.push(...decision.policyChecks.filter(check => check.result !== "pass").map(check => `${check.name}: ${check.result}; ${check.reason ?? "Resolve this policy check, then retry."}`));
   }
   return lines.join("\n");
@@ -37,7 +38,7 @@ export async function runPlan(issueId: string, environment: NodeJS.ProcessEnv = 
   const plan = await planPreflight({ executionId, issue: { id: issue.id, title: issue.title, ...(issue.description !== undefined ? { description: issue.description } : {}), acceptanceCriteria: issue.acceptanceCriteria, labels: issue.labels, hasScreenshot: hasScreenshot(issue), dependencies: issue.dependencies.map(dependency => ({ id: dependency.id, state: dependency.stateType })) }, verifiedModels, defaultRoute: config.config.defaultRoute }, core, audit);
   const output = formatPlan(plan);
   let commentWritten = false;
-  if (plan.decisions.some(decision => decision.escalated || decision.kind === "readiness" && decision.choice === "blocked")) {
+  if (plan.decisions.some(decision => decision.choice !== "uncertain" && (decision.escalated || decision.kind === "readiness" && decision.choice === "blocked"))) {
     await client.apply({ kind: "comment", id: commentId(issue.id), issueId: issue.id, body: output });
     commentWritten = true;
   }
