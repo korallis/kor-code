@@ -137,11 +137,17 @@ async function connect(): Promise<void> {
   const abort = new AbortController();
   controller = abort;
   set({ connection: retries === 0 ? 'connecting' : 'reconnecting' });
+  // A pending handshake can outlive a healthy REST connection. Bound only the
+  // wait for headers; a connected event stream must remain open indefinitely.
+  let handshakeTimedOut = false;
+  const handshakeTimer = setTimeout(() => { handshakeTimedOut = true; abort.abort(); }, 5_000);
   try {
     const response = await fetch(`${API_PREFIX}/events`, {
       headers: { ...authHeaders(), accept: 'text/event-stream', ...(lastEventId ? { 'last-event-id': lastEventId } : {}) },
       signal: abort.signal, cache: 'no-store', credentials: 'omit',
     });
+    clearTimeout(handshakeTimer);
+    if (controller !== abort || abort.signal.aborted) return;
     if (response.status === 401 || response.status === 403) { set({ connection: 'unauthorized', reason: 'This browser session is not authorised. Open Mission Control with `kor ui`.' }); controller = null; return; }
     if (!response.ok || !response.body) throw new Error(`events answered ${response.status}`);
     retries = 0;
@@ -161,10 +167,13 @@ async function connect(): Promise<void> {
     }
     throw new Error('event stream ended');
   } catch {
-    if (abort.signal.aborted) return;
+    if (controller !== abort || abort.signal.aborted && !handshakeTimedOut) return;
+    controller = null;
     retries += 1;
     set({ connection: retries > 2 ? 'offline' : 'reconnecting', reason: 'Lost the daemon event stream; reconnecting.' });
     retryTimer = setTimeout(() => { retryTimer = null; if (listeners.size > 0) void connect(); }, Math.min(15_000, 1_000 * 2 ** Math.min(retries, 4)));
+  } finally {
+    clearTimeout(handshakeTimer);
   }
 }
 

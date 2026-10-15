@@ -60,35 +60,64 @@ In practice:
 
 ## Install
 
-Requirements: Linux with Node 24+, pnpm and Git; Claude Code 2.1.299 or newer; a
+Requirements: Linux with Node 24+, Corepack and Git; Claude Code 2.1.299 or newer; a
 browser; a running [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI); a
 Linear personal API key; a TypeSafe API key. (Where each key goes is in
 [Credentials](docs/user-guide.md#credentials-and-the-gateway).)
 
+Install Kor Code and Mission Control with one command:
+
 ```sh
-git clone https://github.com/korallis/kor-code.git
-cd kor-code
-pnpm install --frozen-lockfile
-pnpm build
-node packages/cli/dist/cli.js install --pilot ~/code/my-project
+curl -fsSL https://raw.githubusercontent.com/korallis/kor-code/main/scripts/install.sh | bash
+```
+
+The script asks for a standalone Git checkout of the project you want Kor to
+work on. To supply it directly (or on a machine without a terminal):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/korallis/kor-code/main/scripts/install.sh | bash -s -- --pilot ~/code/my-project
+```
+
+It checks Linux, Node 24+, Git, Corepack, Claude Code 2.1.299+ and a reachable
+CLIProxyAPI, then clones into `~/.local/share/kor-code`, installs the pinned pnpm
+with Corepack, and builds the CLI, daemon and web app. Install Corepack with
+`npm install -g corepack` if needed. Set `KOR_HOME` to an absolute Linux path to
+move the checkout; `KOR_GATEWAY_URL` selects a proxy other than
+`http://127.0.0.1:8317`. Export these variables before the command so the script
+receives them. A missing systemd user manager is handled automatically;
+`--no-systemd` also opts out explicitly.
+
+If `~/.local/bin` is absent from your PATH, the installer prints this line to run
+and add to your shell profile:
+
+```sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-`pnpm build` also builds Mission Control. `--pilot` is a standalone Git clone of
-the project you want Kor to work on. Keep the `kor-code` checkout on disk: the
-installed `kor` command, the daemon and the web app all run from it. On a machine
-with no Kor files, install prints a new gateway key. **Add that line to
-CLIProxyAPI's `api-keys` list yourself** (Kor never edits the proxy) and restart or
-reload the proxy. Real output on a fresh home, key redacted:
+On a fresh install it prints a new gateway key. **Add that line to CLIProxyAPI's
+`api-keys` list yourself** and reload the proxy. Kor never edits the proxy.
+Keep the Kor checkout on disk: the installed command and web app run from it.
+Rerun the same one-liner to update; it preserves your configuration, credentials
+and uninstall backups, refreshes the cockpit plugin and stops the old daemon.
+Run `kor ui` afterwards. Local checkout edits or divergent commits stop the update
+with a fix-it message. `kor uninstall` removes the integration; `kor uninstall
+--purge` also removes Kor's own data. The downloaded checkout is kept.
 
-![kor install](docs/images/install.png)
+For a private fork or mirror, authenticate with `gh auth login`, then use the
+GitHub API route:
 
-Add `--no-systemd` on a host without a systemd user manager. To remove everything
-again, run `kor uninstall` (`kor uninstall --purge` also removes Kor's own data).
-To update, pull, rebuild and **reinstall**. See
-[Update and uninstall](docs/user-guide.md#update-and-uninstall).
+```sh
+gh api repos/korallis/kor-code/contents/scripts/install.sh -H "Accept: application/vnd.github.raw" | bash
+```
 
-## First run
+For a fork, export `KOR_REPOSITORY=https://github.com/OWNER/REPO.git` and replace
+`korallis/kor-code` in the API or raw URL. `KOR_REF` selects a branch (default `main`).
+Alternatively, export `GH_TOKEN` with repository read access and use
+`curl -fsSL -H "Authorization: Bearer $GH_TOKEN"` with the raw URL above.
+The clone uses the same exported token, or your existing `gh` login.
+The [manual installation appendix](#manual-installation) keeps the clone/build route.
+
+## Quick start
 
 **1. Describe your project** in `~/.config/kor/config.yaml`. The installer scaffolds
 it with empty `checks` and `toolAllowlist`, which are yours to fill in. The file
@@ -140,12 +169,14 @@ says what each line is for.
 **3. Start the daemon and open Mission Control:**
 
 ```sh
-systemctl --user enable --now kor    # or, in a terminal in the kor-code checkout: kor serve
-kor ui                               # opens Mission Control in your browser, already signed in
+kor ui    # starts the daemon if needed and opens Mission Control, already signed in
 ```
 
-`kor ui` finds the daemon's port, adds a one-time session token to the URL
-fragment (it never prints it) and opens your default browser. A browser without a
+`kor ui` starts the installed user service, or a background daemon on hosts without
+a user manager. It waits for live status, finds the daemon's port, adds a one-time session token to the URL
+fragment (it never prints it) and opens your default browser, including the Windows
+browser under WSL. It always prints the local URL; if a browser cannot open, visit
+that URL and connect with the token file below. A browser without a
 session, for example one you opened by hand, shows the connect screen; paste the
 token from `~/.local/state/kor/ui-token`:
 
@@ -321,7 +352,25 @@ probed (about thirty cents); the runs used `claude-haiku-5-5` and cost about fiv
 
 What was not run live: Approve and ship against GitHub (the sandbox never
 published), entering a new key in Settings (the fields are shown empty), a Linear
-outage with synchronization pending, the systemd service lifecycle, and `kor ui`
-itself (the screenshots are of the same page it opens). Each is marked where it
+outage with synchronization pending, the systemd service lifecycle, for those original screenshots. The one-line installer and `kor ui` launch flow
+have since been exercised separately in an isolated home. Each is marked where it
 comes up. The screenshots are 1600-pixel captures of the real page in Chrome,
 saved as WebP.
+
+
+## Manual installation
+
+```sh
+git clone https://github.com/korallis/kor-code.git
+cd kor-code
+corepack pnpm install --frozen-lockfile
+corepack pnpm -r --if-present build
+node packages/cli/dist/cli.js install --pilot ~/code/my-project --no-systemd
+export PATH="$HOME/.local/bin:$PATH"
+kor ui
+```
+
+Omit `--no-systemd` to install a systemd user unit when a user manager is available.
+For a manual update, pull, repeat the install/build commands and run the same
+`node … install` command. Reinstalling with the same pilot refreshes the plugin
+and keeps the original uninstall backups. To change pilot or scope, uninstall first.

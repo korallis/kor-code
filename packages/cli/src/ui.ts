@@ -1,31 +1,70 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { readFile } from "node:fs/promises";
+import { mkdir, open, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
+import { readManifest } from "./install-journal.js";
 import { z } from "zod";
 import { runtimePaths } from "@kor-code/config";
 import { ensureUiToken } from "@kor-code/daemon";
 
 const exec = promisify(execFile);
 const addressSchema = z.object({ pid: z.number().int().positive(), url: z.string().url().refine(value => { const url = new URL(value); return url.protocol === "http:" && url.hostname === "127.0.0.1" && url.pathname === "/" && !url.username && !url.password && !url.search && !url.hash; }) });
+async function liveUiUrl(token: string): Promise<string | undefined> {
+  try {
+    const paths = runtimePaths();
+    const { url } = addressSchema.parse(JSON.parse(await readFile(join(paths.stateDir, "ui-address.json"), "utf8")));
+    const response = await fetch(`${url}api/status`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(1_000), redirect: "error" });
+    await response.body?.cancel();
+    return response.ok ? url : undefined;
+  } catch { return undefined; }
+}
+
+async function startUiDaemon(token: string): Promise<string> {
+  const paths = runtimePaths();
+  const manifest = await readManifest(`${paths.stateDir}-install/manifest.json`);
+  const logPath = join(paths.logsDir, "serve.log");
+  if (manifest?.phase === "installed" && manifest.systemd) {
+    try { await exec("systemctl", ["--user", "start", "kor.service"], { timeout: 20_000 }); }
+    catch { throw new Error("Cannot start kor.service; check systemctl --user status kor.service"); }
+  } else {
+    await mkdir(paths.logsDir, { recursive: true, mode: 0o700 });
+    const log = await open(logPath, "a", 0o600);
+    try {
+      const child = spawn(process.execPath, [fileURLToPath(new URL("./cli.js", import.meta.url)), "serve"], {
+        detached: true, stdio: ["ignore", log.fd, log.fd], env: process.env,
+      });
+      await new Promise<void>((resolve, reject) => { child.once("spawn", resolve); child.once("error", reject); });
+      child.unref();
+    } finally { await log.close(); }
+  }
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const url = await liveUiUrl(token);
+    if (url) return url;
+    await delay(200);
+  }
+  throw new Error(`Kor daemon did not become ready; check ${manifest?.systemd ? "journalctl --user -u kor.service" : logPath} (port 8327 must be free)`);
+}
+
 /** The fragment is delivered only to the explicitly launched browser, never stdout. */
 export async function openUi(args: readonly string[]): Promise<number> {
   if (args.length) throw new Error("Usage: kor ui");
   const paths = runtimePaths();
   const token = await ensureUiToken(paths);
-  let url: string;
-  try { url = addressSchema.parse(JSON.parse(await readFile(join(paths.stateDir, "ui-address.json"), "utf8"))).url; }
-  catch { throw new Error("Kor daemon address unavailable; start kor serve first"); }
-  const response = await fetch(`${url}api/status`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(3_000), redirect: "error" });
-  await response.body?.cancel();
-  if (!response.ok) throw new Error("Kor daemon unavailable; start kor serve first");
+  const url = await liveUiUrl(token) ?? await startUiDaemon(token);
   const target = `${url}#token=${token}`;
   try {
-    if (process.platform === "darwin") await exec("open", [target]);
-    else if (process.env.WSL_DISTRO_NAME) await exec("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `Start-Process '${target}'`]);
-    else await exec("xdg-open", [target]);
-  } catch { throw new Error("Unable to open browser; check the system's default browser association"); }
-  process.stdout.write("Opened Kor Code Mission Control in your browser.\n");
+    const options = { timeout: 10_000 };
+    if (process.platform === "darwin") await exec("open", [target], options);
+    else if (process.env.WSL_DISTRO_NAME) await exec("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `Start-Process '${target}'`], options);
+    else await exec("xdg-open", [target], options);
+    process.stdout.write("Opened Kor Code Mission Control in your browser.\n");
+  } catch {
+    process.stdout.write(`Browser did not open. Open ${url} and connect using the token in ${join(paths.stateDir, "ui-token")}.\n`);
+  }
+  process.stdout.write(`Mission Control: ${url}\n`);
   return 0;
 }
 
