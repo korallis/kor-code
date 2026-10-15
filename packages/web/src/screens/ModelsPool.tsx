@@ -93,8 +93,9 @@ function RoutingCard({ config, runs }: { config: KorConfig; runs: ReturnType<typ
   const save = useSaveConfig();
   const models = useModels();
   const [draft, setDraft] = useState(config);
-  const verified = (models.data?.models.value ?? []).filter(model => model.compatibility === 'verified').map(model => model.id);
-  const modelOptions = [...new Set([draft.defaultRoute.model, ...verified])].map(value => ({ value, label: value }));
+  const verifiedModels = (models.data?.models.value ?? []).filter(model => model.compatibility === 'verified');
+  const verified = verifiedModels.map(model => model.id);
+  const modelOptions = [...new Set([draft.defaultRoute.model, ...verified])].map(value => ({ value, label: verified.includes(value) ? value : `${value} (unavailable)`, disabled: !verified.includes(value) }));
   const byProvider = new Map<string, number>();
   for (const run of runs) if (run.route) byProvider.set(run.route.provider, (byProvider.get(run.route.provider) ?? 0) + 1);
   const total = [...byProvider.values()].reduce((a, b) => a + b, 0);
@@ -133,7 +134,7 @@ function RoutingCard({ config, runs }: { config: KorConfig; runs: ReturnType<typ
           <Toggle on={draft.defaultRoute.sessionAffinity} onChange={value => route({ sessionAffinity: value })} label="Session affinity"><span {...stylex.props(text.mono, text.xs, text.muted)}>keep a run on one slot</span></Toggle>
           <FieldLabel>Default route</FieldLabel>
           <div {...stylex.props(layout.row)}>
-            <Select label="Default model" value={draft.defaultRoute.model} onChange={value => route({ model: value })} options={modelOptions} style={layout.grow} />
+            <Select label="Default model" value={draft.defaultRoute.model} onChange={value => route({ model: value, provider: verifiedModels.find(model => model.id === value)?.provider ?? draft.defaultRoute.provider })} options={modelOptions} style={layout.grow} />
             <Select label="Reasoning level" value={draft.defaultRoute.reasoningLevel} onChange={value => route({ reasoningLevel: value })} options={[{ value: 'low', label: 'low' }, { value: 'medium', label: 'medium' }, { value: 'high', label: 'high' }]} />
           </div>
           <FieldLabel>Limits</FieldLabel>
@@ -196,7 +197,7 @@ export function ModelsPool() {
         </header>
         {pool.error && <QueryError error={pool.error} what="The account pool" />}
         {error && <Notice title={error.message} hint={error instanceof ApiFailure ? error.hint : undefined} />}
-        {probe.isSuccess && <Notice tone={probe.data.verified ? 'ok' : 'warn'} title={`${probe.data.model} ${probe.data.verified ? 'passed every probe and is verified for routing.' : 'did not pass every probe; Kor will not route to it.'}`} />}
+        {probe.isSuccess && <Notice tone={probe.data.verified ? 'ok' : 'warn'} title={`${probe.data.model} ${probe.data.verified ? 'passed the coding probe and is verified for routing.' : 'did not pass the coding probe; Kor will not route to it.'}`} />}
         <section {...stylex.props(styles.providers)}>
           {quota.map((provider, index) => <ProviderCard key={provider.provider} provider={provider} accounts={accountsFor(provider.provider)} index={index} now={now} />)}
           {quota.length === 0 && <Card pad><Empty slot="empty-pool-unavailable" title="No quota windows reported.">{pool.quota?.reason ?? 'quota-axi has not answered the daemon yet.'}</Empty></Card>}
@@ -236,7 +237,7 @@ export function ModelsPool() {
               <CardBody><div {...stylex.props(layout.row, layout.mt3)}><Button size="sm" icon={Plus} onClick={() => navigate('settings')}>Connect another account</Button><span {...stylex.props(text.mono, text.xs, text.muted)}>through the gateway connection · Kor never edits the proxy config</span></div></CardBody>
             </Card>
             <Card index={7} clip label="Verified models">
-              <CardHeader icon={FlaskConical} title="Verified models" count={`${verifiedCount} of ${modelList.length}`} aside={<span {...stylex.props(text.mono, text.xs, text.muted)}>Kor routes only to models that pass all four probes</span>} />
+              <CardHeader icon={FlaskConical} title="Verified models" count={`${verifiedCount} of ${modelList.length}`} aside={<span {...stylex.props(text.mono, text.xs, text.muted)}>Streaming, tools and JSON required · thinking measured separately</span>} />
               <div {...stylex.props(styles.tableWrap)}>
                 <Table label="Verified models">
                   <thead><tr><Th>Model</Th><Th align="center">Streaming</Th><Th align="center">Tool calls</Th><Th align="center">Thinking</Th><Th align="center">Structured</Th><Th align="right">Runs</Th><Th align="right">Verified</Th><Th /></tr></thead>
@@ -292,7 +293,7 @@ function ProbeDialog({ models, onClose, onProbe }: { models: string[]; onClose: 
   const [custom, setCustom] = useState('');
   return (
     <Dialog title="Probe a model" onClose={onClose} icon={<FlaskConical size={18} />}>
-      <p {...stylex.props(text.secondary)}>Kor sends the four probes (streaming, tool calls, thinking, structured output) through the gateway. Only a model that passes all four is routed to.</p>
+      <p {...stylex.props(text.secondary)}>Kor checks streaming, tool calls and a final JSON response through the gateway. All three must pass for routing. Thinking is measured separately.</p>
       {models.length > 0 && <Select label="Model" value={model} onChange={setModel} options={models.map(value => ({ value, label: value }))} />}
       <TextInput label="Or another model ID" value={custom} onChange={setCustom} placeholder="model ID the gateway serves" mono />
       <div {...stylex.props(layout.row)}><span {...stylex.props(layout.grow)} /><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" icon={FlaskConical} disabled={!(custom.trim() || model)} onClick={() => onProbe(custom.trim() || model)}>Run probes</Button></div>

@@ -1,10 +1,13 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { GatewayCapability } from "@kor-code/core";
+import type { ModelCatalogue } from "./index.js";
+import { modelProvider } from "./models.js";
 
 export interface ModelProbeResult {
   model: string;
   family: string;
+  provider?: string;
   verified: boolean;
   capabilities: Partial<Record<GatewayCapability, boolean>>;
   costUsd?: number;
@@ -42,4 +45,10 @@ export async function writeModelRegistry(results: readonly ModelProbeResult[], p
 
 export function registryCapabilities(registry: ModelRegistry): Record<string, Partial<Record<GatewayCapability, boolean>>> {
   return Object.fromEntries(registry.models.filter(item => item.verified).map(item => [item.model, item.capabilities]));
+}
+
+export function availableVerifiedModels(registry: ModelRegistry, catalogue: ModelCatalogue): ModelProbeResult[] {
+  const models = new Map((catalogue.data ?? []).map(model => [model.id, model]));
+  return registry.models.filter(result => result.verified && models.has(result.model))
+    .map(result => ({ ...result, provider: modelProvider(result.model, models.get(result.model)?.owned_by ?? result.provider) }));
 }

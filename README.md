@@ -245,8 +245,25 @@ paste. GitHub connects through `gh-axi` (`gh auth login`) or a token.
 ![Settings: Linear, GitHub, Gateway and Jev connections, with the gateway form open](docs/images/mc-settings.webp)
 
 **5. Probe the models you want** on the **Models** screen (**Probe a model**), or
-with `kor models probe --model claude-haiku-5-5`. Kor only routes to a model that
-passes streaming, tool calls, thinking and structured output.
+with `kor models probe --model gpt-6.1-sol`. Kor reads every provider in the
+gateway's `/v1/models` catalogue, including `devin/` aliases. Run
+`kor models probe --dry-run` to preview all chat and coding models, then
+`kor models probe` to check them. Image, video and speech generation models are
+excluded. `--family gpt` also selects prefixed GPT models; `--model` uses the
+gateway's exact id.
+
+Kor offers a model after its sandbox probe passes streaming, tool calls and a
+final JSON response. Thinking is measured separately, so models without visible
+reasoning can qualify. Run `kor models list` to see verified models and their
+providers. Verified models become candidates for Jev, which chooses the model for
+each task. Verification adds no model preference or fallback order.
+A listed model can still fail because its upstream account has no quota or lacks
+access. The live catalogue refreshes every minute in Mission Control and on each CLI
+list or routing decision. Models removed during an upstream cooldown stop being
+offered. When a verified model reappears, Kor offers it again without losing its
+probe result. An empty registry offers no models until you probe them. See
+[model compatibility](docs/model-compatibility.md) for isolated probe commands and
+the [live gateway results](docs/model-probe-results-2026-10-15.md).
 
 ## Work in Mission Control
 

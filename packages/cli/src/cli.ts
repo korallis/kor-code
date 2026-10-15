@@ -14,10 +14,10 @@ import { ensureRuntimeDirectories, loadGatewayEnvironment, loadKorConfig, reposi
 import { HttpLinearClient, LinearStore, attachLinearImage } from "@kor-code/linear";
 import { GitHubShipping, KorDaemon, MissionServices, processMatches, readExecutionStatus, readStatus, type DaemonOptions } from "@kor-code/daemon";
 import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController, type Controller } from "@kor-code/controller";
-import { readModelRegistry, writeModelRegistry } from "@kor-code/gateway-adapter";
+import { availableVerifiedModels, modelProvider, readModelRegistry, writeModelRegistry } from "@kor-code/gateway-adapter";
 import { PersistentDecisionAuditLog } from "@kor-code/jev";
 import { CalibrationStore, buildReport, formatReport } from "@kor-code/calibration";
-import type { CatalogueModel, KorCliError } from "@kor-code/core";
+import type { KorCliError } from "@kor-code/core";
 import { runSkillsInstall, SkillsUsageError, SKILLS_INSTALL_USAGE } from "./skills-install.js";
 import { formatSkillLint, lintSkills } from "./skills-lint.js";
 import { buildSkillsCatalogue, formatSkillsCatalogue, writeSkillsCatalogue } from "./skills-catalogue.js";
@@ -194,28 +194,27 @@ async function serve(args: readonly string[]): Promise<number> {
   const baselineModel = valueAfter(args, "--baseline-model");
   const calibrationConfig = { ...loaded.config.calibration, sampleRate, baselineRoute: { ...loaded.config.calibration.baselineRoute, ...(baselineModel ? { model: baselineModel } : {}) } };
   const mission: MissionServices = new MissionServices(paths, async model => {
-    const result = await probeModel(model, await mission.sessionGateway());
+    const catalogue = await (await mission.gateway()).listModels();
+    const result = await probeModel(model, { gateway: await mission.sessionGateway(), provider: catalogue.data?.find(item => item.id === model)?.owned_by });
     const registry = await readModelRegistry(paths.modelsFile);
     await writeModelRegistry([...registry.models.filter(item => item.model !== model), result], paths.modelsFile);
     return result.verified;
   });
   await mission.initialize();
   const calibration = calibrationEnabled ? new CalibrationStore(paths.databaseFile) : undefined;
-  let catalogue: CatalogueModel[] | undefined;
   if (jevEnabled) {
     const gatewayAdapter = await mission.gateway();
     const models = await gatewayAdapter.catalogue({ capabilities: ["streaming", "tool_calls"] });
     if (models.length === 0) throw new Error("--jev requires at least one verified gateway model");
-    catalogue = models.map(model => ({ provider: model.provider ?? "unknown", model: model.id, capabilities: Object.entries(model.capabilities).map(([name, supported]) => ({ name, supported })) }));
   }
   const store = new LinearStore(paths.databaseFile);
   const audit = calibration ?? new PersistentDecisionAuditLog({ read: id => store.readDecisionAudit(id), write: (id, at, payload) => store.writeDecisionAudit(id, at, payload), update: (id, at, payload) => store.updateDecisionAudit(id, at, payload) });
   const runtime = (config: KorConfig): { controller: Controller; chooseRoute: NonNullable<DaemonOptions["chooseRoute"]> } => {
     const repositories = new RepositoryRegistry(Object.entries(config.repos).map(([key, repository]) => ({ key, path: repository.path, defaultBranch: repository.defaultBranch, allowedTools: repository.toolAllowlist, checks: repository.checks, ...(repository.tools ? { tools: repository.tools } : {}) })));
     const routing = createServeRouting({ audit, defaultRoute: config.defaultRoute, client: { evaluate: (state, questions) => mission.jev().evaluate(state, questions) }, models: async () => {
-      if (catalogue) return catalogue;
       const registry = await readModelRegistry(paths.modelsFile);
-      return registry.models.filter(result => result.verified).map(result => ({ provider: result.model.startsWith("claude-") ? "anthropic" : result.model.split("/")[0] ?? "unknown", model: result.model, capabilities: Object.entries(result.capabilities).map(([name, supported]) => ({ name, supported: supported === true })), ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) }));
+      const catalogue = await (await mission.gateway()).listModels();
+      return availableVerifiedModels(registry, catalogue).map(result => ({ provider: modelProvider(result.model, result.provider), model: result.model, capabilities: Object.entries(result.capabilities).map(([name, supported]) => ({ name, supported: supported === true })), ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) }));
     } });
     const controller = createController({
       repositories,
@@ -233,7 +232,7 @@ async function serve(args: readonly string[]): Promise<number> {
   };
   const initial = runtime({ ...loaded.config, calibration: calibrationConfig });
   const gateway = await mission.gateway();
-  const verifiedModels = async () => (await readModelRegistry(paths.modelsFile)).models.filter(model => model.verified).map(model => model.model);
+  const verifiedModels = async () => availableVerifiedModels(await readModelRegistry(paths.modelsFile), await (await mission.gateway()).listModels()).map(model => model.model);
   const webRoot = valueAfter(args, "--ui-dir") ?? fileURLToPath(new URL("../../web/dist", import.meta.url));
   const daemon = new KorDaemon({ paths, config: loaded.config, store, linear: mission.linear(), ...initial, shipping: new GitHubShipping((file, args, cwd) => mission.shippingCommand(file, args, cwd)), port, gateway, verifiedModels, webRoot, missionServices: mission, reconfigure: runtime });
   const handle = await daemon.start();

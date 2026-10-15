@@ -1,0 +1,1370 @@
+{
+  "observedDate": "2026-10-15",
+  "initialCatalogueCount": 121,
+  "textModelsProbed": 108,
+  "verified": 34,
+  "models": [
+    {
+      "model": "claude-3-5-haiku-20241022",
+      "family": "claude",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1163,
+      "observedAt": "2026-10-15T06:03:48.222Z",
+      "error": "probe exited 1: API Error: 503 auth_unavailable: no auth available (providers=claude, model=claude-3-5-haiku-20241022; last upstream error: not_found_error: model: claude-3-5-haiku-20241022); check Claude auth/key session and cooldown state via /v0/management/auth-files. This is a server-side issue, usually temporary \u2014 try again in a moment. If it persists, check your inference gateway (127.0.0.1:8317).",
+      "provider": "anthropic",
+      "currentlyServed": false
+    },
+    {
+      "model": "claude-3-7-sonnet-20250219",
+      "family": "claude",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1313,
+      "observedAt": "2026-10-15T06:03:48.361Z",
+      "error": "probe exited 1: API Error: 503 auth_unavailable: no auth available (providers=claude, model=claude-3-7-sonnet-20250219; last upstream error: not_found_error: model: claude-3-7-sonnet-20250219); check Claude auth/key session and cooldown state via /v0/management/auth-files. This is a server-side issue, usually temporary \u2014 try again in a moment. If it persists, check your inference gateway (127.0.0.1:8317).",
+      "provider": "anthropic",
+      "currentlyServed": false
+    },
+    {
+      "model": "claude-fable-5",
+      "family": "claude",
+      "provider": "anthropic",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.412562,
+      "durationMs": 9581,
+      "observedAt": "2026-10-15T06:12:33.336Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "claude-fable-5-1",
+      "family": "claude",
+      "provider": "anthropic",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": false,
+        "structured_output": true
+      },
+      "costUsd": 0.37977475,
+      "durationMs": 15158,
+      "observedAt": "2026-10-15T06:16:02.180Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "claude-haiku-4-5-20251001",
+      "family": "claude",
+      "provider": "anthropic",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.045290050000000005,
+      "durationMs": 4597,
+      "observedAt": "2026-10-15T06:12:28.707Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "claude-haiku-5-5",
+      "family": "claude",
+      "provider": "anthropic",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.00413511,
+      "durationMs": 5400,
+      "observedAt": "2026-10-15T06:12:29.498Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "claude-opus-4-1-20250805",
+      "family": "claude",
+      "provider": "anthropic",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": false,
+        "structured_output": true
+      },
+      "costUsd": 0.146595,
+      "durationMs": 4835,
+      "observedAt": "2026-10-15T06:12:33.869Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "claude-opus-4-20250514",
+      "family": "claude",
+      "provider": "anthropic",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": false,
+        "structured_output": true
+      },
+      "costUsd": 0.14652880000000001,
+      "durationMs": 5559,
+      "observedAt": "2026-10-15T06:12:35.393Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "claude-opus-4-5-20251101",
+      "family": "claude",
+      "provider": "anthropic",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.226091,
+      "durationMs": 6186,
+      "observedAt": "2026-10-15T06:12:39.887Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "claude-opus-4-6",
+      "family": "claude",
+      "provider": "anthropic",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.222209,
+      "durationMs": 8304,
+      "observedAt": "2026-10-15T06:12:42.584Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "claude-opus-4-7",
+      "family": "claude",
+      "provider": "anthropic",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": false,
+        "structured_output": true
+      },
+      "costUsd": 0.31783825,
+      "durationMs": 6584,
+      "observedAt": "2026-10-15T06:12:42.349Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "claude-opus-4-8",
+      "family": "claude",
+      "provider": "anthropic",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": false,
+        "structured_output": true
+      },
+      "costUsd": 0.19695524999999997,
+      "durationMs": 7254,
+      "observedAt": "2026-10-15T06:15:54.267Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "claude-opus-5",
+      "family": "claude",
+      "provider": "anthropic",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": false,
+        "structured_output": true
+      },
+      "costUsd": 0.202987,
+      "durationMs": 6832,
+      "observedAt": "2026-10-15T06:15:53.865Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "claude-opus-5-5",
+      "family": "claude",
+      "provider": "anthropic",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": false,
+        "structured_output": true
+      },
+      "costUsd": 0.0466686,
+      "durationMs": 5880,
+      "observedAt": "2026-10-15T06:12:48.674Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "claude-sonnet-4-20250514",
+      "family": "claude",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1080,
+      "observedAt": "2026-10-15T06:04:15.622Z",
+      "error": "probe exited 1: API Error: 503 auth_unavailable: no auth available (providers=claude, model=claude-sonnet-4-20250514; last upstream error: not_found_error: model: claude-sonnet-4-20250514); check Claude auth/key session and cooldown state via /v0/management/auth-files. This is a server-side issue, usually temporary \u2014 try again in a moment. If it persists, check your inference gateway (127.0.0.1:8317).",
+      "provider": "anthropic",
+      "currentlyServed": false
+    },
+    {
+      "model": "claude-sonnet-4-5-20250929",
+      "family": "claude",
+      "provider": "anthropic",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.1361721,
+      "durationMs": 7402,
+      "observedAt": "2026-10-15T06:12:50.931Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "claude-sonnet-4-6",
+      "family": "claude",
+      "provider": "anthropic",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.14097615,
+      "durationMs": 5528,
+      "observedAt": "2026-10-15T06:12:54.043Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "claude-sonnet-5",
+      "family": "claude",
+      "provider": "anthropic",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.11646730000000001,
+      "durationMs": 7904,
+      "observedAt": "2026-10-15T06:12:56.479Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "claude-sonnet-5-5",
+      "family": "claude",
+      "provider": "anthropic",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": false,
+        "structured_output": true
+      },
+      "costUsd": 0.07328330000000001,
+      "durationMs": 6080,
+      "observedAt": "2026-10-15T06:12:55.156Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "codex-auto-review",
+      "family": "codex",
+      "provider": "openai",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.0794232,
+      "durationMs": 18432,
+      "observedAt": "2026-10-15T06:13:09.772Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "devin/claude-5-fable",
+      "family": "claude",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1470,
+      "observedAt": "2026-10-15T06:04:35.071Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: c21672f7ec75c32af0ccdc62c68569c6)",
+      "provider": "anthropic",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/claude-fable-5-1",
+      "family": "claude",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 975,
+      "observedAt": "2026-10-15T06:04:35.683Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 9e22f4fde9570666e8fcd88d3b79c878)",
+      "provider": "anthropic",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/claude-haiku-5-5",
+      "family": "claude",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1029,
+      "observedAt": "2026-10-15T06:04:35.987Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 224f9724fc8e1bf8b0fb2c1aef687db0)",
+      "provider": "anthropic",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/claude-opus-4-6",
+      "family": "claude",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1002,
+      "observedAt": "2026-10-15T06:04:36.486Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): an internal error occurred (trace ID: f60631bd4c3719b885985cf534d7ece2)",
+      "provider": "anthropic",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/claude-opus-4-6-1m",
+      "family": "claude",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1037,
+      "observedAt": "2026-10-15T06:04:37.085Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): an internal error occurred (trace ID: 132cd341606148650140c48678887d80)",
+      "provider": "anthropic",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/claude-opus-4-7",
+      "family": "claude",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1103,
+      "observedAt": "2026-10-15T06:04:37.447Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): an internal error occurred (trace ID: 482344dc336d407eaf9aad06402d770e)",
+      "provider": "anthropic",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/claude-opus-4-8",
+      "family": "claude",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 946,
+      "observedAt": "2026-10-15T06:04:37.846Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 29a50d0d43c28421c4358ffb65fdff44)",
+      "provider": "anthropic",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/claude-opus-5",
+      "family": "claude",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 918,
+      "observedAt": "2026-10-15T06:04:38.328Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 110f331aaf11958f977d791cd0f0474b)",
+      "provider": "anthropic",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/claude-opus-5-5",
+      "family": "claude",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 975,
+      "observedAt": "2026-10-15T06:04:38.754Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 38d1ecadca348b116b79e4dc645a5989)",
+      "provider": "anthropic",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/claude-sonnet-4-6",
+      "family": "claude",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 985,
+      "observedAt": "2026-10-15T06:04:39.191Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): an internal error occurred (trace ID: e5c03bc925451b56f3098ee9476898e1)",
+      "provider": "anthropic",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/claude-sonnet-4-6-1m",
+      "family": "claude",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1012,
+      "observedAt": "2026-10-15T06:04:39.694Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): an internal error occurred (trace ID: afd3375b16027a74892568029c84ee17)",
+      "provider": "anthropic",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/claude-sonnet-5",
+      "family": "claude",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1005,
+      "observedAt": "2026-10-15T06:04:40.216Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): an internal error occurred (trace ID: 6f13964fd88144588f42ac9368628078)",
+      "provider": "anthropic",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/deepseek-v4-1-flash",
+      "family": "deepseek",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 937,
+      "observedAt": "2026-10-15T06:04:40.506Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 61d9bcf29fb94402d24a6a88eb9c02e4)",
+      "provider": "deepseek",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/deepseek-v4-flash",
+      "family": "deepseek",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 993,
+      "observedAt": "2026-10-15T06:04:41.017Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 29162c9b39f4993e9dd15031ebf7dd37)",
+      "provider": "deepseek",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/deepseek-v4-pro",
+      "family": "deepseek",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 915,
+      "observedAt": "2026-10-15T06:04:41.443Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 535fb64c643311fb0075065b292166f6)",
+      "provider": "deepseek",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/gemini-3-1-pro",
+      "family": "gemini",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 938,
+      "observedAt": "2026-10-15T06:04:41.755Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 2f9238908b62e6757ec1512a6c13c07c)",
+      "provider": "google",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/gemini-3-5-flash",
+      "family": "gemini",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 986,
+      "observedAt": "2026-10-15T06:04:42.339Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: ad9c2f70d68fef18777eed44feb10900)",
+      "provider": "google",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/gemini-3-6-flash",
+      "family": "gemini",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 973,
+      "observedAt": "2026-10-15T06:04:42.747Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: ec5e67244c889416145b0ec4ed20bdc8)",
+      "provider": "google",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/gemini-3-7-flash",
+      "family": "gemini",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1463,
+      "observedAt": "2026-10-15T06:04:43.540Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 1c60beae1aed149175e677cd8cb7b2f4)",
+      "provider": "google",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/gemini-3-8-flash",
+      "family": "gemini",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1037,
+      "observedAt": "2026-10-15T06:04:43.803Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: f396764b894bc4f3b6c4f72c25859a05)",
+      "provider": "google",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/glm-5-2",
+      "family": "glm",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1151,
+      "observedAt": "2026-10-15T06:04:44.307Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: fd3f5ff9120728c8c7c1cd1491b2a58b)",
+      "provider": "zhipu",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/glm-5-2-1m",
+      "family": "glm",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1101,
+      "observedAt": "2026-10-15T06:04:44.537Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 42887c058452d88a324b9b0ec59cc74f)",
+      "provider": "zhipu",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/glm-5-3",
+      "family": "glm",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1060,
+      "observedAt": "2026-10-15T06:04:45.078Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: e6959cfd80df05619e587c918d96d038)",
+      "provider": "zhipu",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/glm-5-3-flash",
+      "family": "glm",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1170,
+      "observedAt": "2026-10-15T06:04:45.440Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: d6c387c0cddfc134041901ce998e1156)",
+      "provider": "zhipu",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/gpt-5-3-codex",
+      "family": "gpt",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1129,
+      "observedAt": "2026-10-15T06:04:45.877Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 36a135e960467582a244237b3c3a423c)",
+      "provider": "openai",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/gpt-5-4",
+      "family": "gpt",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1127,
+      "observedAt": "2026-10-15T06:04:46.096Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 0e82fb04b83ae3131cac43dd255ee242)",
+      "provider": "openai",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/gpt-5-4-mini",
+      "family": "gpt",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1180,
+      "observedAt": "2026-10-15T06:04:46.653Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: cf853bc24c180f6e08ae049f9d923bfd)",
+      "provider": "openai",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/gpt-5-5",
+      "family": "gpt",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1034,
+      "observedAt": "2026-10-15T06:04:46.842Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 9abb6d4e87279063c2d2edffc31d52b9)",
+      "provider": "openai",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/gpt-5-6-luna",
+      "family": "gpt",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1048,
+      "observedAt": "2026-10-15T06:04:47.347Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 86d1647055c1cdb370812a76ddd61023)",
+      "provider": "openai",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/gpt-5-6-sol",
+      "family": "gpt",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1054,
+      "observedAt": "2026-10-15T06:04:47.541Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: e6be1996abd3fac5125b22a0931d9639)",
+      "provider": "openai",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/gpt-5-6-terra",
+      "family": "gpt",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1144,
+      "observedAt": "2026-10-15T06:04:48.256Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 76676ccf238497c5326c80bb1f08d261)",
+      "provider": "openai",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/gpt-6-astra",
+      "family": "gpt",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1062,
+      "observedAt": "2026-10-15T06:04:48.359Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: b415bb73f4ab40e15a45423cc74e7d61)",
+      "provider": "openai",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/gpt-6-luna",
+      "family": "gpt",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1042,
+      "observedAt": "2026-10-15T06:04:48.790Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 0cfcfd05d90031fc466b3729362db65f)",
+      "provider": "openai",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/gpt-6-sol",
+      "family": "gpt",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1002,
+      "observedAt": "2026-10-15T06:04:48.929Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 9da5d0cc783c0f10b267594c920c7e8d)",
+      "provider": "openai",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/grok-4-5",
+      "family": "grok",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 979,
+      "observedAt": "2026-10-15T06:04:49.593Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 9baf984680d7ad7c126f63d5f6a090b9)",
+      "provider": "xai",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/grok-4-6",
+      "family": "grok",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1003,
+      "observedAt": "2026-10-15T06:04:49.726Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: df1b13dbd49ee7e9e579c12e5008a768)",
+      "provider": "xai",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/grok-4-7",
+      "family": "grok",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 981,
+      "observedAt": "2026-10-15T06:04:50.146Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: b547cda9b1236d7ed8cc1c5c850f0e63)",
+      "provider": "xai",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/inkling",
+      "family": "inkling",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 916,
+      "observedAt": "2026-10-15T06:04:50.195Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): an internal error occurred (trace ID: 52531c3eebf7bf571b7f1f35c8094c6d)",
+      "provider": "devin",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/kimi-k2-6",
+      "family": "kimi",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 914,
+      "observedAt": "2026-10-15T06:04:50.824Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: ed3d24824ebf80d0e1c36b379230559b)",
+      "provider": "moonshot",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/kimi-k2-7",
+      "family": "kimi",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 970,
+      "observedAt": "2026-10-15T06:04:51.012Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 0ec4acceb4cd473484f477cd5b43e942)",
+      "provider": "moonshot",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/kimi-k3",
+      "family": "kimi",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1178,
+      "observedAt": "2026-10-15T06:04:51.675Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: a53388be8a6a89f552e2f19dfb4dc7b0)",
+      "provider": "moonshot",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/model_chat_gpt_4_1_2025_04_14",
+      "family": "gpt",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1129,
+      "observedAt": "2026-10-15T06:04:51.679Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): an internal error occurred (trace ID: b130218170848288c86c847df6468b3d)",
+      "provider": "openai",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/model_claude_4_5_opus",
+      "family": "claude",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1161,
+      "observedAt": "2026-10-15T06:04:52.436Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 17b4b58bfe449214047218ead2f6fb5a)",
+      "provider": "anthropic",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/model_google_gemini_3_0_flash",
+      "family": "gemini",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 999,
+      "observedAt": "2026-10-15T06:04:52.418Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: aee62e7d62d1f69ccefce7b0a04e12f7)",
+      "provider": "google",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/model_gpt_5_2",
+      "family": "gpt",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1224,
+      "observedAt": "2026-10-15T06:04:53.296Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 52dc9d463cda14218f614fc8ec11e805)",
+      "provider": "openai",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/model_private_11",
+      "family": "private",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1320,
+      "observedAt": "2026-10-15T06:04:53.400Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): an internal error occurred (trace ID: 81489078785c9427ec375ec046db318a)",
+      "provider": "anthropic",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/model_private_12",
+      "family": "private",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1038,
+      "observedAt": "2026-10-15T06:04:53.885Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): an internal error occurred (trace ID: 4eb7d4a3635e3f6279a80eb50d538d29)",
+      "provider": "openai",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/model_private_13",
+      "family": "private",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1025,
+      "observedAt": "2026-10-15T06:04:53.881Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): an internal error occurred (trace ID: 816f08230c63546d0fbcc054ef2c2633)",
+      "provider": "openai",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/model_private_14",
+      "family": "private",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 967,
+      "observedAt": "2026-10-15T06:04:54.622Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): an internal error occurred (trace ID: 22952d0158899465f319e6de04a072b1)",
+      "provider": "openai",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/model_private_15",
+      "family": "private",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1026,
+      "observedAt": "2026-10-15T06:04:54.794Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): an internal error occurred (trace ID: 628a871de4414243213a4b9cfa1c3efb)",
+      "provider": "openai",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/model_private_2",
+      "family": "private",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 988,
+      "observedAt": "2026-10-15T06:04:55.202Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): an internal error occurred (trace ID: 6bf154e3afc9fd0c016b409aaea2e239)",
+      "provider": "anthropic",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/model_private_3",
+      "family": "private",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1039,
+      "observedAt": "2026-10-15T06:04:55.279Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): an internal error occurred (trace ID: b56935f7237dda2d28a7098c9af72655)",
+      "provider": "anthropic",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/nemotron-3-ultra",
+      "family": "nemotron",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1048,
+      "observedAt": "2026-10-15T06:04:56.097Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: ea04670fd68881d0c49996454c1c8ff5)",
+      "provider": "nvidia",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/swe-1-6",
+      "family": "swe",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1012,
+      "observedAt": "2026-10-15T06:04:56.237Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 631b5c5ca62d35c10d8be3bfe7f3b9a5)",
+      "provider": "cognition",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/swe-1-6-slow",
+      "family": "swe",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 984,
+      "observedAt": "2026-10-15T06:04:56.623Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): an internal error occurred (trace ID: c224eaf217b9ffd8d5d14c4311b2d433)",
+      "provider": "cognition",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/swe-1-7",
+      "family": "swe",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1349,
+      "observedAt": "2026-10-15T06:04:57.058Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 7035e5ec86b71b1a56632496808a9749)",
+      "provider": "cognition",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/swe-1-7-lightning",
+      "family": "swe",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1042,
+      "observedAt": "2026-10-15T06:04:57.494Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: bba56af96598b3a8a079ab309b71ec4f)",
+      "provider": "cognition",
+      "currentlyServed": false
+    },
+    {
+      "model": "devin/swe-2",
+      "family": "swe",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1035,
+      "observedAt": "2026-10-15T06:04:57.629Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 devin upstream error (permission_denied): Your request was blocked by our content policy. Please remove sensitive or unsafe content from your prompt, memories, and other settings and try again. (trace ID: 14522aecb52bcfb203576faddf0f9815)",
+      "provider": "cognition",
+      "currentlyServed": false
+    },
+    {
+      "model": "gpt-5.5",
+      "family": "gpt",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1964,
+      "observedAt": "2026-10-15T06:04:59.014Z",
+      "error": "probe exited 1: API Error: 503 auth_unavailable: no auth available (providers=codex, model=gpt-5.5; last upstream error: {\"detail\":\"The 'gpt-5.5' model is not supported when using Codex with a ChatGPT account.\"}). This is a server-side issue, usually temporary \u2014 try again in a moment. If it persists, check your inference gateway (127.0.0.1:8317).",
+      "provider": "openai",
+      "currentlyServed": false
+    },
+    {
+      "model": "gpt-5.6-luna",
+      "family": "gpt",
+      "provider": "openai",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.0757192,
+      "durationMs": 11888,
+      "observedAt": "2026-10-15T06:13:14.449Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "family": "gpt",
+      "provider": "openai",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.07306080000000001,
+      "durationMs": 12763,
+      "observedAt": "2026-10-15T06:13:15.314Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "family": "gpt",
+      "provider": "openai",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.0747592,
+      "durationMs": 44595,
+      "observedAt": "2026-10-15T06:13:47.363Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "gpt-6-astra",
+      "family": "gpt",
+      "provider": "openai",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": false,
+        "structured_output": true
+      },
+      "costUsd": 0.07124720000000001,
+      "durationMs": 9061,
+      "observedAt": "2026-10-15T06:13:19.329Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "gpt-6-luna",
+      "family": "gpt",
+      "provider": "openai",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": false,
+        "structured_output": true
+      },
+      "costUsd": 0.0739552,
+      "durationMs": 6661,
+      "observedAt": "2026-10-15T06:13:21.459Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "gpt-6-sol",
+      "family": "gpt",
+      "provider": "openai",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": false,
+        "structured_output": true
+      },
+      "costUsd": 0.026882399999999997,
+      "durationMs": 8977,
+      "observedAt": "2026-10-15T06:13:24.672Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "gpt-6.1-sol",
+      "family": "gpt",
+      "provider": "openai",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": false,
+        "structured_output": true
+      },
+      "costUsd": 0.07127119999999999,
+      "durationMs": 7638,
+      "observedAt": "2026-10-15T06:13:27.310Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "grok-3-mini",
+      "family": "grok",
+      "provider": "xai",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 179995,
+      "observedAt": "2026-10-15T06:16:21.825Z",
+      "error": "probe timed out after 180000ms",
+      "currentlyServed": true
+    },
+    {
+      "model": "grok-3-mini-fast",
+      "family": "grok",
+      "provider": "xai",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.0917048,
+      "durationMs": 8908,
+      "observedAt": "2026-10-15T06:13:33.970Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "grok-4.20-0309-non-reasoning",
+      "family": "grok",
+      "provider": "xai",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": false,
+        "structured_output": true
+      },
+      "costUsd": 0.0765104,
+      "durationMs": 4882,
+      "observedAt": "2026-10-15T06:13:32.562Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "grok-4.20-0309-reasoning",
+      "family": "grok",
+      "provider": "xai",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.1531792,
+      "durationMs": 11976,
+      "observedAt": "2026-10-15T06:13:44.944Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "grok-4.20-multi-agent-0309",
+      "family": "grok",
+      "provider": "xai",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1540,
+      "observedAt": "2026-10-15T06:13:35.832Z",
+      "error": "probe exited 1: API Error: 400 {\"code\":\"invalid-argument\",\"error\":\"Client-side tools for multi-agent models require beta access\"}",
+      "currentlyServed": true
+    },
+    {
+      "model": "grok-4.3",
+      "family": "grok",
+      "provider": "xai",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.081008,
+      "durationMs": 6013,
+      "observedAt": "2026-10-15T06:13:42.179Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "grok-4.5",
+      "family": "grok",
+      "provider": "xai",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.0768352,
+      "durationMs": 6783,
+      "observedAt": "2026-10-15T06:13:49.389Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "grok-4.6",
+      "family": "grok",
+      "provider": "xai",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.0771952,
+      "durationMs": 5867,
+      "observedAt": "2026-10-15T06:13:51.151Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "grok-4.7",
+      "family": "grok",
+      "provider": "xai",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.0769728,
+      "durationMs": 8399,
+      "observedAt": "2026-10-15T06:13:56.114Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "grok-4.7-build-fast",
+      "family": "grok",
+      "provider": "xai",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.0784168,
+      "durationMs": 4248,
+      "observedAt": "2026-10-15T06:13:54.017Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "grok-build-0.1",
+      "family": "grok",
+      "provider": "xai",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.08033599999999999,
+      "durationMs": 6247,
+      "observedAt": "2026-10-15T06:13:57.715Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "grok-composer-2.5-fast",
+      "family": "grok",
+      "provider": "xai",
+      "verified": true,
+      "capabilities": {
+        "streaming": true,
+        "tool_calls": true,
+        "thinking": true,
+        "structured_output": true
+      },
+      "costUsd": 0.07743520000000001,
+      "durationMs": 5992,
+      "observedAt": "2026-10-15T06:14:00.354Z",
+      "currentlyServed": true
+    },
+    {
+      "model": "kimi-k2",
+      "family": "kimi",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1757,
+      "observedAt": "2026-10-15T09:02:16.220Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
+      "provider": "moonshot",
+      "currentlyServed": true
+    },
+    {
+      "model": "kimi-k2-thinking",
+      "family": "kimi",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1704,
+      "observedAt": "2026-10-15T09:02:16.169Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
+      "provider": "moonshot",
+      "currentlyServed": true
+    },
+    {
+      "model": "kimi-k2.5",
+      "family": "kimi",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1743,
+      "observedAt": "2026-10-15T09:02:16.210Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
+      "provider": "moonshot",
+      "currentlyServed": true
+    },
+    {
+      "model": "kimi-k2.6",
+      "family": "kimi",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1743,
+      "observedAt": "2026-10-15T09:02:16.210Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
+      "provider": "moonshot",
+      "currentlyServed": true
+    },
+    {
+      "model": "kimi-k2.7-code",
+      "family": "kimi",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1694,
+      "observedAt": "2026-10-15T09:02:18.221Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
+      "provider": "moonshot",
+      "currentlyServed": true
+    },
+    {
+      "model": "kimi-k2.7-code-highspeed",
+      "family": "kimi",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1602,
+      "observedAt": "2026-10-15T09:02:18.168Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
+      "provider": "moonshot",
+      "currentlyServed": true
+    },
+    {
+      "model": "kimi-k2.8",
+      "family": "kimi",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1669,
+      "observedAt": "2026-10-15T09:02:18.238Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
+      "provider": "moonshot",
+      "currentlyServed": true
+    },
+    {
+      "model": "kimi-k2.8-code",
+      "family": "kimi",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1645,
+      "observedAt": "2026-10-15T09:02:18.218Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
+      "provider": "moonshot",
+      "currentlyServed": true
+    },
+    {
+      "model": "kimi-k3",
+      "family": "kimi",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1633,
+      "observedAt": "2026-10-15T09:02:20.173Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
+      "provider": "moonshot",
+      "currentlyServed": true
+    },
+    {
+      "model": "kimi-k3-256k",
+      "family": "kimi",
+      "verified": false,
+      "capabilities": {},
+      "durationMs": 1675,
+      "observedAt": "2026-10-15T09:02:20.236Z",
+      "error": "probe exited 1: Failed to authenticate. API Error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
+      "provider": "moonshot",
+      "currentlyServed": true
+    }
+  ],
+  "finalCatalogueObservedAt": "2026-10-15T09:01:59Z",
+  "finalCatalogueCount": 59,
+  "finalTextModelCount": 46,
+  "currentlyNotServed": 62
+}

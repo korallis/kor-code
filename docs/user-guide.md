@@ -412,7 +412,7 @@ event stream fails, a banner says the daemon is not answering and offers
 ## Choose a model
 
 Kor only routes to a model that passed its compatibility probe. A model must pass
-streaming, tool calls, extended thinking and structured output. Probe the ones you
+streaming, tool calls and structured output. Visible thinking is measured separately. Probe the ones you
 want to use: on the **Models** screen use **Probe a model** (or **Probe** on a
 row), or from a terminal. A probe costs a few cents per model, a little more for
 the largest ones. These are the real results on the sandbox gateway (the column
@@ -433,25 +433,28 @@ $ kor models probe --model claude-haiku-4-5-20251001
 claude-haiku-4-5-20251001	pass	pass	pass	pass	0.047562600000000003	7008
 
 $ kor models list
-MODEL	FAMILY	CAPABILITIES	COST_USD	DURATION_MS
-claude-haiku-5-5	claude	streaming,tool_calls,thinking,structured_output	0.00426136	5527
-claude-sonnet-5-5	claude	streaming,tool_calls,thinking,structured_output	0.0767121	5890
-claude-opus-5-5	claude	streaming,tool_calls,thinking,structured_output	0.15289319999999998	6956
-claude-haiku-4-5-20251001	claude	streaming,tool_calls,thinking,structured_output	0.047562600000000003	7008
+MODEL	FAMILY	PROVIDER	CAPABILITIES	COST_USD	DURATION_MS
+claude-haiku-5-5	claude	anthropic	streaming,tool_calls,thinking,structured_output	0.00426136	5527
+claude-sonnet-5-5	claude	anthropic	streaming,tool_calls,thinking,structured_output	0.0767121	5890
+claude-opus-5-5	claude	anthropic	streaming,tool_calls,thinking,structured_output	0.15289319999999998	6956
+claude-haiku-4-5-20251001	claude	anthropic	streaming,tool_calls,thinking,structured_output	0.047562600000000003	7008
 ```
 
-Whether a model passes depends on your gateway and its accounts, not only on the
-model: when this guide was first written, this same gateway failed
-`claude-sonnet-5-5` on thinking, and with no verified model `kor plan` reports `route: no-verified-route` and
-readiness `blocked`. After a probe, set `defaultRoute.model` to a model in the
-list. The Models screen lists every model the gateway offers (121 here) and marks
-each `verified` or `unverified`; only verified ones can be a route or an override.
+Whether a model passes depends on your gateway and its accounts. An exhausted
+quota or upstream tool restriction leaves the model unverified. With no verified
+model, `kor plan` reports `route: no-verified-route` and readiness `blocked`.
+After a probe, verified models become candidates for Jev's per-task route
+decision. Verification adds no provider preference or fallback order. The Models screen
+lists the live gateway catalogue and marks each model `verified` or `unverified`.
+Only verified models can be a route or an override. Run `kor models probe` to
+check every text model, or `--family gpt` to include GPT models and `devin/` GPT
+aliases. Known image, video and speech models are excluded. See the
+[live probe report](model-probe-results-2026-10-15.md) for per-model results.
 
 ![Models and accounts: account slots, verified models and the routing policy](images/mc-models.webp)
 
 `kor models probe --family claude` probes every Claude model the gateway lists
-(`--dry-run` shows the list first, without starting a session; the gateway used
-here returned 19). Results are stored in `~/.local/state/kor/models.json`, which
+(`--dry-run` shows the list first, without starting a session). Results are stored in `~/.local/state/kor/models.json`, which
 `KOR_MODEL_REGISTRY` can redirect, and the CLI and Mission Control share them.
 
 ## Prepare a Linear issue
