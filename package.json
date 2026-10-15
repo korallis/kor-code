@@ -29,11 +29,14 @@
     "isolation:proof": "bash scripts/isolation-proof.sh",
     "daemon:proof": "tsx scripts/daemon-proof.ts",
     "shipping:proof": "node scripts/shipping-proof.mjs",
-    "calibration:proof": "tsx --tsconfig scripts/tsconfig.json scripts/calibration-proof.ts"
+    "calibration:proof": "tsx --tsconfig scripts/tsconfig.json scripts/calibration-proof.ts",
+    "context:proof": "tsx --tsconfig scripts/tsconfig.json scripts/context-proof.ts",
+    "context:bench": "tsx --tsconfig scripts/tsconfig.json scripts/context-bench.ts"
   },
   "devDependencies": {
     "@types/node": "^24.8.0",
     "tsx": "^4.20.5",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "zod": "^4.6.6"
   }
 }

@@ -1,6 +1,11 @@
+import type { SessionTurn, SessionLoadEvent } from "./context.js";
 import type { Route } from "@kor-code/core";
 export interface SessionTelemetryLike {
   permissionDenials: number;
+  turns?: readonly SessionTurn[];
+  startContextTokens?: number;
+  contextTokenSum?: number;
+  loadEvents?: readonly SessionLoadEvent[];
   totalCostUsd?: number;
   durationMs?: number;
   model?: string;
@@ -60,6 +65,10 @@ export function metricFromSession(input: SessionMetricInput): RunMetric {
     outputTokens,
     cacheReadTokens,
     cacheCreationTokens,
+    startContextTokens: telemetry?.startContextTokens ?? null,
+    contextTokenSum: telemetry?.contextTokenSum ?? null,
+    turns: telemetry?.turns ?? null,
+    loadEvents: telemetry?.loadEvents ?? null,
     wallClockMs: elapsed(input.startedAt, input.finishedAt),
     sessionDurationMs: telemetry?.durationMs ?? null,
     // Claude's result event exposes the upstream API status when a provider
@@ -80,7 +89,9 @@ type MetricName = typeof metricNames[number];
 type Measurements = Record<MetricName, number | null>;
 interface ObservedRun { run: CalibrationRun; values: Measurements }
 export interface Estimate { value: number | null; n: number }
-export interface ArmSummary { arm: CalibrationRun["arm"]; sampleSize: number; finished: number; outcomes: number; merged: number; metrics: Record<MetricName, Estimate> }
+const contextNames = ["startContextTokens", "contextTokenSum", "cacheReadTokens", "cacheCreationTokens", "turns", "toolLoads", "skillLoads"] as const;
+type ContextName = typeof contextNames[number];
+export interface ArmSummary { context: Record<ContextName, Estimate>; arm: CalibrationRun["arm"]; sampleSize: number; finished: number; outcomes: number; merged: number; metrics: Record<MetricName, Estimate> }
 export interface ConfidenceBin { kind: string; bin: string; n: number; mean: number | null; success: number | null; brier: number | null }
 export interface CalibrationReport {
   since: string | null;
@@ -118,6 +129,26 @@ function observe(run: CalibrationRun, metrics: RunMetric[]): ObservedRun {
 function mapMetrics<T>(select: (name: MetricName) => T): Record<MetricName, T> {
   return { successRate: select("successRate"), repairs: select("repairs"), costUsd: select("costUsd"), cacheHitRate: select("cacheHitRate"), wallClockMs: select("wallClockMs"), failovers: select("failovers"), verificationFailures: select("verificationFailures"), policyBlocks: select("policyBlocks"), clarifications: select("clarifications") };
 }
+function contextSummary(runs: ObservedRun[], metrics: RunMetric[]): Record<ContextName, Estimate> {
+  const rows = runs.filter(row => row.values.successRate !== null).map(row => {
+    const attempts = metrics.filter(metric => metric.executionId === row.run.executionId);
+    return {
+      startContextTokens: attempts[0]?.startContextTokens ?? null,
+      contextTokenSum: total(attempts, metric => metric.contextTokenSum),
+      cacheReadTokens: total(attempts, metric => metric.turns?.reduce((sum, turn) => sum + turn.cacheReadTokens, 0) ?? null),
+      cacheCreationTokens: total(attempts, metric => metric.turns?.reduce((sum, turn) => sum + turn.cacheCreationTokens, 0) ?? null),
+      turns: total(attempts, metric => metric.turns?.length ?? null),
+      toolLoads: total(attempts, metric => metric.loadEvents?.filter(event => event.kind === "tool" && event.status === "succeeded").length ?? null),
+      skillLoads: total(attempts, metric => metric.loadEvents?.filter(event => event.kind === "skill" && event.status === "succeeded").length ?? null),
+    };
+  });
+  const median = (name: ContextName): Estimate => {
+    const values = rows.flatMap(row => row[name] === null ? [] : [row[name]]).sort((a, b) => a - b);
+    const middle = Math.floor(values.length / 2);
+    return { value: values.length === 0 ? null : values.length % 2 ? values[middle]! : (values[middle - 1]! + values[middle]!) / 2, n: values.length };
+  };
+  return { startContextTokens: median("startContextTokens"), contextTokenSum: median("contextTokenSum"), cacheReadTokens: median("cacheReadTokens"), cacheCreationTokens: median("cacheCreationTokens"), turns: median("turns"), toolLoads: median("toolLoads"), skillLoads: median("skillLoads") };
+}
 export function buildReport(store: CalibrationStore, since?: string): CalibrationReport {
   const date = since === undefined ? null : new Date(since).toISOString();
   const metrics = store.metrics();
@@ -129,7 +160,7 @@ export function buildReport(store: CalibrationStore, since?: string): Calibratio
     const terminal = outcomes.filter(outcome => selected.some(row => row.run.executionId === outcome.executionId));
     return { arm, sampleSize: selected.length, finished: selected.filter(row => row.values.successRate !== null).length,
       outcomes: terminal.length, merged: terminal.filter(outcome => outcome.status === "merged").length,
-      metrics: mapMetrics(name => estimate(selected.map(row => row.values[name]))) };
+      context: contextSummary(selected, metrics), metrics: mapMetrics(name => estimate(selected.map(row => row.values[name]))) };
   });
   const pairs = observed.filter(row => row.run.arm === "jev" && row.run.sampled && row.values.successRate !== null).flatMap(primary => {
     const baseline = observed.find(row => row.run.arm === "baseline" && row.run.pairId === primary.run.pairId && row.run.baseRevision === primary.run.baseRevision && row.values.successRate !== null);
@@ -163,11 +194,11 @@ export function buildReport(store: CalibrationStore, since?: string): Calibratio
     }
   }
   return { since: date, pairedSampleSize: pairs.length, arms, pairedDeltas, confidence,
-    note: pairs.length < 20 ? "Fewer than 20 completed pairs; insufficient evidence to conclude routing wins." : "Compare paired success and cost per successful issue before changing routes." };
+    note: pairs.length < 20 ? "Directional: fewer than 20 completed pairs; insufficient evidence to conclude routing wins." : "Compare paired success and cost per successful issue before changing routes." };
 }
 function fixed(value: number | null): string { return value === null ? "unavailable" : value.toFixed(4); }
 function cell(value: Estimate): string { return `${fixed(value.value)} (n=${value.n})`; }
-export function formatReport(report: CalibrationReport): string {
+export function formatReport(report: CalibrationReport, options: { context?: boolean } = {}): string {
   const columns = report.arms.filter(arm => arm.arm !== "fallback" || arm.sampleSize > 0);
   return ["Kor calibration report", `Completed Jev/baseline pairs: ${report.pairedSampleSize}`, `Since: ${report.since ?? "all time"}`,
     "Success = identical verification gate in both arms. Terminal merge outcomes are separate.",
@@ -175,6 +206,9 @@ export function formatReport(report: CalibrationReport): string {
     `Runs (finished/total)\t${columns.map(arm => `${arm.finished}/${arm.sampleSize}`).join("\t")}\t${report.pairedSampleSize} pairs`,
     `Merged/terminal outcomes\t${columns.map(arm => `${arm.merged}/${arm.outcomes}`).join("\t")}\tn/a (baseline never ships)`,
     ...metricNames.map(name => `${name}\t${columns.map(arm => cell(arm.metrics[name])).join("\t")}\t${cell(report.pairedDeltas[name])}`),
+    ...(options.context ? ["", "Context medians per completed run (all attempts; start = first attempt)",
+      `Metric\t${columns.map(arm => arm.arm).join("\t")}`,
+      ...contextNames.map(name => `${name}\t${columns.map(arm => cell(arm.context[name])).join("\t")}`)] : []),
     "", "Confidence calibration against terminal merge success (outcome proxy, not decision-correctness probability)",
     "Kind\tBin\tN\tMean signal\tObserved success\tBrier (proxy)",
     ...report.confidence.filter(row => row.n > 0 || row.bin === "0.0–0.2" && !report.confidence.some(other => other.kind === row.kind && other.n > 0)).map(row => `${row.kind}\t${row.n > 0 ? row.bin : "all"}\t${row.n}\t${fixed(row.mean)}\t${fixed(row.success)}\t${fixed(row.brier)}`),
