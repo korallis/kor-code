@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { chmod, mkdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { chmod, copyFile, mkdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import type { SessionSkillPack } from "@kor-code/controller";
 import { readSkillBundle, type CatalogueSkill, type SkillsCatalogue } from "./skills-catalogue.js";
@@ -13,6 +13,8 @@ export interface SkillDeliveryPlan {
 const PLUGIN_NAME = "kor-skills";
 const PLUGIN_MANIFEST = { name: PLUGIN_NAME, version: "1.0.0", description: "Guidance selected for this Kor execution." };
 const TOOL_PERMISSION = /[A-Za-z][A-Za-z0-9_]*(?:\([^()\r\n]*\))?/g;
+const MAX_ARMED_BODY_TOKENS = 1_500;
+const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 const compare = (a: string, b: string): number => a < b ? -1 : a > b ? 1 : 0;
 
 export async function buildSkillsPack(input: {
@@ -50,7 +52,9 @@ export async function buildSkillsPack(input: {
     const lint = await lintSkills(dirname(directory), { names: [basename(directory)], visibility: "local-only" });
     if (!lint.ok) throw new Error(`Skill cannot be delivered: ${skill.name} (${[...new Set(lint.diagnostics.filter(item => item.severity === "error").map(item => item.rule))].sort().join(", ")})`);
     if (tier === "listed" && bundle.header["disable-model-invocation"]) throw new Error(`Manual-only skill cannot be listed: ${skill.name}`);
-    bundles.push({ skill, tier, directory, body: bundle.body.trim() });
+    if (tier === "armed" && Math.max(skill.cost.bodyTokens, Math.ceil(bundle.body.trim().length / 3.7)) > MAX_ARMED_BODY_TOKENS) throw new Error(`Armed skill exceeds ${MAX_ARMED_BODY_TOKENS} body tokens: ${skill.name}`);
+    const triggers = bundle.header.metadata?.["kor.triggers"]?.split(/[,;]/).map(trigger => trigger.trim()).filter(Boolean) ?? [];
+    bundles.push({ skill, tier, directory, triggers, body: bundle.body.trim() });
   }
 
   const session = resolve(input.sessionsDir, input.executionId);
@@ -71,7 +75,15 @@ export async function buildSkillsPack(input: {
     await writeFile(join(temporary, ".claude-plugin", "plugin.json"), `${JSON.stringify(PLUGIN_MANIFEST, null, 2)}\n`, { mode: 0o600 });
     await mkdir(join(temporary, "skills"), { mode: 0o700 });
     for (const bundle of listed) await symlink(bundle.directory, join(temporary, "skills", bundle.skill.name), "dir");
-    if (armed.length) await writeFile(join(temporary, "armed.json"), `${JSON.stringify({ schemaVersion: 1, skills: armed.map(bundle => ({ name: bundle.skill.name, path: bundle.directory, hash: bundle.skill.hash, triggers: bundle.skill.triggers })) }, null, 2)}\n`, { mode: 0o600 });
+    if (armed.length) {
+      await writeFile(join(temporary, "armed.json"), `${JSON.stringify({ schemaVersion: 1, skills: armed.map(bundle => ({ name: bundle.skill.name, path: bundle.directory, hash: bundle.skill.hash, triggers: bundle.triggers, body: bundle.body, bodyHash: createHash("sha256").update(bundle.body).digest("hex") })) }, null, 2)}\n`, { mode: 0o600 });
+      await writeFile(join(temporary, "armed-firings.json"), "[]\n", { mode: 0o600 });
+      await copyFile(new URL("../../../scripts/skills-armed-hook.mjs", import.meta.url), join(temporary, "armed-hook.mjs"));
+      await chmod(join(temporary, "armed-hook.mjs"), 0o600);
+      await mkdir(join(temporary, "hooks"), { mode: 0o700 });
+      const command = `${shellQuote(process.execPath)} ${shellQuote(join(pluginDir, "armed-hook.mjs"))}`;
+      await writeFile(join(temporary, "hooks", "hooks.json"), `${JSON.stringify({ hooks: { PostToolUse: [{ matcher: ".*", hooks: [{ type: "command", command, timeout: 5 }] }] } }, null, 2)}\n`, { mode: 0o600 });
+    }
     await rm(pluginDir, { recursive: true, force: true });
     await rename(temporary, pluginDir);
   } finally {

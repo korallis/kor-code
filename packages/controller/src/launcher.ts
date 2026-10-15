@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { loadEventSchema } from "@kor-code/calibration";
 import type { SessionTurn, SessionLoadEvent } from "@kor-code/calibration";
 import type { Execution, Route } from "@kor-code/core";
 import { EventCollector, type SessionEvent } from "./events.js";
@@ -247,7 +249,7 @@ export class SessionLauncher implements SessionLauncherLike {
     const gatewayKeyFile = this.options.env?.KOR_GATEWAY_KEY_FILE ?? process.env.KOR_GATEWAY_KEY_FILE;
     const gatewayUrl = gateway?.baseUrl ?? this.options.env?.KOR_GATEWAY_URL ?? process.env.KOR_GATEWAY_URL;
     const env = { ...this.options.env, KOR_SANDBOX_ROOT: resolve(this.options.sandboxRoot ?? join(this.repoRoot, ".sandbox")), KOR_EXECUTION_ID: input.execution.id, KOR_WORKTREE: input.worktreePath, KOR_ROUTE_MODEL: input.route?.model ?? "", KOR_CLAUDE_BIN_DIR: toolDir, KOR_GATEWAY_KEY: gatewayKey, ...(gatewayKeyFile ? { KOR_GATEWAY_KEY_FILE: gatewayKeyFile } : {}), ...(gatewayUrl ? { KOR_GATEWAY_URL: gatewayUrl } : {}), ...(this.options.cockpit ? { KOR_STATUS_URL: this.options.cockpit.statusUrl, KOR_STATE_DIR: this.options.cockpit.stateDir } : {}) };
-    return new Promise((resolvePromise, reject) => {
+    const result: SessionResult = await new Promise((resolvePromise, reject) => {
       const child = spawn(this.options.command ?? "bash", [script, ...args], { cwd: input.worktreePath, env: this.isolatedEnv(env), stdio: ["ignore", "pipe", "pipe"], detached: true, signal: input.signal });
       if (child.pid) input.onSpawn?.(child.pid);
       let stdout = ""; let stderr = "";
@@ -276,6 +278,20 @@ export class SessionLauncher implements SessionLauncherLike {
         resolvePromise({ exitCode: actualExitCode, ...(signal ? { signal } : {}), events: collector.events, stdout, stderr, ...(telemetry ? { telemetry } : {}), failed: reasons.length > 0, ...(reasons.length > 0 ? { failureReasons: reasons } : {}) });
       });
     });
+    if (skills?.pluginDir && result.telemetry) {
+      try {
+        const firings = loadEventSchema.omit({ turn: true }).array().max(2).parse(JSON.parse(await readFile(join(skills.pluginDir, "armed-firings.json"), "utf8")));
+        const loads = result.telemetry.loadEvents ?? [];
+        const armed = firings.flatMap(firing => {
+          const event = loads.find(event => event.kind === "tool" && event.toolUseId === firing.toolUseId);
+          return event ? [{ ...firing, turn: event.turn }] : [];
+        });
+        result.telemetry.loadEvents = [...loads, ...armed];
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) collector.add("stderr", "Kor armed skill telemetry unavailable.");
+      }
+    }
+    return result;
   }
   private isolatedEnv(extra: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     const sandboxRoot = this.options.sandboxRoot ?? resolve(this.repoRoot, ".sandbox");
