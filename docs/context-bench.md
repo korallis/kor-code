@@ -211,3 +211,7 @@ and zero main-session armed loads. Two more real sessions forwarded responses
 with the trace header removed or replaced by an unrecognized value. Both
 succeeded, recorded unavailable account attribution, and left the strategy null
 when no management observation was supplied.
+
+Trace-derived response slots now use `account-trace-…`; adapter health rows use
+`account-…`. These are separate identity namespaces and cannot be joined without
+an explicit gateway inventory mapping.

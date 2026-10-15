@@ -175,7 +175,12 @@ export class MissionApi {
   private async staticFile(request: IncomingMessage, response: ServerResponse, pathname: string): Promise<void> {
     if (request.method !== "GET" && request.method !== "HEAD") throw new ApiFailure(404, "not_found", "Endpoint not found");
     if (!this.webRoot) throw new ApiFailure(503, "unavailable", "Mission Control web build unavailable", "Build the web package or start kor serve with --ui-dir DIST");
-    const root = await realpath(this.webRoot);
+    let root: string;
+    try { root = await realpath(this.webRoot); }
+    catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+      throw new ApiFailure(503, "unavailable", "Mission Control web build unavailable; run pnpm build");
+    }
     const decoded = decodeURIComponent(pathname);
     if (decoded.includes("\0") || decoded.split("/").some(segment => segment.startsWith("."))) throw new ApiFailure(404, "not_found", "Asset not found");
     const candidate = resolve(root, `.${decoded}`);

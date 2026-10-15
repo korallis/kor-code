@@ -194,3 +194,13 @@ approval gates with confidence 1.00, and cleanup only after merge with confidenc
 When attaching a no-mistakes run, Kor checks the recorded submitted head together with its run ID and branch. The pipeline owns rebase and repairs, so its current head may differ before the first attachment. A startup response without submission identity is refreshed by run ID when needed. Older responses without that metadata must still match the original head exactly; branch alone never establishes ownership. Once attached, the durable run ID fences later polls and restart recovery.
 
 The no-mistakes step status `completed` produces passing pipeline evidence. Kor also recognizes `passed` for compatibility; failed steps produce failing evidence, and other step states remain unresolved.
+
+Merged worktrees with uncommitted files are retained with `cleanup: retained`
+and unresolved cleanup evidence. Kor stops polling their terminal pull request.
+Inspect and save those files before removing the worktree manually. Closed pull
+requests are terminal observations; reopen them through a separate operator workflow.
+A verified path excluded by the publication policy blocks shipping with its path
+in the diagnostic; remove or rename it and reverify. CI evidence changes update
+the existing Linear shipping comment even when the lifecycle state is unchanged.
+Only regular committed template blobs are rendered, and placeholder expansion is
+one pass, so command output containing template syntax remains literal.

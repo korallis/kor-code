@@ -17,7 +17,10 @@ Status words used in the design documents:
 
 The TypeScript pnpm workspace contains `core`, `jev`, `gateway-adapter`, `linear`, `controller`, `context`, `verification`, `config`, `cli`, and `claude-plugin` packages. Run `pnpm probe` for the external contract checks and read the [Phase 0 probe record](phase-0-probe.md). Use `scripts/sandbox.sh` to load the Claude Code plugin in a disposable `CLAUDE_CONFIG_DIR`; it never installs the plugin globally or changes the existing Claude Code configuration, runs offline unless `--live-model` opts in to CLIProxyAPI, and `pnpm isolation:proof` traces the sandboxed session to show it never touches the real Claude, Codex or agents homes or port 8317.
 
-`pnpm typecheck` runs Claude's plugin validator in a throwaway HOME and configuration directory, so validation cannot migrate your user settings. To run the validator alone:
+Run `pnpm build` before `pnpm typecheck` on a fresh checkout: workspace imports
+resolve through generated `dist` declarations. `pnpm typecheck` runs Claude's
+plugin validator in a throwaway HOME and configuration directory, so validation
+cannot migrate your user settings. To run the validator alone:
 
 ```sh
 bash scripts/validate-plugin.sh packages/claude-plugin

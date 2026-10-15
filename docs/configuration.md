@@ -36,8 +36,9 @@ Execution sessions receive `KOR_STATUS_URL` and `KOR_STATE_DIR`, so the cockpit
 inside them reads this daemon.
 The route handoff retains Jev's provider, model, label and `decisionId`; controller
 metrics and terminal observations refer to that preflight audit. Retry replays the
-same decision while issue intent, blocking dependencies and eligible models are
-unchanged, and rechecks that its model is eligible. Changed inputs create a fresh
+same healthy decision while issue intent, blocking dependencies and eligible models are
+unchanged, and rechecks that its model is eligible. Outage fallbacks are retried
+under a fresh audit ID. Changed inputs create a fresh
 immutable preflight revision while retaining earlier decisions. With calibration
 enabled, recorded attempt metrics retain provider-reported costs, which may be unknown.
 `--jev` filters candidates against the live gateway catalogue at startup; plain
@@ -190,8 +191,8 @@ not configure an MCP server or install browser tooling.
 
 Missing Jev, low probabilities or an outage leave optional tools off. Outages
 are labelled in the decision audit. Tool decisions use immutable IDs keyed by
-execution, task and effective policy; unchanged retries replay them without an
-API call, while repair prompts or policy changes produce new decisions.
+execution, task and effective policy; unchanged healthy retries replay them without an
+API call; outage fallbacks are retried under a fresh audit ID, while repair prompts or policy changes produce new decisions.
 `kor doctor` shows the configured ceiling, before task selection. The session's
 actual tool list and the `tools` decisions show what was selected. Routing
 remains Jev's separate per-task decision.
@@ -350,3 +351,27 @@ and never represented as a successful Jev route.
 `pnpm calibration:proof --live-jev` uses the runtime TypeSafe key for preflight and
 acceptance; `--fallback` forces an outage without external calls. Each run prints
 its own report command. Both retain fixture Linear data and session generation.
+
+### Follow-up safeguards
+
+Repository `skills.always`, `skills.pins` and `skills.never` use catalogue names;
+see [skills policy](skills.md). `kor serve` rejects invalid catalogues and unknown
+names before accepting work. Guidance changed during a run still fails closed.
+A lost controller lease aborts the active session. Baseline sessions have the
+configured check timeout as their overall limit and retain interrupted outcomes.
+The no-skills baseline runs only when the primary offered guidance. Both baselines
+are sequential and hold the execution permit, so sampled work takes longer;
+a sample can add two sessions when guidance was offered.
+
+Installer `KOR_REF` accepts a branch or exact tag. Rerunning with the same tag
+supports the update path; use the same ref and save local edits first. Git errors
+retain their diagnostic text. Uninstall leaves the downloaded checkout and
+Corepack/pnpm caches, including the local `kor-code/bin` cache shim.
+
+Mission Control verifies the saved daemon process identity before sending its
+persistent local token. Legacy loopback `/status` remains unauthenticated.
+SQLite assignment triggers require `kor_now_ms`; use Kor's store for writes
+rather than editing assignments with an unconfigured SQLite client.
+
+Linear outbox failures retain their writes and per-issue order while independent
+issues continue syncing. Intake and shipping polling continue when a write fails.

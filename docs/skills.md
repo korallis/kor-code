@@ -183,7 +183,8 @@ kor skills doctor --from ./existing-skills --from ./another-pack --json
 ```
 
 `index` writes `XDG_STATE_HOME/kor/skills/catalogue.json` (default
-`~/.local/state/kor/skills/catalogue.json`) only when there are no errors. The
+`~/.local/state/kor/skills/catalogue.json`) only when there are no errors and no `--from` sources. Explicit source scans
+never replace the installed catalogue. The
 write is atomic, with a `0700` directory and a `0600` file. A failed index keeps
 the previous catalogue. `list`, `show` and `doctor` rebuild a read-only view of the
 current sources, so they detect changes without replacing that file. `show NAME`
@@ -686,9 +687,10 @@ per-task Jev decision.
 
 ### Playbook selection
 
-The separate `playbook` Choice offers up to 12 eligible procedures plus `none`.
+The separate `playbook` Choice offers up to 254 eligible procedures plus `none`.
 Kor filters by stage, tools, stack and repository `skills.never`, then orders
-trigger matches before taking the first 12. Initial execution may include
+trigger matches first. Larger eligible catalogues fail explicitly instead of silently
+dropping procedures. Initial execution may include
 planning and project-setup procedures because those phases run inside the
 session. Repairs require a procedure available at stage `repair`.
 
@@ -786,7 +788,8 @@ checks for budget, tools, visibility and catalogue hash. `plan.selection` record
 both option orders and answers, per-call/total latency, Jev token usage and
 whether usage was fully reported. The catalogue hash, task, stage, stack, policy
 and costs participate in the revision. Identical inputs replay without a network
-call; changed catalogue, repair evidence or policy creates a new decision.
+call after a healthy result; changed catalogue, repair evidence or policy creates a new decision.
+Outage fallbacks remain in the audit, while identical retries ask Jev under a new ID.
 `explain`, durable replay and observed outcomes retain the complete plan.
 
 Run the public selection proof with:
@@ -973,3 +976,27 @@ available at the session's stage, for example at repair, is left to Jev's
 Choice. An override can load a skill that outcome learning demoted. Neither
 calibration baseline arm receives overrides. No override can choose a model,
 provider, harness or effort; the route stays Jev's per-task decision.
+
+
+## Review follow-up details
+
+Full-visible catalogue counting runs at most eight requests concurrently; explicit
+and private sources keep local estimates. The winning public copy retains public
+visibility when an identical private copy exists. Import refuses byte-identical copies already
+bundled publicly, and guard ignores byte-identical public copies. Hidden folders,
+`node_modules` and private folders without `SKILL.md` are excluded from lint.
+BOM-marked UTF-16 guidance is scanned; binary text/executable guidance with NUL
+bytes fails lint rather than bypassing routing checks.
+
+Screen attachment reads paginate through the complete history, so refreshing an
+issue with more than 100 attachments continues to work. Historical uploads remain.
+Fenced Markdown examples are preserved when replacing a named screen.
+Use `--screen ID` for replacement of a named screen. Armed hooks recover locks
+left by dead processes after ten seconds; live owners keep their lock. Snapshot
+hashes detect corruption, not malicious rewriting by a process that can edit both
+body and hash. Failed tools do not emit the `PostToolUse` trigger.
+
+Private skill names in `guard` match complete names; `deny.txt` entries remain
+literal substrings. Generic complete words can still collide with public prose.
+Managed imports report local-source restrictions and missing upstream subpaths
+directly; update diff summaries replace staging paths with installed/upstream labels.

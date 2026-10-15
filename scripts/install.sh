@@ -4,6 +4,7 @@ set -eu
 fail() { printf 'FAIL install: %s\n' "$*" >&2; exit 1; }
 say() { printf '%s\n' "$*"; }
 
+main() {
 pilot=
 systemd=
 while [ "$#" -gt 0 ]; do
@@ -58,15 +59,15 @@ kor_git() {
 if [ -d "$KOR_HOME/.git" ]; then
   [ "$(git -C "$KOR_HOME" remote get-url origin)" = "$repository" ] || fail 'KOR_HOME has a different origin; choose another KOR_HOME.'
   [ -z "$(git -C "$KOR_HOME" status --porcelain --untracked-files=normal)" ] || fail 'KOR_HOME has local edits. Commit or save them before updating.'
-  [ "$(git -C "$KOR_HOME" symbolic-ref --short HEAD)" = "$ref" ] || fail 'KOR_HOME is on a different branch; use its original KOR_REF.'
+  [ "$(git -C "$KOR_HOME" symbolic-ref --short HEAD 2>/dev/null || git -C "$KOR_HOME" describe --tags --exact-match HEAD)" = "$ref" ] || fail 'KOR_HOME is on a different branch; use its original KOR_REF.'
   say 'Updating Kor Code…'
-  kor_git -C "$KOR_HOME" fetch --quiet origin "$ref" 2>/dev/null || fail 'Git fetch failed. For this private repo, run gh auth login or export GH_TOKEN with repository read access.'
+  kor_git -C "$KOR_HOME" fetch --quiet origin "$ref" || fail 'Git fetch failed; check the repository URL, KOR_REF and network access. Private repositories also require gh auth login or GH_TOKEN.'
   git -C "$KOR_HOME" merge --ff-only --quiet FETCH_HEAD || fail 'Update is not a fast-forward. Save your local commits before retrying.'
 else
   [ ! -e "$KOR_HOME" ] || fail 'KOR_HOME exists but is not a Kor clone; choose an empty path.'
   mkdir -p "$(dirname "$KOR_HOME")"
   say 'Cloning Kor Code…'
-  kor_git clone --quiet --branch "$ref" -- "$repository" "$KOR_HOME" 2>/dev/null || fail 'Clone failed. For this private repo, run gh auth login or export GH_TOKEN with repository read access.'
+  kor_git clone --quiet --branch "$ref" -- "$repository" "$KOR_HOME" || fail 'Clone failed; check the repository URL, KOR_REF and network access. Private repositories also require gh auth login or GH_TOKEN.'
 fi
 cd "$KOR_HOME"
 # Corepack uses the exact pnpm version declared by the checkout, without changing global shims.
@@ -109,7 +110,10 @@ case ":$PATH:" in
   *":$HOME/.local/bin:"*) ;;
   *) say 'Add this to your shell profile, and run it in this terminal:'; say '  export PATH="$HOME/.local/bin:$PATH"' ;;
 esac
-say 'Next: add the gateway api-keys line above to CLIProxyAPI and reload it.'
+if [ "$installed" = no ]; then say 'Next: add the gateway api-keys line above to CLIProxyAPI and reload it.'; fi
 say 'Configure checks and toolAllowlist in ~/.config/kor/config.yaml, then run kor doctor.'
 say 'Launch Mission Control: kor ui (or "$HOME/.local/bin/kor" ui before updating PATH).'
 say 'To update, rerun this same installer. To remove: kor uninstall --purge.'
+
+}
+main "$@"
