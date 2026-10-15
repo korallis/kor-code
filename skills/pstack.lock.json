@@ -70,7 +70,7 @@
       "name": "principle-laziness-protocol",
       "upstream": "pstack/skills/principle-laziness-protocol/SKILL.md",
       "upstreamSha256": "1be6e7a435f26a75a76eb848b9c3d611b9977d0f5822361753244da25ca3ca45",
-      "installedSha256": "ccdc5da7ae2d4c5f5b057467df1fb59885859235ae1a7d7e9c776c34e4ead41b"
+      "installedSha256": "2c03e58c58f733451166877db2af62af5c72281d42e525fdbfc129437a7ed2ec"
     },
     {
       "name": "principle-make-operations-idempotent",

@@ -36,11 +36,24 @@ export function buildSkillsReport(store: CalibrationStore, options: { since?: st
   const groups = new Map<string, { name: string; hash: string | null; offers: {
     executionId: string; probability: number; loaded: boolean; used: boolean; observed: boolean; recordedAt: string; override: boolean;
   }[] }>();
-  for (const record of store.decisions()) {
+  const runById = new Map(runs.map(run => [run.executionId, run]));
+  const metricsByExecution = new Map<string, RunMetric[]>();
+  const metricsByDecision = new Map<string, RunMetric[]>();
+  for (const metric of metrics) {
+    const execution = metricsByExecution.get(metric.executionId) ?? [];
+    execution.push(metric);
+    metricsByExecution.set(metric.executionId, execution);
+    if (metric.skillDecisionId) {
+      const decision = metricsByDecision.get(metric.skillDecisionId) ?? [];
+      decision.push(metric);
+      metricsByDecision.set(metric.skillDecisionId, decision);
+    }
+  }
+  for (const record of store.decisions("skills")) {
     const decision = record.response;
-    const run = runs.find(run => run.executionId === decision.executionId);
+    const run = runById.get(decision.executionId);
     if (decision.kind !== "skills" || !decision.plan || decision.plan.source !== "jev" || !run || run.arm === "baseline" || run.executionId === options.excludeExecutionId || (since !== null && run.startedAt < since)) continue;
-    const attempts = metrics.filter(metric => metric.skillDecisionId === decision.decisionId && metric.executionId === run.executionId);
+    const attempts = (metricsByDecision.get(decision.decisionId) ?? []).filter(metric => metric.executionId === run.executionId);
     if (!attempts.length) continue;
     for (const skill of decision.plan.skills.filter(skill => skill.tier !== "hidden")) {
       const key = JSON.stringify([skill.name, skill.hash ?? null]);
@@ -54,7 +67,7 @@ export function buildSkillsReport(store: CalibrationStore, options: { since?: st
   }
   const skills = [...groups.values()].map(({ name, hash, offers }): SkillStats => {
     const executions = [...new Set(offers.map(offer => offer.executionId))];
-    const completed = executions.filter(id => complete(runs.find(run => run.executionId === id)?.status ?? ""));
+    const completed = executions.filter(id => complete(runById.get(id)?.status ?? ""));
     const recent = executions.filter(id => offers.some(offer => offer.executionId === id && Date.parse(offer.recordedAt) >= windowStart && Date.parse(offer.recordedAt) <= now && offer.observed) && offers.filter(offer => offer.executionId === id).every(offer => offer.observed) && completed.includes(id));
     const terminal = outcomes.filter(outcome => completed.includes(outcome.executionId));
     const reliability = Array.from({ length: 5 }, (_, index): SkillReliabilityBin => {
@@ -67,15 +80,15 @@ export function buildSkillsReport(store: CalibrationStore, options: { since?: st
       return { lower, upper, n: values.length, mean: mean(values.map(value => value.probability)), success: mean(values.map(value => value.success)), brier: mean(values.map(value => (value.probability - value.success) ** 2)) };
     });
     const pairs = completed.flatMap(id => {
-      const primary = runs.find(run => run.executionId === id)!;
+      const primary = runById.get(id)!;
       const baseline = runs.find(run => run.purpose === "skills" && run.arm === "baseline" && run.pairId === `${primary.pairId}-skills` && run.baseRevision === primary.baseRevision && complete(run.status));
       if (!baseline || JSON.stringify(baseline.route) !== JSON.stringify(primary.route)) return [];
-      const a = metrics.filter(metric => metric.executionId === id), b = metrics.filter(metric => metric.executionId === baseline.executionId);
+      const a = (metricsByExecution.get(id) ?? []), b = (metricsByExecution.get(baseline.executionId) ?? []);
       if (!a.length || !b.length || b.some((metric, index) => metric.tools === null || JSON.stringify(metric.tools) !== JSON.stringify((a[index] ?? a.at(-1))?.tools))) return [];
       const aCost = sumCost(a), bCost = sumCost(b);
       return [{ lift: Number(a.at(-1)?.verified ?? false) - Number(b.at(-1)?.verified ?? false), cost: aCost === null || bCost === null ? null : aCost - bCost }];
     });
-    const passed = (id: string): number => Number(metrics.filter(metric => metric.executionId === id).at(-1)?.verified ?? false);
+    const passed = (id: string): number => Number((metricsByExecution.get(id) ?? []).at(-1)?.verified ?? false);
     const samples = completed.length;
     const thresholds = { ...DEFAULT_SKILL_THRESHOLDS };
     if (samples >= MIN_SKILL_SAMPLES) {

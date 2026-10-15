@@ -11,6 +11,7 @@ const CHARS_PER_TOKEN = 3.7;
 const MAX_BODY_LINES = 500;
 const SUMMARY_CHARS = 300;
 const COUNT_TIMEOUT_MS = 2_000;
+const COUNT_CONCURRENCY = 8;
 const DEFAULT_LISTING_BUDGET = 8_000;
 const DEFAULT_BODY_BUDGET = 2_000;
 const STAGES = new Set(["plan", "execute", "repair", "review", "ship", "project-setup"]);
@@ -201,33 +202,36 @@ export async function buildSkillsCatalogue(options: { config: KorConfig; paths: 
   }
   const duplicates: SkillsCatalogue["duplicates"] = [];
   const skills: CatalogueSkill[] = [];
-  for (const [contentHash, group] of [...groups].sort(([a], [b]) => compare(a, b))) {
-    group.sort((a, b) => compare(a.origin.tier, b.origin.tier) || compare(a.origin.path, b.origin.path));
-    const candidate = group.find(item => item.origin.tier === "public") ?? group.find(item => item.origin.tier === "private") ?? group[0];
-    if (!candidate) continue;
-    const { header, body, references } = candidate;
-    const metadata = header.metadata ?? {};
-    const origins = group.map(item => item.origin);
-    if (group.length > 1) duplicates.push({ hash: contentHash, names: [...new Set(group.map(item => item.header.name))].sort(compare), origins });
-    const privateText = group.some(item => item.header.metadata?.["kor.visibility"] === "local-only" || item.origin.tier === "private" && config.skills?.jev !== "full" || item.origin.tier === "from");
-    const summary = privateText ? "Private guidance (local-only)." : header.description.slice(0, SUMMARY_CHARS);
-    const listing = header["disable-model-invocation"] ? "" : `${header.name}: ${privateText ? summary : header.description}`;
-    const cost = await count([listing, body, ...references], privateText);
-    const bodyTokens = cost.tokens[1] ?? 0;
-    const bodyBudget = /^\d+$/.test(metadata["kor.budget"] ?? "") ? Number(metadata["kor.budget"]) : budgets.body;
-    if (bodyTokens > bodyBudget) diagnostics.push({ severity: "warning", rule: "body-budget", path: candidate.origin.path, message: `${header.name}: ${bodyTokens} body tokens exceed ${bodyBudget}` });
-    const bodyLines = body.trimEnd().split("\n").length;
-    if (bodyLines > MAX_BODY_LINES) diagnostics.push({ severity: "warning", rule: "body-lines", path: candidate.origin.path, message: `${header.name}: ${bodyLines} body lines exceed ${MAX_BODY_LINES}` });
-    skills.push({
-      name: header.name, tier: candidate.origin.tier, kind: metadata["kor.kind"] ?? "skill", stages: split(metadata["kor.stages"]),
-      stackTags: split(metadata["kor.stack"]), summary,
-      triggers: privateText ? [] : split(metadata["kor.triggers"]), anti: privateText ? [] : split(metadata["kor.anti"]), requires: split(metadata["kor.requires"]),
-      visibility: privateText ? "local-only" : "public",
-      jevVisible: privateText ? "names-only" : "full",
-      cost: { listingTokens: cost.tokens[0] ?? 0, bodyTokens, referencesMaxTokens: cost.tokens.slice(2).reduce((sum, value) => sum + value, 0), method: cost.method },
-      hash: contentHash, source: { license: header.license ?? null, ...(metadata["kor.source"] ? { url: metadata["kor.source"] } : {}), ...(metadata["kor.commit"] ? { commit: metadata["kor.commit"] } : {}) },
-      origins, stats: { offered: 0, loaded: 0, used: 0, passRate: null, lift: null },
-    });
+  const orderedGroups = [...groups].sort(([a], [b]) => compare(a, b));
+  for (let start = 0; start < orderedGroups.length; start += COUNT_CONCURRENCY) {
+    await Promise.all(orderedGroups.slice(start, start + COUNT_CONCURRENCY).map(async ([contentHash, group]) => {
+      group.sort((a, b) => compare(a.origin.tier, b.origin.tier) || compare(a.origin.path, b.origin.path));
+      const candidate = group.find(item => item.origin.tier === "public") ?? group.find(item => item.origin.tier === "private") ?? group[0];
+      if (!candidate) return;
+      const { header, body, references } = candidate;
+      const metadata = header.metadata ?? {};
+      const origins = group.map(item => item.origin);
+      if (group.length > 1) duplicates.push({ hash: contentHash, names: [...new Set(group.map(item => item.header.name))].sort(compare), origins });
+      const privateText = metadata["kor.visibility"] === "local-only" || candidate.origin.tier === "private" && config.skills?.jev !== "full" || candidate.origin.tier === "from";
+      const summary = privateText ? "Private guidance (local-only)." : header.description.slice(0, SUMMARY_CHARS);
+      const listing = header["disable-model-invocation"] ? "" : `${header.name}: ${privateText ? summary : header.description}`;
+      const cost = await count([listing, body, ...references], privateText);
+      const bodyTokens = cost.tokens[1] ?? 0;
+      const bodyBudget = /^\d+$/.test(metadata["kor.budget"] ?? "") ? Number(metadata["kor.budget"]) : budgets.body;
+      if (bodyTokens > bodyBudget) diagnostics.push({ severity: "warning", rule: "body-budget", path: candidate.origin.path, message: `${header.name}: ${bodyTokens} body tokens exceed ${bodyBudget}` });
+      const bodyLines = body.trimEnd().split("\n").length;
+      if (bodyLines > MAX_BODY_LINES) diagnostics.push({ severity: "warning", rule: "body-lines", path: candidate.origin.path, message: `${header.name}: ${bodyLines} body lines exceed ${MAX_BODY_LINES}` });
+      skills.push({
+        name: header.name, tier: candidate.origin.tier, kind: metadata["kor.kind"] ?? "skill", stages: split(metadata["kor.stages"]),
+        stackTags: split(metadata["kor.stack"]), summary,
+        triggers: privateText ? [] : split(metadata["kor.triggers"]), anti: privateText ? [] : split(metadata["kor.anti"]), requires: split(metadata["kor.requires"]),
+        visibility: privateText ? "local-only" : "public",
+        jevVisible: privateText ? "names-only" : "full",
+        cost: { listingTokens: cost.tokens[0] ?? 0, bodyTokens, referencesMaxTokens: cost.tokens.slice(2).reduce((sum, value) => sum + value, 0), method: cost.method },
+        hash: contentHash, source: { license: header.license ?? null, ...(metadata["kor.source"] ? { url: metadata["kor.source"] } : {}), ...(metadata["kor.commit"] ? { commit: metadata["kor.commit"] } : {}) },
+        origins, stats: { offered: 0, loaded: 0, used: 0, passRate: null, lift: null },
+      });
+    }));
   }
   const names = new Map<string, CatalogueSkill[]>();
   for (const skill of skills) names.set(skill.name, [...(names.get(skill.name) ?? []), skill]);

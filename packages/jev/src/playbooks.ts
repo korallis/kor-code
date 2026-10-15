@@ -7,7 +7,7 @@ import type { AppliedDecision, DecisionAuditLog, DecisionRequest } from "./index
 import type { SkillCandidate, SkillsInput } from "./skills.js";
 
 const NONE = "none";
-const MAX_CANDIDATES = 12;
+const MAX_CANDIDATES = 254;
 export const PLAYBOOK_BODY_BUDGET = 1_500;
 
 export interface PlaybookInput extends Pick<SkillsInput, "executionId" | "task" | "stage" | "catalogue" | "allowedTools" | "stackTags" | "never"> {
@@ -43,7 +43,8 @@ export async function decidePlaybook(input: PlaybookInput, client: Pick<JevClien
   if (input.override !== undefined && input.override !== NONE && !eligible.some(skill => skill.name === input.override)) throw new Error("Playbook override is unavailable under current policy");
   const relevance = (skill: typeof eligible[number]) => [...skill.triggers, skill.name.replaceAll("-", " ")]
     .filter(trigger => input.task.toLowerCase().includes(trigger.toLowerCase())).length;
-  const candidates = eligible.sort((a, b) => Number(b.name === input.override) - Number(a.name === input.override) || relevance(b) - relevance(a) || a.name.localeCompare(b.name)).slice(0, MAX_CANDIDATES);
+  const candidates = eligible.sort((a, b) => Number(b.name === input.override) - Number(a.name === input.override) || relevance(b) - relevance(a) || a.name.localeCompare(b.name));
+  if (candidates.length > MAX_CANDIDATES) throw new Error("Playbook selection supports at most 254 eligible procedures; narrow the catalogue");
   const criteria: Record<string, JevJsonValue> = {};
   for (const skill of candidates) criteria[skill.name] = skill.jevVisible === "names-only" || skill.visibility === "local-only"
       ? { what: "Private guidance (local-only)." }
@@ -52,11 +53,16 @@ export async function decidePlaybook(input: PlaybookInput, client: Pick<JevClien
   const state = { task: input.task, stage: input.stage, catalogueHash: input.catalogue.hash,
     ...(input.attemptId ? { attemptId: input.attemptId } : {}), ...(input.failure ? { failure: input.failure } : {}) };
   const revision = createHash("sha256").update(JSON.stringify({ state, criteria, costs: candidates.map(skill => [skill.name, skill.cost.bodyTokens]), override: input.override })).digest("hex").slice(0, 16);
-  const decisionId = `playbook-${input.executionId}-${revision}`;
-  const previous = audit.get(decisionId);
-  if (previous?.response.playbookPlan) return { ...audit.replay(decisionId), playbookPlan: previous.response.playbookPlan };
+  const baseId = `playbook-${input.executionId}-${revision}`;
+  let decisionId = baseId;
+  for (let retry = 1; ; retry++) {
+    const previous = audit.get(decisionId);
+    if (!previous?.response.playbookPlan) break;
+    if (previous.response.playbookPlan.source !== "fallback") return { ...audit.replay(decisionId), playbookPlan: previous.response.playbookPlan };
+    decisionId = `${baseId}-retry-${retry}`;
+  }
   const request: DecisionRequest = { decisionId, executionId: input.executionId, kind: "playbook",
-    question: "Which single playbook best supports the current task and phase? Use what, not_for and examples to distinguish neighbours. At repair, prioritise the current verification failure over the original task shape. Choose fix-bug for a failing check that needs a causal fix. Choose diagnose-bug for diagnosis-only work. Choose none for routine work needing no procedure. Judge task fit only.",
+    question: "Which single playbook best supports the current task and phase? Use what, not_for and examples to distinguish neighbours. At repair, prioritise the current verification failure over the original task shape. For a failing check, prefer a procedure that finds and fixes its cause; for diagnosis-only work, prefer investigation. Choose none for routine work needing no procedure. Judge task fit only.",
     state, inputs: [{ name: "catalogue-hash", value: input.catalogue.hash }], candidates: Object.keys(criteria), criteria, threshold: 0,
     ...(input.override !== undefined ? { overrides: { choice: input.override } } : {}) };
   let source: PlaybookPlan["source"] = "jev";
@@ -67,7 +73,7 @@ export async function decidePlaybook(input: PlaybookInput, client: Pick<JevClien
   let outage: string | undefined;
   const started = performance.now();
   try {
-    if (candidates.length) {
+    if (candidates.length && input.override === undefined) {
       const questions = { playbook: { type: "choice" as const, instructions: request.question, criteria } };
       const raw = await client.evaluate(state, questions);
       let response;

@@ -102,7 +102,7 @@ export async function checkRestore(manifest: InstallManifest, purge: boolean): P
       const current = await fingerprint(entry.path);
       if (current !== entry.after && current !== entry.before) {
         if (entry.policy === "settings" && entry.afterBackup && current !== null && await sameClaudeSettings(entry.path, entry.afterBackup)) continue;
-        throw new Error(`Changed since install: ${entry.path}; save your edits, then restore ${entry.afterBackup ?? "the original path (absent before install)"} before retrying uninstall. Original: ${entry.before === null ? "absent" : entry.backup}`);
+        throw new Error(`Changed since install: ${entry.path}; save your edits, then restore ${entry.afterBackup ?? "the original path (absent before install)"} before retrying the operation. Original: ${entry.before === null ? "absent" : entry.backup}`);
       }
     }
   }

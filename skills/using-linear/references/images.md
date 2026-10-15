@@ -3,7 +3,7 @@
 For a local screenshot, execute the installed CLI on the host:
 
 ```sh
-kor linear attach-image APP-123 ./mockups/settings-error.png --alt "/settings — error — desktop" --json
+kor linear attach-image APP-123 ./mockups/settings-error.png --alt "/settings — error — desktop" --screen settings-error-desktop --json
 ```
 
 Use a public-safe image or a ticket whose access permits that image. Inspect the

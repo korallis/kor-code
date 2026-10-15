@@ -145,9 +145,14 @@ export async function decideSkills(input: SkillsInput, client: Pick<JevClient, "
     : { what: skill.summary, not_for: skill.anti, examples: skill.triggers };
   criteria[NONE] = { what: "No specialised guidance is needed for this task.", not_for: [], examples: [] };
   const revision = digest({ state, criteria, policy: { allowedTools: [...input.allowedTools].sort(), always: input.always ?? [], pins: input.pins ?? [], never: input.never ?? [], budget: input.budget ?? DEFAULT_SKILL_BUDGET, listingBudget: input.listingBudget, bodyBudget: input.bodyBudget }, costs: input.catalogue.skills.map(skill => [skill.name, skill.hash, skill.cost, filteredReason(skill, input)]), ...(Object.keys(learning).length ? { learning } : {}) }).slice(0, 16);
-  const decisionId = `skills-${input.executionId}-${revision}`;
-  const previous = audit.get(decisionId);
-  if (previous?.response.plan) return { ...audit.replay(decisionId), plan: previous.response.plan };
+  const baseId = `skills-${input.executionId}-${revision}`;
+  let decisionId = baseId;
+  for (let retry = 1; ; retry++) {
+    const previous = audit.get(decisionId);
+    if (!previous?.response.plan) break;
+    if (previous.response.plan.source !== "fallback") return { ...audit.replay(decisionId), plan: previous.response.plan };
+    decisionId = `${baseId}-retry-${retry}`;
+  }
   const candidateNames = [...candidates.map(skill => skill.name), NONE];
   const request: DecisionRequest = { decisionId, executionId: input.executionId, kind: "skills", question: "Which skill best supports the task? Use what, not_for and examples to distinguish neighbouring skills. Select none-needed for routine work that needs no specialised guidance. Judge task fit only.", state, inputs: [{ name: "catalogue-hash", value: input.catalogue.hash }, ...(Object.keys(learning).length ? [{ name: "skill-learning", value: learning }] : [])], candidates: candidateNames, criteria, threshold: 0 };
   const selection: SkillPlan["selection"] = { calls: 0, durationMs: 0, callDurationMs: [], inputTokens: 0, outputTokens: 0, usageReported: true, samples: [] };

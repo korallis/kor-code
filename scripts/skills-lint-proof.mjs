@@ -104,6 +104,7 @@ try {
     "Use the effort estimate from the ticket.",
     "Prefer Google style comments in the file.",
     "Opus is a musical work; the sonnet is a poem.",
+    "Run `printf a\\nb` to print a newline.",
   ];
   await writeFile(join(prose, "SKILL.md"), source("", ordinary.join("\n")));
   await writeFile(join(prose, "image.png"), Buffer.from("PNG\0gpt-example-1\0"));

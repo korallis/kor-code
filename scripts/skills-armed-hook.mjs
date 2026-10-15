@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, matchesGlob, relative, resolve } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 const MAX_INJECTIONS = 2;
 const MAX_BODY_CHARACTERS = 5_550;
+const ABANDONED_LOCK_MS = 10_000;
 const root = fileURLToPath(new URL(".", import.meta.url));
 const lock = join(root, ".armed-lock");
 const stateFile = join(root, "armed-firings.json");
@@ -42,8 +43,31 @@ async function run() {
   if (plan.schemaVersion !== 1 || !Array.isArray(plan.skills)) throw new Error("Invalid armed skill plan");
   let acquired = false;
   for (let attempt = 0; attempt < 100; attempt++) {
-    try { await mkdir(lock, { mode: 0o700 }); acquired = true; break; }
-    catch (error) { if (error.code !== "EEXIST") throw error; await setTimeout(20); }
+    try {
+      await mkdir(lock, { mode: 0o700 });
+      acquired = true;
+      await writeFile(join(lock, "pid"), String(process.pid), { mode: 0o600 });
+      break;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      try {
+        const age = Date.now() - (await stat(lock)).mtimeMs;
+        if (age > ABANDONED_LOCK_MS) {
+          const pid = Number(await readFile(join(lock, "pid"), "utf8").catch(() => ""));
+          let alive = false;
+          if (Number.isSafeInteger(pid) && pid > 0) {
+            try { process.kill(pid, 0); alive = true; } catch (failure) { if (failure.code !== "ESRCH") throw failure; }
+          }
+          if (!alive) {
+            const abandoned = `${lock}.abandoned-${process.pid}`;
+            await rename(lock, abandoned);
+            await rm(abandoned, { recursive: true });
+            continue;
+          }
+        }
+      } catch (failure) { if (failure.code !== "ENOENT") throw failure; }
+      await setTimeout(20);
+    }
   }
   if (!acquired) throw new Error("Armed skill state is locked");
   try {

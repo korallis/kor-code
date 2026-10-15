@@ -66,7 +66,8 @@ function parseOptions(args: readonly string[]): Options {
     const pin = /^(.*)@([a-f0-9]{7,40})$/.exec(args[1] ?? "");
     if (!pin?.[1] || !pin[2] || !tier) invalid();
     let url: string;
-    try { url = sourceUrl(pin[1], tier); } catch { invalid(); }
+    try { url = sourceUrl(pin[1], tier); }
+    catch (error) { throw new SkillsUsageError(error instanceof Error ? error.message : SKILLS_INSTALL_USAGE); }
     return { ...common, kind, url, commit: pin[2], tier, subpath, adaptFrontmatter };
   }
   if (kind !== "update") invalid();
@@ -158,12 +159,20 @@ type Change = { tier: SkillTier; entry: SkillLockEntry; previous: SkillLockEntry
 
 async function diffStat(before: string, after: string): Promise<string> {
   let output: string;
-  try { output = (await execFileAsync("git", ["--no-pager", "diff", "--no-index", "--stat", "--", before, after], { maxBuffer: MAX_DIFF_OUTPUT })).stdout; }
+  try { output = (await execFileAsync("git", ["--no-pager", "diff", "--no-index", "--numstat", "-z", "--no-renames", "--", before, after], { maxBuffer: MAX_DIFF_OUTPUT })).stdout; }
   catch (error) {
     if (!(error instanceof Error && "code" in error && error.code === 1 && "stdout" in error && typeof error.stdout === "string")) throw new Error("Cannot compute skills diff stat");
     output = error.stdout;
   }
-  return output.replaceAll(before, "installed").replaceAll(after, "upstream").trim() || "No content changes";
+  const fields = output.split("\0");
+  const rows: string[] = [];
+  for (let index = 0; index < fields.length && fields[index]; index++) {
+    const [added, removed, path] = fields[index]!.split("\t");
+    const paths = path ? [path] : [fields[++index] ?? "", fields[++index] ?? ""];
+    const labels = paths.map(value => value.replaceAll(before, "installed").replaceAll(after, "upstream"));
+    rows.push(`+${added} -${removed} ${labels.map(value => JSON.stringify(value)).join(" -> ")}`);
+  }
+  return rows.join("\n") || "No content changes";
 }
 
 async function applyChanges(changes: Change[], initialTiers: Map<SkillTier, string | null>): Promise<void> {

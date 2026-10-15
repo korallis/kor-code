@@ -20,6 +20,18 @@ export async function repositoryStackTags(directory: string): Promise<string[]> 
   }
 }
 
+export async function validateSessionSkills(config: KorConfig, paths: KorPaths): Promise<void> {
+  const catalogue = await buildSkillsCatalogue({ config, paths, estimate: true });
+  if (!catalogue.ok) throw new Error("Cannot select session skills from an invalid catalogue; run kor skills doctor");
+  const names = new Set(catalogue.skills.map(skill => skill.name));
+  for (const [key, repository] of Object.entries(config.repos)) {
+    const policy = repository.skills;
+    for (const name of [...policy?.always ?? [], ...policy?.pins ?? [], ...policy?.never ?? []]) {
+      if (!names.has(name)) throw new Error(`Unknown repository skill in repos.${key}.skills: ${name}; run kor skills doctor`);
+    }
+  }
+}
+
 export async function prepareSessionSkills(options: {
   input: SessionLaunch & { allowedTools: readonly string[] };
   config: KorConfig;
