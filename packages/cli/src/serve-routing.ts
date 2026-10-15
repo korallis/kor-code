@@ -4,11 +4,12 @@ import type { CatalogueModel, Route } from "@kor-code/core";
 import { NeedsInputError, type DaemonOptions, type DescribePullRequest } from "@kor-code/daemon";
 import { JevClient, JevDecisionCore, JevUnavailableError, redact, planPreflight, preflightRequests, routeFromDecision, type DecisionAuditLog } from "@kor-code/jev";
 
-const routingLabels = (labels: readonly string[]) => labels.filter(label => label !== "kor:blocked").sort();
+const routingLabels = (labels: readonly string[], intakeLabel: string) => labels.filter(label => label !== "kor:blocked" && (label !== intakeLabel || label.trim().toLowerCase() === "ui")).sort();
 
 /** One persistent decision core for serve's preflight and acceptance judgments. */
 export function createServeRouting(options: {
   audit: DecisionAuditLog;
+  intakeLabel: string;
   defaultRoute: Route;
   models: () => Promise<readonly CatalogueModel[]>;
   client?: Pick<JevClient, "evaluate">;
@@ -22,7 +23,7 @@ export function createServeRouting(options: {
     try { models = [...await options.models()].sort((a, b) => a.model.localeCompare(b.model)); }
     catch (cause) { catalogueFailure = new JevUnavailableError("Model catalogue unavailable; check the registry and gateway before retrying.", { cause }); }
     const input = { executionId,
-      issue: { id: issue.id, title: issue.title, ...(issue.description !== undefined ? { description: issue.description } : {}), acceptanceCriteria: issue.acceptanceCriteria, labels: routingLabels(issue.labels), hasScreenshot: hasScreenshot(issue), dependencies: issue.dependencies.map(dependency => ({ id: dependency.id, state: dependency.stateType })).sort((a, b) => a.id.localeCompare(b.id)) },
+      issue: { id: issue.id, title: issue.title, ...(issue.description !== undefined ? { description: issue.description } : {}), acceptanceCriteria: issue.acceptanceCriteria, labels: routingLabels(issue.labels, options.intakeLabel), hasScreenshot: hasScreenshot(issue), dependencies: issue.dependencies.map(dependency => ({ id: dependency.id, state: dependency.stateType })).sort((a, b) => a.id.localeCompare(b.id)) },
       verifiedModels: models, defaultRoute: options.defaultRoute,
     };
     const state = preflightRequests(input)[0]?.state;
@@ -30,7 +31,7 @@ export function createServeRouting(options: {
     const previous = options.audit.get(previousDecisionId ?? `route-${executionId}`) ?? original;
     const previousReadiness = previous && options.audit.get(previous.request.decisionId.replace(/^route-/, 'readiness-'));
     const fingerprint = (value: unknown, excludeGuidance = false) => createHash('sha256').update(JSON.stringify(redact(value), (key, field: unknown) => {
-      if (key === 'labels' && Array.isArray(field)) return routingLabels(field);
+      if (key === 'labels' && Array.isArray(field)) return routingLabels(field, options.intakeLabel);
       if (excludeGuidance && key === 'description' && typeof field === 'string') return field.split('\n\nOperator guidance:\n')[0];
       return field;
     }) ?? 'null').digest('hex').slice(0, 16);

@@ -159,9 +159,10 @@ export function buildReport(store: CalibrationStore, since?: string): Calibratio
   const date = since === undefined ? null : new Date(since).toISOString();
   const metrics = store.metrics();
   const outcomes = store.outcomes();
-  const runs = store.runs().filter(run => run.purpose !== "skills" && (date === null || run.startedAt >= date));
+  const runs = store.runs().filter(run => run.purpose !== "skills" && (date === null || run.startedAt >= date))
+    .map((run): CalibrationRun => run.arm === "fallback" && run.route.label === "override" ? { ...run, arm: "override" } : run);
   const observed = runs.map(run => observe(run, metrics.filter(metric => metric.executionId === run.executionId)));
-  const arms = (["jev", "baseline", "fallback"] as const).map(arm => {
+  const arms = (["jev", "baseline", "fallback", "override"] as const).map(arm => {
     const selected = observed.filter(row => row.run.arm === arm);
     const terminal = outcomes.filter(outcome => selected.some(row => row.run.executionId === outcome.executionId));
     return { arm, sampleSize: selected.length, finished: selected.filter(row => row.values.successRate !== null).length,
@@ -207,7 +208,7 @@ export function buildReport(store: CalibrationStore, since?: string): Calibratio
 function fixed(value: number | null): string { return value === null ? "unavailable" : value.toFixed(4); }
 function cell(value: Estimate): string { return `${fixed(value.value)} (n=${value.n})`; }
 export function formatReport(report: CalibrationReport, options: { context?: boolean } = {}): string {
-  const columns = report.arms.filter(arm => arm.arm !== "fallback" || arm.sampleSize > 0);
+  const columns = report.arms.filter(arm => arm.arm === "jev" || arm.arm === "baseline" || arm.sampleSize > 0);
   return ["Kor calibration report", `Completed Jev/baseline pairs: ${report.pairedSampleSize}`, `Since: ${report.since ?? "all time"}`,
     "Success = identical verification gate in both arms. Terminal merge outcomes are separate.",
     `Metric\t${columns.map(arm => arm.arm === "jev" ? "Jev-route (all)" : arm.arm === "baseline" ? "baseline (sampled)" : arm.arm).join("\t")}\tPaired delta (Jev - baseline)`,

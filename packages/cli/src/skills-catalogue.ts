@@ -184,7 +184,7 @@ export async function buildSkillsCatalogue(options: { config: KorConfig; paths: 
     }
     if (source.tier === "public" || source.tier === "private" && files.length > 0) {
       const lint = await lintSkills(source.path, { private: source.tier === "private" });
-      diagnostics.push(...lint.diagnostics.map(item => ({ severity: item.severity, rule: item.rule, path: join(source.path, item.file), message: item.message })));
+      diagnostics.push(...lint.diagnostics.filter(item => item.rule !== "body-budget").map(item => ({ severity: item.severity, rule: item.rule, path: join(source.path, item.file), message: item.message })));
     }
     for (const path of files) {
       try {

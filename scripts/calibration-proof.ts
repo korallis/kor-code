@@ -49,7 +49,7 @@ const client = {
   },
 };
 // Exactly the routing factory used by kor serve; only Linear and session generation are fixtures.
-const routing = createServeRouting({ audit, defaultRoute: config.defaultRoute, models: async () => catalogue, client });
+const routing = createServeRouting({ audit, intakeLabel: config.intakeLabel, defaultRoute: config.defaultRoute, models: async () => catalogue, client });
 let primaryAttempts = 0;
 const controller = createController({
   repositories: new RepositoryRegistry([{ key: "proof", path: repositoryPath, defaultBranch: "main", checks: config.repos.proof?.checks ?? [] }]),
