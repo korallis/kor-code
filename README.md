@@ -104,12 +104,14 @@ with a fix-it message. `kor uninstall` removes the integration; `kor uninstall
 --purge` also removes Kor's own data. The downloaded checkout is kept.
 
 For a private fork or mirror, authenticate with `gh auth login`, then use the
-GitHub API route (replace the repository in both places for a fork):
+GitHub API route:
 
 ```sh
 gh api repos/korallis/kor-code/contents/scripts/install.sh -H "Accept: application/vnd.github.raw" | bash
 ```
 
+For a fork, export `KOR_REPOSITORY=https://github.com/OWNER/REPO.git` and replace
+`korallis/kor-code` in the API or raw URL. `KOR_REF` selects a branch (default `main`).
 Alternatively, export `GH_TOKEN` with repository read access and use
 `curl -fsSL -H "Authorization: Bearer $GH_TOKEN"` with the raw URL above.
 The clone uses the same exported token, or your existing `gh` login.
