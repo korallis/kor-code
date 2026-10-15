@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { JsonValue } from "@kor-code/core";
 import { MemoryDecisionAuditLog, redact, type AppliedDecision, type DecisionAuditLog, type DecisionAuditRecord } from "@kor-code/jev";
-import { turnSchema, loadEventSchema, gatewayTelemetrySchema } from "./context.js";
+import { turnSchema, loadEventSchema, gatewayTelemetrySchema, skillPackSchema } from "./context.js";
 
 const count = z.number().int().nonnegative();
 const measurement = z.number().nonnegative().nullable();
@@ -18,7 +18,7 @@ export const runSchema = z.object({
 export type CalibrationRun = z.infer<typeof runSchema>;
 export const metricSchema = z.object({
   executionId: z.string(), attempt: count.positive(), attemptId: z.string().uuid().optional(), recordedAt: z.string().datetime(),
-  skillDecisionId: z.string().optional(), tools: z.array(z.string()).nullable().default(null),
+  skillDecisionId: z.string().optional(), skillPack: skillPackSchema.nullable().default(null), tools: z.array(z.string()).nullable().default(null),
   decisionId: z.string().optional(), model: z.string(), costUsd: measurement,
   inputTokens: measurement, outputTokens: measurement, cacheReadTokens: measurement, cacheCreationTokens: measurement,
   startContextTokens: measurement.default(null), contextTokenSum: measurement.default(null),

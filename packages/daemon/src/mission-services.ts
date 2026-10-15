@@ -10,8 +10,8 @@ import { GatewayAdapter, readModelRegistry } from "@kor-code/gateway-adapter";
 import { HttpLinearClient, type LinearClient } from "@kor-code/linear";
 import { JevClient, resolveJevApiKey } from "@kor-code/jev";
 import { redact, runtimeSecrets } from "@kor-code/jev";
-import { CalibrationStore, buildReport } from "@kor-code/calibration";
-import type { AskRequest, AskResponse, BrainResponse, ConnectRequest, ConnectionsResponse, ModelsResponse, PullsResponse, SuggestedAction } from "@kor-code/mission-control";
+import { CalibrationStore, buildReport, buildSkillsReport, skillLearningChanges } from "@kor-code/calibration";
+import type { AskRequest, AskResponse, BrainResponse, LearningsReport, ConnectRequest, ConnectionsResponse, ModelsResponse, PullsResponse, SuggestedAction } from "@kor-code/mission-control";
 import type { JsonValue, Labelled, KorStatusSnapshot, GatewayStrategyObservation } from "@kor-code/core";
 
 const exec = promisify(execFile);
@@ -148,10 +148,22 @@ export class MissionServices {
       return { schemaVersion: 1, bounded: true, pulls: live(values.map(pr => ({ number: pr.number, title: pr.title, url: pr.html_url, state: pr.state, draft: pr.draft, merged: pr.merged_at !== null, head: pr.head.sha }))) };
     } catch { return { schemaVersion: 1, bounded: true, pulls: unavailable([], "GitHub pull requests unavailable") }; }
   }
-  brain(snapshot: KorStatusSnapshot): BrainResponse {
+  async brain(snapshot: KorStatusSnapshot, catalogue: () => Promise<readonly { name: string; hash?: string | undefined }[]>): Promise<BrainResponse> {
     const store = new CalibrationStore(this.paths.databaseFile);
     try {
-      return { schemaVersion: 1, decisions: snapshot.decisions ?? unavailable([], "No decision audit available"), calibration: live(buildReport(store)), learnings: unavailable([], "No learned-memory store is configured") };
+      const report = buildSkillsReport(store);
+      const learnings = (changes: LearningsReport["changes"], current: (name: string, hash: string | null) => boolean): LearningsReport => ({
+        minimumSamples: report.minimumSamples, windowDays: report.windowDays, note: report.note, changes,
+        skills: report.skills.map(({ reliability: _, ...stats }) => ({ ...stats, current: current(stats.name, stats.hash) })),
+      });
+      let learned: Labelled<LearningsReport>;
+      try {
+        const skills = await catalogue();
+        learned = live(learnings(skillLearningChanges(report, skills), (name, hash) => skills.some(skill => skill.name === name && (skill.hash ?? null) === hash)));
+      } catch (error) {
+        learned = unavailable(learnings([], () => false), `Skill catalogue unavailable: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      return { schemaVersion: 1, decisions: snapshot.decisions ?? unavailable([], "No decision audit available"), calibration: live(buildReport(store)), learnings: learned };
     } finally { store.close(); }
   }
   async probeModel(id: string): Promise<boolean> {

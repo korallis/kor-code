@@ -69,7 +69,8 @@ export async function runVerifiedSessions(input: {
     if (execution.route) {
       const metric = metricFromSession({ executionId: execution.id, attempt: attemptNumber, attemptId, route: execution.route, startedAt, finishedAt: new Date().toISOString(), session, verified: false });
       input.onSpend?.(execution.id, { attempt: attemptNumber, attemptId, recordedAt: metric.recordedAt, model: metric.model, costUsd: metric.costUsd,
-        inputTokens: metric.inputTokens, outputTokens: metric.outputTokens, cacheReadTokens: metric.cacheReadTokens, cacheCreationTokens: metric.cacheCreationTokens });
+        inputTokens: metric.inputTokens, outputTokens: metric.outputTokens, cacheReadTokens: metric.cacheReadTokens, cacheCreationTokens: metric.cacheCreationTokens,
+        ...(session.skillPack ? { skillPack: session.skillPack } : {}) });
     }
     costs.push(session.telemetry?.totalCostUsd);
     const attempt = await race(verifyAttempt({ execution, acceptance: execution.manifest?.acceptance ?? [], session, attempt: attemptNumber, attemptId,

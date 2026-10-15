@@ -2,8 +2,8 @@
 import type { KorConfig } from "@kor-code/config";
 import type { CalibrationReport } from "@kor-code/calibration";
 import type { LinearIssue } from "@kor-code/linear";
-import type { DecisionRecord, GatewayAccountHealth, GatewayModel, JsonValue, KorStatusResponse, Labelled, OverrideRecord, RunStatus, VerificationAttempt, VerificationReport } from "@kor-code/core";
-import type { RunMetric } from "@kor-code/calibration";
+import type { DecisionRecord, GatewayAccountHealth, SessionSpend, GatewayModel, JsonValue, KorStatusResponse, Labelled, OverrideRecord, RunStatus, VerificationAttempt, VerificationReport } from "@kor-code/core";
+import type { RunMetric, SkillLearningChange, SkillStats } from "@kor-code/calibration";
 
 export const API_VERSION = 1;
 export const API_PREFIX = "/api";
@@ -36,7 +36,7 @@ export interface MissionVerificationReport extends Omit<VerificationReport, "att
 }
 /** Individual persisted measurements, including previous attempts. Compute
  * spend today from recordedAt, never from the run's cumulative cost or age. */
-export type SpendRecord = Pick<RunMetric, "attempt" | "attemptId" | "recordedAt" | "model" | "costUsd" | "inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheCreationTokens">;
+export type SpendRecord = Pick<RunMetric, "attempt" | "attemptId" | "recordedAt" | "model" | "costUsd" | "inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheCreationTokens"> & Pick<SessionSpend, "skillPack">;
 export interface MissionRun extends Omit<RunStatus, "verification">, RunTimes {
   stage: Stage;
   needsInput: { reason: string } | null;
@@ -61,7 +61,16 @@ export interface PullRequest { number: number; title: string; url: string; state
 export interface PullsResponse { schemaVersion: 1; pulls: Labelled<PullRequest[]>; bounded: true }
 export interface ModelsResponse { schemaVersion: 1; models: Labelled<GatewayModel[]> }
 export interface PoolResponse { schemaVersion: 1; accounts: Labelled<GatewayAccountHealth[]>; quota: Labelled<JsonValue | null> }
-export interface BrainResponse { schemaVersion: 1; decisions: Labelled<DecisionRecord[]>; calibration: Labelled<CalibrationReport | null>; learnings: Labelled<string[]> }
+/** What outcome learning changed in Jev's skill selection, and the per-skill evidence behind it. A new install has no skills and no changes. */
+export interface LearningsReport {
+  minimumSamples: number;
+  windowDays: number;
+  note: string;
+  changes: SkillLearningChange[];
+  /** `current` marks the version in today's catalogue; learning applies only to that version. */
+  skills: Array<Omit<SkillStats, "reliability"> & { current: boolean }>;
+}
+export interface BrainResponse { schemaVersion: 1; decisions: Labelled<DecisionRecord[]>; calibration: Labelled<CalibrationReport | null>; learnings: Labelled<LearningsReport> }
 export interface ConnectionsResponse { schemaVersion: 1; connections: Connection[] }
 export interface Connection { id: "linear" | "github" | "gateway" | "jev"; status: "connected" | "unavailable"; reason: string | null }
 export interface ConfigResponse { schemaVersion: 1; config: KorConfig; restartRequired: boolean }

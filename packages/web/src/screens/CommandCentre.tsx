@@ -29,6 +29,7 @@ import { CountUp } from '../ui/count';
 import { MotionMedia } from '../motion/MotionMedia';
 import { buildActivity } from '../lib/activity';
 import { plural, shortModel, usd } from '../lib/format';
+import { learnedSummary } from '../lib/learning';
 import { canAnswer, isActive, keyOf, needsYou, readyToShip, runUpdatedAt, spendOn } from '../lib/runs';
 import { parseQuota, sessionWindow, weeklyWindow, providerTitle } from '../lib/quota';
 import { ago, clock, greeting, isToday, longDate, shortDate, useNow } from '../lib/time';
@@ -320,7 +321,6 @@ export function CommandCentre() {
 
   const activity = buildActivity(runs, overrides, decisions).slice(0, 4);
   const intakeLabel = config.data?.config.intakeLabel ?? 'kor';
-  const learning = brain.data?.learnings.value[0];
   const activeSeries = activitySamples.length >= 2 ? activitySamples.map(sample => sample.active) : null;
 
   return (
@@ -457,7 +457,8 @@ export function CommandCentre() {
           </Card>
           <Card index={12} variant="insight" style={[styles.insight, styles.spanNarrow]}>
             <div {...stylex.props(layout.row)}><JevOrb size={26} /><span {...stylex.props(text.eyebrow, text.violet)}>Jev learned</span><span {...stylex.props(layout.grow)} />{brain.data && <ProvenanceChip provenance={brain.data.learnings.provenance} reason={brain.data.learnings.reason} />}</div>
-            {learning ? <q {...stylex.props(styles.quote)}>{learning}</q> : <p {...stylex.props(styles.quote, text.muted)}>{brain.error ? `Learnings unavailable: ${brain.error.message}` : brain.data?.learnings.provenance === 'unavailable' ? `Learnings unavailable: ${brain.data.learnings.reason ?? 'not reported by the daemon'}.` : 'No learnings yet. Jev proposes one once calibration has enough finished runs to compare.'}</p>}
+            {brain.data?.learnings.provenance === 'live' ? <p {...stylex.props(styles.quote, brain.data.learnings.value.changes.length === 0 && text.muted)}>{learnedSummary(brain.data.learnings.value)}</p>
+              : <p {...stylex.props(styles.quote, text.muted)}>{brain.error ? `Learnings unavailable: ${brain.error.message}` : brain.data ? `Learnings unavailable: ${brain.data.learnings.reason ?? 'not reported by the daemon'}.` : 'Reading what Jev learned…'}</p>}
             <div {...stylex.props(layout.row, layout.mt3)}><Button size="sm" variant="violet" icon={BrainCircuit} onClick={() => navigate('brain')}>See why</Button></div>
           </Card>
         </section>

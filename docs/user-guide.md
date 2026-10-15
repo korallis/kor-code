@@ -637,7 +637,7 @@ The screens, from the sidebar:
 | **Linear** | The decision workspace for one run: the issue, Jev's reasoning, the diff and the evidence, and the approve, request-changes and override controls. |
 | **Agents** | Every live run with its actual output, stages, tokens and cost; stop, retry and steer. |
 | **Models** | Account slots and their health, the verified-model table, probes and the routing policy. |
-| **Jev Brain** | The decision audit and the calibration report. |
+| **Jev Brain** | The decision audit, the calibration report and what Jev learned about skills. |
 | **Terminal** (Ctrl+Backtick) | The Agents view again, opened on the live output. |
 | **Settings** | Connections, intake label, limits and projects. |
 
@@ -711,8 +711,28 @@ under its title is the seven stages; the tabs are **Live output** (the real
 stdout and stderr of the session, with tool calls, permission denials and the
 checks), **Plan**, **Changes**, **Checks**, **Decisions** and **Log**. The side
 panel shows acceptance as Jev judges it, the next step, tokens, cache hit and cost
-so far. The header's **Worktree** button copies the worktree path, **Linear** and
-the PR button open them.
+so far. The provider reports cost when a session ends, so a live first session
+shows `costUsd at session end` until then; amounts under a cent keep two
+significant digits (`$0.0025`, not `$0.00`). The header's **Worktree** button
+copies the worktree path, **Linear** and the PR button open them.
+
+When a run is sampled for calibration, Kor runs the comparison sessions after the
+run verifies and before it waits for you, in separate worktrees. They write no
+output into the run's stream; each one adds a `baseline` line when it starts and
+when it ends, for example:
+
+```text
+13:23:45 baseline started on claude-sonnet-5-5: the baseline route, to measure Jev's routing. It never ships and does not change this run.
+13:23:56 baseline verified · $0.0311. This run's result is unchanged.
+13:23:56 baseline started on claude-haiku-5-5: the same route without skills, to measure skill lift. It never ships and does not change this run.
+13:24:03 baseline verified · $0.0016. This run's result is unchanged.
+```
+
+**Plan** starts with **Sessions received**: for every attempt, the skills it was
+actually given (tier, per-turn tokens, and whether Jev, your override or the
+repository chose it), its playbook, and the guidance tokens per turn. Kor records
+this when each session launches, so you can check afterwards that an override
+reached the session. A calibration session without skills records no pack.
 
 Tool denials are visible here: the capture shows a session being refused `Bash`
 commands outside the allowlist and carrying on with the tools it had. One denial
@@ -828,7 +848,9 @@ In the capture, the run on LEE-1150 had the label `kor:skill/human-written-code`
 pinned over the 1,000-token budget, the playbook was switched to `fix-bug` and
 `Bash` was removed. After **Request changes**, the next session started without
 `Bash`, with `Skill` and `kor-skills:principle-build-the-lever` in its tool
-list, and with the `fix-bug` playbook recorded as `source: override`:
+list, and with the `fix-bug` playbook recorded as `source: override`.
+**Sessions received**, below the editor and in the run's **Plan** tab, shows what
+each attempt actually got:
 
 ```text
 override ovr_e5a19b62 applied: skills -> skill:-human-written-code (... Selected guidance goes from 400 to 0 tokens per turn.)
@@ -890,17 +912,33 @@ The **Models** screen (screenshot [above](#choose-a-model)) has four parts:
 
 ### See what Jev learned
 
-![Jev Brain](images/mc-brain.webp)
+![Jev Brain](images/mc-brain.png)
 
 **Jev Brain** reads the persisted decision audit and the same calibration report as
 `kor calibrate report`: decisions made, first-pass verification rate, cost per
 verified run, Jev against the baseline route, and your overrides, over 7, 30 or 90
-days. With few finished runs it says so instead of drawing a trend; the capture
-has three runs, so calibration shows `No finished runs with confidence yet` and
-the baseline comparison shows `Fewer than 20 completed pairs`. **Learnings** is
-unavailable until a learned-memory store exists. The running experiment pairs a
-sampled share of runs (25% by default) with the baseline route, in a second
-worktree, so routing claims are measured.
+days. With few finished runs it says so instead of drawing a trend: calibration
+shows `No finished runs with confidence yet` and the baseline comparison shows
+`Fewer than 20 completed pairs`. The running experiment pairs a sampled share of
+runs (25% by default) with the baseline route, in a second worktree, so routing
+claims are measured.
+
+**Learnings** is the [skill outcome learning](skills.md#outcome-learning) Kor
+records for every run: what it changed in Jev's skill picks and why, then each
+skill version's completed runs against the 20 Jev needs, and how often it was
+loaded when offered. A change is one of:
+
+- **hidden**: offered in the recent finished sessions and never loaded, so Jev
+  stops offering it unless a repository pins it;
+- **stricter**: Jev's confidence ran ahead of merge outcomes, so the skill needs a
+  higher probability to be pinned, listed or armed.
+
+The capture is of the recorded proof store from `scripts/skills-outcome-proof.mjs`,
+where `human-written-code` was offered 20 times and never loaded. A skill below 20
+runs is `measuring` and changes nothing; a version no longer in the catalogue is
+`old version`. Home's **Jev learned** card shows the first change, or how close
+the nearest skill is. A new install shows `Nothing learned yet` with the rule
+above, not an error.
 
 ### When Linear is behind (synchronization pending)
 

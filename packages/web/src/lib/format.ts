@@ -1,4 +1,6 @@
-export const usd = (value: number | null | undefined, digits = 2) => value === null || value === undefined || !Number.isFinite(value) ? '—' : `$${value.toFixed(digits)}`;
+/** Sub-cent amounts keep two significant digits, so a $0.0021 session never reads as $0.00. */
+export const usd = (value: number | null | undefined, digits = 2) => value === null || value === undefined || !Number.isFinite(value) ? '—'
+  : value !== 0 && Math.abs(value) < 10 ** -digits ? `$${value.toPrecision(2)}` : `$${value.toFixed(digits)}`;
 export const pct = (value: number | null | undefined, digits = 0) => value === null || value === undefined || !Number.isFinite(value) ? '—' : `${(value * 100).toFixed(digits)}%`;
 export const prob = (value: number | null | undefined) => value === null || value === undefined || !Number.isFinite(value) ? '—' : value.toFixed(2);
 export const count = (value: number) => new Intl.NumberFormat('en-GB').format(value);

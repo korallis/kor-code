@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadEventSchema } from "@kor-code/calibration";
 import type { SessionTurn, SessionLoadEvent, SessionGatewayTelemetry } from "@kor-code/calibration";
-import type { Execution, Route, GatewayStrategyObservation } from "@kor-code/core";
+import type { Execution, Route, GatewayStrategyObservation, SessionSkillPackRecord } from "@kor-code/core";
 import { sessionGateway } from "./session-gateway.js";
 import { EventCollector, type SessionEvent } from "./events.js";
 import { redact, type SessionOverrides } from "@kor-code/jev";
@@ -33,6 +33,7 @@ export interface SessionTelemetry {
 }
 export interface SessionResult {
   skillDecisionId?: string;
+  skillPack?: SessionSkillPackRecord;
   tools?: readonly string[];
   exitCode: number;
   signal?: NodeJS.Signals;
@@ -44,7 +45,7 @@ export interface SessionResult {
   failureReasons?: readonly string[];
 }
 export interface SessionLauncherLike { launch(input: SessionLaunch): Promise<SessionResult> }
-export interface SessionSkillPack { decisionId?: string; pluginDir?: string; listedSkills: readonly string[]; pinnedGuidance: string }
+export interface SessionSkillPack { decisionId?: string; record?: SessionSkillPackRecord; pluginDir?: string; listedSkills: readonly string[]; pinnedGuidance: string }
 export interface SessionLauncherOptions {
   repoRoot?: string; command?: string; args?: string[]; env?: NodeJS.ProcessEnv; gatewayKey?: string; sandboxScript?: string; allowedTools?: readonly string[]; tools?: readonly string[];
   /** Where the daemon publishes status, so the cockpit inside the session reads it rather than the session's own sandbox home. */
@@ -283,7 +284,7 @@ export class SessionLauncher implements SessionLauncherLike {
         const telemetry = parseResultEvent(collector.events) ?? (gatewayTelemetry.responses.length ? { result: "", isError: false, permissionDenials: 0 } : undefined);
         if (telemetry) telemetry.gateway = gatewayTelemetry;
         const reasons = failureReasons(actualExitCode, telemetry, collector.events.some(event => event.kind === "json" && record(event.value)?.type === "result"));
-        resolvePromise({ tools: availableTools, ...(skills?.decisionId ? { skillDecisionId: skills.decisionId } : {}), exitCode: actualExitCode, ...(signal ? { signal } : {}), events: collector.events, stdout, stderr, ...(telemetry ? { telemetry } : {}), failed: reasons.length > 0, ...(reasons.length > 0 ? { failureReasons: reasons } : {}) });
+        resolvePromise({ tools: availableTools, ...(skills?.decisionId ? { skillDecisionId: skills.decisionId } : {}), ...(skills?.record ? { skillPack: skills.record } : {}), exitCode: actualExitCode, ...(signal ? { signal } : {}), events: collector.events, stdout, stderr, ...(telemetry ? { telemetry } : {}), failed: reasons.length > 0, ...(reasons.length > 0 ? { failureReasons: reasons } : {}) });
       });
     }).finally(() => relay.close());
     if (skills?.pluginDir && result.telemetry) {

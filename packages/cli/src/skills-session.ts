@@ -2,9 +2,10 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import type { KorConfig, KorPaths } from "@kor-code/config";
+import type { SessionSkillPackRecord } from "@kor-code/core";
 import type { SessionLaunch, SessionSkillPack } from "@kor-code/controller";
-import { buildSkillsReport, type CalibrationStore } from "@kor-code/calibration";
-import { MIN_SKILL_SAMPLES, applySkillOverrides, playbookProblem, type SkillLearning, type JevDecisionCore } from "@kor-code/jev";
+import { appliedSkillLearning, buildSkillsReport, type CalibrationStore } from "@kor-code/calibration";
+import { OVERRIDE_REASON, applySkillOverrides, playbookProblem, type JevDecisionCore } from "@kor-code/jev";
 import { buildSkillsCatalogue } from "./skills-catalogue.js";
 import { buildSkillsPack, type SkillDeliveryPlan } from "./skills-pack.js";
 
@@ -49,15 +50,7 @@ export async function prepareSessionSkills(options: {
     ...(config.skills ? { bodyBudget: config.skills.bodyBudget } : {}) };
   const playbookOverride = input.playbookOverride === undefined || input.playbookOverride === "none" ? input.playbookOverride
     : catalogue.skills.find(skill => skill.name === input.playbookOverride && !playbookProblem(skill, policy))?.name;
-  const learning: Record<string, SkillLearning> = {};
-  if (options.calibration) {
-    const report = buildSkillsReport(options.calibration, { excludeExecutionId: input.execution.id });
-    for (const stats of report.skills) {
-      if (stats.samples < MIN_SKILL_SAMPLES || !catalogue.skills.some(skill => skill.name === stats.name && skill.hash === stats.hash)) continue;
-      learning[stats.name] = { samples: stats.samples, offered: stats.offered, loaded: stats.loaded, used: stats.used,
-        passRate: stats.passRate, lift: stats.pairs >= MIN_SKILL_SAMPLES ? stats.lift : null, demoted: stats.demoted, thresholds: stats.thresholds };
-    }
-  }
+  const learning = options.calibration ? appliedSkillLearning(buildSkillsReport(options.calibration, { excludeExecutionId: input.execution.id }), catalogue.skills) : {};
   const [decision, playbook] = await Promise.all([jev.selectSkills({ executionId: input.execution.id, task: input.prompt,
     stage, catalogue, allowedTools: input.allowedTools, stackTags, learning, ...repository?.skills,
     ...(config.skills ? { listingBudget: config.skills.listingBudget, bodyBudget: config.skills.bodyBudget } : {}),
@@ -69,9 +62,14 @@ export async function prepareSessionSkills(options: {
     ...(playbookOverride !== undefined ? { override: playbookOverride } : {}),
   })]);
   const selected = playbook.playbookPlan.selected;
-  const skills = applySkillOverrides(decision.plan, catalogue.skills, input.skillOverrides ?? { skills: new Map(), confirmed: new Set() }, policy).skills;
-  const plan: SkillDeliveryPlan = { catalogueHash: catalogue.hash, skills: skills.map(skill => ({ name: skill.name,
+  const effective = applySkillOverrides(decision.plan, catalogue.skills, input.skillOverrides ?? { skills: new Map(), confirmed: new Set() }, policy);
+  const plan: SkillDeliveryPlan = { catalogueHash: catalogue.hash, skills: effective.skills.map(skill => ({ name: skill.name,
     tier: skill.name === selected ? "pinned" : skill.tier })) };
   const pack = await buildSkillsPack({ sessionsDir: paths.sessionsDir, executionId: input.execution.id, catalogue, plan, allowedTools: input.allowedTools });
-  return { ...pack, decisionId: decision.decisionId };
+  const repositoryGuidance = [...repository?.skills?.always ?? [], ...repository?.skills?.pins ?? []];
+  const record: SessionSkillPackRecord = { catalogueHash: catalogue.hash, tokens: effective.tokens,
+    skills: effective.skills.flatMap(skill => skill.tier === "hidden" || skill.name === selected ? [] : [{ name: skill.name, tier: skill.tier, tokens: skill.tokens,
+      source: skill.reason === OVERRIDE_REASON ? "override" as const : repositoryGuidance.includes(skill.name) ? "repository" as const : "jev" as const }]),
+    playbook: selected ? { name: selected, tokens: catalogue.skills.find(skill => skill.name === selected)?.cost.bodyTokens ?? 0 } : null };
+  return { ...pack, decisionId: decision.decisionId, record };
 }

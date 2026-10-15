@@ -36,6 +36,7 @@ import { ago, duration, isToday, useNow } from '../lib/time';
 import { page } from './shared';
 import { nextStep } from './runText';
 import { QueueDialog } from './QueueDialog';
+import { DeliveredPacks } from './SessionPackEditor';
 
 const NARROW = '@media (max-width: 1499px)';
 
@@ -156,6 +157,7 @@ function RunTerminal({ run, decisions, now }: { run: MissionRun; decisions: Deci
   const live = isActive(run);
   const shippedAt = useLive(live => live.shippedAt[run.executionId] ?? 0);
   const finished = FINISHED.has(run.status);
+  const cost = run.costUsd ?? usage?.costUsd ?? null;
   const cacheRate = usage && usage.inputTokens + usage.cacheReadTokens + usage.cacheCreationTokens > 0 ? usage.cacheReadTokens / (usage.inputTokens + usage.cacheReadTokens + usage.cacheCreationTokens) : null;
   const sendNote = () => { if (note.trim()) message.mutate({ action: 'note', executionId: run.executionId, body: { message: note.trim() } }, { onSuccess: () => setNote('') }); };
   const copyWorktree = () => { if (run.worktree) void navigator.clipboard?.writeText(run.worktree).then(() => setCopied(true)); };
@@ -195,8 +197,8 @@ function RunTerminal({ run, decisions, now }: { run: MissionRun; decisions: Deci
           <div {...stylex.props(styles.tabs)}><PillTabs value={tab} items={tabs} onChange={setTab} label="Run views" /></div>
           <div {...stylex.props(styles.paneBody)}>
             {tab === 'live' && <Terminal lines={lines} live={live} empty={terminal.loading ? 'Reading the run output…' : terminal.error ? `Output unavailable: ${terminal.error.message}` : 'No output yet. It streams here the moment the session starts.'} label={`${keyOf(run)} output`} />}
-            {tab === 'log' && <Terminal lines={lines.filter(line => line.who === 'kor' || line.who === 'jev')} live={false} empty="No daemon log lines yet." label={`${keyOf(run)} log`} />}
-            {tab === 'plan' && <div {...stylex.props(styles.scroll)}>{runDecisions.filter(decision => decision.kind !== 'acceptance').map(decision => <DecisionRow key={decision.decisionId} decision={decision} />)}{runDecisions.length === 0 && <Empty title="Jev has not planned this run yet." />}</div>}
+            {tab === 'log' && <Terminal lines={lines.filter(line => line.who === 'kor' || line.who === 'jev' || line.who === 'baseline')} live={false} empty="No daemon log lines yet." label={`${keyOf(run)} log`} />}
+            {tab === 'plan' && <div {...stylex.props(styles.scroll)}><DeliveredPacks run={run} />{runDecisions.filter(decision => decision.kind !== 'acceptance').map(decision => <DecisionRow key={decision.decisionId} decision={decision} />)}{runDecisions.length === 0 && <Empty title="Jev has not planned this run yet." />}</div>}
             {tab === 'decisions' && <div {...stylex.props(styles.scroll)}>{runDecisions.map(decision => <DecisionRow key={decision.decisionId} decision={decision} />)}{runDecisions.length === 0 && <Empty title="No decisions recorded for this run." />}<div><Button size="sm" variant="violet" onClick={() => navigate('linear', run.executionId)}>Open the decision panel</Button></div></div>}
             {tab === 'changes' && <div {...stylex.props(styles.scroll)}>{diffs.map(file => <DiffView key={file.path} file={file} />)}{diffs.length === 0 && <Empty title="No changes recorded yet." >The diff appears once the run reaches Verify.</Empty>}</div>}
             {tab === 'checks' && (
@@ -242,7 +244,7 @@ function RunTerminal({ run, decisions, now }: { run: MissionRun; decisions: Deci
             <div {...stylex.props(styles.tile)}><b {...stylex.props(styles.tileValue)}>{usage ? compact(usage.inputTokens + usage.cacheReadTokens + usage.cacheCreationTokens) : '—'}</b><span {...stylex.props(styles.tileLabel)}>input tokens</span></div>
             <div {...stylex.props(styles.tile)}><b {...stylex.props(styles.tileValue)}>{usage ? compact(usage.outputTokens) : '—'}</b><span {...stylex.props(styles.tileLabel)}>output tokens</span></div>
             <div {...stylex.props(styles.tile)}><b {...stylex.props(styles.tileValue)}>{cacheRate === null ? '—' : `${Math.round(cacheRate * 100)}%`}</b><span {...stylex.props(styles.tileLabel)}>cache read</span></div>
-            <div {...stylex.props(styles.tile)}><b {...stylex.props(styles.tileValue)}>{usd(run.costUsd ?? usage?.costUsd)}</b><span {...stylex.props(styles.tileLabel)}>costUsd so far</span></div>
+            <div {...stylex.props(styles.tile)}><b {...stylex.props(styles.tileValue)}>{usd(cost)}</b><span {...stylex.props(styles.tileLabel)}>{cost === null && live ? 'costUsd at session end' : 'costUsd so far'}</span></div>
           </div>
           {!usage && <ProvenanceChip provenance="unavailable" reason="Token usage comes from the session's own output once it starts">tokens after the session starts</ProvenanceChip>}
           <span {...stylex.props(layout.grow)} />

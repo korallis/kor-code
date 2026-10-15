@@ -61,7 +61,7 @@ remain forbidden. The browser always uses the authenticated `/api` routes.
 | `/api/github/pulls?repo=<repository-key>` | Up to 100 pull requests from the actual GitHub repository |
 | `/api/models` | Gateway catalogue joined to Kor's compatibility registry |
 | `/api/pool`, `/api/quota` | Gateway account health and measured quota, with provenance |
-| `/api/brain` | Persisted Jev decisions and the same calibration report as `kor calibrate report` |
+| `/api/brain` | Persisted Jev decisions, the same calibration report as `kor calibrate report`, and `learnings`: the skill outcome-learning changes and per-skill statistics from `kor skills report` |
 | `/api/config`, `/api/connections` | Validated settings and provider connection status; never credentials |
 
 The daemon exposes candidate probability distributions from the decision audit.
@@ -163,7 +163,14 @@ verification, including when calibration sampling is disabled. Retry history is
 retained and calibration records are included without double-counting matching
 attempt IDs. Filter `recordedAt` by the viewer's day to compute spend today;
 unknown cost is null and must not be treated as zero. Runs whose previous
-measurements were never recorded label their spend history unavailable.
+measurements were never recorded label their spend history unavailable. A
+measurement's optional `skillPack` is the guidance that session received after
+overrides and policy: delivered skills with tier, tokens and source, the playbook,
+and per-turn token totals. It is absent for sessions without skills and for older
+measurements.
+
+Terminal events and the terminal tail share one byte offset per run, including
+daemon log lines; a client appends only events past the tail's `offset`.
 
 Every SSE envelope already carries `observedAt`, the event publication time.
 For historical decision/override activity, use each record's `recordedAt`;

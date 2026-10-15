@@ -3,7 +3,7 @@
 // edit costs per turn, or why policy refuses it; the daemon judges and audits it.
 import * as stylex from '@stylexjs/stylex';
 import { useState } from 'react';
-import type { SessionOption, SessionPackResponse } from '@kor-code/mission-control';
+import type { MissionRun, SessionOption, SessionPackResponse } from '@kor-code/mission-control';
 import { useOverride, useSessionPack } from '../api/queries';
 import { color, font, fontSize, space, tint, tracking } from '../theme/tokens.stylex';
 import { Button } from '../ui/button';
@@ -13,9 +13,11 @@ import { Pill } from '../ui/pill';
 import { layout } from '../ui/layout';
 import { text, type Tone } from '../ui/text';
 import { compact, count, prob } from '../lib/format';
+import { spendOf } from '../lib/runs';
 
 const SHOWN_SKILLS = 8;
 const TIER_TONE: Record<SessionPackResponse['skills'][number]['tier'], Tone | 'ghost'> = { pinned: 'violet', listed: 'cyan', armed: 'amber', hidden: 'ghost' };
+const SOURCE_LABEL = { jev: 'Jev', override: 'your override', repository: 'repository' } as const;
 
 const styles = stylex.create({
   group: { display: 'flex', flexDirection: 'column', gap: space.s2, paddingBlock: space.s3, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine },
@@ -83,5 +85,38 @@ export function SessionPackEditor({ executionId }: { executionId: string }) {
       </div>
       {override.data?.tokens && override.data.record.status === 'applied' && <Notice tone="ok" title={`Next session: ${count(override.data.tokens.before)} → ${count(override.data.tokens.after)} guidance tokens per turn`} />}
     </>
+  );
+}
+
+/** What each session of a run actually received, recorded when it launched: the check that an override reached it. */
+export function DeliveredPacks({ run }: { run: MissionRun }) {
+  const sessions = spendOf(run);
+  return (
+    <div {...stylex.props(styles.group)}>
+      <span {...stylex.props(styles.kind)}>sessions received</span>
+      {sessions.map(session => (
+        <div key={session.attemptId ?? session.attempt} {...stylex.props(layout.stackTight)}>
+          <div {...stylex.props(layout.row)}>
+            <span {...stylex.props(text.mono, text.sm, text.strong)}>Attempt {session.attempt}</span>
+            <span {...stylex.props(text.mono, text.xs, text.muted)}>{session.model}</span>
+            {session.skillPack && <span {...stylex.props(text.mono, text.xs, text.secondary)}>{count(session.skillPack.tokens.total)} guidance tokens per turn</span>}
+          </div>
+          {session.skillPack ? (
+            <div {...stylex.props(layout.rowWrap)}>
+              {session.skillPack.skills.map(skill => (
+                <span key={skill.name} {...stylex.props(layout.row)} title={`${skill.tier} by ${SOURCE_LABEL[skill.source]}`}>
+                  <span {...stylex.props(text.mono, text.sm)}>{skill.name}</span>
+                  <Pill tone={TIER_TONE[skill.tier]} small>{skill.tier}</Pill>
+                  <span {...stylex.props(text.xs, skill.source === 'override' ? text.magenta : text.muted)}>{SOURCE_LABEL[skill.source]} · {compact(skill.tokens)}</span>
+                </span>
+              ))}
+              {session.skillPack.playbook && <span {...stylex.props(text.sm)}>playbook <b {...stylex.props(text.mono)}>{session.skillPack.playbook.name}</b> · {compact(session.skillPack.playbook.tokens)}</span>}
+              {session.skillPack.skills.length === 0 && !session.skillPack.playbook && <span {...stylex.props(styles.reasons)}>No skills or playbook.</span>}
+            </div>
+          ) : <span {...stylex.props(styles.reasons)}>Not recorded: the session ran without skills or before Kor recorded each session's pack.</span>}
+        </div>
+      ))}
+      {sessions.length === 0 && <span {...stylex.props(styles.reasons)}>No session has finished yet. Each one's skills, playbook and token cost appear here once it ends.</span>}
+    </div>
   );
 }

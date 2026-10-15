@@ -35,3 +35,10 @@ export const gatewayTelemetrySchema = z.object({
   })),
 });
 export type SessionGatewayTelemetry = z.infer<typeof gatewayTelemetrySchema>;
+
+export const skillPackSchema = z.object({
+  catalogueHash: z.string(),
+  skills: z.array(z.object({ name: z.string(), tier: z.enum(["pinned", "listed", "armed"]), tokens, source: z.enum(["jev", "override", "repository"]) })),
+  playbook: z.object({ name: z.string(), tokens }).nullable(),
+  tokens: z.object({ pinned: tokens, listed: tokens, tool: tokens, total: tokens }),
+});

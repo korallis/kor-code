@@ -1,6 +1,6 @@
 // A run's terminal: the transcript fetched once, then every streamed chunk
-// past its offset. Session output offsets are byte ends; daemon log lines
-// (offset 0) are spliced in only at line boundaries so they never break a
+// past its offset. Offsets are byte ends in the transcript file; daemon log
+// lines are spliced in only at line boundaries so they never break a
 // stream-json line that arrived in pieces.
 import { useLive } from './live';
 import { useTerminal } from './queries';
@@ -14,11 +14,11 @@ export function useRunTerminal(executionId: string | undefined): { text: string;
   const offset = initial.data?.offset ?? 0;
   let pending = '';
   for (const chunk of chunks) {
+    if (chunk.offset <= offset) continue;
     if (chunk.channel === 'daemon') {
       if (text === '' || text.endsWith('\n')) text += chunk.text; else pending += chunk.text;
       continue;
     }
-    if (chunk.offset <= offset) continue;
     text += chunk.text;
     if (pending && text.endsWith('\n')) { text += pending; pending = ''; }
   }

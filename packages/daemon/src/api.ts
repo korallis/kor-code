@@ -86,7 +86,7 @@ export class MissionApi {
           send(200, await services.pulls(repository)); return;
         }
         if (path === "/api/models") { send(200, await services.models()); return; }
-        if (path === "/api/brain") { send(200, services.brain(this.daemon.status())); return; }
+        if (path === "/api/brain") { send(200, await services.brain(this.daemon.status(), () => this.daemon.skillCatalogue())); return; }
         if (path === "/api/connections") { send(200, await services.connections()); return; }
         if (path === "/api/config") { send(200, { schemaVersion: 1, config: this.daemon.config, restartRequired: false } satisfies ConfigResponse); return; }
         if (path === "/api/quota" || path === "/api/pool") {
