@@ -224,14 +224,30 @@ must respect `jevVisible` when constructing selection requests.
 Identical bundles merge into one row with every origin retained. The SHA-256
 content hash covers every bundled file, using sorted relative filenames and
 byte hashes, so changing a reference, script or asset changes the skill hash.
-Repeated paths to the same physical file are counted once. Different content
-with the same name is an error, including within one tier. The sole exception
-is a private skill declaring `metadata.kor.overrides: public`: it replaces a
-public skill of that name, with a warning. The public tier uses the full lint
-rules above. External sources accept existing non-Kor metadata and missing
-licenses for inventory purposes, while validating names, descriptions and Kor
-metadata. Inventory success is not permission to execute a bundle; delivery
-must still enforce authoring, routing and repository policy.
+Repeated paths to the same physical file are counted once. When one private
+skill and one bundled public skill have different content under the same name,
+the bundled skill stays active and the private skill is excluded from selection.
+Import and catalogue commands warn with the override instruction; this clash
+does not prevent the daemon from starting. To replace the bundled skill, declare
+`metadata.kor.overrides: public` in the private skill's frontmatter:
+
+```yaml
+metadata:
+  kor:
+    overrides: public
+```
+
+The flat spelling `metadata: { kor.overrides: public }` also works. Nested Kor
+metadata is normalized to the flat catalogue keys; conflicting flat and nested
+values are errors. An explicit override activates only the private version and
+reports a warning. Other same-name collisions, including different bundles
+within one tier, remain errors.
+
+The public tier uses the full lint rules above. External sources accept existing
+non-Kor metadata and missing licenses for inventory purposes, while validating
+names, descriptions and Kor metadata. Private imports also use the private lint
+rules during delivery; inventory success does not bypass routing, bundle
+integrity or repository permission checks.
 
 Costs cover `name: description` (zero for manual-only skills), the body, and the
 sum of text files under `references/`. `referencesMaxTokens` represents loading
@@ -357,11 +373,12 @@ and skill listing. Armed-only packs do not enable the `Skill` tool.
 
 Before writing a pack, delivery verifies the catalogue hash, rejects duplicate
 or unknown plan entries, rereads every selected bundle and checks its content
-hash. It reruns strict authoring and routing lint on the selected bundles,
-including private bundles (`local-only` visibility is accepted). Inventory-only
-imports without the required license or with unsupported fields must be adapted
-before execution. Required tools must already be available under repository
-permissions. Frontmatter `allowed-tools` grants must exactly match existing
+hash. It reruns lint on the selected bundles using their source tier: bundled
+public skills retain strict authoring rules, while private skills accept missing
+licenses and unrelated frontmatter, with the same authoring warnings as import.
+Routing instructions and invalid reference paths still fail private delivery.
+Required tools must already be available under repository permissions.
+Frontmatter `allowed-tools` grants must exactly match existing
 permission entries; skill invocation cannot broaden auto-approval. Manual-only
 skills cannot be listed. Private pack paths and
 `armed.json` stay in Kor's session directory, with private directory permissions.
@@ -519,11 +536,12 @@ tiers are visible together. Private sources also run the private import lint rul
 
 `kor skills guard [DIRECTORY] [--json]` checks the bundled public `skills/` by
 default, or an explicit public directory. It fails on a literal case-insensitive
-match of any private skill directory name or `deny.txt` entry in a public path or
-file, an absolute home path, a symlink, overlapping tiers, an unignored private
+match of any private-only skill directory name or `deny.txt` entry in a public
+path or file, an absolute home path, a symlink, overlapping tiers, an unignored private
 pack in a worktree, or tracked private files. Private matches are redacted from
-its diagnostics. Because names are guarded too, a private override sharing a
-public name is reported even though the catalogue permits that override.
+its diagnostics. Names already supplied by the public tier are excluded from
+the private-name scan, so a private override does not fail merely for sharing
+that name. Explicit `deny.txt` entries still apply, including to bundled names.
 
 CI runs guard with its isolated private configuration. CI cannot know an owner's
 local deny list: run it locally before publication as well. This literal scan
@@ -1012,8 +1030,8 @@ provider, harness or effort; the route stays Jev's per-task decision.
 Full-visible catalogue counting runs at most eight requests concurrently; explicit
 and private sources keep local estimates. The winning public copy retains public
 visibility when an identical private copy exists. Import refuses byte-identical copies already
-bundled publicly, and guard ignores byte-identical public copies. Hidden folders,
-`node_modules` and private folders without `SKILL.md` are excluded from lint.
+bundled publicly, and guard excludes names already present in the public tier.
+Hidden folders, `node_modules` and private folders without `SKILL.md` are excluded from lint.
 BOM-marked UTF-16 guidance is scanned; binary text/executable guidance with NUL
 bytes fails lint rather than bypassing routing checks.
 

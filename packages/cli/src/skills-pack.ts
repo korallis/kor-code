@@ -52,7 +52,7 @@ export async function buildSkillsPack(input: {
     const grants = bundle.header["allowed-tools"] ?? "";
     if (grants.replace(TOOL_PERMISSION, "").replace(/[,\s]/g, "") || (grants.match(TOOL_PERMISSION) ?? []).some(tool => !input.allowedTools.includes(tool))) throw new Error(`Skill cannot expand repository permissions: ${skill.name}`);
     const directory = dirname(path);
-    const lint = await lintSkills(dirname(directory), { names: [basename(directory)], visibility: "local-only" });
+    const lint = await lintSkills(dirname(directory), { private: origin.tier === "private", names: [basename(directory)], visibility: "local-only" });
     if (!lint.ok) throw new Error(`Skill cannot be delivered: ${skill.name} (${[...new Set(lint.diagnostics.filter(item => item.severity === "error").map(item => item.rule))].sort().join(", ")})`);
     if (tier === "listed" && bundle.header["disable-model-invocation"]) throw new Error(`Manual-only skill cannot be listed: ${skill.name}`);
     if (tier === "armed" && Math.max(skill.cost.bodyTokens, Math.ceil(bundle.body.trim().length / 3.7)) > MAX_ARMED_BODY_TOKENS) throw new Error(`Armed skill exceeds ${MAX_ARMED_BODY_TOKENS} body tokens: ${skill.name}`);

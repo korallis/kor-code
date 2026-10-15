@@ -235,8 +235,20 @@ kor skills doctor                                       # the merged catalogue a
 ```
 
 Private skills are `local-only` by default: Jev sees only their names, never
-their content. `kor skills guard` checks that no private name leaks into the
-public tier. More in [Skills](docs/skills.md).
+their content. Imported skills can reach sessions without adding a license or
+removing unrelated frontmatter. If a private skill shares a bundled name, Kor
+keeps the bundled skill active and warns. To use your version, add this to the
+private skill's frontmatter:
+
+```yaml
+metadata:
+  kor:
+    overrides: public
+```
+
+`kor skills guard` checks private-only names and `deny.txt` entries against the
+public tier; existing bundled names are already public. More in
+[Skills](docs/skills.md).
 
 ### Override Jev
 

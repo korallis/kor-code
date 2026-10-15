@@ -238,10 +238,14 @@ export async function buildSkillsCatalogue(options: { config: KorConfig; paths: 
   const shadowed = new Set<CatalogueSkill>();
   for (const [name, matches] of names) {
     if (matches.length < 2) continue;
-    const override = matches.find(skill => skill.tier === "private" && candidates.find(candidate => candidate.hash === skill.hash && candidate.origin.tier === "private")?.header.metadata?.["kor.overrides"] === "public");
-    if (matches.length === 2 && override && matches.some(skill => skill.tier === "public")) {
-      for (const skill of matches) if (skill !== override) shadowed.add(skill);
-      diagnostics.push({ severity: "warning", rule: "override", path: override.origins[0]?.path ?? "", message: `${name}: private skill explicitly overrides public skill` });
+    const privateSkill = matches.find(skill => skill.tier === "private");
+    const publicSkill = matches.find(skill => skill.tier === "public");
+    if (matches.length === 2 && privateSkill && publicSkill) {
+      const override = candidates.find(candidate => candidate.hash === privateSkill.hash && candidate.origin.tier === "private")?.header.metadata?.["kor.overrides"] === "public";
+      shadowed.add(override ? publicSkill : privateSkill);
+      diagnostics.push(override
+        ? { severity: "warning", rule: "override", path: privateSkill.origins[0]?.path ?? "", message: `${name}: private skill explicitly overrides public skill` }
+        : { severity: "warning", rule: "name-collision", path: privateSkill.origins[0]?.path ?? "", message: `${name}: bundled public skill remains active; set metadata.kor.overrides: public in the private skill to replace it` });
     } else diagnostics.push({ severity: "error", rule: "name-collision", path: matches[0]?.origins[0]?.path ?? "", message: `${name}: different content uses the same name (${matches.map(skill => skill.hash).join(", ")})` });
   }
   const active = skills.filter(skill => !shadowed.has(skill)).sort((a, b) => compare(a.name, b.name) || compare(a.hash, b.hash));
