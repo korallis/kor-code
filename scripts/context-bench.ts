@@ -23,7 +23,8 @@ function option(name: string): string | undefined {
 }
 const routeFile = option("--routes");
 const revision = option("--revision");
-if (!routeFile || !revision) throw new Error("Usage: pnpm context:bench --revision COMMIT --routes FILE [--output DIR] [--case ID] [--repeats N]");
+if (!routeFile || !revision) throw new Error("Usage: pnpm context:bench --revision COMMIT --routes FILE [--output DIR] [--case ID] [--repeats N] [--launch-profile lean|standard]");
+const launchProfile = z.enum(["lean", "standard"]).parse(option("--launch-profile") ?? "lean");
 const repeats = Number(option("--repeats") ?? 3);
 if (!Number.isInteger(repeats) || repeats < 1) throw new Error("--repeats must be a positive integer");
 const cases = [
@@ -99,7 +100,7 @@ try {
     const startedAt = new Date().toISOString();
     store.beginRun({ executionId: id, pairId: id, issueId: issue.id, arm: "baseline", baseRevision, route, sampled: false, startedAt, status: "running" });
     try {
-      const launcher = new SessionLauncher({ repoRoot: sourceRoot, sandboxRoot: join(directory, "sandbox"), gatewayKey: key, env: { KOR_GATEWAY_URL: `http://127.0.0.1:${address.port}` } });
+      const launcher = new SessionLauncher({ repoRoot: sourceRoot, launchProfile, sandboxRoot: join(directory, "sandbox"), gatewayKey: key, env: { KOR_GATEWAY_URL: `http://127.0.0.1:${address.port}` } });
       const session = await launcher.launch({ execution: { id, issueId: issue.id, repository: "bench", worktree: repository, branch: "", status: "running" }, repositoryPath: repository, worktreePath: repository, route,
         allowedTools: ["Read", "Glob", "Grep", "Write", "Edit", "Bash(git status*)", "Bash(git diff*)"],
         prompt: `Issue ${issue.id}: ${issue.title}\n\n${issue.task}\n\nDo not add tests, commit, publish, or access anything outside this scratch repository. Kor runs acceptance checks after the session.`, signal: AbortSignal.timeout(300_000) });
@@ -124,13 +125,16 @@ try {
           counts.push({ request: index + 1, error: "Count unavailable" });
         }
       }
-      const summary = { id, profile: "legacy", baseRevision, route, startContextTokens: metric.startContextTokens, contextTokenSum: metric.contextTokenSum, turns: metric.turns, loadEvents: metric.loadEvents, costUsd: metric.costUsd, verified, checks, countTokens: counts };
+      const cacheRead = metric.turns?.reduce((sum, turn) => sum + turn.cacheReadTokens, 0) ?? 0;
+      const cacheCreation = metric.turns?.reduce((sum, turn) => sum + turn.cacheCreationTokens, 0) ?? 0;
+      const cacheReadShare = cacheRead + cacheCreation > 0 ? cacheRead / (cacheRead + cacheCreation) : null;
+      const summary = { id, profile: launchProfile, cacheReadShare, baseRevision, route, startContextTokens: metric.startContextTokens, contextTokenSum: metric.contextTokenSum, turns: metric.turns, loadEvents: metric.loadEvents, costUsd: metric.costUsd, verified, checks, countTokens: counts };
       await writeFile(join(directory, "summary.json"), JSON.stringify(summary, null, 2), { mode: 0o600 });
       process.stdout.write(`${JSON.stringify(summary)}\n`);
       if (!verified) failures++;
     } catch (error) {
       store.finishRun(id, "interrupted");
-      const summary = { id, profile: "legacy", baseRevision, route, error: error instanceof Error ? error.name : "UnknownError", verified: false };
+      const summary = { id, profile: launchProfile, baseRevision, route, error: error instanceof Error ? error.name : "UnknownError", verified: false };
       await writeFile(join(directory, "summary.json"), JSON.stringify(summary, null, 2), { mode: 0o600 });
       process.stdout.write(`${JSON.stringify(summary)}\n`);
       failures++;

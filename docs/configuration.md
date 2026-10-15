@@ -56,6 +56,28 @@ The CLI freshness threshold is the configured poll interval multiplied by two un
 
 `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, and `XDG_DATA_HOME` override those roots. `KOR_GATEWAY_KEY`, `KOR_GATEWAY_URL`, and the other supported environment variables override values in `gateway.env` for one process. Kor never edits CLIProxyAPI configuration. Install prints only a newly generated key for manual provisioning; it never prints existing credential values.
 
+## Session launch profile
+
+Set the top-level `launchProfile` in `config.yaml` to `lean` (the default) or
+`standard`, then restart `kor serve` to use it for subsequent sessions.
+
+```yaml
+launchProfile: lean
+```
+
+Both profiles use the repository tool policy, disable automatic memory and
+repository instruction discovery, and load the cockpit plugin. `lean` additionally
+sets `includeGitInstructions: false` and `disableBundledSkills: true` in Claude
+Code’s `--settings` JSON and passes `--exclude-dynamic-system-prompt-sections`.
+This removes built-in commit/PR guidance and bundled skills and stabilizes the
+system prefix across execution homes. `standard` retains the P1-1 settings for
+A/B measurement. These flags apply only to isolated execution sessions.
+
+The profile does not change Jev’s per-task route. Embedders can pass the same
+`launchProfile` option to `SessionLauncher`; an explicit `args` override still
+replaces the generated Claude arguments. See [Measure session context](context-bench.md)
+for repeatable comparisons and cache measurements.
+
 ## Install and uninstall
 
 Build with `pnpm install --frozen-lockfile && pnpm build`, then run

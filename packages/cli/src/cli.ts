@@ -223,7 +223,7 @@ async function serve(args: readonly string[]): Promise<number> {
       onStage: (executionId, stage) => daemon.setStage(executionId, stage),
       onSpend: (executionId, spend) => store.recordSpend(executionId, spend),
       worktrees: new GitWorktreeManager(paths.worktreesDir),
-      launcher: new SessionLauncher({ repoRoot: sourceRoot, sandboxRoot: paths.sessionsDir, gateway: () => mission.sessionGateway(), cockpit: { statusUrl, stateDir: paths.stateDir }, onOutput: (executionId, channel, text) => daemon.recordOutput(executionId, channel, text) }),
+      launcher: new SessionLauncher({ repoRoot: sourceRoot, launchProfile: config.launchProfile, sandboxRoot: paths.sessionsDir, gateway: () => mission.sessionGateway(), cockpit: { statusUrl, stateDir: paths.stateDir }, onOutput: (executionId, channel, text) => daemon.recordOutput(executionId, channel, text) }),
       limits: new ConcurrencyLimiter({ total: config.limits.total, perRepository: config.limits.perRepository, ...(config.limits.perProvider ? { perProvider: config.limits.perProvider } : {}) }),
       defaultRoute: config.defaultRoute,
       jev: routing.jev,
