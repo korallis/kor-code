@@ -5,8 +5,9 @@ repository's MIT license unless a skill declares another license. The bundled
 standards cover code style (`human-written-code`) and pull requests (`pr-standard`).
 The `using-linear` skill covers tracker operations and image handling;
 `writing-linear-tickets` covers scope, acceptance, dependencies and screen evidence.
-The standards adapt the owner's code and PR conventions, with repository policy taking
-precedence. Shipping this tier does not yet load it into execution sessions;
+Screen workflows cover complete mockup inventories (`designing-screen-mockups`)
+and verified Linear images (`attaching-screens-to-tickets`). Repository policy
+takes precedence over the bundled guidance. Shipping this tier does not yet load it into execution sessions;
 catalogue selection and delivery are separate work.
 
 The direct shipping path also enforces the PR layout in code, without loading a
@@ -493,3 +494,32 @@ contains `tier`, `name`, `before` (null for add), `after`, `changed`, `diffStat`
 1 means lint, licence, conflict or I/O failure; 2 means invalid arguments. A check
 that finds an available, valid update still exits 0. Failures use the shared CLI
 error shape. These commands never load gateway or Linear credentials.
+
+## Screen mockups and ticket images
+
+Use `skills/designing-screen-mockups/SKILL.md` when starting an app or changing
+its screen requirements. It produces `docs/mockups/INDEX.md`, static HTML with a
+shared stylesheet, and a PNG for every applicable screen/state/viewport row.
+The default widths are 390 and 1280; record explicit exclusions for inapplicable
+states. Run a local static server and capture with the available browser (for
+example, `chrome-devtools-axi`). Inspect the rendered PNGs and report both view
+coverage against requirements and capture coverage against the full matrix.
+
+Then use `skills/attaching-screens-to-tickets/SKILL.md` to map those rows to UI
+tickets, upload images, preserve existing descriptions and read every image back
+from Linear. It uses `kor linear attach-image` when supported by the installed
+CLI, with a documented connected-tool/server-side API fallback otherwise. The
+fallback needs Linear write access; lint and local mockup design do not. Keep
+credentials on the host and out of tickets, sources and captures.
+
+A typical request is: "Use designing-screen-mockups for the requirements in
+docs/requirements.md, then attaching-screens-to-tickets for the agreed UI issues.
+Report every missing capture or ticket image." These are guidance bundles; they
+do not create tickets or render images merely by being installed. Until session
+delivery is available, explicitly supply the selected skill body to the working
+session; load its direct reference only when that step needs it.
+
+Completion means all required views have applicable captures, all applicable
+rows have valid PNGs and owning tickets, and every scoped UI ticket has all its
+expected images verified from Linear. Changed requirements invalidate affected
+captures and linked ticket images. Existing unrelated images remain intact.

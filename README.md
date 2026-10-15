@@ -360,7 +360,8 @@ the same as an object.
 ## Documentation
 
 - [Skills](docs/skills.md): bundled code and PR standards, Linear operations
-  and ticket-writing guidance, authoring schema, lint, catalogue commands, private
+  and ticket-writing guidance, complete screen mockups and verified ticket images,
+  authoring schema, lint, catalogue commands, private
   and configured sources, pinned imports and updates, lockfiles, attribution,
   uninstall, routing guardrails and token costs. Lint runs locally without
   credentials or a daemon, scans every bundled text file for explicit model,
