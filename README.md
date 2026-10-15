@@ -74,7 +74,9 @@ for supported locations and optional placeholders.
 
 Requirements: Linux with Node 24+, Corepack and Git; Claude Code 2.1.299 or newer; a
 browser; a running [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI); a
-Linear personal API key; a TypeSafe API key. (Where each key goes is in
+Linear personal API key; a TypeSafe API key. Shipping also needs a github.com
+repository, Git `user.name` / `user.email`, and GitHub write access through `gh`
+or a token (or an SSH key for an SSH origin). (Where each key goes is in
 [Credentials](docs/user-guide.md#credentials-and-the-gateway).)
 
 Install Kor Code and Mission Control with one command:
@@ -213,11 +215,22 @@ PASS quota-axi: available
 PASS Claude Code: 2.1.300 (Claude Code)
 FAIL no-mistakes daemon: not running
 PASS repo kor-code: <sandbox>/pilot (main)
+PASS repo kor-code shipping target: github.com
+PASS repo kor-code git identity: user.name and user.email configured
+PASS repo kor-code push access: push dry run passed; no remote refs changed
 FAIL doctor: one or more checks failed. Hint: fix the reported checks and rerun `kor doctor`
 ```
 
-The one `FAIL` is the `no-mistakes` daemon, which only the shipping step needs, so
-a run still verifies without it. [The guide](docs/user-guide.md#check-your-setup-with-kor-doctor)
+Doctor also checks each repository’s GitHub shipping target, `user.name` and
+`user.email`, and push access before you queue work. Configure identity with
+`git config user.name "Your Name"` and `git config user.email "you@example.com"`
+in the project checkout (add `--global` if you want it for all repositories).
+The push check uses `git push --dry-run --no-verify`; it changes no remote refs
+and skips local push hooks. It checks current access, not future branch protection
+or CI requirements. Failures include commands to fix the setup.
+
+The one `FAIL` in the example is the `no-mistakes` daemon, which only the
+shipping step needs, so a run still verifies without it. [The guide](docs/user-guide.md#check-your-setup-with-kor-doctor)
 says what each line is for.
 
 **3. Start the daemon and open Mission Control:**
@@ -241,7 +254,12 @@ paste there are write-only: the daemon stores them privately in
 `~/.local/state/kor/connections.json` and never sends one back to the browser. If
 you already keep them in `~/.config/linear/env`, `~/.config/typesafe/env` and
 `~/.config/kor/gateway.env` the connections show as connected with nothing to
-paste. GitHub connects through `gh-axi` (`gh auth login`) or a token.
+paste. Settings uses the same Jev key resolver as the client and doctor, including
+`TYPESAFE_API_KEY`, `TYPESAFE_KEY` and `JEV_API_KEY`. GitHub connects through
+`gh-axi` (`gh auth login --hostname github.com`), `GH_TOKEN` / `GITHUB_TOKEN`,
+or a token saved in Settings. Kor supplies the GitHub credential helper for
+shipping; a separate `gh auth setup-git` is unnecessary. Run `kor doctor` to
+check push access; Settings’ GitHub light checks API connectivity.
 
 ![Settings: Linear, GitHub, Gateway and Jev connections, with the gateway form open](docs/images/mc-settings.webp)
 
