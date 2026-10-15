@@ -11,6 +11,13 @@ import { redact } from "@kor-code/jev";
 import type { LinearIssue } from "@kor-code/linear";
 
 const exec = promisify(execFile);
+const PR_TITLE_LIMIT = 200;
+const PR_BODY_LIMIT = 60_000;
+const PR_FIELD_LIMIT = 4_000;
+const PR_TEMPLATE_LIMIT = 12_000;
+const PR_SECTION_LIMIT = 4_000;
+const PR_EVIDENCE_LIMIT = 24_000;
+const PR_TEMPLATE_PATHS = ['.github/pull_request_template.md', '.github/PULL_REQUEST_TEMPLATE.md', 'pull_request_template.md', 'PULL_REQUEST_TEMPLATE.md', 'docs/pull_request_template.md', 'docs/PULL_REQUEST_TEMPLATE.md'];
 export interface ShippingCommandResult { code: number; stdout: string; stderr: string }
 export type ShippingCommand = (file: string, args: string[], cwd: string) => Promise<ShippingCommandResult>;
 export interface ShippingInput { execution: Execution; issue: LinearIssue; repository: KorRepositoryConfig }
@@ -168,8 +175,8 @@ export class GitHubShipping implements ShippingDriver {
           const directory = await mkdtemp(join(tmpdir(), "kor-pr-"));
           try {
             const bodyFile = join(directory, "body.md");
-            await writeFile(bodyFile, this.body(input), { mode: 0o600 });
-            await this.run("gh-axi", ["pr", "create", "--repo", target.slug, "--head", execution.branch, "--base", input.repository.defaultBranch, "--title", publicText(`${input.issue.identifier ?? input.issue.id}: ${input.issue.title}`, input).slice(0, 200), "--body-file", bodyFile], execution.worktree);
+            await writeFile(bodyFile, await this.body(input, stage.head), { mode: 0o600 });
+            await this.run("gh-axi", ["pr", "create", "--repo", target.slug, "--head", execution.branch, "--base", input.repository.defaultBranch, "--title", this.title(input), "--body-file", bodyFile], execution.worktree);
           } finally { await rm(directory, { recursive: true, force: true }); }
           prs = z.array(pullRequestSchema).parse(await this.api(`/repos/${target.slug}/pulls?state=all&head=${encodeURIComponent(`${target.slug.split('/')[0]}:${execution.branch}`)}&per_page=100`, execution.worktree));
           pr = prs.find(item => item.head.ref === execution.branch && item.head.sha === stage.head);
@@ -299,10 +306,67 @@ export class GitHubShipping implements ShippingDriver {
     }
     return execution;
   }
-  private body(input: ShippingInput): string {
+  private title(input: ShippingInput): string {
+    const title = publicText(input.issue.title, input).replace(/[\r\n]+/g, ' ').trim().replace(/\.+$/, '');
+    return (/^(?:feat|fix|refactor|perf|docs|ci|chore)\([\w.-]+\): .+/.test(title) ? title : `chore(task): ${title}`).slice(0, PR_TITLE_LIMIT);
+  }
+  private async body(input: ShippingInput, head: string): Promise<string> {
     const latest = input.execution.verification?.attempts.at(-1);
-    const field = (text: string) => publicText(text, input).slice(0, 4_000);
-    const body = [`## Summary`, field(`${input.issue.identifier ?? input.issue.id}: ${input.issue.title}`), field(input.issue.url ?? ''), `## Evidence`, field(`Execution: ${input.execution.id}`), `Repository is not initialized for no-mistakes; direct PR fallback.`, ...(latest?.checks.map(check => `\n\`\`\`text\n$ ${field(check.command)}\nexit ${check.exitCode}\n${field(check.output)}\n\`\`\``) ?? []), ...(latest?.findings.map(finding => field(`- ${finding.conditionId}: ${finding.status} — ${finding.note ?? ''}`)) ?? []), `\nMerge is an operator decision. Kor observes GitHub and updates Linear after merge.`].join('\n\n');
-    return body.length > 60_000 ? `${body.slice(0, 59_900)}\n\n[Evidence truncated; see local Kor status for the full report.]` : body;
+    const field = (text: string) => publicText(text, input).slice(0, PR_FIELD_LIMIT);
+    const bounded = (text: string, limit: number) => text.length > limit ? `${text.slice(0, limit)}\n\n[Truncated; see local Kor status for the full report.]` : text;
+    const summary = [field(input.issue.title), field(`${input.issue.identifier ?? input.issue.id}${input.issue.url ? `: ${input.issue.url}` : ''}`)].join('\n\n');
+    const changelog = `- Changed: ${field(input.issue.title).replace(/\s+/g, ' ')}`;
+    const checks: string[] = [];
+    let checkLength = 0;
+    for (const check of latest?.checks ?? []) {
+      const output = `$ ${field(check.command)}\nexit ${check.exitCode}\n${field(check.output)}`;
+      const fence = '`'.repeat(Math.max(3, ...Array.from(output.matchAll(/`+/g), match => match[0].length + 1)));
+      const block = `${fence}text\n${output}\n${fence}`;
+      if (checkLength + block.length > PR_EVIDENCE_LIMIT) {
+        checks.push('[Evidence truncated; see local Kor status for the full report.]');
+        break;
+      }
+      checks.push(block);
+      checkLength += block.length;
+    }
+    const verification = [
+      field(`Execution: ${input.execution.id}`),
+      ...(input.execution.shipping?.evidence.filter(evidence => evidence.id === `shipping-${input.execution.id}-gate`).map(evidence => field(evidence.summary)) ?? []),
+      ...checks,
+      'Only the recorded checks and acceptance findings were verified. Browser or client flows are not implied by a passing command.',
+    ].join('\n\n');
+    const checklist = bounded(latest?.findings.map(finding => {
+      const condition = input.execution.manifest?.acceptance.find(item => item.id === finding.conditionId);
+      return `- [${finding.status === 'pass' ? 'x' : ' '}] ${field(condition?.description ?? finding.conditionId).replace(/\s+/g, ' ')}: ${field(`${finding.status}${finding.note ? `; ${finding.note}` : ''}`).replace(/\s+/g, ' ')}`;
+    }).join('\n') || '- [ ] No acceptance findings were recorded.', PR_SECTION_LIMIT);
+    const screenshots = bounded(latest?.evidence.flatMap(evidence => {
+      if (evidence.status !== 'pass' || !evidence.source || !/^https:\/\/[^\s<>]+\.(?:png|jpe?g|webp|gif)(?:\?[^\s<>]*)?$/i.test(evidence.source)) return [];
+      return [`![${field(evidence.summary).replace(/[\[\]\r\n]/g, ' ')}](<${field(evidence.source)}>)`];
+    }).join('\n\n') || 'No public screenshot evidence was recorded. Visual changes require before and after captures.', PR_SECTION_LIMIT);
+    const sections = { summary, changelog, verification, screenshots, checklist };
+    for (const path of PR_TEMPLATE_PATHS) {
+      const template = await this.command('git', ['show', `${head}:${path}`], input.execution.worktree);
+      if (template.code !== 0) continue;
+      if (template.stdout.length > PR_TEMPLATE_LIMIT) throw new Error('Repository PR template exceeds the publication limit; shorten it before shipping');
+      const used = new Set<string>();
+      let rendered = publicText(template.stdout, input);
+      for (const [key, value] of Object.entries(sections)) {
+        const slot = `{{${key}}}`;
+        if (!rendered.includes(slot)) continue;
+        used.add(key);
+        rendered = rendered.split(slot).join(value);
+      }
+      const evidence = [!used.has('verification') ? verification : '', !used.has('checklist') ? checklist : '', !used.has('screenshots') ? screenshots : ''].filter(Boolean).join('\n\n');
+      const body = publicText([rendered, evidence ? `---\n\nKor execution evidence\n\n${evidence}` : ''].filter(Boolean).join('\n\n'), input);
+      if (body.length > PR_BODY_LIMIT) throw new Error('Rendered repository PR template exceeds the publication limit; reduce repeated placeholders before shipping');
+      return body;
+    }
+    return publicText([
+      `## What does this PR do?\n\n${summary}`,
+      `## Changelog\n\n${changelog}`,
+      `## How was it tested?\n\n${verification}`,
+      `## Screenshots\n\n${screenshots}`,
+      `## Checklist\n\n${checklist}`,
+    ].join('\n\n'), input);
   }
 }
