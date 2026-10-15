@@ -51,6 +51,11 @@ In practice:
 - **It needs a few things around it:** a CLIProxyAPI gateway for your model
   accounts, a Linear API key, a TypeSafe API key, and, for the pull-request step,
   a GitHub `origin`, `gh-axi` and a `no-mistakes` daemon.
+- **Repair prompts stay focused.** Repairs receive failing checks (the last 4,000
+  characters each) and unmet criteria. Large diffs reach Jev as a bounded file list
+  and relevant hunks; omitted content is marked. Check exit codes still block
+  completion. [Verification budgets and the live proof](docs/specs/context-and-verification.md#prompt-budgets)
+  describe the limits.
 - **Be aware of the edge of the evidence.** Queue, plan, work, verify, request
   changes, override and undo, retry and stop were all run live for this README.
   The final step, **Approve and ship to GitHub, was not**: the sandbox never
