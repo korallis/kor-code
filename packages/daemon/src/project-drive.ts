@@ -157,7 +157,7 @@ export class ProjectDrives {
           continue;
         }
         if (assignment?.status === "complete") { entry.status = "review"; entry.reason = "Waiting for Linear to confirm Done"; continue; }
-        if (assignment?.status === "blocked" && assignment.manifest?.shipping && /Synchronization will retry|No verified reviewer from a different model family/.test(assignment.lastError ?? assignment.manifest.shipping.error ?? "")) {
+        if (assignment?.status === "blocked" && assignment.manifest?.shipping && !assignment.manifest.shipping.repairReason && assignment.manifest.shipping.stage.kind !== "closed") {
           entry.status = "review"; entry.reason = assignment.lastError ?? assignment.manifest.shipping.error ?? "Publication synchronization will retry"; continue;
         }
         if (assignment && ["failed", "blocked", "canceled"].includes(assignment.status)) {
