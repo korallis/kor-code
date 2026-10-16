@@ -125,6 +125,7 @@ export interface AskResponse {
   actions: SuggestedAction[];
   links?: Array<{ label: string; url: string }>;
 }
+export type LiveResource = "projects" | "run" | "session" | "issues" | "pulls" | "models" | "pool" | "brain" | "config" | "connections";
 export type EventPayload =
   | { kind: "snapshot"; status: KorStatusResponse; runs: MissionRun[] }
   | { kind: "run"; run: MissionRun }
@@ -136,6 +137,7 @@ export type EventPayload =
   | { kind: "usage"; quota: Labelled<JsonValue | null> }
   | { kind: "ask"; response: AskResponse }
   | { kind: "config"; restartRequired: boolean }
+  | { kind: "invalidate"; resources: LiveResource[] }
   | { kind: "reset"; reason: string };
 /** SSE event: message; id: <id>; data: JSON.stringify(MissionEvent).
  * Reconnect with Last-Event-ID. A reset precedes a fresh snapshot when history

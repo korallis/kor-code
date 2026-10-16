@@ -412,7 +412,7 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
             {issues.every(issue => issue.documents.length === 0) && <Empty title="No documents attached to this project's issues." />}
           </Card>
         )}
-        {tab === 'settings' && <Card index={1}><RepositorySettings key={project.id} project={project} /></Card>}
+        {tab === 'settings' && <Card index={1}><RepositorySettings key={`${project.id}:${JSON.stringify(project.repository)}`} project={project} /></Card>}
       </div>
     </AppFrame>
   );

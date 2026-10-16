@@ -33,8 +33,10 @@ export function useDecisions(): DecisionRecord[] {
 }
 
 export function useOverrides(): OverrideRecord[] {
-  useStatus();
-  return useLive(state => state.overrides);
+  const status = useStatus();
+  const live = useLive(state => state.status);
+  const overrides = useLive(state => state.overrides);
+  return live ? overrides : status.data?.snapshot?.overrides ?? overrides;
 }
 
 export function usePoolLive() {

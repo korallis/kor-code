@@ -535,6 +535,21 @@ a downstream reader such as `head` closes its pipe.
 
 ## Work in Mission Control
 
+All screens stay live, including runs, queue and Next up, Jev decisions and
+overrides, PRs, issues, spend, quota, notifications, counters and settings. Changes
+made in another tab or through the CLI appear without refreshing. The daemon
+checks the external data used by open screens every three seconds; provider
+latency and availability still govern when an observation arrives. Intake and
+shipping continue on the configured daemon poll schedule.
+
+**LIVE** appears after the event connection supplies a current snapshot.
+**RECONNECTING** and the **Live updates disconnected** banner mean the values
+on screen are the last ones received. Kor retries automatically with increasing
+delays, up to 15 seconds, and restores the snapshot, cached screens and terminal
+history after reconnecting. A silent connection is detected after 35 seconds.
+You can also use **Reconnect**. Keep the page open; no refresh is needed, even
+after restarting the daemon.
+
 | Screen | What it is for |
 | --- | --- |
 | **Home** | What needs you, what is ready to ship, running agents, spend, **Next up**, **Jev learned** and Ask Jev. |

@@ -2,7 +2,7 @@
 // React and read with useSyncExternalStore. It opens on the first subscriber,
 // closes on the last, and reconnects with Last-Event-ID.
 import { useSyncExternalStore } from 'react';
-import { API_PREFIX, type MissionEvent, type MissionRun, type PoolResponse, type Stage } from '@kor-code/mission-control';
+import { API_PREFIX, type LiveResource, type MissionEvent, type MissionRun, type PoolResponse } from '@kor-code/mission-control';
 import type { DecisionRecord, KorStatusResponse, OverrideRecord } from '@kor-code/core';
 import { authHeaders } from './client';
 import { queryClient } from './query';
@@ -32,6 +32,7 @@ export interface LiveState {
 
 const ACTIVE = new Set(['evaluating', 'running', 'verifying', 'repairing', 'shipping']);
 const TERMINAL_LIMIT = 4_000;
+const STREAM_TIMEOUT = 35_000;
 
 let state: LiveState = {
   connection: 'connecting', status: null, runs: [], decisions: [], overrides: [], accounts: null, quota: null,
@@ -42,6 +43,10 @@ let controller: AbortController | null = null;
 let lastEventId: string | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let retries = 0;
+
+function invalidate(resources: readonly LiveResource[]): void {
+  for (const resource of resources) void queryClient.invalidateQueries({ queryKey: [resource] });
+}
 
 function set(patch: Partial<LiveState>): void {
   state = { ...state, ...patch };
@@ -72,9 +77,11 @@ function apply(event: MissionEvent): void {
   const at = Date.now();
   switch (event.kind) {
     case 'snapshot': {
-      const decisions = event.status.snapshot?.decisions?.value ?? state.decisions;
-      set({ status: event.status, runs: event.runs, decisions, overrides: event.status.snapshot?.overrides ?? state.overrides, activity: sample(event.runs), lastEventAt: at, reason: event.status.provenance === 'live' ? null : event.status.reason ?? null });
-      void queryClient.invalidateQueries({ queryKey: ['runs'] });
+      const decisions = event.status.snapshot?.decisions?.value ?? [];
+      set({ status: event.status, runs: event.runs, decisions, overrides: event.status.snapshot?.overrides ?? [], accounts: event.status.snapshot?.accounts ?? null, activity: sample(event.runs), lastEventAt: at, reason: event.status.provenance === 'live' ? null : event.status.reason ?? null });
+      queryClient.setQueryData(['status'], event.status);
+      queryClient.setQueryData(['runs'], { schemaVersion: 1, runs: event.runs });
+      invalidate(['projects', 'run', 'session', 'brain']);
       return;
     }
     case 'run': {
@@ -86,8 +93,9 @@ function apply(event: MissionEvent): void {
       return;
     }
     case 'stage': {
-      const runs = state.runs.map(run => run.executionId === event.executionId ? { ...run, stage: event.stage as Stage } : run);
+      const runs = state.runs.map(run => run.executionId === event.executionId ? { ...run, stage: event.stage } : run);
       set({ runs, lastEventAt: at });
+      invalidate(['run']);
       return;
     }
     case 'terminal': {
@@ -96,6 +104,7 @@ function apply(event: MissionEvent): void {
       if (existing.some(chunk => chunk.offset === event.offset)) return;
       const next = [...existing, { offset: event.offset, channel: event.channel, text: event.text, at }].slice(-TERMINAL_LIMIT);
       set({ terminals: { ...state.terminals, [event.executionId]: next }, lastEventAt: at });
+      if (existing.length >= TERMINAL_LIMIT) void queryClient.invalidateQueries({ queryKey: ['terminal', event.executionId] });
       return;
     }
     case 'decision': {
@@ -112,12 +121,16 @@ function apply(event: MissionEvent): void {
     case 'pool': set({ accounts: event.accounts, lastEventAt: at }); void queryClient.invalidateQueries({ queryKey: ['pool'] }); return;
     case 'usage': set({ quota: event.quota, lastEventAt: at }); return;
     case 'ask': queryClient.setQueryData(['ask', event.response.id], event.response); set({ lastEventAt: at }); return;
-    case 'config': set({ restartRequired: event.restartRequired, lastEventAt: at }); void queryClient.invalidateQueries({ queryKey: ['config'] }); void queryClient.invalidateQueries({ queryKey: ['projects'] }); return;
-    case 'reset': set({ reason: event.reason, lastEventAt: at }); return;
+    case 'config': set({ restartRequired: event.restartRequired, lastEventAt: at }); invalidate(['config', 'projects', 'session', 'issues', 'pulls']); return;
+    case 'invalidate':
+      if (event.resources.includes('pool')) set({ accounts: null, quota: null });
+      invalidate(event.resources); set({ lastEventAt: at }); return;
+    case 'reset': set({ terminals: {}, accounts: null, quota: null, reason: event.reason, lastEventAt: at }); return;
+    default: { const exhaustive: never = event; throw new Error(String(exhaustive)); }
   }
 }
 
-function parseBlock(block: string): void {
+function parseBlock(block: string): boolean {
   let id: string | null = null;
   const data: string[] = [];
   for (const line of block.split('\n')) {
@@ -128,9 +141,16 @@ function parseBlock(block: string): void {
     if (field === 'id') id = value;
     else if (field === 'data') data.push(value);
   }
-  if (id !== null) lastEventId = id;
-  if (data.length === 0) return;
-  try { apply(JSON.parse(data.join('\n')) as MissionEvent); } catch { /* a malformed frame is skipped; the next snapshot repairs state */ }
+  if (data.length === 0) return false;
+  try {
+    const event = JSON.parse(data.join('\n')) as MissionEvent;
+    apply(event);
+    if (id !== null) lastEventId = id;
+    return event.kind === 'snapshot';
+  } catch (error) {
+    lastEventId = null;
+    throw error;
+  }
 }
 
 async function connect(): Promise<void> {
@@ -139,47 +159,60 @@ async function connect(): Promise<void> {
   set({ connection: retries === 0 ? 'connecting' : 'reconnecting' });
   // A pending handshake can outlive a healthy REST connection. Bound only the
   // wait for headers; a connected event stream must remain open indefinitely.
-  let handshakeTimedOut = false;
-  const handshakeTimer = setTimeout(() => { handshakeTimedOut = true; abort.abort(); }, 5_000);
+  let timedOut = false;
+  let timeout = setTimeout(() => { timedOut = true; abort.abort(); }, 5_000);
   try {
     const response = await fetch(`${API_PREFIX}/events`, {
       headers: { ...authHeaders(), accept: 'text/event-stream', ...(lastEventId ? { 'last-event-id': lastEventId } : {}) },
       signal: abort.signal, cache: 'no-store', credentials: 'omit',
     });
-    clearTimeout(handshakeTimer);
+    clearTimeout(timeout);
     if (controller !== abort || abort.signal.aborted) return;
     if (response.status === 401 || response.status === 403) { set({ connection: 'unauthorized', reason: 'This browser session is not authorised. Open Mission Control with `kor ui`.' }); controller = null; return; }
     if (!response.ok || !response.body) throw new Error(`events answered ${response.status}`);
-    retries = 0;
-    set({ connection: 'live', reason: null });
     const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
     let buffer = '';
+    let synchronized = false;
     for (;;) {
+      timeout = setTimeout(() => { timedOut = true; abort.abort(); }, STREAM_TIMEOUT);
       const { value, done } = await reader.read();
+      clearTimeout(timeout);
+      if (controller !== abort) return;
+      if (timedOut) throw new Error('event stream timed out');
+      if (abort.signal.aborted) return;
       if (done) break;
       buffer += value.replace(/\r\n?/g, '\n');
       let split = buffer.indexOf('\n\n');
       while (split !== -1) {
-        parseBlock(buffer.slice(0, split));
+        const snapshot = parseBlock(buffer.slice(0, split));
+        if (!synchronized && snapshot) {
+          synchronized = true;
+          retries = 0;
+          // Inactive queries must also be stale when their screen next opens.
+          // Refetch transcripts even when replay history no longer covers a gap.
+          set({ connection: 'live', reason: null });
+          void queryClient.invalidateQueries();
+        }
         buffer = buffer.slice(split + 2);
         split = buffer.indexOf('\n\n');
       }
     }
     throw new Error('event stream ended');
   } catch {
-    if (controller !== abort || abort.signal.aborted && !handshakeTimedOut) return;
+    if (controller !== abort || abort.signal.aborted && !timedOut) return;
+    abort.abort();
     controller = null;
     retries += 1;
     set({ connection: retries > 2 ? 'offline' : 'reconnecting', reason: 'Lost the daemon event stream; reconnecting.' });
     retryTimer = setTimeout(() => { retryTimer = null; if (listeners.size > 0) void connect(); }, Math.min(15_000, 1_000 * 2 ** Math.min(retries, 4)));
   } finally {
-    clearTimeout(handshakeTimer);
+    clearTimeout(timeout);
   }
 }
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
-  if (listeners.size === 1 && controller === null && retryTimer === null && document.visibilityState !== 'hidden') void connect();
+  if (listeners.size === 1 && controller === null && retryTimer === null) void connect();
   return () => {
     listeners.delete(listener);
     if (listeners.size === 0) {
@@ -188,31 +221,6 @@ function subscribe(listener: () => void): () => void {
       if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
     }
   };
-}
-
-// A hidden tab releases its stream (browsers allow six connections per host,
-// and every open tab would otherwise hold one) and resumes from its last event.
-if (typeof document !== 'undefined') {
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      controller?.abort();
-      controller = null;
-      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-    } else if (listeners.size > 0 && controller === null && retryTimer === null) {
-      retries = 0;
-      void connect();
-    }
-  });
-}
-
-/** The daemon's full override audit, from a REST status read. */
-export function replaceOverrides(records: OverrideRecord[]): void {
-  set({ overrides: records });
-}
-
-/** Record an override the daemon just applied, refused or reverted, so every view shows it at once. */
-export function upsertOverride(record: OverrideRecord): void {
-  set({ overrides: [record, ...state.overrides.filter(existing => existing.id !== record.id)] });
 }
 
 /** Reconnect now (the offline banner's button). */

@@ -289,6 +289,13 @@ matches regardless of letter case.
 
 ### Work in Mission Control
 
+Every screen updates in place over the daemon's live connection, including
+changes from the CLI and other open tabs. Linear and GitHub observations refresh
+every three seconds while Mission Control is connected. **LIVE** means the event
+stream is connected and has supplied a snapshot. If it drops, the app marks the
+displayed data as stale, reconnects automatically with backoff, and resyncs missed
+changes and terminal output. You do not need to refresh the page.
+
 **Home** shows what needs you, what is ready to ship, running agents, spend and
 **Next up**. A run that needs an answer lands in **Needs you**: type the answer
 and **Send and retry** writes it to the Linear issue and runs again. Ctrl+K (⌘K)
