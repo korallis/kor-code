@@ -76,8 +76,9 @@ export function AskAnswer({ response, onFollowUp }: { response: AskResponse; onF
   const count = response.answer.split(/\s+/).length;
   return (
     <div {...stylex.props(styles.answer, animate.fadeInFast)} aria-live="polite">
-      <div {...stylex.props(styles.who)}><JevOrb size={26} state="deciding" playKey={response.id} /><b {...stylex.props(styles.name)}>Jev</b><span {...stylex.props(text.mono, text.muted, text.xs)}>just now · read the live snapshot</span></div>
+      <div {...stylex.props(styles.who)}><JevOrb size={26} state="deciding" playKey={response.id} /><b {...stylex.props(styles.name)}>Jev</b><span {...stylex.props(text.mono, text.muted, text.xs)}>just now · {response.provenance === 'unavailable' ? 'Jev unavailable' : response.provenance === 'uncertain' ? 'needs clarification' : 'live decision'}</span></div>
       <div {...stylex.props(styles.txt)}>{words(response.answer)}</div>
+      {response.links && response.links.length > 0 && <div {...stylex.props(styles.acts)}>{response.links.map(link => <Button key={link.url} size="sm" variant="ghost" href={link.url} external={link.url.startsWith('https://')}>{link.label}</Button>)}</div>}
       {(response.actions.length > 0 || onFollowUp) && (
         <div {...stylex.props(styles.acts)}>
           {response.actions.map((action, index) => <ActionButton key={`${response.id}-${index}`} action={action} index={index} first={index === 0} wordCount={count} />)}
@@ -96,7 +97,7 @@ export function AskJev({ executionId, initial = '', autoFocus = false, placehold
     const trimmed = value.trim();
     if (!trimmed || ask.isPending) return;
     setMessage(trimmed);
-    ask.mutate(executionId ? { message: trimmed, executionId } : { message: trimmed });
+    ask.mutate({ message: trimmed, requestId: crypto.randomUUID(), ...(executionId ? { executionId } : {}) });
   };
   const insert = (token: string) => setMessage(current => `${current}${current && !current.endsWith(' ') ? ' ' : ''}${token}`);
   const refocus = (node: HTMLInputElement | null) => { if (node && autoFocus) node.focus(); };
@@ -113,7 +114,7 @@ export function AskJev({ executionId, initial = '', autoFocus = false, placehold
           <button type="button" {...stylex.props(styles.chip)} onClick={() => insert('/')}><Icon icon={Slash} size={12} />Command</button>
           <button type="button" {...stylex.props(styles.chip)} onClick={() => navigate('projects')}><Icon icon={FolderKanban} size={12} />All projects</button>
           <span {...stylex.props(layout.grow)} />
-          {ask.isPending ? <span {...stylex.props(styles.thinking)}>Jev is reading the snapshot…</span> : (
+          {ask.isPending ? <span {...stylex.props(styles.thinking)}>Jev is working on your request…</span> : (
             <>
               <span {...stylex.props(styles.tryLabel)}>Try</span>
               {SUGGESTIONS.slice(0, 2).map(suggestion => <button key={suggestion} type="button" {...stylex.props(styles.suggestion)} onClick={() => submit(suggestion)}>{suggestion}</button>)}

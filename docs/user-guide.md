@@ -282,9 +282,20 @@ limits:
   perRepository: 1
 ```
 
-Give each project its own `linearTeam` or `linearProject`: Kor uses it to send an
-issue to the right repository, and polls every configured team. `kor doctor`
-checks each project in turn, and **Projects** lists them all.
+Give repositories on the same team distinct `linearProject` mappings. An exact
+project match takes precedence over a team-only mapping. A repository scoped to
+a different project cannot catch the issue through its team. If several
+repositories still match, Kor refuses to queue the issue and shows the mapping
+error on Home; other unambiguous issues can continue. Kor polls every configured
+team. `kor doctor` checks each project in turn, and **Projects** lists them all.
+
+To add a project in Mission Control, open **Settings**, enter its key, checkout
+path, Linear team and Linear project ID, click **Add project**, then **Save
+configuration**. Enter the full checkout path starting with `/` or `~/`.
+Mission Control rejects relative paths so they cannot resolve against Kor's
+installation directory. Absolute checkout paths are stored as entered.
+Existing projects can set their Linear project
+under **Projects → Settings**.
 
 Runs from different projects go in parallel, each in its own worktree.
 `limits.total` caps the active runs across every project and
@@ -376,10 +387,38 @@ pill in the top bar, a bell counting runs that need you, the screens and your
 projects in the sidebar with the connection lights, and a footer with pool
 health, run slots, today's spend and verified runs.
 
-Ask Jev accepts up to 2,000 characters. It receives up to 20 run summaries within
-a 6,000-byte context budget, with failures and runs waiting for approval first.
-Each summary includes the issue key, status, next step and pull request URL.
-Decision history, logs and full verification reports stay out of this request.
+Use **Ask Jev** to give Kor work or ask about its live state. Requests accept up
+to 2,000 characters. Jev distinguishes questions, new work and actions on
+existing issues. Questions do not create issues, queue runs or approve work.
+
+- **New work:** name a configured project and the expected outcome. For example,
+  “Kor-Code: replace the beta release label with stable and implement it.” Jev
+  selects the project. Kor uses a verified model to draft a title, description
+  and acceptance criteria, then creates the issue in that
+  project's Linear project with the `kor` intake label and queues it immediately.
+  A free slot starts the run using the normal Jev route and skill selection.
+  The reply links both the issue and run. When all slots are busy, it says queued.
+- **Existing work:** “approve and ship LEE-123”, “retry LEE-123”, “queue LEE-123”
+  and “make LEE-123 high priority” execute through the same controls as the run
+  screens. Approval still requires successful verification. Priority updates
+  both Linear and the local queue; it does not interrupt a running task.
+- **Stop:** “stop LEE-123” offers a **Stop LEE-123** button. Confirm the interruption
+  before it takes effect. Questions and ordinary work requests need no approval.
+- **Questions:** “what can ship today?” and “what is blocked?” answer from the
+  live snapshot. Any offered retry or approval button performs the named action
+  when clicked. Questions needing facts outside the snapshot get an explicit
+  explanation of what Kor can answer.
+
+If the project or issue is ambiguous, specify its name or key. If Jev cannot be
+reached, returns invalid data or lacks confidence, the reply says so and takes
+no action. Issue drafting also needs a verified gateway model. Every Jev choice,
+including request interpretation and project selection, is recorded in the same
+decision audit as execution decisions and appears in **Jev Brain**.
+
+Jev receives up to 20 run summaries within a 6,000-byte context budget, with
+failures and runs waiting for approval first. Decision history, logs and full
+verification reports stay out of this request. Answers state when runs were
+omitted; use the run's Ask Jev box to scope a question to it.
 
 ## Choose models
 

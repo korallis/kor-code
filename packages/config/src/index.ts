@@ -62,9 +62,10 @@ export type KorConfig = z.infer<typeof korConfigSchema>;
 
 export function repositoryKeyForIssue(issue: { teamKey: string; projectId?: string }, config: KorConfig): string {
   const entries = Object.entries(config.repos);
-  const match = entries.find(([, repository]) => repository.linearProject && repository.linearProject === issue.projectId)
-    ?? entries.find(([, repository]) => repository.linearTeam && repository.linearTeam === issue.teamKey)
-    ?? entries.find(([key]) => key === issue.projectId || key === issue.teamKey);
+  const projects = entries.filter(([key, repository]) => (repository.linearProject ?? key) === issue.projectId);
+  const matches = projects.length ? projects : entries.filter(([key, repository]) => !repository.linearProject && (repository.linearTeam ?? key) === issue.teamKey);
+  if (matches.length > 1) throw new Error(`Ambiguous Kor repository mapping for Linear team ${issue.teamKey}: ${matches.map(([key]) => key).join(", ")}. Set a unique linearProject for each repository.`);
+  const match = matches[0];
   if (!match) throw new Error(`No Kor repository mapping for Linear team ${issue.teamKey}`);
   return match[0];
 }
@@ -130,7 +131,7 @@ export function parseKorConfig(input: unknown, options: { home?: string; baseDir
     repos: Object.fromEntries(Object.entries(parsed.data.repos).map(([key, repository]) => {
       const path = repository.path === "~" ? home : repository.path.startsWith("~/")
         ? join(home, repository.path.slice(2)) : repository.path;
-      return [key, { ...repository, path: isAbsolute(path) ? resolve(path) : resolve(baseDir, path) }];
+      return [key, { ...repository, path: isAbsolute(path) ? path : resolve(baseDir, path) }];
     })),
   };
 }

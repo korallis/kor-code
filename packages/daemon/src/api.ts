@@ -1,8 +1,8 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { extname, join, relative, resolve, sep } from "node:path";
+import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
-import { parseKorConfig, repositorySchema } from "@kor-code/config";
+import { korConfigSchema, parseKorConfig, repositorySchema } from "@kor-code/config";
 import { redact, runtimeSecrets } from "@kor-code/jev";
 import type { ActionResponse, ApiError, ApiErrorCode, ConfigResponse, PoolResponse, ProjectsResponse, RunsResponse } from "@kor-code/mission-control";
 import type { KorDaemon } from "./index.js";
@@ -100,13 +100,18 @@ export class MissionApi {
         const input = await jsonBody(request);
         if (method === "PUT" && (path === "/api/config" || path.startsWith("/api/projects/"))) {
           const operation = async () => {
-            let config;
-            if (path === "/api/config") config = parseKorConfig(input, { home: this.daemon.paths.home });
+            let draft;
+            if (path === "/api/config") draft = korConfigSchema.parse(input);
             else {
               const project = decodeURIComponent(path.slice("/api/projects/".length));
               id.parse(project);
-              config = parseKorConfig({ ...this.daemon.config, repos: { ...this.daemon.config.repos, [project]: repositorySchema.parse(input) } }, { home: this.daemon.paths.home });
+              draft = { ...this.daemon.config, repos: { ...this.daemon.config.repos, [project]: repositorySchema.parse(input) } };
             }
+            for (const [key, repository] of Object.entries(draft.repos)) {
+              if (!isAbsolute(repository.path) && repository.path !== "~" && !repository.path.startsWith("~/")) throw new ApiFailure(400, "invalid_request", `Enter the full checkout path for ${key}, starting with / or ~/`, "Relative paths cannot be saved from Mission Control");
+              if (!this.daemon.config.repos[key] && (!repository.linearTeam || !repository.linearProject)) throw new ApiFailure(400, "invalid_request", "New projects need a Linear team and Linear project ID", "Enter both in the Add project form");
+            }
+            const config = parseKorConfig(draft, { home: this.daemon.paths.home });
             const unknown = await this.daemon.unknownRepositorySkills(config);
             if (unknown.length) throw new ApiFailure(400, "invalid_request", `Unknown skills in repository settings: ${unknown.join(", ")}`, "Use names from kor skills list");
             await this.daemon.configure(config);
@@ -144,8 +149,8 @@ export class MissionApi {
           send(answer.status, { schemaVersion: 1, record: answer.record }); return;
         }
         if (path === "/api/ask") {
-          const body = z.strictObject({ message: message.shape.message.max(2_000), executionId: id.optional() }).parse(input);
-          const answer = await services.ask({ message: body.message, ...(body.executionId ? { executionId: body.executionId } : {}) }, this.daemon.status());
+          const body = z.strictObject({ message: message.shape.message.max(2_000), executionId: id.optional(), requestId: z.uuid().optional() }).parse(input);
+          const answer = await this.daemon.ask({ message: body.message, ...(body.executionId ? { executionId: body.executionId } : {}), ...(body.requestId ? { requestId: body.requestId } : {}) });
           this.daemon.events.publish({ kind: "ask", response: answer }); send(200, answer); return;
         }
         if (path === "/api/connections") {
@@ -166,7 +171,7 @@ export class MissionApi {
       }
       throw new ApiFailure(404, "not_found", "API endpoint not found");
     } catch (error) {
-      const failure = error instanceof ApiFailure ? error : error instanceof z.ZodError || error instanceof URIError || error instanceof Error && error.message.startsWith("Invalid Kor config")
+      const failure = error instanceof ApiFailure ? error : error instanceof Error && /repository mapping/.test(error.message) ? new ApiFailure(409, "conflict", error.message, "Set a unique Linear project for each repository in Settings") : error instanceof z.ZodError || error instanceof URIError || error instanceof Error && error.message.startsWith("Invalid Kor config")
         ? new ApiFailure(400, "invalid_request", "Request does not match the Mission Control schema")
         : new ApiFailure(503, "unavailable", "Action or upstream service unavailable", "Check provider connections and daemon logs, then retry");
       send(failure.status, { schemaVersion: 1, error: { code: failure.code, message: failure.message, hint: failure.hint } } satisfies ApiError);

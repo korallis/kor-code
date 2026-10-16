@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import type { Execution } from '@kor-code/core';
-import { array, connection, object, parseIssue, stableId, stateType, string, type LinearClient, type LinearWrite, type LinearWorkflowState } from './contract.js';
+import { array, connection, object, parseIssue, stableId, stateType, string, workflowMapping, type LinearClient, type LinearWrite, type LinearWorkflowState } from './contract.js';
 
 const page = 'pageInfo { hasNextPage }';
 const issueFields = `id identifier url title description updatedAt priority team { id key } state { id type name }
@@ -95,6 +95,41 @@ export class HttpLinearClient implements LinearClient {
   async getIssue(id: string) {
     const data = await this.query(`query KorIssue($id: String!) { issue(id: $id) { ${issueFields} } }`, { id });
     return parseIssue(data.issue);
+  }
+
+  async createIssue(input: Parameters<NonNullable<LinearClient['createIssue']>>[0]) {
+    if (!this.options.writes) throw new Error('Linear writes disabled');
+    const existing = await this.query(`query KorExistingIssue($id: ID!) { issues(first: 2, filter: { id: { eq: $id } }) { nodes { id team { key } project { id } } ${page} } }`, { id: input.id });
+    const found = connection(existing.issues)[0];
+    if (found !== undefined) {
+      const issue = object(found);
+      if (string(object(issue.team).key) !== input.teamKey || string(object(issue.project).id) !== input.projectId) throw new Error('Linear issue scope mismatch');
+    } else {
+      const scope = await this.query(`query KorIntakeScope($key: String!, $project: String!) {
+        teams(filter: { key: { eq: $key } }) { nodes { id } ${page} }
+        project(id: $project) { id teams { nodes { id } ${page} } }
+      }`, { key: input.teamKey, project: input.projectId });
+      const teams = connection(scope.teams);
+      if (teams.length !== 1) throw new Error('Linear team must resolve uniquely');
+      const teamId = string(object(teams[0]).id);
+      const project = object(scope.project);
+      if (!connection(project.teams).some(team => string(object(team).id) === teamId)) throw new Error('Linear project does not belong to the configured team');
+      const states = workflowMapping(await this.listWorkflowStates(input.teamKey));
+      const data = await this.query('mutation KorCreateIssue($input: IssueCreateInput!) { issueCreate(input: $input) { success } }', {
+        input: { id: input.id, teamId, projectId: input.projectId, title: input.title, description: input.description, stateId: states.queued.id },
+      });
+      if (object(data.issueCreate).success !== true) throw new Error('Linear issue creation did not succeed');
+    }
+    // Label only after creation: incomplete intake remains out of the automatic queue.
+    for (const name of input.labels) await this.apply({ kind: 'label', issueId: input.id, name, present: true });
+    return this.getIssue(input.id);
+  }
+
+  async setPriority(issueId: string, priority: number): Promise<void> {
+    if (!this.options.writes) throw new Error('Linear writes disabled');
+    if (!Number.isInteger(priority) || priority < 0 || priority > 4) throw new Error('Linear priority must be 0..4');
+    const data = await this.query('mutation KorPriority($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }', { id: issueId, input: { priority } });
+    if (object(data.issueUpdate).success !== true) throw new Error('Linear priority update did not succeed');
   }
 
   async listIssues(teamKey: string, limit = 50) {

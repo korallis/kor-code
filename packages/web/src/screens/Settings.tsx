@@ -79,11 +79,12 @@ function GeneralSettings({ config }: { config: KorConfig }) {
   const save = useSaveConfig();
   const [draft, setDraft] = useState(config);
   const [repoKey, setRepoKey] = useState(''), [repoPath, setRepoPath] = useState(''), [repoTeam, setRepoTeam] = useState('');
+  const [repoProject, setRepoProject] = useState('');
   const numberField = (value: string, apply: (n: number) => KorConfig) => { const n = Number(value); if (Number.isInteger(n) && n > 0) setDraft(apply(n)); };
   const addRepo = () => {
-    if (!repoKey.trim() || !repoPath.trim()) return;
-    setDraft(current => ({ ...current, repos: { ...current.repos, [repoKey.trim()]: { path: repoPath.trim(), defaultBranch: 'main', checks: [], toolAllowlist: [], ship: 'approve', ...(repoTeam.trim() ? { linearTeam: repoTeam.trim() } : {}) } } }));
-    setRepoKey(''); setRepoPath(''); setRepoTeam('');
+    if (!repoKey.trim() || !repoPath.trim() || !repoTeam.trim() || !repoProject.trim()) return;
+    setDraft(current => ({ ...current, repos: { ...current.repos, [repoKey.trim()]: { path: repoPath.trim(), defaultBranch: 'main', checks: [], toolAllowlist: [], ship: 'approve', linearTeam: repoTeam.trim(), linearProject: repoProject.trim() } } }));
+    setRepoKey(''); setRepoPath(''); setRepoTeam(''); setRepoProject('');
   };
   const removeRepo = (key: string) => setDraft(current => { const repos = { ...current.repos }; delete repos[key]; return { ...current, repos }; });
   const dirty = JSON.stringify(draft) !== JSON.stringify(config);
@@ -114,7 +115,8 @@ function GeneralSettings({ config }: { config: KorConfig }) {
             <FieldLabel>Key</FieldLabel><TextInput label="Project key" mono value={repoKey} onChange={setRepoKey} placeholder="e.g. matilda-v2" />
             <FieldLabel>Checkout path</FieldLabel><TextInput label="Checkout path" mono value={repoPath} onChange={setRepoPath} placeholder="/home/you/code/project" />
             <FieldLabel>Linear team</FieldLabel><TextInput label="Linear team" mono value={repoTeam} onChange={setRepoTeam} placeholder="e.g. MAT" />
-            <span /><div><Button size="sm" icon={FolderPlus} disabled={!repoKey.trim() || !repoPath.trim()} onClick={addRepo}>Add project</Button></div>
+            <FieldLabel>Linear project</FieldLabel><TextInput label="Linear project" mono value={repoProject} onChange={setRepoProject} placeholder="project ID from Linear" />
+            <span /><div><Button size="sm" icon={FolderPlus} disabled={!repoKey.trim() || !repoPath.trim() || !repoTeam.trim() || !repoProject.trim()} onClick={addRepo}>Add project</Button></div>
           </div>
         </CardBody>
       </Card>

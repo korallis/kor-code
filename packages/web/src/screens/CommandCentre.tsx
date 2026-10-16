@@ -294,6 +294,7 @@ export function CommandCentre() {
   const brain = useBrain();
   const pool = usePoolLive();
   const activitySamples = useLive(live => live.activity);
+  const daemonError = useLive(live => live.status?.snapshot?.daemon.lastError);
   const projectList = projects.data?.projects ?? [];
   const issuesByProject = useAllIssues(projectList);
   const allIssues = issuesByProject.flatMap(entry => entry.issues);
@@ -326,6 +327,7 @@ export function CommandCentre() {
   return (
     <AppFrame active="home" crumbs={['Command Centre']} showAsk={false}>
       <div {...stylex.props(page.page)}>
+        {daemonError && <Notice title="Kor needs attention" hint={daemonError} />}
         <section {...stylex.props(styles.hero)}>
           <Card index={0} style={styles.hello} label="Greeting">
             <span {...stylex.props(styles.halo)} />
@@ -340,7 +342,7 @@ export function CommandCentre() {
               <Pill tone="violet" dot>{prsOpen.length} PRs open</Pill>
             </div>
             <div {...stylex.props(styles.ask)}>
-              <AskJev placeholder="Ask Jev — what's blocked, and what can ship today?" idle={<RightNow attention={attention} ready={ready} queued={queued} />} />
+              <AskJev placeholder="Ask Jev — give a project work, act on an issue, or ask a question…" idle={<RightNow attention={attention} ready={ready} queued={queued} />} />
             </div>
             </div>
           </Card>

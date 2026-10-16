@@ -144,7 +144,7 @@ export function JevBrain() {
   const decisions = (brain.data?.decisions.value ?? []).filter(decision => Date.parse(decision.recordedAt) >= since).sort((a, b) => Date.parse(b.recordedAt) - Date.parse(a.recordedAt));
   const report = brain.data?.calibration.value ?? null;
   const kinds = new Set(decisions.map(decision => decision.kind));
-  const runIds = new Set(decisions.map(decision => decision.executionId));
+  const runIds = new Set(decisions.filter(decision => runs.some(run => run.executionId === decision.executionId)).map(decision => decision.executionId));
   const escalatedShare = decisions.length ? decisions.filter(decision => decision.escalated).length / decisions.length : null;
   const arm = (name: 'jev' | 'baseline' | 'fallback') => report?.arms.find(one => one.arm === name);
   const jev = arm('jev'), baseline = arm('baseline');
