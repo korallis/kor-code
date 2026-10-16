@@ -28,7 +28,9 @@ export class ProjectDrives {
   list(repository: string): ProjectDrive[] { return this.drives.filter(drive => drive.repository === repository); }
   owns(issueId: string): boolean { return this.drives.some(drive => drive.issues.some(issue => issue.issueId === issueId)); }
   excluded(): string[] {
-    return this.drives.flatMap(drive => drive.issues.filter(issue => drive.status !== "running" || issue.status !== "queued" && issue.status !== "running").map(issue => issue.issueId));
+    const latest = new Map<string, boolean>();
+    for (const drive of this.drives) for (const issue of drive.issues) latest.set(issue.issueId, drive.status !== "running" || issue.status !== "queued" && issue.status !== "running");
+    return [...latest].filter(([, excluded]) => excluded).map(([issueId]) => issueId);
   }
   private serialize<T>(action: () => Promise<T>): Promise<T> {
     const next = this.operations.then(action);
