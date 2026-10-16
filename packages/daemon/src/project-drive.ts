@@ -125,6 +125,16 @@ export class ProjectDrives {
         if (issue.stateType === "canceled" || issue.stateType === "duplicate") { entry.status = "held"; entry.reason = "Issue is canceled or duplicate"; continue; }
         if (entry.admission !== null || entry.status === "held") continue;
         const full = await client.getIssue(issue.id);
+        const existing = this.daemon.store.findAssignment(issue.id);
+        if (existing?.manifest?.shipping && existing.manifest.verification?.passed) {
+          const decisionId = `drive-${drive.id}-monitor-${issue.id}`;
+          const decision = audit.get(decisionId) ? audit.replay(decisionId) : await core.decide({ decisionId, executionId: drive.id, kind: "intake", question: "This issue already has a verified Kor execution in publication or review. Monitor its existing shipping and merge gates to reach Done; do not ask for implementation readiness again or rerun verified work. Hold only if the original issue explicitly requires a server-side or owner-only check.", state: z.json().parse({ issue: { title: full.title, description: full.description ?? "", acceptanceCriteria: full.acceptanceCriteria, labels: full.labels }, execution: existing.executionId, stage: existing.manifest.shipping.stage.kind, verified: true }), inputs: [{ name: "existing verified execution", value: existing.executionId }], candidates: ["monitor", "hold"] });
+          entry.admission = decisionId;
+          entry.status = decision.applied && decision.choice === "monitor" ? "review" : "held";
+          entry.reason = entry.status === "review" ? "Monitoring existing verified publication" : "Jev held the existing execution for operator review";
+          core.recordOutcome(decisionId, { action: entry.status === "review" ? "monitor" : "hold", executionId: existing.executionId });
+          continue;
+        }
         const decisionId = `drive-${drive.id}-admit-${issue.id}`;
         const request: DecisionRequest = { decisionId, executionId: drive.id, kind: "intake", question: "Can Kor autonomously implement this existing issue? Read its description, acceptance, labels and comments. Hold work explicitly requiring server-side/live production checks, owner access, credentials or a human-only check. A normal repository check or local test is runnable. Do not implement held work. Missing essential scope or acceptance is held. Dependencies are enforced separately by the scheduler.", state: z.json().parse({ project, issue: full }), inputs: [{ name: "issue", value: issue.id }], candidates: ["ready", "server-check", "owner-check", "needs-input"], criteria: { ready: "Concrete coding work and local verification that Kor can perform", "server-check": "Explicitly requires server-side, production or deployed-environment validation", "owner-check": "Explicitly requires owner action, private access or human validation", "needs-input": "Missing essential specification or acceptance criteria" } };
         const decision = audit.get(decisionId) ? audit.replay(decisionId) : await core.decide(request);
@@ -143,7 +153,7 @@ export class ProjectDrives {
         const assignment = this.daemon.store.findAssignment(issue.id);
         if (assignment && ["running", "shipping", "review", "waiting"].includes(assignment.status)) {
           entry.status = assignment.status === "running" ? "running" : "review";
-          entry.reason = assignment.status === "waiting" ? "Awaiting configured publication approval" : "Waiting for verified publication and merge";
+          entry.reason = assignment.status === "running" ? null : assignment.status === "waiting" ? "Awaiting configured publication approval" : "Waiting for verified publication and merge";
           continue;
         }
         if (assignment?.status === "complete") { entry.status = "review"; entry.reason = "Waiting for Linear to confirm Done"; continue; }

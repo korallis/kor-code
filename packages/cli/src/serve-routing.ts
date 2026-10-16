@@ -120,7 +120,7 @@ export function createServeRouting(options: {
       if (!models.length) throw new Error("No verified deep-class reviewer from a different model family is available");
       const decisionId = `review-route-${executionId}-${head}`;
       const decision = options.audit.get(decisionId) ? options.audit.replay(decisionId) : await jev.decide({
-        decisionId, executionId, kind: "review-route", question: "Which independent model should review this change? Choose among the verified models from a different family than the writer, considering correctness review capabilities, cost and duration.",
+        decisionId, executionId, kind: "review-route", question: "Which independent model should review this change? Choose among the verified models from a different family than the writer, considering correctness review capabilities, cost and duration. Choose no-suitable-reviewer only if none is suitable.",
         state: { writer: { ...writer }, models: models.map(model => ({ ...model, capabilities: model.capabilities.map(capability => ({ ...capability })) })), change: prompt },
         inputs: [{ name: "writer family", value: family }, { name: "reviewed head", value: head }], candidates: [...models.map(model => model.model), "no-suitable-reviewer"], criteria: { ...modelCriteria(models, "review"), "no-suitable-reviewer": "None of the available independent models is suitable for correctness review." }, nonApplyingCandidates: ["no-suitable-reviewer"],
         policyChecks: [{ name: "different model family", result: "pass" }, { name: "deep correctness review class", result: "pass" }],
