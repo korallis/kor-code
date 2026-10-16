@@ -7,6 +7,11 @@ checks and your acceptance criteria, and reports progress on the Linear issue.
 You run it from Mission Control, a web app the Kor daemon serves on your own
 machine. Kor never merges anything; you do.
 
+You install Kor once, and it works on any number of projects at the same time.
+Each project is a Git checkout on your machine, mapped to a Linear team, and runs
+from different projects proceed in parallel
+([working on several projects](#work-on-several-projects)).
+
 ![Mission Control's Command Centre: one run needing an answer, two verified runs ready to ship, and the Jev learned card](docs/images/mc-command-centre.webp)
 
 ```text
@@ -68,8 +73,12 @@ curl -fsSL https://raw.githubusercontent.com/korallis/kor-code/main/scripts/inst
 
 The installer checks the requirements, clones Kor into `~/.local/share/kor-code`,
 builds the CLI, daemon and Mission Control, and installs `kor` into
-`~/.local/bin`. It asks for the Git checkout of the project you want Kor to work
-on and its Linear team key. To answer up front, or without a terminal:
+`~/.local/bin`. It also asks for one project to start with: the Git checkout
+path and the Linear team key for that project. That is only the first entry in
+Kor's config. You can add more projects afterwards in Mission Control or in
+`config.yaml` ([working on several projects](#work-on-several-projects)), and
+you do not rerun the installer for them. To answer up front, or without a
+terminal:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/korallis/kor-code/main/scripts/install.sh | bash -s -- --pilot ~/code/my-project --linear-team APP
@@ -81,6 +90,12 @@ new one as an `api-keys` line: **add that line to CLIProxyAPI's config yourself*
 and reload the proxy. Kor never edits the proxy. Keep the checkout on disk; the
 `kor` command and Mission Control run from it.
 
+The first project cannot be skipped: with no `--pilot` and no terminal the
+installer stops and asks you to pass one, and the path must be a Git checkout
+root. The Linear team key is only asked for when `~/.config/kor/config.yaml` does
+not exist yet; rerunning the installer to update reuses the first project and
+never touches an existing config.
+
 `--no-systemd` skips the systemd user unit, `KOR_HOME` moves the checkout and
 `KOR_GATEWAY_URL` points at another gateway. The [user guide](docs/user-guide.md#install)
 covers forks, private mirrors and a manual build.
@@ -88,8 +103,9 @@ covers forks, private mirrors and a manual build.
 ## First run
 
 **1. Set your repository policy** in `~/.config/kor/config.yaml`. The installer
-writes a scaffold with your checkout, team key, default branch and `ship: approve`.
-Add the checks that decide whether work is accepted and the tools sessions may use:
+writes a scaffold with your first project (its checkout, team key, default
+branch and `ship: approve`) under `repos:`. Add the checks that decide whether
+work is accepted and the tools sessions may use:
 
 ```yaml
 repos:
@@ -116,6 +132,65 @@ intakeLabel: kor
 
 Sessions get only what `toolAllowlist` allows, and an unscoped `Read` also allows
 file search. See [Configure a repository](docs/user-guide.md#configure-a-repository).
+
+### Work on several projects
+
+`repos:` is a map with one entry per project, so Kor works on as many as you list,
+and Mission Control's **Projects** page shows each one. The installer only wrote
+the first. Add another in either of two ways:
+
+- **In Mission Control:** open **Settings**, find the **Projects** card, enter a
+  project key (any name you like), its checkout path and its Linear team, then
+  choose **Add project** and **Save configuration**. The daemon validates the
+  file, applies it without a restart once no work is running and keeps the old
+  one as `config.yaml.bak`. A project added here starts with `ship: approve`; set
+  its checks and tool allowlist under the project's **Repository settings**.
+- **In `config.yaml`:** add another entry under `repos:`, then stop and restart
+  the daemon (`kor ui` starts it again) so it rereads the file.
+
+Two projects look like this. Each entry needs its own checkout and its own
+`linearTeam` (or `linearProject`), because that is how Kor routes an issue to the
+right repository:
+
+```yaml
+repos:
+  web-app:
+    path: /home/you/code/web-app
+    linearTeam: WEB
+    defaultBranch: main
+    ship: approve
+    checks:
+      - pnpm test
+    toolAllowlist:
+      - Read
+      - Edit
+      - "Bash(pnpm test*)"
+  api-service:
+    path: /home/you/code/api-service
+    linearTeam: API
+    defaultBranch: main
+    ship: approve
+    checks:
+      - ./mvnw test
+    toolAllowlist:
+      - Read
+      - Edit
+      - "Bash(./mvnw test*)"
+limits:
+  total: 2
+  perRepository: 1
+```
+
+Run `kor doctor` afterwards: it prints one block of checks for each project.
+
+Runs from different projects work in parallel, each in its own worktree.
+`limits.total` caps how many runs are active across all projects, and
+`limits.perRepository` caps how many one project may have active. With the
+settings above, a `web-app` run and an `api-service` run go at the same time,
+and a second `web-app` issue waits for the first. Raise `total` and
+`perRepository` (for example `4` and `2`) to run more at once; in Mission Control
+they are **Runs at once** and **Runs per repository** under **Settings**. Waiting
+runs do not hold a slot.
 
 **2. Check the setup.** This is `kor doctor` in the throwaway home used for
 these docs:

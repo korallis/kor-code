@@ -76,9 +76,14 @@ Install with one command:
 curl -fsSL https://raw.githubusercontent.com/korallis/kor-code/main/scripts/install.sh | bash -s -- --pilot ~/code/my-project --linear-team APP
 ```
 
-Without `--pilot` and `--linear-team` the script asks for them. `--pilot` is a
-standalone Git checkout of the project Kor will work on (a linked worktree is
-refused). The script checks Linux, Node, Git, Corepack, Claude Code and the
+Kor is one install that works on many projects at once; the installer only sets
+up the first. Without `--pilot` and `--linear-team` the script asks for that
+first project's checkout and Linear team key. `--pilot` is a standalone Git
+checkout (a linked worktree is refused) and cannot be skipped: with no terminal
+the script stops and asks you to pass it. The team key is only asked for when
+`~/.config/kor/config.yaml` does not exist, and a rerun reuses the first project.
+Add further projects afterwards in
+[Work on several projects](#work-on-several-projects). The script checks Linux, Node, Git, Corepack, Claude Code and the
 gateway, clones Kor into `~/.local/share/kor-code`, installs its pinned pnpm,
 builds the CLI, daemon and Mission Control, then runs `kor install`. In the
 throwaway home this took 36 seconds and ended:
@@ -114,7 +119,7 @@ What the installer writes:
 - `~/.local/bin/kor`, a link to the CLI in the checkout. Add `~/.local/bin` to
   `PATH` if it is not there. Keep the checkout: the CLI and Mission Control run
   from it.
-- `~/.config/kor/config.yaml`, a scaffold with your checkout, team key,
+- `~/.config/kor/config.yaml`, a scaffold with your first project's checkout, team key,
   default branch and `ship: approve` ([next section](#configure-a-repository)). An existing config is
   kept.
 - A systemd user unit, installed but not started. `--no-systemd` skips it, and a
@@ -239,6 +244,55 @@ settings** and in **Settings**; the daemon validates the whole config, writes it
 atomically and keeps the previous file as `config.yaml.bak`. If you edit the file
 by hand, restart the daemon (stop it, then `kor ui`). The full schema is in
 [configuration](configuration.md).
+
+### Work on several projects
+
+`repos` in `config.yaml` is a map, one entry per project, and the installer only
+writes the first. Add more in either of two ways:
+
+- **Mission Control → Settings → Projects:** enter a project key, the checkout
+  path and the Linear team, then **Add project** and **Save configuration**. The
+  new project starts as `ship: approve`; set its checks and tool allowlist under
+  the project's **Repository settings**.
+- **`config.yaml`:** add another entry under `repos:` and restart the daemon.
+
+```yaml
+repos:
+  web-app:
+    path: /home/you/code/web-app
+    linearTeam: WEB
+    ship: approve
+    checks:
+      - pnpm test
+    toolAllowlist:
+      - Read
+      - Edit
+      - "Bash(pnpm test*)"
+  api-service:
+    path: /home/you/code/api-service
+    linearTeam: API
+    ship: approve
+    checks:
+      - ./mvnw test
+    toolAllowlist:
+      - Read
+      - Edit
+      - "Bash(./mvnw test*)"
+limits:
+  total: 2
+  perRepository: 1
+```
+
+Give each project its own `linearTeam` or `linearProject`: Kor uses it to send an
+issue to the right repository, and polls every configured team. `kor doctor`
+checks each project in turn, and **Projects** lists them all.
+
+Runs from different projects go in parallel, each in its own worktree.
+`limits.total` caps the active runs across every project and
+`limits.perRepository` caps them per project. With `total: 2` and
+`perRepository: 1`, one `web-app` run and one `api-service` run go together and a
+second `web-app` issue waits. Raise both to run more at once (**Settings →
+Runs at once** and **Runs per repository** in Mission Control).
 
 ## Check your setup with `kor doctor`
 
