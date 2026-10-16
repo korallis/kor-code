@@ -151,9 +151,19 @@ export class ProjectDrives {
         const entry = drive.issues.find(one => one.issueId === issue.id);
         if (!entry || entry.status === "done" || entry.status === "held") continue;
         const assignment = this.daemon.store.findAssignment(issue.id);
+        const shipping = assignment?.manifest?.shipping;
+        // Viable repairs have already been requeued by advanceShipping. An
+        // unqueued repair reason is a terminal hold for this drive, not progress.
+        if (assignment && shipping?.repairReason && assignment.status !== "queued" && assignment.status !== "running") {
+          entry.status = "held";
+          entry.reason = assignment.lastError ?? shipping.error ?? shipping.repairReason;
+          const decisionId = shipping.mergeDecision?.decisionId ?? shipping.review?.decisionId;
+          if (decisionId && audit.get(decisionId)) core.recordOutcome(decisionId, { action: "hold", driveId: drive.id, issueId: issue.id, reason: entry.reason });
+          continue;
+        }
         if (assignment && ["running", "shipping", "review", "waiting"].includes(assignment.status)) {
           entry.status = assignment.status === "running" ? "running" : "review";
-          entry.reason = assignment.status === "running" ? null : assignment.status === "waiting" ? "Awaiting configured publication approval" : "Waiting for verified publication and merge";
+          entry.reason = assignment.status === "running" ? null : assignment.lastError ?? shipping?.error ?? (assignment.status === "waiting" ? "Awaiting configured publication approval" : "Waiting for verified publication and merge");
           continue;
         }
         if (assignment?.status === "complete") { entry.status = "review"; entry.reason = "Waiting for Linear to confirm Done"; continue; }
