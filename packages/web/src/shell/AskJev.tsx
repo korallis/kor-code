@@ -114,7 +114,7 @@ export function AskJev({ executionId, initial = '', autoFocus = false, placehold
           <button type="button" {...stylex.props(styles.chip)} onClick={() => insert('/')}><Icon icon={Slash} size={12} />Command</button>
           <button type="button" {...stylex.props(styles.chip)} onClick={() => navigate('projects')}><Icon icon={FolderKanban} size={12} />All projects</button>
           <span {...stylex.props(layout.grow)} />
-          {ask.isPending ? <span {...stylex.props(styles.thinking)}>Jev is reading the snapshot…</span> : (
+          {ask.isPending ? <span {...stylex.props(styles.thinking)}>Jev is working on your request…</span> : (
             <>
               <span {...stylex.props(styles.tryLabel)}>Try</span>
               {SUGGESTIONS.slice(0, 2).map(suggestion => <button key={suggestion} type="button" {...stylex.props(styles.suggestion)} onClick={() => submit(suggestion)}>{suggestion}</button>)}

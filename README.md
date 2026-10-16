@@ -309,7 +309,9 @@ action. An unreachable or uncertain Jev is identified plainly, with no action.
 Every Jev choice is recorded in the decision audit.
 
 When adding a project in **Settings**, enter its checkout path, Linear team and
-Linear project ID. Absolute paths stay as entered. Give repositories on the same
+Linear project ID. Enter a full checkout path starting with `/` or `~/`;
+Mission Control rejects relative paths instead of joining the install directory.
+Absolute paths stay as entered. Give repositories on the same
 team different Linear project mappings: ambiguous intake is refused and shown
 on Home.
 

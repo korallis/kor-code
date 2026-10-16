@@ -294,7 +294,7 @@ export function CommandCentre() {
   const brain = useBrain();
   const pool = usePoolLive();
   const activitySamples = useLive(live => live.activity);
-  const intakeError = useLive(live => live.status?.snapshot?.daemon.lastError);
+  const daemonError = useLive(live => live.status?.snapshot?.daemon.lastError);
   const projectList = projects.data?.projects ?? [];
   const issuesByProject = useAllIssues(projectList);
   const allIssues = issuesByProject.flatMap(entry => entry.issues);
@@ -327,7 +327,7 @@ export function CommandCentre() {
   return (
     <AppFrame active="home" crumbs={['Command Centre']} showAsk={false}>
       <div {...stylex.props(page.page)}>
-        {intakeError && <Notice title={intakeError} hint="Check project mappings and provider connections in Settings." />}
+        {daemonError && <Notice title="Kor needs attention" hint={daemonError} />}
         <section {...stylex.props(styles.hero)}>
           <Card index={0} style={styles.hello} label="Greeting">
             <span {...stylex.props(styles.halo)} />

@@ -79,6 +79,7 @@ export async function askJev(daemon: KorDaemon, input: AskRequest): Promise<AskR
         shipping: ready.length ? describe(ready) : "No runs are currently waiting for approval or have a pull request to review.",
         projects: Object.entries(daemon.config.repos).map(([key, repo]) => `${key}: Linear team ${repo.linearTeam ?? key}, project ${repo.linearProject ?? "not configured"}`).join(". ") || "No projects are configured. Add one in Settings with its Linear team and project.",
         decisions: decisions.length ? decisions.map(decision => `${decision.kind}: ${decision.choice} (${Math.round(decision.confidence * 100)}%). ${decision.reasons.join(" ").slice(0, 200)}`).join(" ") : "There are no execution decisions in this run summary yet.",
+        other: "I can answer questions about current runs, blockers, work ready to ship, configured projects and Jev decisions. I cannot answer this question from the live snapshot. Nothing was changed.",
       };
       const topic = await choose("question", "Classify the topic of the user's question. Select the topic from the wording of the question, not which run status happens to be present.", {
         status: "General overview: what is running, current progress or status",
@@ -86,6 +87,7 @@ export async function askJev(daemon: KorDaemon, input: AskRequest): Promise<AskR
         shipping: "What can ship today, is ready for approval, or has a pull request",
         projects: "Which repositories or Linear projects are configured",
         decisions: "Why Jev chose a route, model, skill or another decision",
+        other: "The question needs facts outside these topics or not present in the supplied snapshot, such as elapsed time, estimates or general knowledge",
       });
       const answer = new Map(Object.entries(answers)).get(topic);
       if (!answer) throw new Error("Invalid live answer");
@@ -151,10 +153,15 @@ export async function askJev(daemon: KorDaemon, input: AskRequest): Promise<AskR
       if (!run) throw new Error("Queued issue has no run");
       return respond(`${issue.label}: its run is ${run.status}.`, [], runLinks(run));
     }
-    const run = daemon.missionRun(issue.id);
+    const run = daemon.missionRuns().find(run => run.issueId === issue.id);
+    if (!run) return respond(`${issue.label} has no run to act on. Ask me to queue it to start work.`, [], fact.url ? [{ label: issue.label, url: fact.url }] : []);
     if (intent === "stop") return respond(`Confirm stopping ${issue.label}. Its current work will be interrupted.`, [{ kind: "cancel", executionId: run.executionId, label: `Stop ${issue.label}` }], runLinks(run));
     if (intent !== "approve" && intent !== "retry") throw new Error("Unsupported Jev action");
-    await daemon.runAction(run.executionId, intent);
+    try { await daemon.runAction(run.executionId, intent); }
+    catch (error) {
+      if (error instanceof ApiFailure && error.status === 409) return respond(`${issue.label}: ${error.message}. Nothing was changed.`, [], runLinks(run));
+      throw error;
+    }
     core.recordOutcome(`intake-${id}-intent`, { executionId: run.executionId, action: intent, applied: true });
     const updated = daemon.missionRun(run.executionId);
     return respond(intent === "approve" ? `Approved ${issue.label} for publication. Shipping will now advance.` : `Retry accepted for ${issue.label}; its run is ${updated.status}.`, [], runLinks(updated));

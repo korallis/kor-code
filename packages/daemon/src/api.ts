@@ -1,8 +1,8 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { extname, join, relative, resolve, sep } from "node:path";
+import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
-import { parseKorConfig, repositorySchema } from "@kor-code/config";
+import { korConfigSchema, parseKorConfig, repositorySchema } from "@kor-code/config";
 import { redact, runtimeSecrets } from "@kor-code/jev";
 import type { ActionResponse, ApiError, ApiErrorCode, ConfigResponse, PoolResponse, ProjectsResponse, RunsResponse } from "@kor-code/mission-control";
 import type { KorDaemon } from "./index.js";
@@ -100,16 +100,18 @@ export class MissionApi {
         const input = await jsonBody(request);
         if (method === "PUT" && (path === "/api/config" || path.startsWith("/api/projects/"))) {
           const operation = async () => {
-            let config;
-            if (path === "/api/config") config = parseKorConfig(input, { home: this.daemon.paths.home });
+            let draft;
+            if (path === "/api/config") draft = korConfigSchema.parse(input);
             else {
               const project = decodeURIComponent(path.slice("/api/projects/".length));
               id.parse(project);
-              config = parseKorConfig({ ...this.daemon.config, repos: { ...this.daemon.config.repos, [project]: repositorySchema.parse(input) } }, { home: this.daemon.paths.home });
+              draft = { ...this.daemon.config, repos: { ...this.daemon.config.repos, [project]: repositorySchema.parse(input) } };
             }
-            for (const [key, repository] of Object.entries(config.repos)) {
+            for (const [key, repository] of Object.entries(draft.repos)) {
+              if (!isAbsolute(repository.path) && repository.path !== "~" && !repository.path.startsWith("~/")) throw new ApiFailure(400, "invalid_request", `Enter the full checkout path for ${key}, starting with / or ~/`, "Relative paths cannot be saved from Mission Control");
               if (!this.daemon.config.repos[key] && (!repository.linearTeam || !repository.linearProject)) throw new ApiFailure(400, "invalid_request", "New projects need a Linear team and Linear project ID", "Enter both in the Add project form");
             }
+            const config = parseKorConfig(draft, { home: this.daemon.paths.home });
             const unknown = await this.daemon.unknownRepositorySkills(config);
             if (unknown.length) throw new ApiFailure(400, "invalid_request", `Unknown skills in repository settings: ${unknown.join(", ")}`, "Use names from kor skills list");
             await this.daemon.configure(config);

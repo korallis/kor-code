@@ -291,8 +291,10 @@ team. `kor doctor` checks each project in turn, and **Projects** lists them all.
 
 To add a project in Mission Control, open **Settings**, enter its key, checkout
 path, Linear team and Linear project ID, click **Add project**, then **Save
-configuration**. Absolute checkout paths are stored as entered, without the Kor
-installation directory prepended. Existing projects can set their Linear project
+configuration**. Enter the full checkout path starting with `/` or `~/`.
+Mission Control rejects relative paths so they cannot resolve against Kor's
+installation directory. Absolute checkout paths are stored as entered.
+Existing projects can set their Linear project
 under **Projects → Settings**.
 
 Runs from different projects go in parallel, each in its own worktree.
@@ -404,7 +406,8 @@ existing issues. Questions do not create issues, queue runs or approve work.
   before it takes effect. Questions and ordinary work requests need no approval.
 - **Questions:** “what can ship today?” and “what is blocked?” answer from the
   live snapshot. Any offered retry or approval button performs the named action
-  when clicked.
+  when clicked. Questions needing facts outside the snapshot get an explicit
+  explanation of what Kor can answer.
 
 If the project or issue is ambiguous, specify its name or key. If Jev cannot be
 reached, returns invalid data or lacks confidence, the reply says so and takes
