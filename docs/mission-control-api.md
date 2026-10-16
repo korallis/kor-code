@@ -6,7 +6,10 @@ Project responses include `drives`, a durable list with status (`running`,
 counts. `POST /api/ask` recognizes whole-project completion requests and returns
 queue counts and progress links without drafting an issue.
 `POST /api/drives/:id/:action` accepts `{}` and `pause`, `resume` or `stop`;
-it returns `{schemaVersion: 1, drive}` after the Jev-audited control applies.
+it returns `{schemaVersion: 1, drive}` after the locally audited operator control
+applies, without requiring Jev availability. Admission runs in bounded background
+passes and never blocks polling or controls. Explicit issue queue/retry actions
+release drive ownership and retain ordinary execution gates.
 Drive changes publish `invalidate` events for `projects`, `issues` and `brain`.
 
 The browser protocol lives in `packages/mission-control/src/index.ts`, exported

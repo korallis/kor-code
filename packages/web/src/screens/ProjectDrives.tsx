@@ -28,7 +28,7 @@ export function ProjectDrives({ repository }: { repository?: string }) {
         <CardBody>
           <div role="status" aria-live="polite" {...stylex.props(layout.rowWrap)}>
             <b>{count('done')} / {drive.issues.length} Done</b>
-            <span>{count('queued')} queued · {count('running')} running · {count('pending')} waiting for blockers · {count('review')} in review · {count('held')} held</span>
+            <span>{count('queued')} queued · {count('running')} running · {count('pending')} awaiting assessment or blockers · {count('review')} in review · {count('held')} held</span>
             <span {...stylex.props(layout.grow)} />
             <Button size="sm" href={href('projects', drive.repository)}>Open project</Button>
             <Button size="sm" href={drive.url} external>Open in Linear</Button>

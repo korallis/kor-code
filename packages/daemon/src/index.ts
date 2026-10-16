@@ -307,6 +307,7 @@ export class KorDaemon {
     await this.pendingIntake.settle();
     await this.cycle;
     await this.poll;
+    await this.drives.stop();
     await Promise.all(this.scopePolls.values());
     await Promise.all([...this.active.values()].map(run => run.done));
     await this.writeSnapshot();
@@ -361,7 +362,7 @@ export class KorDaemon {
         catch (error) { writeError = error; }
       }
       await this.advanceShipping();
-      await this.drives.reconcile();
+      this.drives.reconcile();
       if (this.now() - this.lastQuotaAt >= 60_000) void this.refreshQuota();
       const found = (await candidates).reduce((sum, count) => sum + count, 0);
       this.lastPollAt = new Date(this.now()).toISOString();
@@ -482,6 +483,7 @@ export class KorDaemon {
   }
   async enqueue(issueId: string): Promise<AssignmentRecord> {
     const assignment = this.store.enqueue(issueId);
+    this.drives.release(issueId);
     await this.writeSnapshot();
     return this.store.listAssignments().find(item => item.issueId === issueId) ?? { ...assignment, attempts: 0 };
   }
@@ -571,6 +573,7 @@ export class KorDaemon {
       this.remember(issue.id, issue);
       this.store.enqueue(issue.id, { issueKey: issue.identifier ?? issue.id, issueTitle: issue.title, repository: repositoryKeyForIssue(issue, this.config) });
       this.store.setPriority(issue.id, issue.priority);
+      this.drives.release(issue.id);
     }
     await this.writeSnapshot();
     await this.tick();
@@ -602,6 +605,7 @@ export class KorDaemon {
       default: { const exhaustive: never = action; throw new Error(String(exhaustive)); }
     }
     if (!accepted) throw new ApiFailure(409, "conflict", "This action is not available in the execution's current state");
+    if (["retry", "answer", "request-changes"].includes(action)) this.drives.release(assignment.issueId);
     // The durable action has already applied. Ancillary failures must not ask
     // clients to repeat it; unacknowledged Tracker writes retry on the next poll.
     await this.log(executionId, `${action} accepted from ${origin}`).catch(error => this.reportError(error));
@@ -611,7 +615,7 @@ export class KorDaemon {
     return pendingWrites ? { status: "pending", pendingWrites } : { status: "synced" };
   }
   async configure(config: KorConfig): Promise<void> {
-    if (this.active.size || this.poll || this.shippingActive.size) throw new ApiFailure(409, "conflict", "Wait for running work and polling to settle before changing configuration");
+    if (this.active.size || this.poll || this.shippingActive.size || this.drives.busy) throw new ApiFailure(409, "conflict", "Wait for running work and polling to settle before changing configuration");
     this.reconfiguring = true;
     try {
     const runtime = this.options.reconfigure?.(config);

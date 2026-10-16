@@ -609,7 +609,9 @@ this request does not create another issue or require a drafting model.
 
 The reply links to Linear and the drive in Mission Control and reports queued,
 waiting, running, review, Done and held counts. Home and the project workspace
-update those counts live. Issues enter the queue in priority, then milestone
+update those counts live. The initial reply reports the discovered issues;
+readiness is assessed in bounded background passes, allowing work and controls
+to proceed while the remaining issues are assessed. Issues enter the queue in priority, then milestone
 target-date/order, then stable issue order. Blocking relations take precedence:
 a dependent starts only after all blockers are Done in Linear. Each new drive
 execution fetches the project's default branch before creating its worktree.
@@ -630,7 +632,11 @@ Correct held issues and ask for another drive to assess them again.
 **Pause drive** prevents new executions and lets started runs finish.
 **Resume drive** continues scheduling. **Stop drive** also cancels queued and
 executing runs; published pull requests retain their review gates. These
-controls and admission/retry decisions are recorded by Jev. Restarting the daemon
+controls apply immediately without a Jev connection and are recorded as explicit
+operator overrides in the decision audit. Admission/retry decisions still use Jev.
+Queue or retry an individual issue to return it to ordinary scheduling and its
+normal execution gates, independently of a held, paused or stopped drive.
+Restarting the daemon
 restores the drive and its pause state from SQLite. A repeated request reuses an
 active drive for the same repository.
 

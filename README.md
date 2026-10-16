@@ -211,12 +211,16 @@ parallel, monitoring, fixing and testing its existing issues.”** Jev resolves 
 live Linear project name to its configured checkout. Kor creates a persistent
 project drive, queues ready issues in priority and milestone order, and waits for
 each blocking issue to be Done before admitting its dependents. No new issue is
-drafted for this request.
+drafted for this request. The reply reports the discovered count immediately;
+readiness assessment proceeds in bounded background passes.
 
 Home and the project workspace show live counts, each issue's state and hold
 reason, and **Pause drive**, **Resume drive** and **Stop drive**. Pause prevents
 new execution while started runs finish; stop also cancels queued and executing
-runs. Published pull requests retain their review gates.
+runs. Controls work even when Jev is unavailable and record the explicit
+operator action in the decision audit. Published pull requests retain their review gates.
+Queueing or retrying an issue manually returns it to ordinary scheduling and
+execution checks, including when its drive is held, paused or stopped.
 
 The drive uses configured concurrency limits, repository checks, acceptance
 verification and shipping policy. `ship: approve` still waits for your approval;
