@@ -147,6 +147,9 @@ export class ProjectDrives {
           continue;
         }
         if (assignment?.status === "complete") { entry.status = "review"; entry.reason = "Waiting for Linear to confirm Done"; continue; }
+        if (assignment?.status === "blocked" && assignment.manifest?.shipping && /Synchronization will retry|No verified reviewer from a different model family/.test(assignment.lastError ?? assignment.manifest.shipping.error ?? "")) {
+          entry.status = "review"; entry.reason = assignment.lastError ?? assignment.manifest.shipping.error ?? "Publication synchronization will retry"; continue;
+        }
         if (assignment && ["failed", "blocked", "canceled"].includes(assignment.status)) {
           if (assignment.status !== "failed" || assignment.manifest?.verification || entry.retries >= MAX_RETRIES) {
             entry.status = "held"; entry.reason = assignment.lastError ?? "Run needs operator input or exhausted its repair budget"; continue;
@@ -160,13 +163,19 @@ export class ProjectDrives {
         const blockers = issue.dependencies.filter(dependency => dependency.stateType !== "completed");
         if (blockers.length) { entry.status = "pending"; entry.reason = `Waiting for blockers to be Done: ${blockers.map(blocker => drive.issues.find(one => one.issueId === blocker.id)?.key ?? blocker.id).join(", ")}`; continue; }
         if (!assignment && issue.stateType === "started") { entry.status = "held"; entry.reason = "Already in progress outside this drive"; continue; }
+        if (assignment?.status !== "queued") {
+          const decisionId = `drive-${drive.id}-queue-${issue.id}-${assignment?.attempts ?? 0}`;
+          const decision = audit.get(decisionId) ? audit.replay(decisionId) : await core.decide({ decisionId, executionId: drive.id, kind: "intake", question: "Admit this previously assessed ready issue to the project drive queue now that every blocking dependency is Done. Respect the established ready admission, priority and milestone order. Choose wait only if a supplied blocking fact prevents autonomous execution.", state: z.json().parse({ issue, admission: entry.admission, project, blockers }), inputs: [{ name: "ready issue", value: issue.id }], candidates: ["queue", "wait"], policyChecks: [{ name: "all blockers Done", result: blockers.length === 0 ? "pass" : "fail" }] });
+          if (!decision.applied || decision.choice !== "queue") { entry.status = "held"; entry.reason = "Jev held queue admission"; continue; }
+          core.recordOutcome(decisionId, { action: "queue", issueId: issue.id, driveId: drive.id });
+        }
         entry.status = "queued"; entry.reason = null;
         // Save eligibility before enqueue; an interrupted enqueue is replayed on the next poll.
         this.save(drive);
         this.daemon.store.enqueue(issue.id, { issueKey: entry.key, issueTitle: issue.title, repository: drive.repository });
         // Rows enter in priority / milestone order; claim preserves this order for equal priority.
         this.daemon.store.setPriority(issue.id, issue.priority);
-        if (entry.admission) core.recordOutcome(entry.admission, { action: "queue", issueId: issue.id, driveId: drive.id, blockersDone: true });
+        if (entry.admission && !audit.get(entry.admission)?.response.observedOutcome) core.recordOutcome(entry.admission, { action: "queue", issueId: issue.id, driveId: drive.id, blockersDone: true });
       }
       const progressing = drive.issues.some(entry => ["queued", "running", "review"].includes(entry.status));
       if (!progressing) for (const entry of drive.issues) if (entry.status === "pending") { entry.status = "held"; entry.reason = `No runnable path: ${entry.reason ?? "dependency cycle or external blocker"}`; }
