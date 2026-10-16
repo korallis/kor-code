@@ -13,7 +13,7 @@ import { AgentSessionWriter, LinearStore, flushLinearWrites, hasScreenshot, stab
 import { captureProcess, processExists, processMatches, stopSession } from "./process.js";
 import { OverrideStore } from "./overrides.js";
 import type { ShippingDriver } from "./shipping.js";
-import type { AskRequest, AskResponse, IssuesResponse, LinearSync, MissionRun, SessionOption, SessionPackResponse, Stage } from "@kor-code/mission-control";
+import type { AskRequest, AskResponse, IssuesResponse, LinearSync, MissionRun, PoolResponse, SessionOption, SessionPackResponse, Stage } from "@kor-code/mission-control";
 import type { JsonValue } from "@kor-code/core";
 import { DEFAULT_SKILL_BUDGET, SESSION_TARGETS, applySkillOverrides, emptySkillPlan, foldSessionEdits, labelEdits, parseSessionEdit, redact, reviewSessionEdit, runtimeSecrets, screenshotReadinessCheck, sessionEditChoice, type SessionEdit, type SessionEditContext, type SkillCandidate, type SkillTier } from "@kor-code/jev";
 import { ApiFailure, MissionApi } from "./api.js";
@@ -21,6 +21,7 @@ import { MissionEvents } from "./events.js";
 import { MissionServices, atomicPrivateFile, live, unavailable } from "./mission-services.js";
 import { ensureUiToken } from "./ui-token.js";
 import { askJev } from "./ask.js";
+import { stateSignature } from "./observations.js";
 export { ensureUiToken } from "./ui-token.js";
 export { MissionServices } from "./mission-services.js";
 export { GitHubShipping, type ShippingDriver, type ShippingCommand, type DescribePullRequest, type MergeIntelligence } from "./shipping.js";
@@ -154,6 +155,8 @@ export class KorDaemon {
   private lastPollAt: string | undefined;
   private lastError: string | undefined;
   private timer: ReturnType<typeof setInterval> | undefined;
+  private observationTimer: ReturnType<typeof setInterval> | undefined;
+  private api: MissionApi | undefined;
   private cycle: Promise<void> = Promise.resolve();
   private snapshotWrite: Promise<void> = Promise.resolve();
   private server: Server | undefined;
@@ -164,6 +167,7 @@ export class KorDaemon {
   readonly overrides: OverrideStore;
   /** Issue facts by assignment issue ID, kept from polls and claims for display. */
   private readonly issues = new Map<string, IssueFacts>();
+  private readonly issueLists = new Map<string, Labelled<LinearIssue[]>>();
   private accounts: Labelled<GatewayAccountHealth[]> | undefined;
   readonly mission: MissionServices;
   readonly events = new MissionEvents(() => [this.token, ...runtimeSecrets(), ...this.mission.secrets()]);
@@ -211,6 +215,7 @@ export class KorDaemon {
       await this.mission.initialize();
       await this.reconcile();
       const api = new MissionApi(this, this.token, this.options.webRoot);
+      this.api = api;
       const server = createServer((request, response) => {
         const address = server.address();
         const port = address && typeof address !== "string" ? address.port : this.port;
@@ -230,6 +235,7 @@ export class KorDaemon {
       if (address && typeof address !== "string") await atomicPrivateFile(join(this.paths.stateDir, "ui-address.json"), `${JSON.stringify({ pid: process.pid, url: `http://127.0.0.1:${address.port}/` })}\n`);
       await this.tick();
       this.timer = setInterval(() => { void this.tick(); }, 100);
+      this.observationTimer = setInterval(() => { void api.observations.refresh(); }, 3_000);
       return { daemon: this, server, stop: () => this.stop() };
     } catch (error) {
       if (this.ownsStore) this.store.releaseDaemon(this.owner);
@@ -244,6 +250,8 @@ export class KorDaemon {
   private async shutdown(): Promise<void> {
     this.stopping = true;
     if (this.timer) clearInterval(this.timer);
+    if (this.observationTimer) clearInterval(this.observationTimer);
+    this.api?.observations.close();
     for (const run of this.active.values()) run.abort.abort(new Error("daemon stopping"));
     await this.cycle;
     await this.poll;
@@ -300,7 +308,10 @@ export class KorDaemon {
       if (this.now() - this.lastQuotaAt >= 60_000) void this.refreshQuota();
       let found = 0;
       if (this.options.linear) for (const key of teamKeys(this.options.config)) {
-        const issues = await this.options.linear.listIssues(key, 100);
+        let issues: LinearIssue[];
+        try { issues = await this.options.linear.listIssues(key, 100); }
+        catch (error) { this.observeIssues(key, unavailable([], "Linear issues unavailable")); throw error; }
+        this.observeIssues(key, live(issues));
         for (const issue of issues) {
           if (this.stopping) break;
           this.remember(issue.id, issue);
@@ -432,18 +443,24 @@ export class KorDaemon {
     if (!run) throw new ApiFailure(404, "not_found", "Execution not found");
     return run;
   }
+  private observeIssues(team: string, observation: Labelled<LinearIssue[]>): void {
+    const changed = stateSignature(this.issueLists.get(team)) !== stateSignature(observation);
+    this.issueLists.set(team, observation);
+    if (changed) this.events.publish({ kind: "invalidate", resources: ["issues"] });
+  }
   async missionIssues(project: string | null): Promise<IssuesResponse> {
     const repositories = project ? [[project, this.config.repos[project]]] as const : Object.entries(this.config.repos);
     if (project && !this.config.repos[project]) throw new ApiFailure(404, "not_found", "Configured project not found");
     const linear = this.options.linear;
     if (!linear) return { schemaVersion: 1, bounded: true, issues: unavailable([], "Linear connection unavailable") };
-    try {
-      const issues = (await Promise.all(repositories.map(async ([key, repository]) => {
-        const all = await linear.listIssues(repository?.linearTeam ?? key.split("/")[0] ?? key, 100);
-        return repository?.linearProject ? all.filter(issue => issue.projectId === repository.linearProject) : all;
-      }))).flat();
-      return { schemaVersion: 1, bounded: true, issues: { value: [...new Map(issues.map(issue => [issue.id, issue])).values()], provenance: "live", observedAt: new Date().toISOString() } };
-    } catch { return { schemaVersion: 1, bounded: true, issues: unavailable([], "Linear issues unavailable") }; }
+    const lists = repositories.map(([key, repository]) => this.issueLists.get(repository?.linearTeam ?? key.split("/")[0] ?? key));
+    const issues = repositories.flatMap(([, repository], index) => {
+      const all = lists[index]?.value ?? [];
+      return repository?.linearProject ? all.filter(issue => issue.projectId === repository.linearProject) : all;
+    });
+    const value = [...new Map(issues.map(issue => [issue.id, issue])).values()];
+    const ready = lists.every(list => list?.provenance === "live");
+    return { schemaVersion: 1, bounded: true, issues: ready ? live(value) : unavailable(value, "Waiting for the daemon's Linear intake observation") };
   }
   async queueIssues(references: string[]): Promise<MissionRun[]> {
     const linear = this.options.linear;
@@ -506,14 +523,18 @@ export class KorDaemon {
     });
     if (previous !== undefined) await atomicPrivateFile(`${this.paths.configFile}.bak`, previous);
     await atomicPrivateFile(this.paths.configFile, `${JSON.stringify(config, null, 2)}\n`);
+    if (stateSignature(this.options.config.repos) !== stateSignature(config.repos)) this.api?.observations.clear("pulls");
     this.options.config = config;
     this.pollIntervalMs = config.pollIntervalSeconds * 1000;
+    for (const team of this.issueLists.keys()) if (!teamKeys(config).includes(team)) this.issueLists.delete(team);
     if (runtime) { this.options.controller = runtime.controller; this.options.chooseRoute = runtime.chooseRoute; }
     await this.writeSnapshot();
+    this.events.publish({ kind: "config", restartRequired: false });
     } finally { this.reconfiguring = false; }
   }
   async connectionsChanged(provider: string): Promise<void> {
-    if (provider === "linear") this.options.linear = this.mission.linear();
+    this.api?.observations.clear();
+    if (provider === "linear") { this.options.linear = this.mission.linear(); this.issueLists.clear(); this.lastPollAt = undefined; }
     if (provider === "gateway") {
       this.options.gateway = await this.mission.gateway();
       // Observations from another gateway must not survive a connection switch.
@@ -523,13 +544,22 @@ export class KorDaemon {
       this.lastQuotaAt = 0;
       await this.refreshAccounts();
     }
+    this.events.publish({ kind: "invalidate", resources: ["connections", "models", "pool", "issues", "pulls", "brain"] });
   }
   refreshQuota(): Promise<Labelled<JsonValue | null>> {
     if (this.quotaPoll) return this.quotaPoll;
     if (this.now() - this.lastQuotaAt < 60_000) return Promise.resolve(this.quota);
     this.lastQuotaAt = this.now();
-    this.quotaPoll = this.mission.quota().then(quota => { this.quota = quota; this.events.publish({ kind: "usage", quota }); return quota; }).finally(() => { this.quotaPoll = undefined; });
+    this.quotaPoll = this.mission.quota().then(quota => {
+      const changed = stateSignature(this.quota) !== stateSignature(quota);
+      this.quota = quota;
+      if (changed) this.events.publish({ kind: "usage", quota });
+      return quota;
+    }).finally(() => { this.quotaPoll = undefined; });
     return this.quotaPoll;
+  }
+  pool(): PoolResponse {
+    return { schemaVersion: 1, accounts: this.accounts ?? unavailable([], "Gateway pool unavailable"), quota: this.quota };
   }
   setStage(executionId: string, stage: Stage): void {
     this.stages.set(executionId, stage);
@@ -1013,6 +1043,11 @@ export class KorDaemon {
       if (snapshot.accounts) {
         const signature = JSON.stringify({ ...snapshot.accounts, observedAt: undefined });
         if (this.eventSignatures.get("pool") !== signature) { this.eventSignatures.set("pool", signature); this.events.publish({ kind: "pool", accounts: snapshot.accounts }); }
+      }
+      const signature = stateSignature(snapshot);
+      if (this.eventSignatures.get("status") !== signature) {
+        this.eventSignatures.set("status", signature);
+        this.events.publish({ kind: "snapshot", status: { schemaVersion: 1, provenance: "live", observedAt: snapshot.observedAt, snapshot }, runs: this.missionRuns() });
       }
     };
     this.snapshotWrite = this.snapshotWrite.catch(() => undefined).then(write);

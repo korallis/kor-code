@@ -1,13 +1,14 @@
-// The live store: one server-sent-event stream from the daemon, held outside
-// React and read with useSyncExternalStore. It opens on the first subscriber,
-// closes on the last, and reconnects with Last-Event-ID.
+// Each tab reads this store with useSyncExternalStore. A SharedWorker holds
+// one authenticated event stream for every tab, including background tabs.
 import { useSyncExternalStore } from 'react';
-import { API_PREFIX, type MissionEvent, type MissionRun, type PoolResponse, type Stage } from '@kor-code/mission-control';
+import { type LiveResource, type MissionEvent, type MissionRun, type PoolResponse } from '@kor-code/mission-control';
 import type { DecisionRecord, KorStatusResponse, OverrideRecord } from '@kor-code/core';
 import { authHeaders } from './client';
 import { queryClient } from './query';
 
-export type Connection = 'connecting' | 'live' | 'reconnecting' | 'unauthorized' | 'offline';
+import type { StreamMessage } from './stream-types';
+export type { Connection } from './stream-types';
+import type { Connection } from './stream-types';
 export interface TerminalChunk { offset: number; channel: 'stdout' | 'stderr' | 'daemon'; text: string; at: number }
 export interface LiveState {
   connection: Connection;
@@ -38,10 +39,11 @@ let state: LiveState = {
   terminals: {}, decidedAt: {}, shippedAt: {}, activity: [], lastEventAt: null, restartRequired: false, reason: null,
 };
 const listeners = new Set<() => void>();
-let controller: AbortController | null = null;
-let lastEventId: string | null = null;
-let retryTimer: ReturnType<typeof setTimeout> | null = null;
-let retries = 0;
+let worker: SharedWorker | null = null;
+
+function invalidate(resources: readonly LiveResource[]): void {
+  for (const resource of resources) void queryClient.invalidateQueries({ queryKey: [resource] });
+}
 
 function set(patch: Partial<LiveState>): void {
   state = { ...state, ...patch };
@@ -72,9 +74,11 @@ function apply(event: MissionEvent): void {
   const at = Date.now();
   switch (event.kind) {
     case 'snapshot': {
-      const decisions = event.status.snapshot?.decisions?.value ?? state.decisions;
-      set({ status: event.status, runs: event.runs, decisions, overrides: event.status.snapshot?.overrides ?? state.overrides, activity: sample(event.runs), lastEventAt: at, reason: event.status.provenance === 'live' ? null : event.status.reason ?? null });
-      void queryClient.invalidateQueries({ queryKey: ['runs'] });
+      const decisions = event.status.snapshot?.decisions?.value ?? [];
+      set({ status: event.status, runs: event.runs, decisions, overrides: event.status.snapshot?.overrides ?? [], accounts: event.status.snapshot?.accounts ?? null, activity: sample(event.runs), lastEventAt: at, reason: event.status.provenance === 'live' ? null : event.status.reason ?? null });
+      queryClient.setQueryData(['status'], event.status);
+      queryClient.setQueryData(['runs'], { schemaVersion: 1, runs: event.runs });
+      invalidate(['projects', 'run', 'session', 'brain']);
       return;
     }
     case 'run': {
@@ -86,8 +90,9 @@ function apply(event: MissionEvent): void {
       return;
     }
     case 'stage': {
-      const runs = state.runs.map(run => run.executionId === event.executionId ? { ...run, stage: event.stage as Stage } : run);
+      const runs = state.runs.map(run => run.executionId === event.executionId ? { ...run, stage: event.stage } : run);
       set({ runs, lastEventAt: at });
+      invalidate(['run']);
       return;
     }
     case 'terminal': {
@@ -96,6 +101,7 @@ function apply(event: MissionEvent): void {
       if (existing.some(chunk => chunk.offset === event.offset)) return;
       const next = [...existing, { offset: event.offset, channel: event.channel, text: event.text, at }].slice(-TERMINAL_LIMIT);
       set({ terminals: { ...state.terminals, [event.executionId]: next }, lastEventAt: at });
+      if (existing.length >= TERMINAL_LIMIT) void queryClient.invalidateQueries({ queryKey: ['terminal', event.executionId] });
       return;
     }
     case 'decision': {
@@ -112,116 +118,61 @@ function apply(event: MissionEvent): void {
     case 'pool': set({ accounts: event.accounts, lastEventAt: at }); void queryClient.invalidateQueries({ queryKey: ['pool'] }); return;
     case 'usage': set({ quota: event.quota, lastEventAt: at }); return;
     case 'ask': queryClient.setQueryData(['ask', event.response.id], event.response); set({ lastEventAt: at }); return;
-    case 'config': set({ restartRequired: event.restartRequired, lastEventAt: at }); void queryClient.invalidateQueries({ queryKey: ['config'] }); void queryClient.invalidateQueries({ queryKey: ['projects'] }); return;
-    case 'reset': set({ reason: event.reason, lastEventAt: at }); return;
+    case 'config': set({ restartRequired: event.restartRequired, lastEventAt: at }); invalidate(['config', 'projects', 'session', 'issues', 'pulls']); return;
+    case 'invalidate':
+      if (event.resources.includes('pool')) set({ accounts: null, quota: null });
+      invalidate(event.resources); set({ lastEventAt: at }); return;
+    case 'reset': set({ terminals: {}, accounts: null, quota: null, reason: event.reason, lastEventAt: at }); return;
+    default: { const exhaustive: never = event; throw new Error(String(exhaustive)); }
   }
 }
 
-function parseBlock(block: string): void {
-  let id: string | null = null;
-  const data: string[] = [];
-  for (const line of block.split('\n')) {
-    if (line.startsWith(':') || line === '') continue;
-    const colon = line.indexOf(':');
-    const field = colon === -1 ? line : line.slice(0, colon);
-    const value = colon === -1 ? '' : line.slice(colon + 1).replace(/^ /, '');
-    if (field === 'id') id = value;
-    else if (field === 'data') data.push(value);
-  }
-  if (id !== null) lastEventId = id;
-  if (data.length === 0) return;
-  try { apply(JSON.parse(data.join('\n')) as MissionEvent); } catch { /* a malformed frame is skipped; the next snapshot repairs state */ }
-}
-
-async function connect(): Promise<void> {
-  const abort = new AbortController();
-  controller = abort;
-  set({ connection: retries === 0 ? 'connecting' : 'reconnecting' });
-  // A pending handshake can outlive a healthy REST connection. Bound only the
-  // wait for headers; a connected event stream must remain open indefinitely.
-  let handshakeTimedOut = false;
-  const handshakeTimer = setTimeout(() => { handshakeTimedOut = true; abort.abort(); }, 5_000);
-  try {
-    const response = await fetch(`${API_PREFIX}/events`, {
-      headers: { ...authHeaders(), accept: 'text/event-stream', ...(lastEventId ? { 'last-event-id': lastEventId } : {}) },
-      signal: abort.signal, cache: 'no-store', credentials: 'omit',
-    });
-    clearTimeout(handshakeTimer);
-    if (controller !== abort || abort.signal.aborted) return;
-    if (response.status === 401 || response.status === 403) { set({ connection: 'unauthorized', reason: 'This browser session is not authorised. Open Mission Control with `kor ui`.' }); controller = null; return; }
-    if (!response.ok || !response.body) throw new Error(`events answered ${response.status}`);
-    retries = 0;
-    set({ connection: 'live', reason: null });
-    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-    let buffer = '';
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += value.replace(/\r\n?/g, '\n');
-      let split = buffer.indexOf('\n\n');
-      while (split !== -1) {
-        parseBlock(buffer.slice(0, split));
-        buffer = buffer.slice(split + 2);
-        split = buffer.indexOf('\n\n');
-      }
+function connect(): void {
+  if (worker) return;
+  set({ connection: 'connecting' });
+  const headers = authHeaders();
+  const shared = new SharedWorker(new URL('./live-worker.ts', import.meta.url), { type: 'module', name: JSON.stringify(headers) });
+  worker = shared;
+  shared.port.onmessage = ({ data }: MessageEvent<StreamMessage>) => {
+    if (worker !== shared) return;
+    if (data.kind === 'event') apply(data.event);
+    else {
+      set({ connection: data.connection, reason: data.reason });
+      // Every new attachment and reconnect resyncs inactive screens and transcripts.
+      if (data.connection === 'live') void queryClient.invalidateQueries();
     }
-    throw new Error('event stream ended');
-  } catch {
-    if (controller !== abort || abort.signal.aborted && !handshakeTimedOut) return;
-    controller = null;
-    retries += 1;
-    set({ connection: retries > 2 ? 'offline' : 'reconnecting', reason: 'Lost the daemon event stream; reconnecting.' });
-    retryTimer = setTimeout(() => { retryTimer = null; if (listeners.size > 0) void connect(); }, Math.min(15_000, 1_000 * 2 ** Math.min(retries, 4)));
-  } finally {
-    clearTimeout(handshakeTimer);
-  }
+  };
+  shared.onerror = () => { set({ connection: 'offline', reason: 'The shared live connection failed. Reconnect to retry.' }); };
+  shared.port.postMessage({ kind: 'subscribe', headers });
+}
+
+function disconnect(): void {
+  worker?.port.postMessage({ kind: 'unsubscribe' });
+  worker?.port.close();
+  worker = null;
 }
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
-  if (listeners.size === 1 && controller === null && retryTimer === null && document.visibilityState !== 'hidden') void connect();
+  if (listeners.size === 1) {
+    connect();
+    window.addEventListener('pagehide', disconnect);
+    window.addEventListener('pageshow', connect);
+  }
   return () => {
     listeners.delete(listener);
     if (listeners.size === 0) {
-      controller?.abort();
-      controller = null;
-      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+      disconnect();
+      window.removeEventListener('pagehide', disconnect);
+      window.removeEventListener('pageshow', connect);
     }
   };
 }
 
-// A hidden tab releases its stream (browsers allow six connections per host,
-// and every open tab would otherwise hold one) and resumes from its last event.
-if (typeof document !== 'undefined') {
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      controller?.abort();
-      controller = null;
-      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-    } else if (listeners.size > 0 && controller === null && retryTimer === null) {
-      retries = 0;
-      void connect();
-    }
-  });
-}
-
-/** The daemon's full override audit, from a REST status read. */
-export function replaceOverrides(records: OverrideRecord[]): void {
-  set({ overrides: records });
-}
-
-/** Record an override the daemon just applied, refused or reverted, so every view shows it at once. */
-export function upsertOverride(record: OverrideRecord): void {
-  set({ overrides: [record, ...state.overrides.filter(existing => existing.id !== record.id)] });
-}
-
 /** Reconnect now (the offline banner's button). */
 export function reconnect(): void {
-  controller?.abort();
-  controller = null;
-  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-  retries = 0;
-  void connect();
+  if (!worker) connect();
+  worker?.port.postMessage({ kind: 'reconnect' });
 }
 
 /** Read one slice of the live store. The selector must return a stable value (a slice of state or a primitive). */

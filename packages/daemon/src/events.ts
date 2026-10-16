@@ -11,6 +11,7 @@ export class MissionEvents {
   private readonly history: MissionEvent[] = [];
   private bytes = 0;
   private readonly clients = new Set<ServerResponse>();
+  get connected(): boolean { return this.clients.size > 0; }
 
   publish(payload: EventPayload): MissionEvent {
     const event: MissionEvent = { ...payload, schemaVersion: 1, id: `${this.epoch}:${++this.sequence}`, observedAt: new Date().toISOString() };
@@ -33,10 +34,10 @@ export class MissionEvents {
     response.flushHeaders();
     const index = lastId ? this.history.findIndex(event => event.id === lastId) : -1;
     if (lastId && index >= 0) for (const event of this.history.slice(index + 1)) this.write(response, event);
-    else {
-      if (lastId) this.write(response, { kind: "reset", reason: "Event history expired or daemon restarted", schemaVersion: 1, id: `${this.epoch}:${this.sequence}`, observedAt: new Date().toISOString() });
-      this.write(response, { ...snapshot, schemaVersion: 1, id: `${this.epoch}:${this.sequence}`, observedAt: new Date().toISOString() });
-    }
+    else if (lastId) this.write(response, { kind: "reset", reason: "Event history expired or daemon restarted", schemaVersion: 1, id: `${this.epoch}:${this.sequence}`, observedAt: new Date().toISOString() });
+    // Replayed deltas repair the terminal; the snapshot also covers changes
+    // observed while no browser was connected and establishes readiness.
+    this.write(response, { ...snapshot, schemaVersion: 1, id: `${this.epoch}:${this.sequence}`, observedAt: new Date().toISOString() });
     this.clients.add(response);
     const heartbeat = setInterval(() => {
       if (response.writableLength > 1_000_000) response.destroy();

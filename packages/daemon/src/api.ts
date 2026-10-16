@@ -4,8 +4,9 @@ import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import { korConfigSchema, parseKorConfig, repositorySchema } from "@kor-code/config";
 import { redact, runtimeSecrets } from "@kor-code/jev";
-import type { ActionResponse, ApiError, ApiErrorCode, ConfigResponse, PoolResponse, ProjectsResponse, RunsResponse } from "@kor-code/mission-control";
+import type { ActionResponse, ApiError, ApiErrorCode, ConfigResponse, PullsResponse, ProjectsResponse, RunsResponse } from "@kor-code/mission-control";
 import type { KorDaemon } from "./index.js";
+import { MissionObservations } from "./observations.js";
 import { acceptsUiToken } from "./ui-token.js";
 import { atomicPrivateFile, unavailable } from "./mission-services.js";
 
@@ -39,7 +40,10 @@ const mime: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js
 /** Authenticates all data routes, keeping the static bootstrap free of secrets. */
 export class MissionApi {
   private configWrite: Promise<void> = Promise.resolve();
-  constructor(private readonly daemon: KorDaemon, private readonly token: string, private readonly webRoot: string | undefined) {}
+  readonly observations: MissionObservations;
+  constructor(private readonly daemon: KorDaemon, private readonly token: string, private readonly webRoot: string | undefined) {
+    this.observations = new MissionObservations(daemon.events, () => Math.max(60_000, daemon.config.pollIntervalSeconds * 1_000));
+  }
   async handle(request: IncomingMessage, response: ServerResponse, port: number): Promise<void> {
     response.setHeader("x-content-type-options", "nosniff");
     response.setHeader("referrer-policy", "no-referrer");
@@ -83,16 +87,18 @@ export class MissionApi {
         if (path === "/api/github/pulls") {
           const repository = this.daemon.config.repos[url.searchParams.get("repo") ?? ""];
           if (!repository) throw new ApiFailure(404, "not_found", "Configured repository not found");
-          send(200, await services.pulls(repository)); return;
+          send(200, await this.observations.read(`pulls:${url.searchParams.get("repo")}`, "pulls", async (): Promise<PullsResponse> => {
+            const current = this.daemon.config.repos[url.searchParams.get("repo") ?? ""];
+            return current ? services.pulls(current) : { schemaVersion: 1, bounded: true, pulls: unavailable([], "Repository removed") };
+          })); return;
         }
-        if (path === "/api/models") { send(200, await services.models()); return; }
+        if (path === "/api/models") { send(200, await this.observations.read(path, "models", () => services.models())); return; }
         if (path === "/api/brain") { send(200, await services.brain(this.daemon.status(), () => this.daemon.skillCatalogue())); return; }
-        if (path === "/api/connections") { send(200, await services.connections()); return; }
+        if (path === "/api/connections") { send(200, await this.observations.read(path, "connections", () => services.connections(), Infinity)); return; }
         if (path === "/api/config") { send(200, { schemaVersion: 1, config: this.daemon.config, restartRequired: false } satisfies ConfigResponse); return; }
         if (path === "/api/quota" || path === "/api/pool") {
-          const quota = await this.daemon.refreshQuota();
-          if (path === "/api/quota") send(200, quota);
-          else send(200, { schemaVersion: 1, accounts: this.daemon.status().accounts ?? unavailable([], "Gateway pool unavailable"), quota } satisfies PoolResponse);
+          const pool = this.daemon.pool();
+          send(200, path === "/api/quota" ? pool.quota : pool);
           return;
         }
       }
@@ -115,7 +121,6 @@ export class MissionApi {
             const unknown = await this.daemon.unknownRepositorySkills(config);
             if (unknown.length) throw new ApiFailure(400, "invalid_request", `Unknown skills in repository settings: ${unknown.join(", ")}`, "Use names from kor skills list");
             await this.daemon.configure(config);
-            this.daemon.events.publish({ kind: "config", restartRequired: false });
             send(200, { schemaVersion: 1, config, restartRequired: false } satisfies ConfigResponse);
           };
           const write = this.configWrite.then(operation);
@@ -160,7 +165,13 @@ export class MissionApi {
           send(200, connections); return;
         }
         const probe = /^\/api\/models\/([^/]+)\/probe$/.exec(path);
-        if (probe?.[1]) { empty.parse(input); const model = decodeURIComponent(probe[1]); send(200, { schemaVersion: 1, model, verified: await services.probeModel(model) }); return; }
+        if (probe?.[1]) {
+          empty.parse(input); const model = decodeURIComponent(probe[1]);
+          const verified = await services.probeModel(model);
+          this.observations.clear("models");
+          this.daemon.events.publish({ kind: "invalidate", resources: ["models"] });
+          send(200, { schemaVersion: 1, model, verified }); return;
+        }
         const account = /^\/api\/accounts\/([^/]+)\/(pause|resume)$/.exec(path);
         if (account?.[1]) {
           empty.parse(input); const accountId = decodeURIComponent(account[1]); const paused = account[2] === "pause";

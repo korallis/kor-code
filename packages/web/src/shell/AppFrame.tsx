@@ -121,7 +121,7 @@ function TopBar({ crumbs, askHint, showAsk }: { crumbs: readonly string[]; askHi
   const { runs } = useMissionRuns();
   const attention = runs.filter(needsYou).length;
   const ok = connection === 'live' && status?.provenance === 'live';
-  const label = connection === 'live' ? (status?.provenance === 'stale' ? 'STALE' : 'LIVE') : connection === 'unauthorized' ? 'SIGNED OUT' : connection === 'offline' ? 'OFFLINE' : 'CONNECTING';
+  const label = connection === 'live' ? (status?.provenance === 'stale' ? 'STALE' : 'LIVE') : connection === 'unauthorized' ? 'SIGNED OUT' : connection === 'offline' ? 'OFFLINE' : connection === 'reconnecting' ? 'RECONNECTING' : 'CONNECTING';
   return (
     <header {...stylex.props(styles.top)}>
       <span {...stylex.props(styles.topLine)} />
@@ -237,6 +237,7 @@ function SideBar({ active, project }: { active: Screen; project?: string }) {
 
 function StatusBar() {
   const now = useNow();
+  const connection = useLive(live => live.connection);
   const decisions = useDecisions();
   const status = useStatusResponse();
   const { runs } = useMissionRuns();
@@ -282,24 +283,24 @@ function StatusBar() {
       </div>
       <div {...stylex.props(styles.seg, styles.segRight)}>
         {daemon && <span {...stylex.props(styles.hideNarrowInline)}>pid {daemon.pid} · poll {daemon.pollIntervalSeconds}s · last {ago(daemon.lastPollAt, now)} ago</span>}
-        <ProvenanceChip provenance={status?.provenance ?? 'unavailable'} reason={status?.reason}>{status ? status.provenance : 'connecting'}{lastEventAt ? ` · ${ago(new Date(lastEventAt).toISOString(), now)}` : ''}</ProvenanceChip>
+        <ProvenanceChip provenance={connection === 'live' ? status?.provenance ?? 'unavailable' : 'stale'} reason={status?.reason}>{connection === 'live' ? status?.provenance ?? 'connecting' : connection}{lastEventAt ? ` · ${ago(new Date(lastEventAt).toISOString(), now)}` : ''}</ProvenanceChip>
       </div>
     </footer>
   );
 }
 
-/** When the event stream has failed repeatedly, say so above every screen, with the daemon-offline art and a reconnect. */
+/** Keep the last values visible and label them as soon as the stream drops. */
 function Offline() {
   const connection = useLive(live => live.connection);
   const reason = useLive(live => live.reason);
-  if (connection !== 'offline') return null;
+  if (connection !== 'offline' && connection !== 'reconnecting') return null;
   return (
     <div {...stylex.props(styles.offline)}>
       <Card pad variant="attention">
         <div {...stylex.props(styles.offlineRow)}>
           <MotionMedia slot="empty-daemon-offline" contain fallback={null} style={styles.offlineArt} />
           <div>
-            <div {...stylex.props(styles.offlineTitle)}>The Kor daemon is not answering.</div>
+            <div {...stylex.props(styles.offlineTitle)}>Live updates disconnected.</div>
             <div {...stylex.props(text.muted)}>{reason ?? 'The live event stream closed.'} Every value below is the last one Kor reported. Start it with <span {...stylex.props(text.mono, text.cyan)}>kor serve</span>.</div>
           </div>
           <span {...stylex.props(styles.pushRight)}><Button variant="warn" onClick={reconnect}>Reconnect</Button></span>
