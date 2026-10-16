@@ -25,9 +25,10 @@ import { askJev } from "./ask.js";
 import { stateSignature } from "./observations.js";
 import { PendingIntake } from "./pending-intake.js";
 import { readModelRegistry } from "@kor-code/gateway-adapter";
+import { ProjectDrives } from "./project-drive.js";
 export { ensureUiToken } from "./ui-token.js";
 export { MissionServices } from "./mission-services.js";
-export { GitHubShipping, type ShippingDriver, type ShippingCommand, type DescribePullRequest, type MergeIntelligence } from "./shipping.js";
+export { GitHubShipping, ShippingDecisionHold, type ShippingDriver, type ShippingCommand, type DescribePullRequest, type MergeIntelligence } from "./shipping.js";
 
 export { OverrideStore } from "./overrides.js";
 
@@ -178,6 +179,7 @@ export class KorDaemon {
   private readonly issueLists = new Map<string, Labelled<TrackerIssueSummary[]>>();
   private accounts: Labelled<GatewayAccountHealth[]> | undefined;
   readonly mission: MissionServices;
+  readonly drives: ProjectDrives;
   readonly events = new MissionEvents(() => [this.token, ...runtimeSecrets(), ...this.mission.secrets()]);
   private readonly stages = new Map<string, Stage>();
   private readonly shippingActive = new Set<string>();
@@ -239,6 +241,7 @@ export class KorDaemon {
     this.mission = options.missionServices ?? new MissionServices(options.paths, options.probeModel);
     if (!options.tracker && options.linear) options.tracker = new TrackerRouter(options.config, options.linear, (path, body, method) => this.mission.github(path, body, process.env, method));
     this.pendingIntake = new PendingIntake(join(options.paths.stateDir, "pending-intake.json"));
+    this.drives = new ProjectDrives(this);
     this.startedAt = new Date(this.now()).toISOString();
   }
 
@@ -304,6 +307,7 @@ export class KorDaemon {
     await this.pendingIntake.settle();
     await this.cycle;
     await this.poll;
+    await this.drives.stop();
     await Promise.all(this.scopePolls.values());
     await Promise.all([...this.active.values()].map(run => run.done));
     await this.writeSnapshot();
@@ -358,6 +362,7 @@ export class KorDaemon {
         catch (error) { writeError = error; }
       }
       await this.advanceShipping();
+      this.drives.reconcile();
       if (this.now() - this.lastQuotaAt >= 60_000) void this.refreshQuota();
       const found = (await candidates).reduce((sum, count) => sum + count, 0);
       this.lastPollAt = new Date(this.now()).toISOString();
@@ -384,6 +389,7 @@ export class KorDaemon {
         this.observeIssues(key, live(issues));
         for (const issue of issues) {
           this.remember(issue.id, issue);
+          if (this.drives.owns(issue.id)) continue;
           if (issue.stateType !== 'unstarted' || issue.intakeBlockedReason || !issue.labels.some(label => label.toLowerCase() === this.config.intakeLabel.toLowerCase())) continue;
           try {
             this.store.enqueue(issue.id, { issueKey: issue.identifier ?? issue.id, issueTitle: issue.title, repository: repositoryKeyForIssue(issue, this.config) });
@@ -477,6 +483,7 @@ export class KorDaemon {
   }
   async enqueue(issueId: string): Promise<AssignmentRecord> {
     const assignment = this.store.enqueue(issueId);
+    this.drives.release(issueId);
     await this.writeSnapshot();
     return this.store.listAssignments().find(item => item.issueId === issueId) ?? { ...assignment, attempts: 0 };
   }
@@ -566,6 +573,7 @@ export class KorDaemon {
       this.remember(issue.id, issue);
       this.store.enqueue(issue.id, { issueKey: issue.identifier ?? issue.id, issueTitle: issue.title, repository: repositoryKeyForIssue(issue, this.config) });
       this.store.setPriority(issue.id, issue.priority);
+      this.drives.release(issue.id);
     }
     await this.writeSnapshot();
     await this.tick();
@@ -597,6 +605,7 @@ export class KorDaemon {
       default: { const exhaustive: never = action; throw new Error(String(exhaustive)); }
     }
     if (!accepted) throw new ApiFailure(409, "conflict", "This action is not available in the execution's current state");
+    if (["retry", "answer", "request-changes"].includes(action)) this.drives.release(assignment.issueId);
     // The durable action has already applied. Ancillary failures must not ask
     // clients to repeat it; unacknowledged Tracker writes retry on the next poll.
     await this.log(executionId, `${action} accepted from ${origin}`).catch(error => this.reportError(error));
@@ -606,7 +615,7 @@ export class KorDaemon {
     return pendingWrites ? { status: "pending", pendingWrites } : { status: "synced" };
   }
   async configure(config: KorConfig): Promise<void> {
-    if (this.active.size || this.poll || this.shippingActive.size) throw new ApiFailure(409, "conflict", "Wait for running work and polling to settle before changing configuration");
+    if (this.active.size || this.poll || this.shippingActive.size || this.drives.busy) throw new ApiFailure(409, "conflict", "Wait for running work and polling to settle before changing configuration");
     this.reconfiguring = true;
     try {
     const runtime = this.options.reconfigure?.(config);
@@ -976,7 +985,11 @@ export class KorDaemon {
       const modelsReady = !this.mission.canProbe || (await readModelRegistry(this.paths.modelsFile)).models.some(model => model.verified);
       if (modelsReady && this.options.tracker && (this.options.runner || this.options.controller)) {
         while (!this.stopping && this.active.size < this.options.config.limits.total) {
-          const claim = this.store.claim(this.owner, this.leaseTtlMs, undefined, [...this.active.keys()]);
+          const assignments = this.store.listAssignments();
+          const busyRepositories = new Map<string, number>();
+          for (const assignment of assignments) if (this.active.has(assignment.issueId) && assignment.manifest) busyRepositories.set(assignment.manifest.repository, (busyRepositories.get(assignment.manifest.repository) ?? 0) + 1);
+          const saturated = assignments.filter(assignment => assignment.manifest && (busyRepositories.get(assignment.manifest.repository) ?? 0) >= this.config.limits.perRepository).map(assignment => assignment.issueId);
+          const claim = this.store.claim(this.owner, this.leaseTtlMs, undefined, [...this.active.keys(), ...this.drives.excluded(), ...saturated]);
           if (!claim) break;
           const abort = new AbortController();
           const run: ActiveRun = { claim, abort, done: Promise.resolve() };
@@ -1043,7 +1056,10 @@ export class KorDaemon {
       }
       abort.signal.throwIfAborted();
       if (this.options.runner) result = await this.options.runner({ claim, issue, onSpawn, signal: abort.signal });
-      else if (this.options.controller) result = await this.options.controller.dispatch({ ...manifest, status: "queued", issue, claim, onSpawn, signal: abort.signal });
+      else if (this.options.controller) {
+        const baseRevision = this.drives.owns(issue.id) && !previous?.worktree ? await this.drives.baseRevision(repository) : undefined;
+        result = await this.options.controller.dispatch({ ...manifest, status: "queued", issue, claim, onSpawn, signal: abort.signal, ...(baseRevision ? { baseRevision } : {}) });
+      }
       else throw new Error("Daemon controller unavailable");
       abort.signal.throwIfAborted();
     } catch (error) { failure = error; }

@@ -2,6 +2,7 @@
 import * as stylex from '@stylexjs/stylex';
 import { Activity as ActivityIcon, ArrowRight, Bot, Check, RotateCcw, BrainCircuit, Coins, Cpu, FolderKanban, Gauge, GitPullRequest, ListTodo, MessageSquare, Play, Send, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
+import { ProjectDrives } from './ProjectDrives';
 import type { MissionRun } from '@kor-code/mission-control';
 import type { TrackerIssueSummary } from '@kor-code/tracker';
 import type { DecisionRecord } from '@kor-code/core';
@@ -347,6 +348,7 @@ export function CommandCentre() {
         </section>
 
         {runsError && <QueryError error={runsError} what="Runs" />}
+        <ProjectDrives />
 
         <section {...stylex.props(styles.kpis)} aria-label="Today">
           <Kpi index={2} icon={Bot} tone="cyan" label="Active runs" value={<CountUp value={active.length} format={String} />} small={<><b {...stylex.props(text.secondary)}>+{queued.length}</b> queued</>}

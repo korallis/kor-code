@@ -94,6 +94,7 @@ export class TrackerStore {
       CREATE TABLE IF NOT EXISTS run_messages (id TEXT PRIMARY KEY, execution_id TEXT NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL, recorded_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS writer (id INTEGER PRIMARY KEY CHECK(id=1), token TEXT, expires_at INTEGER);
       CREATE TABLE IF NOT EXISTS decision_audit (decision_id TEXT PRIMARY KEY, recorded_at TEXT NOT NULL, payload TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS project_drives (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS execution_previews (issue_id TEXT PRIMARY KEY, execution_id TEXT NOT NULL UNIQUE);
       CREATE TABLE IF NOT EXISTS verification_attempts (attempt_id TEXT PRIMARY KEY, execution_id TEXT NOT NULL, attempt_number INTEGER NOT NULL, started_at INTEGER NOT NULL);
       INSERT OR IGNORE INTO writer(id) VALUES (1);`);
@@ -201,6 +202,13 @@ export class TrackerStore {
     catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
   close(): void { this.db.close(); }
+
+  readProjectDrives(): string[] {
+    return this.db.prepare('SELECT payload FROM project_drives ORDER BY rowid').all().map(row => string(row.payload));
+  }
+  writeProjectDrive(id: string, payload: string): void {
+    this.db.prepare('INSERT INTO project_drives(id,payload) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload').run(id, payload);
+  }
 
   /** Append before starting a session, including sessions interrupted before judgment. */
   reserveVerificationAttempt(executionId: string, attempt: number): string {

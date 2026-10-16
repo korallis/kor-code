@@ -36,7 +36,7 @@ export class GitWorktreeManager implements WorktreeManager {
       const marker = JSON.parse(await readFile(`${path}.kor-worktree.json`, "utf8"));
       if (marker.executionId !== input.executionId || marker.issueId !== input.issueId || resolve(marker.repository) !== resolve(input.repository.path)) throw new Error("Stale worktree ownership does not match this execution");
     }
-    const addArgs = branchExists ? ["worktree", "add", ...(stale ? ["--force"] : []), path, branch] : ["worktree", "add", "-b", branch, path, input.repository.defaultBranch ?? "HEAD"];
+    const addArgs = branchExists ? ["worktree", "add", ...(stale ? ["--force"] : []), path, branch] : ["worktree", "add", "-b", branch, path, input.baseRevision ?? input.repository.defaultBranch ?? "HEAD"];
     await execFile("git", ["-C", input.repository.path, ...addArgs]);
     await writeFile(join(resolve(this.root), `${input.executionId}.kor-worktree.json`), `${JSON.stringify({ executionId: input.executionId, issueId: input.issueId, path, repository: input.repository.path, branch })}\n`, { mode: 0o600 });
     return { executionId: input.executionId, issueId: input.issueId, path, branch, repository: input.repository.path };

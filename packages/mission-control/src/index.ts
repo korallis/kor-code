@@ -51,6 +51,19 @@ export interface Project {
   name: string;
   repository: KorConfig["repos"][string];
   runs: MissionRun[];
+  drives?: ProjectDrive[];
+}
+export interface ProjectDrive {
+  id: string;
+  repository: string;
+  projectId: string;
+  name: string;
+  url: string;
+  status: "running" | "paused" | "stopped" | "finished";
+  createdAt: string;
+  updatedAt: string;
+  error: string | null;
+  issues: Array<{ issueId: string; key: string; title: string; status: "pending" | "queued" | "running" | "review" | "done" | "held"; reason: string | null; retries: number }>;
 }
 export interface ProjectsResponse { schemaVersion: 1; projects: Project[] }
 export interface RunsResponse { schemaVersion: 1; runs: MissionRun[] }
@@ -188,6 +201,7 @@ export interface MissionControlApi {
   "GET /api/connections": Endpoint<never, ConnectionsResponse>;
   "GET /api/events": Endpoint<never, MissionEvent>;
   "POST /api/runs": Endpoint<QueueRequest, QueueResponse>;
+  "POST /api/drives/:id/:action": Endpoint<Record<string, never>, { schemaVersion: 1; drive: ProjectDrive }>;
   "POST /api/runs/:id/cancel": Endpoint<{ origin?: "CLI" | "Mission Control" }, ActionResponse>;
   "POST /api/runs/:id/retry": Endpoint<{ origin?: "CLI" | "Mission Control" }, ActionResponse>;
   "POST /api/runs/:id/answer": Endpoint<MessageRequest, ActionResponse>;

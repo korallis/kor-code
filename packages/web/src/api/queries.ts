@@ -30,6 +30,13 @@ export function useQueue() {
   return useMutation({ mutationFn: (body: QueueRequest) => post('POST /api/runs', '/api/runs', body), onSuccess: () => refresh(['runs'], ['projects'], ['issues']) });
 }
 
+export function useDriveControl() {
+  return useMutation({
+    mutationFn: ({ id, action }: { id: string; action: 'pause' | 'resume' | 'stop' }) => post('POST /api/drives/:id/:action', path('POST /api/drives/:id/:action', '/api/drives/:id/:action', { id, action }), {}),
+    onSuccess: () => refresh(['projects'], ['runs'], ['brain']),
+  });
+}
+
 type RunAction = 'cancel' | 'retry' | 'approve';
 export function useRunAction() {
   return useMutation({
@@ -62,7 +69,7 @@ export function useRevertOverride() {
 }
 
 export function useAsk() {
-  return useMutation({ mutationFn: (body: { message: string; executionId?: string; requestId?: string }) => post('POST /api/ask', '/api/ask', body), onSuccess: () => refresh(['runs'], ['status'], ['brain'], ['issues']) });
+  return useMutation({ mutationFn: (body: { message: string; executionId?: string; requestId?: string }) => post('POST /api/ask', '/api/ask', body), onSuccess: () => refresh(['runs'], ['status'], ['brain'], ['issues'], ['projects']) });
 }
 export function useQueuedAsk(id: string | undefined) {
   return useQuery({ queryKey: ['ask', id], enabled: id !== undefined, queryFn: () => get('GET /api/ask/:id', path('GET /api/ask/:id', '/api/ask/:id', { id: id ?? '' })), refetchInterval: query => query.state.data?.status === 'waiting-for-models' ? 3_000 : false });

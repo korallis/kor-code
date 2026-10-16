@@ -51,6 +51,14 @@ export class TrackerRouter implements TrackerClient {
     const repository = scope.startsWith('project:') ? this.config.repos[scope.slice(8)] : undefined;
     return repository?.linearProject && client.listProjectDocuments ? client.listProjectDocuments(repository.linearProject) : [];
   }
+  async getProject(projectId: string) {
+    if (!this.linear.getProject) throw new Error('Linear project discovery unavailable');
+    return this.linear.getProject(projectId);
+  }
+  async listProjectIssues(projectId: string) {
+    if (!this.linear.listProjectIssues) throw new Error('Linear project issues unavailable');
+    return this.linear.listProjectIssues(projectId);
+  }
   async createProjectIssue(input: { repositoryKey: string; id: string; title: string; description: string; labels: string[] }) {
     const repository = this.config.repos[input.repositoryKey];
     if (!repository) throw new Error('Configured tracker project not found');

@@ -1,5 +1,17 @@
 # Mission Control daemon API
 
+Project responses include `drives`, a durable list with status (`running`,
+`paused`, `stopped`, `finished`), Linear project name/URL and per-issue states
+(`pending`, `queued`, `running`, `review`, `done`, `held`), reasons and retry
+counts. `POST /api/ask` recognizes whole-project completion requests and returns
+queue counts and progress links without drafting an issue.
+`POST /api/drives/:id/:action` accepts `{}` and `pause`, `resume` or `stop`;
+it returns `{schemaVersion: 1, drive}` after the locally audited operator control
+applies, without requiring Jev availability. Admission runs in bounded background
+passes and never blocks polling or controls. Explicit issue queue/retry actions
+release drive ownership and retain ordinary execution gates.
+Drive changes publish `invalidate` events for `projects`, `issues` and `brain`.
+
 The browser protocol lives in `packages/mission-control/src/index.ts`, exported
 as `@kor-code/mission-control`. Its imports are type-only; importing the package
 in the browser does not execute the configuration, SQLite, or provider modules.

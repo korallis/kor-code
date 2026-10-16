@@ -39,6 +39,7 @@ export function parseIssueSummary(value: unknown): LinearIssueSummary {
     teamId: string(object(data.team).id), teamKey: string(object(data.team).key), stateId: string(state.id), stateType: stateType(state.type),
     ...(typeof data.identifier === 'string' ? { identifier: data.identifier } : {}), ...(typeof data.url === 'string' ? { url: data.url } : {}), ...(typeof state.name === 'string' ? { stateName: state.name } : {}),
     updatedAt: string(data.updatedAt), priority: data.priority, dependencies,
+    ...(data.projectMilestone ? { milestoneId: string(object(data.projectMilestone).id) } : {}),
     subIssueIds: connection(data.children).map(value => string(object(value).id)),
     labels: data.labels === undefined ? [] : connection(data.labels).map(value => string(object(value).name)),
   };
