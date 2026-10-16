@@ -61,7 +61,9 @@ or guidance are a recorded gap; a filename alone is no proof of a rendered image
 
 ## 4. Prepare delivery work
 
-Resolve the repository's configured tracker and inspect its existing project.
+Use the tracker named in session context or its offered tracker skill; if neither
+is known, resolve the authorised project mapping before writing. Inspect its
+existing project.
 For Linear use `using-linear` and `writing-linear-tickets`; for GitHub Issues/
 Projects v2 use `using-github` and `writing-github-tickets`, including its Project
 setup reference. Use `attaching-screens-to-tickets` for either tracker. Create or

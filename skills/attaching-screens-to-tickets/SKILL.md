@@ -15,7 +15,8 @@ metadata:
 # Attaching screens to tickets
 
 Resolve the repository's configured tracker before writing. For Linear use
-`kor linear attach-image` and [Linear commands](references/upload.md). For GitHub
+`kor linear attach-image` and [Linear commands](references/upload.md); update
+Kor before refreshing if the installed CLI lacks `--screen`. For GitHub
 use the bundled script and [GitHub images](references/github.md): publish PNGs in
 the authorised repository, pin their commit and verify their issue-body links.
 Keep stable screen IDs across route/caption/image changes; use distinct IDs for
@@ -33,7 +34,6 @@ states and viewports, such as `saved-items-empty-phone`.
    unrelated text/images. GitHub's script requires an already published commit;
    Linear's command uploads the local PNG. Missing upload/publication capability
    is a blocker, never proof of attachment.
-
 4. Read the issue again and inspect the downloaded image. Confirm exactly one
    inline `screen:<id>` image for each expected row and the correct route, state,
    viewport and requirement IDs. Only then record the verified ticket in INDEX.

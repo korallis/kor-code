@@ -212,7 +212,9 @@ export async function guardPrivateSkills(options: { privatePath: string; publicP
       const text = `${file}\n${entry.isFile() ? await readFile(path, "utf8") : ""}`;
       const privateMatch = namePatterns.some(pattern => pattern.test(text)) || [...denied].some(value => text.toLowerCase().includes(value));
       if (privateMatch) diagnostics.push({ rule: "private-string", file: "[redacted]", message: "Public path or content matches a private name or deny.txt entry" });
-      if (/(?:\/home\/[^/\s]+|\/Users\/[^/\s]+|[A-Z]:[\\/]Users[\\/][^\\/\s]+)/i.test(text)) diagnostics.push({ rule: "home-path", file: privateMatch ? "[redacted]" : file, message: "Public tier contains an absolute home path" });
+      // A gh-axi profile request names a GitHub API route, not a home directory.
+      const homePathText = text.replace(/\bgh-axi[ \t]+api\s+(?:GET\s+)?\/users\/[A-Za-z0-9-]+(?=[\s`'"]|$)/g, "gh-axi api [profile route]");
+      if (/(?:\/home\/[^/\s]+|\/Users\/[^/\s]+|[A-Z]:[\\/]Users[\\/][^\\/\s]+)/i.test(homePathText)) diagnostics.push({ rule: "home-path", file: privateMatch ? "[redacted]" : file, message: "Public tier contains an absolute home path" });
       if (entry.isFile()) files++;
     }
   }

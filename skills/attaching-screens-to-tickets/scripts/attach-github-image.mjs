@@ -27,16 +27,19 @@ function imageFromRecord(record) {
 }
 function attach(body, id, image) {
   const lines = body.split('\n');
+  const newline = body.includes('\r\n') ? '\r\n' : '\n';
   const result = [];
   let fence;
   let replaced = false;
   for (const line of lines) {
+    const carriageReturn = line.endsWith('\r') ? '\r' : '';
+    const content = carriageReturn ? line.slice(0, -1) : line;
     const marker = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1];
     if (marker && (!fence || marker[0] === fence[0] && marker.length >= fence.length)) {
       fence = fence ? undefined : marker;
     }
-    if (!fence && line.startsWith(`![screen:${id} | `) && /^!\[[^\]\r\n]+\]\([^\r\n]+\)$/.test(line)) {
-      if (!replaced) result.push(image);
+    if (!fence && content.startsWith(`![screen:${id} | `) && /^!\[[^\]\r\n]+\]\([^\r\n]+\)$/.test(content)) {
+      if (!replaced) result.push(image + carriageReturn);
       replaced = true;
     } else result.push(line);
   }
@@ -53,8 +56,9 @@ function attach(body, id, image) {
     if (/^## Screens\s*$/.test(line)) screens = index;
     else if (screens !== -1 && /^#{1,2} /.test(line)) { end = index; break; }
   }
-  if (screens === -1) return [body.trimEnd(), '', '## Screens', '', image, ''].join('\n');
-  result.splice(end, 0, image, '');
+  if (screens === -1) return [body.trimEnd(), '', '## Screens', '', image, ''].join(newline);
+  const carriageReturn = newline === '\r\n' ? '\r' : '';
+  result.splice(end, 0, image + carriageReturn, carriageReturn);
   return result.join('\n');
 }
 

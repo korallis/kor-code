@@ -352,7 +352,8 @@ playbook handles accuracy, speed and competing technical approaches with measure
 research, an independent challenge and a recorded Jev decision before implementation
 and re-measurement. See [how it works](docs/pstack-playbooks.md#resolve-hard-technical-problems).
 Project setup shares the same documentation, screen mockups and image-coverage
-gates across trackers. GitHub projects use `using-github` and
+gates across trackers. Set `repos.<key>.tracker` to `github` for GitHub guidance;
+omitted values default to `linear`. GitHub projects use `using-github` and
 `writing-github-tickets`; Linear projects use their Linear counterparts. Jev
 filters tracker-specific guidance by the repository's tracker, including pins and
 overrides. The shared screen attachment skill supports both. See

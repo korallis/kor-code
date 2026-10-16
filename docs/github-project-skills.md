@@ -53,18 +53,3 @@ write. Refreshing captions or pixels keeps the ID; unrelated text, other images
 and fenced examples remain. API verification establishes stored bytes and links;
 browser inspection establishes readable content and rendering. Both gates precede
 marking UI work ready. The script does not publish files or change issue status.
-
-## Validation
-
-The LEE-1323 proof uses a disposable repository and personal Project under
-`korallis`, with synthetic documentation, phone/desktop mockups, a milestone,
-parent and child issues, native blocking, Project fields and image attachments.
-Observed coverage: 2/2 mockup rows, 2/2 Project UI issues with 4/4 images, plus
-a plain issue with both images and zero Project membership. Identical repeats
-made no writes; caption refresh removed a duplicate and preserved a fenced
-example and unrelated text. Both tracker session packs excluded the other
-provider's skills, including pins, overrides and outage fallback.
-Scratch data and API readbacks stay outside the source checkout. The repository
-and Project are deleted after validation; recorded URLs are historical proof
-identifiers and are expected to stop resolving. See the PR's validation record
-for observed coverage and cleanup results. No test files are added.
