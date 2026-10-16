@@ -12,7 +12,11 @@ import { href } from '../router';
 export function ProjectDrives({ repository }: { repository?: string }) {
   const projects = useProjects();
   const control = useDriveControl();
-  const drives = (projects.data?.projects ?? []).filter(project => !repository || project.id === repository).flatMap(project => project.drives ?? []).slice().reverse();
+  const drives = (projects.data?.projects ?? []).filter(project => !repository || project.id === repository).flatMap(project => {
+    const history = project.drives ?? [];
+    const active = history.filter(drive => drive.status === 'running' || drive.status === 'paused');
+    return active.length ? active : history.slice(-1);
+  });
   if (!drives.length) return null;
   return <section aria-label="Project drives" {...stylex.props(layout.stack)}>
     {control.error && <Notice title={control.error.message} />}
