@@ -46,16 +46,17 @@ export async function prepareSessionSkills(options: {
   if (!catalogue.ok) throw new Error("Cannot select session skills from an invalid catalogue; run kor skills doctor");
   const stackTags = await repositoryStackTags(input.worktreePath);
   const stage = input.skillStage ?? "execute";
-  const policy = { stage, allowedTools: input.allowedTools, stackTags, ...repository?.skills,
+  const tracker = repository?.tracker ?? "linear";
+  const policy = { stage, tracker, allowedTools: input.allowedTools, stackTags, ...repository?.skills,
     ...(config.skills ? { bodyBudget: config.skills.bodyBudget } : {}) };
   const playbookOverride = input.playbookOverride === undefined || input.playbookOverride === "none" ? input.playbookOverride
     : catalogue.skills.find(skill => skill.name === input.playbookOverride && !playbookProblem(skill, policy))?.name;
   const learning = options.calibration ? appliedSkillLearning(buildSkillsReport(options.calibration, { excludeExecutionId: input.execution.id }), catalogue.skills) : {};
   const [decision, playbook] = await Promise.all([jev.selectSkills({ executionId: input.execution.id, task: input.prompt,
-    stage, catalogue, allowedTools: input.allowedTools, stackTags, learning, ...repository?.skills,
+    stage, tracker, catalogue, allowedTools: input.allowedTools, stackTags, learning, ...repository?.skills,
     ...(config.skills ? { listingBudget: config.skills.listingBudget, bodyBudget: config.skills.bodyBudget } : {}),
   }), jev.selectPlaybook({ executionId: input.execution.id, task: input.prompt,
-    stage, catalogue, allowedTools: input.allowedTools, stackTags,
+    stage, tracker, catalogue, allowedTools: input.allowedTools, stackTags,
     ...(repository?.skills?.never ? { never: repository.skills.never } : {}),
     ...(input.attemptId ? { attemptId: input.attemptId } : {}),
     ...(input.playbookFailure ? { failure: input.playbookFailure } : {}),

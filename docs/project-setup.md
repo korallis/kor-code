@@ -1,6 +1,6 @@
 # Project setup guidance
 
-Kor bundles two public MIT guidance packages:
+Kor bundles shared project setup and documentation guidance:
 
 - `setting-up-a-project` is a playbook for turning a brief into implementation-ready
   work: brief, docs, screen inventory, rendered mockups, tickets, scaffold and
@@ -10,8 +10,8 @@ Kor bundles two public MIT guidance packages:
   preserves stable requirement IDs, terminology and existing decisions.
 
 These are guidance files, not a project generator or a new CLI setup command.
-They ship under `skills/` in the Kor checkout. This tier alone does not select or
-deliver them to a running session. Jev's per-task route remains authoritative;
+They ship under `skills/` in the Kor checkout. Jev selects and delivers eligible guidance before each session;
+the repository's tracker selects the applicable tracker skills. Jev's per-task route remains authoritative;
 neither guidance package configures execution routing.
 
 ## Use with a coding session
@@ -82,10 +82,13 @@ and relevant images on every UI ticket, verified by reading the ticket back.
 Non-UI projects record screen gates as N/A with a reason. Tracker changes and
 configuration require the appropriate authorisation and access.
 
-The playbook can use the corresponding screen and Linear skills when installed;
-it records missing guidance, rendering/upload tools and checks as gaps. It only
-runs `kor linear lint` when that command is available. It never treats a local
-ticket plan as published work or an unrun command as verified.
+The playbook uses shared screen/docs skills and the configured tracker's skills:
+`using-linear`/`writing-linear-tickets` or `using-github`/`writing-github-tickets`.
+The [GitHub workflow](github-project-skills.md) covers Projects v2 setup,
+repository milestones, dependencies and commit-pinned image attachments. Missing
+guidance, rendering/upload tools and checks remain explicit gaps. Linear lint
+applies only to Linear; GitHub records receive API and browser readback. Local
+ticket plans never count as published work or unrun checks as verified.
 
 From a built source checkout:
 

@@ -3,6 +3,7 @@ name: using-linear
 description: Reads and updates Linear data. Use when reading issues, changing project records, linking work or reporting ticket progress.
 license: MIT
 metadata:
+  kor.trackers: linear
   kor.kind: skill
   kor.stages: plan,execute,repair,review,ship,project-setup
   kor.triggers: read Linear issue; update Linear project; report ticket progress; upload issue image

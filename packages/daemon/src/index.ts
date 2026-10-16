@@ -753,7 +753,7 @@ export class KorDaemon {
       skills: catalogue.skills,
       plan: planned.skills ? { ...planned.skills, budget } : emptySkillPlan(catalogue, budget),
       overrides: foldSessionEdits(this.sessionEdits(executionId)),
-      policy: { stage: "execute", allowedTools: eligibleTools, stackTags, ...repository.skills,
+      policy: { stage: "execute", tracker: repository.tracker, allowedTools: eligibleTools, stackTags, ...repository.skills,
         ...(this.config.skills ? { bodyBudget: this.config.skills.bodyBudget } : {}) },
       playbook: planned.playbook ?? null,
       eligibleTools,

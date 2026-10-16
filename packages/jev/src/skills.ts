@@ -32,6 +32,7 @@ export const skillCandidateSchema = z.object({
   triggers: z.array(z.string()), anti: z.array(z.string()), requires: z.array(z.string()),
   visibility: z.enum(["public", "local-only"]), jevVisible: z.enum(["full", "names-only"]),
   stackTags: z.array(z.string()).optional(),
+  trackers: z.array(z.enum(["linear", "github"])).optional(),
   cost: z.object({ listingTokens: z.number().int().nonnegative(), bodyTokens: z.number().int().nonnegative() }),
 });
 export type SkillCandidate = z.infer<typeof skillCandidateSchema>;
@@ -42,6 +43,7 @@ export interface SkillsInput {
   catalogue: { hash: string; skills: readonly SkillCandidate[] };
   allowedTools: readonly string[];
   stackTags?: readonly string[];
+  tracker?: "linear" | "github";
   always?: readonly string[];
   pins?: readonly string[];
   never?: readonly string[];
@@ -71,7 +73,8 @@ function ordered(names: string[], seed: string): string[] {
   return [...names].sort((a, b) => digest([seed, a]).localeCompare(digest([seed, b])));
 }
 /** Why policy keeps a skill out of this session's plan, or undefined when it may load. */
-export function filteredReason(skill: SkillCandidate, input: Pick<SkillsInput, "never" | "stage" | "allowedTools" | "stackTags" | "learning" | "always" | "pins">): string | undefined {
+export function filteredReason(skill: SkillCandidate, input: Pick<SkillsInput, "never" | "stage" | "allowedTools" | "stackTags" | "learning" | "always" | "pins" | "tracker">): string | undefined {
+  if (skill.trackers?.length && !skill.trackers.includes(input.tracker ?? "linear")) return "Project tracker does not match.";
   if (input.never?.includes(skill.name)) return "Denied by repository policy.";
   if (input.learning?.[skill.name]?.demoted && !input.always?.includes(skill.name) && !input.pins?.includes(skill.name)) return "Hidden by outcome learning: never loaded in the recent offer window.";
   if (skill.kind === "playbook") return "Playbooks have a separate decision.";
@@ -138,7 +141,7 @@ export async function decideSkills(input: SkillsInput, client: Pick<JevClient, "
   }).slice(0, MAX_CANDIDATES);
   // Paths and skill bodies never cross the decision boundary.
   const history = Object.fromEntries(candidates.filter(skill => learning[skill.name]).slice(0, MAX_HISTORY).map(skill => [skill.name, learning[skill.name]!]));
-  const state = { ...(Object.keys(history).length ? { history } : {}), task: input.task, stage: input.stage, catalogueHash: input.catalogue.hash, stackTags: [...input.stackTags ?? []].sort() };
+  const state = { ...(Object.keys(history).length ? { history } : {}), task: input.task, stage: input.stage, tracker: input.tracker ?? "linear", catalogueHash: input.catalogue.hash, stackTags: [...input.stackTags ?? []].sort() };
   const criteria: Record<string, JevJsonValue> = {};
   for (const skill of candidates) criteria[skill.name] = skill.jevVisible === "names-only" || skill.visibility === "local-only"
     ? { what: "Private guidance (local-only)." }

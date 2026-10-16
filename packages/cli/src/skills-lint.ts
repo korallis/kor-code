@@ -195,6 +195,7 @@ export async function lintSkills(root: string, options: { private?: boolean; nam
       if (kind !== undefined && !["skill", "standard", "playbook"].includes(kind)) add(skillFile, 1, "error", "metadata", "kor.kind must be skill, standard or playbook.");
       if (metadata["kor.visibility"] !== undefined && !((options.private || options.visibility === "local-only" ? ["public", "local-only"] : ["public"]).includes(metadata["kor.visibility"]))) add(skillFile, 1, "error", "metadata", "Visibility must be public, or local-only in the private tier.");
       if (metadata["kor.stages"]?.split(",").some(stage => !STAGES.has(stage.trim()))) add(skillFile, 1, "error", "metadata", "kor.stages contains an unknown stage.");
+      if (metadata["kor.trackers"]?.split(/[,;]/).some(tracker => !["linear", "github"].includes(tracker.trim()))) add(skillFile, 1, "error", "metadata", "kor.trackers must contain linear or github.");
       const budget = metadata["kor.budget"] === undefined ? DEFAULT_BODY_BUDGET : Number(metadata["kor.budget"]);
       if (!Number.isInteger(budget) || budget <= 0) add(skillFile, 1, "error", "metadata", "kor.budget must be a positive integer token count.");
       const bodyTokens = tokenEstimate(body);

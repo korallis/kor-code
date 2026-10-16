@@ -83,7 +83,7 @@ function GeneralSettings({ config }: { config: KorConfig }) {
   const numberField = (value: string, apply: (n: number) => KorConfig) => { const n = Number(value); if (Number.isInteger(n) && n > 0) setDraft(apply(n)); };
   const addRepo = () => {
     if (!repoKey.trim() || !repoPath.trim() || !repoTeam.trim() || !repoProject.trim()) return;
-    setDraft(current => ({ ...current, repos: { ...current.repos, [repoKey.trim()]: { path: repoPath.trim(), defaultBranch: 'main', checks: [], toolAllowlist: [], ship: 'approve', linearTeam: repoTeam.trim(), linearProject: repoProject.trim() } } }));
+    setDraft(current => ({ ...current, repos: { ...current.repos, [repoKey.trim()]: { tracker: 'linear', path: repoPath.trim(), defaultBranch: 'main', checks: [], toolAllowlist: [], ship: 'approve', linearTeam: repoTeam.trim(), linearProject: repoProject.trim() } } }));
     setRepoKey(''); setRepoPath(''); setRepoTeam(''); setRepoProject('');
   };
   const removeRepo = (key: string) => setDraft(current => { const repos = { ...current.repos }; delete repos[key]; return { ...current, repos }; });

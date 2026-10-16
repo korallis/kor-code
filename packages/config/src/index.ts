@@ -7,6 +7,7 @@ import { z } from "zod";
 const nonempty = z.string().trim().min(1);
 const positiveInteger = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export const repositorySchema = z.strictObject({
+  tracker: z.enum(["linear", "github"]).default("linear"),
   path: nonempty,
   remote: nonempty.optional(),
   linearTeam: nonempty.optional(),

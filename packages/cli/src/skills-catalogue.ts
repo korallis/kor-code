@@ -34,6 +34,7 @@ export interface CatalogueSkill {
   kind: string;
   stages: string[];
   stackTags?: string[];
+  trackers?: ("linear" | "github")[];
   summary: string;
   triggers: string[];
   anti: string[];
@@ -123,6 +124,7 @@ export async function readSkillBundle(path: string, tier: SkillOrigin["tier"]): 
   if (metadata["kor.kind"] !== undefined && !["skill", "standard", "playbook"].includes(metadata["kor.kind"]) ||
     metadata["kor.visibility"] !== undefined && !["public", "local-only"].includes(metadata["kor.visibility"]) ||
     split(metadata["kor.stages"]).some(stage => !STAGES.has(stage)) ||
+    split(metadata["kor.trackers"]).some(tracker => tracker !== "linear" && tracker !== "github") ||
     metadata["kor.budget"] !== undefined && (!/^[1-9]\d*$/.test(metadata["kor.budget"]) || !Number.isSafeInteger(Number(metadata["kor.budget"])))) {
     throw new Error("Invalid Kor metadata value");
   }
@@ -223,7 +225,7 @@ export async function buildSkillsCatalogue(options: { config: KorConfig; paths: 
       if (bodyLines > MAX_BODY_LINES) diagnostics.push({ severity: "warning", rule: "body-lines", path: candidate.origin.path, message: `${header.name}: ${bodyLines} body lines exceed ${MAX_BODY_LINES}` });
       skills.push({
         name: header.name, tier: candidate.origin.tier, kind: metadata["kor.kind"] ?? "skill", stages: split(metadata["kor.stages"]),
-        stackTags: split(metadata["kor.stack"]), summary,
+        stackTags: split(metadata["kor.stack"]), trackers: z.array(z.enum(["linear", "github"])).parse(split(metadata["kor.trackers"])), summary,
         triggers: privateText ? [] : split(metadata["kor.triggers"]), anti: privateText ? [] : split(metadata["kor.anti"]), requires: split(metadata["kor.requires"]),
         visibility: privateText ? "local-only" : "public",
         jevVisible: privateText ? "names-only" : "full",
