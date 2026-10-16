@@ -116,7 +116,7 @@ export class MissionServices {
   jev(): JevClient { return new JevClient(this.credentials.jev ? { apiKey: this.credentials.jev } : {}); }
   async connections(): Promise<ConnectionsResponse> {
     const [linear, github, gateway, jev] = await Promise.allSettled([
-      this.linear().listIssues("KOR", 1), this.github("/user"), this.gateway().then(adapter => adapter.listModels()), this.jevApiKey(),
+      this.linear().checkConnection(), this.github("/user"), this.gateway().then(adapter => adapter.listModels()), this.jevApiKey(),
     ]);
     return { schemaVersion: 1, connections: [
       { id: "linear", status: linear.status === "fulfilled" ? "connected" : "unavailable", reason: linear.status === "fulfilled" ? null : "Linear credentials or API unavailable" },

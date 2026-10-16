@@ -5,7 +5,10 @@ export const linearLintUsage = "kor linear lint ISSUE-ID [--json] | kor linear l
 
 export async function runLinearLint(reference: string, project: boolean, json: boolean): Promise<number> {
   const client = new HttpLinearClient();
-  const issues = project ? await client.listProjectIssues(reference) : [await client.getIssue(reference)];
+  const issues = [];
+  if (project) {
+    for (const issue of await client.listProjectIssues(reference)) issues.push(await client.getIssue(issue.id));
+  } else issues.push(await client.getIssue(reference));
   const results = issues.map(issue => {
     const screenshot = hasScreenshot(issue);
     const checks = issueReadinessChecks({ ...issue, hasScreenshot: screenshot, dependencies: issue.dependencies.map(dependency => ({ id: dependency.id, state: dependency.stateType })) });

@@ -53,7 +53,7 @@ export function QueueDialog({ onClose, projectId }: { onClose: () => void; proje
             <LinearState kind={linearStateKind(issue.stateType, issue.stateName)} />
             <span {...stylex.props(text.key)}>{issueKey(issue)}</span>
             <span {...stylex.props(text.ellipsis)}>{issue.title} <span {...stylex.props(text.muted)}>· {project.name}</span></span>
-            {issue.acceptanceCriteria.length === 0 ? <Pill tone="amber" small dot>no criteria</Pill> : <Pill tone="ghost" small>{issue.acceptanceCriteria.length} criteria</Pill>}
+            <Pill tone="ghost" small>readiness checked on start</Pill>
           </div>
         ))}
         {candidates.length === 0 && <Empty slot="empty-no-issues" title={issues.some(entry => entry.provenance === 'loading') ? 'Reading Linear…' : 'No open issues to queue.'} />}

@@ -3,7 +3,7 @@ import * as stylex from '@stylexjs/stylex';
 import { Activity as ActivityIcon, ArrowRight, Bot, Check, RotateCcw, BrainCircuit, Coins, Cpu, FolderKanban, Gauge, GitPullRequest, ListTodo, MessageSquare, Play, Send, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import type { MissionRun } from '@kor-code/mission-control';
-import type { LinearIssue } from '@kor-code/linear';
+import type { LinearIssueSummary } from '@kor-code/linear';
 import type { DecisionRecord } from '@kor-code/core';
 import { ApiFailure } from '../api/client';
 import { useMissionRuns, useOverrides, usePoolLive, useDecisions } from '../api/data';
@@ -256,7 +256,7 @@ function cumulative(points: readonly { at: number; value: number }[]): number[] 
   return [0, ...sorted.map(point => (sum += point.value))];
 }
 
-function NextUp({ issues, runs, intakeLabel, unavailable }: { issues: readonly LinearIssue[]; runs: readonly MissionRun[]; intakeLabel: string; unavailable: string | null }) {
+function NextUp({ issues, runs, intakeLabel, unavailable }: { issues: readonly LinearIssueSummary[]; runs: readonly MissionRun[]; intakeLabel: string; unavailable: string | null }) {
   const queue = useQueue();
   const started = new Set(runs.map(run => run.issueId));
   const next = issues.filter(issue => isOpen(issue) && issue.stateType !== 'started' && issue.labels.includes(intakeLabel) && !started.has(issue.id))
@@ -267,16 +267,13 @@ function NextUp({ issues, runs, intakeLabel, unavailable }: { issues: readonly L
     <>
       {queue.error && <Notice title={queue.error.message} hint={queue.error instanceof ApiFailure ? queue.error.hint : undefined} />}
       {next.map(issue => {
-        const noCriteria = issue.acceptanceCriteria.length === 0;
         const pending = queue.isPending && queue.variables?.issueIds.includes(issue.id);
         return (
           <div key={issue.id} {...stylex.props(styles.next)}>
             <Priority value={issue.priority} />
             <span {...stylex.props(text.key)}>{issueKey(issue)}</span>
-            <span {...stylex.props(text.ellipsis, noCriteria && text.amber)}>{issue.title}{noCriteria && <span {...stylex.props(text.muted)}> · no acceptance criteria</span>}</span>
-            {noCriteria
-              ? <Button size="sm" variant="warn" icon={MessageSquare} href={issue.url} external title="Add acceptance criteria in Linear">Add</Button>
-              : <Button size="sm" icon={Play} busy={pending} onClick={() => queue.mutate({ issueIds: [issue.id] })}>Start</Button>}
+            <span {...stylex.props(text.ellipsis)}>{issue.title}</span>
+            <Button size="sm" icon={Play} busy={pending} title="Read the issue and check readiness before execution" onClick={() => queue.mutate({ issueIds: [issue.id] })}>Start</Button>
           </div>
         );
       })}

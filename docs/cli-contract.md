@@ -415,7 +415,7 @@ in the durable Jev audit.
 ### `kor linear lint --json`
 
 Use `kor linear lint ISSUE-ID --json`, or `kor linear lint --project PROJECT-ID
---json` for a project of up to 100 issues. This read-only command needs Linear
+--json` to check a whole project through cursor pages. This read-only command needs Linear
 credentials, with no daemon, Kor repository configuration or TypeSafe key required.
 It returns `{ "schemaVersion": 1, "ready": boolean, "issues": [...] }`. Each issue
 has `issueId`, `status` (`ready` or `blocked`), `hasScreenshot`, and `checks` in the
@@ -426,8 +426,8 @@ returns `ready: true` and `issues: []`.
 Exit `0` means ready; exit `1` means blocked or an operational failure; invalid
 arguments exit `2`. A blocked report is a normal result without an `error` object.
 Operational and usage failures use the standard JSON error envelope. Project
-queries fail explicitly if there are more than 100 issues, rather than reporting
-readiness from an incomplete page.
+lint reads every issue summary, then fetches full context one issue at a time.
+The 2 MB upstream response limit still applies to each page.
 
 ## Over HTTP
 

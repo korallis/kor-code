@@ -4,7 +4,7 @@
 
 Linear is the command centre for intent and delivery history. Kor Code uses Linear as the only project and issue management system.
 
-**Status: Validated** — the fake contract probe covers an issue lifecycle, one linked execution, a Linear-shaped signed webhook delivery returning HTTP 200, and duplicate suppression. The live adapter has only been exercised with read-only count checks. Mutations require explicit writer configuration and are not enabled by the probe. Phase 1 persists the `queued` → `running` → `complete` execution subset; the broader lifecycle and retry states remain controller responsibilities.
+**Status: Validated** — the fake contract probe covers an issue lifecycle, one linked execution, a Linear-shaped signed webhook delivery returning HTTP 200, and duplicate suppression. The live adapter has been exercised read-only through Mission Control against team LEE, including paged issue summaries, project-document metadata, and single-issue context. Mutations require explicit writer configuration and are not enabled by the probe. Phase 1 persists the `queued` → `running` → `complete` execution subset; the broader lifecycle and retry states remain controller responsibilities.
 
 ## Linear model
 
@@ -42,9 +42,9 @@ means invalid arguments. A successful lint does not replace Jev's scope judgment
 or the verified-route check.
 
 `kor linear lint --project PROJECT-ID [--json]` checks all project issues, including
-completed issues. Use the project's UUID. Projects exceeding 100 issues fail
-explicitly rather than returning a partial readiness report; lint individual
-issues in that case. An empty project reports no issues and exits `0`.
+completed issues. Use the project's UUID. Kor walks cursor pages of issue summaries,
+then reads each issue's full context individually for lint. An empty project
+reports no issues and exits `0`.
 
 Both `kor plan` and daemon preflight supply labels and `hasScreenshot` to Jev,
 alongside the deterministic `ui-screenshot` check. A missing image blocks a
@@ -93,6 +93,29 @@ Treat webhook payloads as triggers, not as the complete source of truth.
 
 Webhook event IDs and execution assignments are persisted in the Linear store's SQLite database. WAL mode and `BEGIN IMMEDIATE` make acceptance and queue insertion atomic across controller processes. A duplicate ID with a different payload digest fails closed. Execution leases contain an owner, token, expiry, and attempt count; state transitions and outbox writes commit under the same lease. A single writer lease drains the outbox, acknowledging each write only after the client succeeds.
 
+Intake walks cursor pages of 50 issue summaries per configured team and publishes
+its observation to Mission Control. Mapped repositories filter that complete
+observation by Linear project. Team lists continue to the final page instead of
+filtering only the newest 100 team issues. Linear's
+default archive visibility still applies. Summaries contain identity, title,
+workflow state, labels, priority, relations, update time, and URL. They omit
+descriptions, comments, document bodies, sessions, and attachments.
+
+Opening an execution's issue, planning, running, or linting reads that issue's
+full context. Nested connections also follow cursors. Project-document bodies
+are read one document per response for that issue. The workspace Documents tab
+lists project-document titles and links once, without repeating their bodies for
+every issue. Open a document in Linear to read it.
+
+List views show readiness as checked on start. They do not infer missing
+acceptance criteria from an unread description, and the project health score
+uses recorded checks and runs rather than unread issue bodies. The existing
+preflight still checks acceptance criteria and screenshots before execution.
+
+Connection health authenticates with a single viewer query and reads no issues.
+
+Each upstream response retains the 2,000,000-byte safety cap. A size error names
+the GraphQL operation and page number without including its cursor or content.
 Upstream response bodies are bounded and redacted on HTTP, transport, and GraphQL errors. The adapter validates JSON at the boundary and never exposes the credential or upstream issue text in error messages.
 
 ## Cross-project work

@@ -4,12 +4,12 @@ import * as stylex from '@stylexjs/stylex';
 import { Activity as ActivityIcon, BookOpen, Check, CircleAlert, CircleCheck, Coins, FileText, FolderKanban, Funnel, GitBranch, GitPullRequest, Layers, ListChecks, Play, Plus, RotateCcw, Route as RouteIcon, Search, Settings as SettingsIcon, ShieldCheck, Sparkles, Square, Timer, Users } from 'lucide-react';
 import { useState } from 'react';
 import type { MissionRun, Project } from '@kor-code/mission-control';
-import type { LinearIssue } from '@kor-code/linear';
+import type { LinearIssueSummary } from '@kor-code/linear';
 import type { KorConfig } from '@kor-code/config';
 import { ApiFailure } from '../api/client';
 import { useMissionRuns, useOverrides, useDecisions } from '../api/data';
 import { isOpen, issueKey, useAllIssues } from '../api/issues';
-import { useConfig, useProjects, usePulls, useQueue, useRunAction, useSaveProject } from '../api/queries';
+import { useConfig, useProjects, usePulls, useQueue, useRunAction, useSaveProject, useProjectDocuments } from '../api/queries';
 import { href, navigate } from '../router';
 import { AppFrame } from '../shell/AppFrame';
 import { openAsk } from '../shell/askStore';
@@ -72,17 +72,16 @@ const styles = stylex.create({
   edgeViolet: { borderLeftColor: color.violetBright }, edgeGreen: { borderLeftColor: color.green }, edgeAmber: { borderLeftColor: color.amber }, edgeSlate: { borderLeftColor: color.slate },
   form: { display: 'grid', gridTemplateColumns: '180px minmax(0, 1fr)', gap: `${space.s3h} ${space.s4h}`, alignItems: 'start', padding: space.s5, maxWidth: '920px' },
   doc: { display: 'grid', gridTemplateColumns: '22px minmax(0, 1fr) auto', gap: space.s2h, paddingBlock: space.s2h, borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: tint.rowLine, alignItems: 'start' },
-  docBody: { fontSize: fontSize.smPlus, color: color.textMuted, whiteSpace: 'pre-wrap', maxHeight: '64px', overflow: 'hidden', marginTop: space.s1 },
 });
 
 type Tab = 'overview' | 'issues' | 'runs' | 'pulls' | 'documents' | 'settings';
 type Filter = 'all' | 'kor' | 'running' | 'needs' | 'ready';
 
-function runFor(issue: LinearIssue, runs: readonly MissionRun[]): MissionRun | undefined {
+function runFor(issue: LinearIssueSummary, runs: readonly MissionRun[]): MissionRun | undefined {
   return runs.filter(run => run.issueId === issue.id).sort((a, b) => (Date.parse(runUpdatedAt(b) ?? '') || 0) - (Date.parse(runUpdatedAt(a) ?? '') || 0))[0];
 }
 
-function IssueAction({ issue, run, intake, selected }: { issue: LinearIssue; run: MissionRun | undefined; intake: string; selected: boolean }) {
+function IssueAction({ issue, run, intake, selected }: { issue: LinearIssueSummary; run: MissionRun | undefined; intake: string; selected: boolean }) {
   const queue = useQueue();
   const action = useRunAction();
   const error = queue.error ?? action.error;
@@ -93,15 +92,14 @@ function IssueAction({ issue, run, intake, selected }: { issue: LinearIssue; run
   if (run?.pullRequestUrl) return <a href={run.pullRequestUrl} target="_blank" rel="noopener noreferrer" {...stylex.props(text.cyan, text.mono, text.sm)}>{prNumber(run.pullRequestUrl)}</a>;
   if (run?.status === 'queued') return <Pill tone="slate" small dot>queued</Pill>;
   if (!isOpen(issue)) return null;
-  if (issue.acceptanceCriteria.length === 0) return <Button size="sm" variant="warn" icon={Plus} href={issue.url} external title="Add acceptance criteria in Linear">Add criteria</Button>;
   if (!issue.labels.includes(intake)) return <Button size="sm" variant="ghost" icon={Plus} href={issue.url} external title={`Label the issue ${intake} in Linear so the daemon picks it up`}>Label</Button>;
   return <Button size="sm" variant={selected ? 'violet' : 'default'} icon={Play} title={title} busy={queue.isPending} onClick={() => queue.mutate({ issueIds: [issue.id] })}>Run with Kor</Button>;
 }
 
-function IssuesTable({ issues, runs, intake, selected, setSelected, filter }: { issues: readonly LinearIssue[]; runs: readonly MissionRun[]; intake: string; selected: readonly string[]; setSelected: (ids: readonly string[]) => void; filter: Filter }) {
+function IssuesTable({ issues, runs, intake, selected, setSelected, filter }: { issues: readonly LinearIssueSummary[]; runs: readonly MissionRun[]; intake: string; selected: readonly string[]; setSelected: (ids: readonly string[]) => void; filter: Filter }) {
   const decisions = useDecisions();
   const rows = issues.map(issue => ({ issue, run: runFor(issue, runs) }))
-    .filter(({ issue, run }) => filter === 'all' || (filter === 'kor' && issue.labels.includes(intake)) || (filter === 'running' && run && isActive(run)) || (filter === 'needs' && run && (needsYou(run) || run.status === 'waiting')) || (filter === 'ready' && !run && isOpen(issue) && issue.labels.includes(intake) && issue.acceptanceCriteria.length > 0))
+    .filter(({ issue, run }) => filter === 'all' || (filter === 'kor' && issue.labels.includes(intake)) || (filter === 'running' && run && isActive(run)) || (filter === 'needs' && run && (needsYou(run) || run.status === 'waiting')) || (filter === 'ready' && !run && isOpen(issue) && issue.labels.includes(intake)))
     .sort((a, b) => (a.run ? 0 : 1) - (b.run ? 0 : 1) || (a.issue.priority || 5) - (b.issue.priority || 5));
   const toggle = (id: string) => setSelected(selected.includes(id) ? selected.filter(one => one !== id) : [...selected, id]);
   return (
@@ -130,7 +128,7 @@ function IssuesTable({ issues, runs, intake, selected, setSelected, filter }: { 
                     {isActive(run) || run.status === 'waiting' ? <StageTrack stage={run.stage} status={run.status} /> : null}
                     {readiness && !isActive(run) && run.status === 'queued' && <span {...stylex.props(text.mono, text.micro, text.muted)}>Jev {prob(readiness.confidence)}</span>}
                   </div>
-                ) : issue.acceptanceCriteria.length === 0 && isOpen(issue) ? <Pill tone="amber" small dot>no criteria</Pill> : issue.labels.includes(intake) || !isOpen(issue) ? <span {...stylex.props(text.mono, text.xs, text.muted)}>{isOpen(issue) ? 'ready for Kor' : '—'}</span> : <span {...stylex.props(text.mono, text.xs, text.faint)}>not labelled {intake}</span>}
+                ) : issue.labels.includes(intake) || !isOpen(issue) ? <span {...stylex.props(text.mono, text.xs, text.muted)}>{isOpen(issue) ? 'readiness checked on start' : '—'}</span> : <span {...stylex.props(text.mono, text.xs, text.faint)}>not labelled {intake}</span>}
               </Td>
               <Td selected={sel || run?.status === 'waiting'} tall>{run?.route ? <div {...stylex.props(styles.mdl)}><div>{shortModel(run.route.model)}</div><div {...stylex.props(styles.mdlSub)}>{run.accountSlot.value ?? run.routeSource ?? ''}</div></div> : <span {...stylex.props(text.faint)}>—</span>}</Td>
               <Td selected={sel || run?.status === 'waiting'} tall align="right"><span {...stylex.props(text.mono)}>{usd(run?.costUsd)}</span></Td>
@@ -200,6 +198,7 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
   const [selected, setSelected] = useState<readonly string[]>([]);
   const queue = useQueue();
   const tab = (['overview', 'issues', 'runs', 'pulls', 'documents', 'settings'].includes(tabParam ?? '') ? tabParam : 'overview') as Tab;
+  const documents = useProjectDocuments(project?.id, tab === 'documents');
   const setTab = (next: Tab) => project && navigate('projects', project.id, next);
   if (!project) {
     return (
@@ -223,7 +222,6 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
     const times = issues.filter(issue => issue.stateType === 'completed').map(issue => Date.parse(issue.updatedAt)).sort((a, b) => a - b);
     return times.length >= 2 ? times.map((_, i) => i + 1) : null;
   })();
-  const withCriteria = issues.filter(issue => issue.acceptanceCriteria.length > 0).length;
   const failedRuns = projectRuns.filter(run => run.status === 'failed');
   const failed7 = failedRuns.filter(run => run.completedAt !== null && now - Date.parse(run.completedAt) < 7 * 86_400_000).length;
   const failedUndated = failedRuns.filter(run => run.completedAt === null).length;
@@ -231,10 +229,10 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
   const checkPass = checkRuns.length ? checkRuns.filter(check => check.status === 'pass').length / checkRuns.length : null;
   const verifiedRuns = projectRuns.filter(run => run.verification?.passed && run.costUsd !== undefined);
   const costPerVerified = verifiedRuns.length ? verifiedRuns.reduce((sum, run) => sum + (run.costUsd ?? 0), 0) / verifiedRuns.length : null;
-  const scores = [checkPass, issues.length ? withCriteria / issues.length : null, projectRuns.length ? 1 - failed7 / projectRuns.length : null].filter((value): value is number => value !== null);
+  const scores = [checkPass, projectRuns.length ? 1 - failed7 / projectRuns.length : null].filter((value): value is number => value !== null);
   const healthScore = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
   const grade = healthScore === null ? '—' : healthScore >= 0.9 ? 'A' : healthScore >= 0.8 ? 'B' : healthScore >= 0.65 ? 'C' : 'D';
-  const readyIds = issues.filter(issue => isOpen(issue) && !projectRuns.some(run => run.issueId === issue.id && !FINISHED.has(run.status)) && issue.labels.includes(intake) && issue.acceptanceCriteria.length > 0).map(issue => issue.id);
+  const readyIds = issues.filter(issue => isOpen(issue) && !projectRuns.some(run => run.issueId === issue.id && !FINISHED.has(run.status)) && issue.labels.includes(intake)).map(issue => issue.id);
   const selectedReady = selected.filter(id => readyIds.includes(id));
   const queueCount = selectedReady.length || readyIds.length;
   const queueSelected = (ids: readonly string[]) => { const [first, ...rest] = ids; if (first) queue.mutate({ issueIds: [first, ...rest] }, { onSuccess: () => setSelected([]) }); };
@@ -246,14 +244,14 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
     { value: 'kor', label: `Labelled ${intake}`, count: issues.filter(issue => issue.labels.includes(intake)).length },
     { value: 'running', label: 'Running', count: projectRuns.filter(isActive).length },
     { value: 'needs', label: 'Needs you', count: projectRuns.filter(run => needsYou(run) || run.status === 'waiting').length },
-    { value: 'ready', label: 'Ready', count: readyIds.length },
+    { value: 'ready', label: 'Candidates', count: readyIds.length },
   ];
   const tabs = [
     { value: 'overview' as const, label: 'Overview', icon: Layers },
     { value: 'issues' as const, label: 'Issues', icon: ListChecks, count: issues.length },
     { value: 'runs' as const, label: 'Runs', icon: Users, count: projectRuns.length },
     { value: 'pulls' as const, label: 'Pull requests', icon: GitPullRequest, count: pulls.data && pulls.data.pulls.provenance !== 'unavailable' ? openPulls.length : undefined },
-    { value: 'documents' as const, label: 'Documents', icon: FileText, count: issues.reduce((sum, issue) => sum + issue.documents.length, 0) },
+    { value: 'documents' as const, label: 'Documents', icon: FileText, count: documents.data?.documents.value.length },
     { value: 'settings' as const, label: 'Repository settings', icon: SettingsIcon },
   ];
   const issuesCard = (
@@ -329,7 +327,7 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
                     <Ring pct={(healthScore ?? 0) * 100} size={78} stroke={7} from="cyan" to="green" label={`Health grade ${grade}`}><span {...stylex.props(styles.grade, text.grad)}>{grade}</span></Ring>
                     <div {...stylex.props(styles.hl)}>
                       <div {...stylex.props(styles.hlRow)}><Icon icon={CircleCheck} size={14} style={text.green} />Repository checks<b {...stylex.props(styles.hlVal)}>{checkPass === null ? '—' : `${Math.round(checkPass * 100)}% pass`}</b></div>
-                      <div {...stylex.props(styles.hlRow)}><Icon icon={ListChecks} size={14} style={text.cyan} />Issues with criteria<b {...stylex.props(styles.hlVal)}>{withCriteria} / {issues.length}</b></div>
+                      <div {...stylex.props(styles.hlRow)}><Icon icon={ListChecks} size={14} style={text.cyan} />Acceptance criteria<b {...stylex.props(styles.hlVal)}>Checked on start</b></div>
                       <div {...stylex.props(styles.hlRow)}><Icon icon={CircleAlert} size={14} style={text.amber} />Failed runs (7 days)<b {...stylex.props(styles.hlVal)} title={failedUndated ? `${failedUndated} failed runs have no recorded completion time and are not counted` : undefined}>{failed7}{failedUndated ? ` · ${failedUndated} undated` : ''}</b></div>
                       <div {...stylex.props(styles.hlRow)}><Icon icon={Timer} size={14} style={text.violet} />Runs with a PR<b {...stylex.props(styles.hlVal)}>{projectRuns.filter(run => run.pullRequestUrl).length}</b></div>
                       <div {...stylex.props(styles.hlRow)}><Icon icon={Coins} size={14} style={text.violet} />Cost per verified run<b {...stylex.props(styles.hlVal)}>{usd(costPerVerified)}</b></div>
@@ -402,14 +400,17 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
         )}
         {tab === 'documents' && (
           <Card index={1} pad>
-            {issues.flatMap(issue => issue.documents.map(doc => ({ doc, issue }))).map(({ doc, issue }) => (
+            {documents.isPending && <Empty title="Reading project documents…" />}
+            {documents.error && <QueryError error={documents.error} what="Documents" />}
+            {documents.data?.documents.provenance === 'unavailable' && <Notice title={documents.data.documents.reason ?? 'Linear documents unavailable'} />}
+            {(documents.data?.documents.value ?? []).map(doc => (
               <div key={doc.id} {...stylex.props(styles.doc)}>
                 <Icon icon={BookOpen} size={16} style={text.violet} />
-                <div><b {...stylex.props(text.strong)}>{doc.title}</b><div {...stylex.props(styles.docBody)}>{doc.content}</div></div>
-                <a href={issue.url} target="_blank" rel="noopener noreferrer" {...stylex.props(text.key)}>{issueKey(issue)}</a>
+                <b {...stylex.props(text.strong)}>{doc.title}</b>
+                <Button size="sm" href={doc.url} external>Open in Linear</Button>
               </div>
             ))}
-            {issues.every(issue => issue.documents.length === 0) && <Empty title="No documents attached to this project's issues." />}
+            {documents.data?.documents.provenance === 'live' && documents.data.documents.value.length === 0 && <Empty title="No project documents." />}
           </Card>
         )}
         {tab === 'settings' && <Card index={1}><RepositorySettings key={`${project.id}:${JSON.stringify(project.repository)}`} project={project} /></Card>}

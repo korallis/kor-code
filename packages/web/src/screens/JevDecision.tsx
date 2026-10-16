@@ -13,7 +13,7 @@ import { useDecisions, useMissionRuns } from '../api/data';
 import { isOpen, issueKey, useAllIssues } from '../api/issues';
 import { useLive } from '../api/live';
 import { useRunTerminal } from '../api/terminal';
-import { useConfig, useModels, useOverride, useProjects, useQueue, useRunAction, useRunMessage } from '../api/queries';
+import { useConfig, useIssue, useModels, useOverride, useProjects, useQueue, useRunAction, useRunMessage } from '../api/queries';
 import { href } from '../router';
 import { AppFrame } from '../shell/AppFrame';
 import { initials, projectTone } from '../shell/projectTone';
@@ -397,7 +397,8 @@ export function JevDecision({ executionId }: { executionId?: string }) {
   const project: Project | undefined = projectList.find(one => one.id === (projectId ?? selected?.repository)) ?? projectList.find(one => one.runs.some(run => run.executionId === selected?.executionId)) ?? projectList[0];
   const issues = useAllIssues(project ? [project] : []);
   const projectIssues = issues[0]?.issues ?? [];
-  const issue = selected ? projectIssues.find(one => one.id === selected.issueId) : undefined;
+  const issueRead = useIssue(selected?.issueId);
+  const issue = issueRead.data?.issue;
   const projectRuns = (project ? runs.filter(run => project.runs.some(one => one.executionId === run.executionId)) : runs);
   const needle = search.trim().toLowerCase();
   const match = (key: string, title: string) => !needle || `${key} ${title}`.toLowerCase().includes(needle);
@@ -450,6 +451,7 @@ export function JevDecision({ executionId }: { executionId?: string }) {
             )}
           </div>
           {queue.error && <div {...stylex.props(styles.lh)}><Notice title={queue.error.message} hint={queue.error instanceof ApiFailure ? queue.error.hint : undefined} /></div>}
+          {issueRead.error && <div {...stylex.props(styles.lh)}><Notice title="Issue context unavailable" hint={issueRead.error.message} /></div>}
           {selected && (
             <div {...stylex.props(styles.history)}>
               <div {...stylex.props(layout.row)}><span {...stylex.props(text.label)}>Run history</span><span {...stylex.props(layout.grow)} /><span {...stylex.props(text.mono, text.faint, text.micro)}>{keyOf(selected)}</span></div>

@@ -1,7 +1,7 @@
 /** Browser-safe Mission Control protocol. No server modules execute on import. */
 import type { KorConfig } from "@kor-code/config";
 import type { CalibrationReport } from "@kor-code/calibration";
-import type { LinearIssue } from "@kor-code/linear";
+import type { LinearIssue, LinearIssueSummary, LinearDocumentSummary } from "@kor-code/linear";
 import type { DecisionRecord, GatewayAccountHealth, SessionSpend, GatewayModel, JsonValue, KorStatusResponse, Labelled, OverrideRecord, RunStatus, VerificationAttempt, VerificationReport } from "@kor-code/core";
 import type { RunMetric, SkillLearningChange, SkillStats } from "@kor-code/calibration";
 
@@ -56,7 +56,9 @@ export interface ProjectsResponse { schemaVersion: 1; projects: Project[] }
 export interface RunsResponse { schemaVersion: 1; runs: MissionRun[] }
 export interface RunResponse { schemaVersion: 1; run: MissionRun }
 export interface TerminalResponse { schemaVersion: 1; executionId: string; content: string; offset: number }
-export interface IssuesResponse { schemaVersion: 1; issues: Labelled<LinearIssue[]>; bounded: true }
+export interface IssuesResponse { schemaVersion: 1; issues: Labelled<LinearIssueSummary[]>; bounded: true }
+export interface IssueResponse { schemaVersion: 1; issue: LinearIssue }
+export interface DocumentsResponse { schemaVersion: 1; documents: Labelled<LinearDocumentSummary[]> }
 export interface PullRequest { number: number; title: string; url: string; state: "open" | "closed"; draft: boolean; merged: boolean; head: string }
 export interface PullsResponse { schemaVersion: 1; pulls: Labelled<PullRequest[]>; bounded: true }
 export interface ModelsResponse { schemaVersion: 1; models: Labelled<GatewayModel[]> }
@@ -157,6 +159,8 @@ export interface MissionControlApi {
   "GET /api/runs/:id": Endpoint<never, RunResponse>;
   "GET /api/runs/:id/terminal": Endpoint<never, TerminalResponse>;
   "GET /api/runs/:id/session": Endpoint<never, SessionPackResponse>;
+  "GET /api/linear/issues/:id": Endpoint<never, IssueResponse>;
+  "GET /api/linear/documents": Endpoint<never, DocumentsResponse>;
   "GET /api/linear/issues": Endpoint<never, IssuesResponse>;
   "GET /api/github/pulls": Endpoint<never, PullsResponse>;
   "GET /api/models": Endpoint<never, ModelsResponse>;

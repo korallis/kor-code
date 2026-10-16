@@ -8,12 +8,12 @@ import { z } from "zod";
 import type { DecisionRecord, Execution, GatewayAccountHealth, KorRunSnapshot, KorStatusResponse, KorStatusSnapshot, Labelled, OverrideRecord, Route, RouteSource, RunStatus, SessionProcessIdentity } from "@kor-code/core";
 import { repositoryKeyForIssue, type KorConfig, type KorPaths } from "@kor-code/config";
 import { ExecutionVerificationError, policyTools, type CalibrationBaseline, type Controller } from "@kor-code/controller";
-import type { LinearClient, LinearIssue } from "@kor-code/linear";
+import type { LinearClient, LinearIssue, LinearIssueSummary } from "@kor-code/linear";
 import { AgentSessionWriter, LinearStore, flushLinearWrites, hasScreenshot, stableId, workflowMapping, type LinearWrite, type AssignmentRecord, type ExecutionClaim } from "@kor-code/linear";
 import { captureProcess, processExists, processMatches, stopSession } from "./process.js";
 import { OverrideStore } from "./overrides.js";
 import type { ShippingDriver } from "./shipping.js";
-import type { AskRequest, AskResponse, IssuesResponse, LinearSync, MissionRun, PoolResponse, SessionOption, SessionPackResponse, Stage } from "@kor-code/mission-control";
+import type { AskRequest, AskResponse, IssuesResponse, DocumentsResponse, IssueResponse, LinearSync, MissionRun, PoolResponse, SessionOption, SessionPackResponse, Stage } from "@kor-code/mission-control";
 import type { JsonValue } from "@kor-code/core";
 import { DEFAULT_SKILL_BUDGET, SESSION_TARGETS, applySkillOverrides, emptySkillPlan, foldSessionEdits, labelEdits, parseSessionEdit, redact, reviewSessionEdit, runtimeSecrets, screenshotReadinessCheck, sessionEditChoice, type SessionEdit, type SessionEditContext, type SkillCandidate, type SkillTier } from "@kor-code/jev";
 import { ApiFailure, MissionApi } from "./api.js";
@@ -167,7 +167,7 @@ export class KorDaemon {
   readonly overrides: OverrideStore;
   /** Issue facts by assignment issue ID, kept from polls and claims for display. */
   private readonly issues = new Map<string, IssueFacts>();
-  private readonly issueLists = new Map<string, Labelled<LinearIssue[]>>();
+  private readonly issueLists = new Map<string, Labelled<LinearIssueSummary[]>>();
   private accounts: Labelled<GatewayAccountHealth[]> | undefined;
   readonly mission: MissionServices;
   readonly events = new MissionEvents(() => [this.token, ...runtimeSecrets(), ...this.mission.secrets()]);
@@ -308,8 +308,8 @@ export class KorDaemon {
       if (this.now() - this.lastQuotaAt >= 60_000) void this.refreshQuota();
       let found = 0;
       if (this.options.linear) for (const key of teamKeys(this.options.config)) {
-        let issues: LinearIssue[];
-        try { issues = await this.options.linear.listIssues(key, 100); }
+        let issues: LinearIssueSummary[];
+        try { issues = await this.options.linear.listIssues(key); }
         catch (error) { this.observeIssues(key, unavailable([], "Linear issues unavailable")); throw error; }
         this.observeIssues(key, live(issues));
         for (const issue of issues) {
@@ -443,7 +443,7 @@ export class KorDaemon {
     if (!run) throw new ApiFailure(404, "not_found", "Execution not found");
     return run;
   }
-  private observeIssues(team: string, observation: Labelled<LinearIssue[]>): void {
+  private observeIssues(team: string, observation: Labelled<LinearIssueSummary[]>): void {
     const changed = stateSignature(this.issueLists.get(team)) !== stateSignature(observation);
     this.issueLists.set(team, observation);
     if (changed) this.events.publish({ kind: "invalidate", resources: ["issues"] });
@@ -461,6 +461,18 @@ export class KorDaemon {
     const value = [...new Map(issues.map(issue => [issue.id, issue])).values()];
     const ready = lists.every(list => list?.provenance === "live");
     return { schemaVersion: 1, bounded: true, issues: ready ? live(value) : unavailable(value, "Waiting for the daemon's Linear intake observation") };
+  }
+  async missionIssue(id: string): Promise<IssueResponse> {
+    if (!this.options.linear) throw new ApiFailure(503, "unavailable", "Linear connection unavailable");
+    return { schemaVersion: 1, issue: await this.options.linear.getIssue(id) };
+  }
+  async missionDocuments(project: string): Promise<DocumentsResponse> {
+    const repository = this.config.repos[project];
+    if (!repository) throw new ApiFailure(404, "not_found", "Configured project not found");
+    if (!this.options.linear) return { schemaVersion: 1, documents: unavailable([], "Linear connection unavailable") };
+    if (!repository.linearProject) return { schemaVersion: 1, documents: unavailable([], "Map a Linear project to read its documents") };
+    try { return { schemaVersion: 1, documents: live(await this.options.linear.listProjectDocuments(repository.linearProject)) }; }
+    catch { return { schemaVersion: 1, documents: unavailable([], "Linear documents unavailable") }; }
   }
   async queueIssues(references: string[]): Promise<MissionRun[]> {
     const linear = this.options.linear;
@@ -625,7 +637,7 @@ export class KorDaemon {
     return { ...(issue ? { issue } : {}), route: base, routeSource, decisions };
   }
 
-  private remember(key: string, issue: LinearIssue): void {
+  private remember(key: string, issue: LinearIssueSummary): void {
     this.issues.set(key, { key: issue.identifier ?? issue.id, title: issue.title, ...(issue.url ? { url: issue.url } : {}), ...(issue.stateName ? { state: issue.stateName } : {}) });
   }
 
