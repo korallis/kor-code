@@ -68,7 +68,7 @@ async function readBounded(response: Response, limit: number): Promise<string> {
 export class JevClient {
   private readonly options: Required<Pick<JevClientOptions, "endpoint" | "model" | "fetch" | "timeoutMs">> & Pick<JevClientOptions, "apiKey">;
   constructor(options: JevClientOptions = {}) {
-    this.options = { endpoint: options.endpoint ?? "https://api.typesafe.ai/v1/systemone", model: options.model ?? "jev-1.13.0", fetch: options.fetch ?? globalThis.fetch, timeoutMs: options.timeoutMs ?? 30_000, ...(options.apiKey ? { apiKey: options.apiKey } : {}) };
+    this.options = { endpoint: options.endpoint ?? "https://api.typesafe.ai/v1/systemone", model: options.model ?? "jev-1.14.0", fetch: options.fetch ?? globalThis.fetch, timeoutMs: options.timeoutMs ?? 30_000, ...(options.apiKey ? { apiKey: options.apiKey } : {}) };
     const url = new URL(this.options.endpoint);
     if (url.protocol !== "https:" && !(url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname))) throw new Error("Jev endpoint must use HTTPS or loopback HTTP");
     if (!Number.isFinite(this.options.timeoutMs) || this.options.timeoutMs <= 0) throw new Error("Invalid Jev timeout");

@@ -1114,12 +1114,12 @@ export class KorDaemon {
       catch (error) {
         if (error instanceof NeedsInputError) throw error;
         await this.log(executionId, `route preflight unavailable; default route stands: ${safeMessage(error)}`);
-        return { ...defaultRoute, label: "fallback" };
+        return { ...defaultRoute, label: "fallback", fallbackReason: `Route preflight unavailable: ${safeMessage(error)}` };
       }
     }
     if (this.options.controller) return undefined;
     const planned = [...this.overrides.decisions(executionId)].reverse().find(decision => decision.kind === "route");
-    if (planned) return { ...defaultRoute, model: !planned.escalated && planned.choice ? planned.choice : defaultRoute.model, label: planned.escalated ? "fallback" : "jev", decisionId: planned.decisionId };
+    if (planned) return { ...defaultRoute, model: !planned.escalated && planned.choice ? planned.choice : defaultRoute.model, label: planned.escalated ? "fallback" : "jev", decisionId: planned.decisionId, ...(planned.escalated ? { fallbackReason: planned.reasons.join(" ") } : {}) };
     return defaultRoute;
   }
 

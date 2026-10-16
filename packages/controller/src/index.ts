@@ -1,10 +1,10 @@
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { cp, mkdir } from "node:fs/promises";
 import type { CatalogueModel, ContextManifest, Evidence, Execution, Route, SessionSpend } from "@kor-code/core";
-import { JevDecisionCore, redact, routeFromDecision, type SessionOverrides } from "@kor-code/jev";
+import { JevDecisionCore, redact, preflightRequests, type SessionOverrides } from "@kor-code/jev";
 import type { TrackerClient, TrackerIssue, WorkflowMapping, ExecutionClaim } from "@kor-code/tracker";
-import { AgentSessionWriter, DurableQueue, ExecutionLease, TrackerStore, SnapshotReader } from "@kor-code/tracker";
-import { randomUUID } from "node:crypto";
+import { AgentSessionWriter, DurableQueue, ExecutionLease, TrackerStore, SnapshotReader, hasScreenshot } from "@kor-code/tracker";
+import { createHash, randomUUID } from "node:crypto";
 import { RepositoryRegistry, type RepositoryLookup, type Repository } from "./repository.js";
 import { type Worktree, type WorktreeManager } from "./worktree.js";
 import { ConcurrencyLimiter } from "./limiter.js";
@@ -83,25 +83,24 @@ interface ChosenRoute { route?: Route; decisionId?: string }
 async function chooseRoute(options: ControllerOptions, executionId: string, issue: TrackerIssue, existing?: Route): Promise<ChosenRoute> {
   if (existing) return { route: existing, ...(existing.decisionId ? { decisionId: existing.decisionId } : {}) };
   const catalogue = options.catalogue ?? [];
-  if (!options.jev || catalogue.length === 0) return { ...(options.defaultRoute ? { route: options.defaultRoute } : {}) };
-  const candidates = catalogue.filter(item => item.available !== false).map(item => item.model);
-  if (candidates.length === 0) throw new Error("No available model routes in catalogue");
-  const decisionId = `route-${executionId}`;
-  try {
-    const replayed = options.jev.replay(decisionId);
-    if (replayed.escalated) return { ...(options.defaultRoute ? { route: { ...options.defaultRoute, label: "fallback" } } : {}), decisionId };
-    return { route: { ...routeFromDecision(replayed, catalogue, { accountPolicy: "fill-first", sessionAffinity: true }), label: "jev" }, decisionId };
-  } catch (error) {
-    // A first attempt has no audit record; retries reuse the recorded decision
-    // above. If a previously selected model left the catalogue, keep the
-    // execution retryable by falling back instead of writing a duplicate id.
-    if (!(error instanceof Error) || !/Decision not found/.test(error.message)) {
-      return { ...(options.defaultRoute ? { route: { ...options.defaultRoute, label: "fallback" } } : {}), decisionId };
-    }
+  const jev = options.jev;
+  if (!jev || catalogue.length === 0) return { ...(options.defaultRoute ? { route: options.defaultRoute } : {}) };
+  const first = catalogue.find(model => model.available !== false);
+  if (!first) throw new Error("No available model routes in catalogue");
+  const input = { executionId,
+    issue: { ...issue, hasScreenshot: hasScreenshot(issue), dependencies: issue.dependencies.map(dependency => ({ id: dependency.id, state: dependency.stateType })) },
+    verifiedModels: catalogue, defaultRoute: options.defaultRoute ?? { model: first.model, provider: first.provider, accountPolicy: "fill-first" as const, sessionAffinity: true } };
+  const baseRevision = createHash("sha256").update(JSON.stringify(preflightRequests(input)[0]?.inputs.find(input => input.name === "routing-input")?.value)).digest("hex").slice(0, 16);
+  let decisionRevision = baseRevision;
+  for (let retry = 1; ; retry++) {
+    const saved = preflightRequests({ ...input, decisionRevision }).map(request => jev.get(request.decisionId));
+    if (!saved.some(record => record && record.response.policyChecks.some(check => check.name === "jev-available" && check.result === "fail"))) break;
+    decisionRevision = `${baseRevision}-retry-${retry}`;
   }
-  const decision = await options.jev.selectRoute({ decisionId, executionId, kind: "route", question: `Select the available model route that best fits this ${issue.tracker === "github" ? "GitHub" : "Linear"} issue and its acceptance conditions.`, state: { issueId: issue.id, title: issue.title, description: issue.description ?? "", acceptance: issue.acceptanceCriteria, dependencies: issue.dependencies }, inputs: [{ name: "issue", value: issue.title, source: "tracker" }], candidates, policyChecks: [{ name: "catalogue-nonempty", result: "pass" }] });
-  if (decision.escalated) return { ...(options.defaultRoute ? { route: { ...options.defaultRoute, label: "fallback" } } : {}), decisionId };
-  return { route: { ...routeFromDecision(decision, catalogue, { accountPolicy: "fill-first", sessionAffinity: true }), label: "jev" }, decisionId: decision.decisionId };
+  const plan = await jev.planIssue({ ...input, decisionRevision });
+  const readiness = plan.decisions.find(decision => decision.kind === "readiness");
+  if (readiness?.policyChecks.some(check => check.result === "fail" && check.name !== "jev-available") || !plan.outage && (!readiness?.applied || readiness.choice !== "ready")) throw new Error(readiness?.reasons.join(" ") ?? "Issue readiness could not be established");
+  return { route: plan.route, ...(plan.route.decisionId ? { decisionId: plan.route.decisionId } : {}) };
 }
 
 class ExecutionController implements Controller {

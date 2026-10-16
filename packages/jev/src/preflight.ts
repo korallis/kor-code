@@ -1,7 +1,8 @@
 import type { CatalogueModel, DecisionBundle, DecisionInput, JsonValue, Route } from "@kor-code/core";
 import { JevUnavailableError } from "./client.js";
 import type { JevJsonValue } from "./contracts.js";
-import { JevDecisionCore, type AppliedDecision, type DecisionAuditLog, type DecisionRequest, type PreflightResult } from "./index.js";
+import { ROUTING_POLICY_VERSION, conservativeModel, isRoutableModel, modelCriteria, modelReasoningClass, modelsForClass, reasoningCriteria, type ReasoningClass } from "./routing.js";
+import type { JevDecisionCore, AppliedDecision, DecisionAuditLog, DecisionRequest, PreflightResult } from "./index.js";
 
 export interface PreflightIssue {
   id: string;
@@ -54,8 +55,10 @@ export function issueReadinessChecks(issue: PreflightIssue): DecisionBundle["pol
   });
 }
 
-function issueState(input: PreflightInput, readinessChecks: DecisionBundle["policyChecks"]): JsonValue {
+function issueState(input: PreflightInput, readinessChecks: DecisionBundle["policyChecks"]): Record<string, JsonValue> {
   return {
+    routingPolicyVersion: ROUTING_POLICY_VERSION,
+    modelProfiles: modelCriteria(input.verifiedModels),
     issue: { id: input.issue.id, title: input.issue.title, description: input.issue.description ?? "", acceptance: input.issue.acceptanceCriteria, dependencies: input.issue.dependencies, labels: input.issue.labels ?? [], hasScreenshot: input.issue.hasScreenshot ?? false },
     verifiedModels: input.verifiedModels.map(model => ({ model: model.model, provider: model.provider, capabilities: Object.fromEntries(model.capabilities.map(capability => [capability.name, capability.supported])), ...(model.costUsd !== undefined ? { costUsd: model.costUsd } : {}), ...(model.durationMs !== undefined ? { durationMs: model.durationMs } : {}) })),
     readinessChecks: readinessChecks.map(check => ({ ...check })),
@@ -66,27 +69,27 @@ function decisionId(inputData: PreflightInput, kind: string): string {
   return `${kind}-${inputData.executionId}${inputData.decisionRevision ? `-${inputData.decisionRevision}` : ""}`;
 }
 function makeRequests(inputData: PreflightInput): DecisionRequest[] {
-  const models = inputData.verifiedModels.map(model => model.model);
+  const models = inputData.verifiedModels.filter(isRoutableModel).map(model => model.model);
   const routeCandidates = models.length >= 2 ? models : [...models, "no-verified-route", "clarification"].slice(0, 2);
   const readinessChecks = [
     ...issueReadinessChecks(inputData.issue),
-    { name: "verified-route", result: models.length > 0 ? "pass" as const : "fail" as const, ...(models.length ? {} : { reason: "No verified model is available; run kor models probe before retrying." }) },
+    { name: "verified-route", result: models.length > 0 ? "pass" as const : "fail" as const, ...(models.length ? {} : { reason: "No available model has both verified streaming/tool/structured-output support and a maintained reasoning profile. Run kor models probe or add a routing profile before retrying." }) },
   ];
-  const routeCriteria: Record<string, JevJsonValue> = Object.fromEntries(inputData.verifiedModels.map(model => [model.model, {
-    provider: model.provider,
-    capabilities: Object.fromEntries(model.capabilities.map(capability => [capability.name, capability.supported])),
-    ...(model.costUsd !== undefined ? { costUsd: model.costUsd } : {}),
-    ...(model.durationMs !== undefined ? { durationMs: model.durationMs } : {}),
-  }]));
-  for (const candidate of routeCandidates) if (!Object.hasOwn(routeCriteria, candidate)) routeCriteria[candidate] = { reason: candidate === "no-verified-route" ? "No verified model is available." : "Ask the user for a route." };
+  const routeCriteria: Record<string, JevJsonValue> = modelCriteria(inputData.verifiedModels);
+  routeCriteria["no-verified-route"] = "None of the offered models has the required verified capabilities or a maintained role suitable for this issue.";
+  routeCriteria.clarification = "The issue cannot be assigned to an offered model without an essential scope decision.";
   const threshold = inputData.threshold ?? 0.7;
-  const common = { executionId: inputData.executionId, state: issueState(inputData, readinessChecks), inputs: [input("issue", inputData.issue.title)], threshold };
+  const routingInput = issueState(inputData, readinessChecks);
+  const common = { executionId: inputData.executionId,
+    state: { issue: routingInput.issue, readinessChecks: routingInput.readinessChecks, routingPolicyVersion: ROUTING_POLICY_VERSION },
+    inputs: [input("issue", inputData.issue.title), input("routing-input", routingInput, "routing-policy")], threshold };
   return [
-    { ...common, decisionId: decisionId(inputData, "readiness"), kind: "readiness", answerType: "noul", question: "Is the issue sufficiently specified to begin implementation? Judge missing essential scope, not implementation difficulty or confidence that the code will pass verification. Treat the supplied passing readinessChecks as established facts. Concrete file, export, input and behavior requirements are sufficient; do not require a build setup, design decisions or background that the task does not need.", candidates: ["ready", "blocked"], policyChecks: readinessChecks, criteria: { true: "All readinessChecks pass and a coding worker can start the bounded change from the stated acceptance criteria without asking the operator an essential scope question.", false: "A readinessCheck fails, or an essential expected behavior or scope decision is missing or contradictory, so implementation needs operator input." } },
-    { ...common, decisionId: decisionId(inputData, "complexity"), kind: "complexity", answerType: "score", question: "How complex is this issue for an isolated coding session?", candidates: [...complexityLevels], threshold: 0 },
-    { ...common, decisionId: decisionId(inputData, "risk"), kind: "risk", answerType: "score", question: "How much delivery or operational risk does this issue carry?", candidates: [...riskLevels], threshold: 0 },
-    { ...common, decisionId: decisionId(inputData, "route"), kind: "route", question: "Which verified model best fits this issue? Compare the supplied provider, capabilities, cost, and duration. Choose no-verified-route when no supplied model is suitable.", candidates: routeCandidates, policyChecks: [{ name: "verified-model", result: models.length > 0 ? "pass" : "fail" }], criteria: routeCriteria, nonApplyingCandidates: ["no-verified-route", "clarification"] },
-    { ...common, decisionId: decisionId(inputData, "agent"), kind: "agent", question: "Which available agent profile best supports this issue? Select generalist for bounded implementation or documentation. Select specialist only when the issue explicitly requires deep domain expertise or a broad investigation.", candidates: [...(inputData.agents ?? defaultAgents)], criteria: { generalist: "A coding worker can complete the bounded change with ordinary repository context.", specialist: "Requires deep domain expertise, architecture research, or specialized investigation." } },
+    { ...common, decisionId: decisionId(inputData, "readiness"), kind: "readiness", answerType: "noul", noulPolicy: "scope-veto", threshold: 0.9, question: "Is the issue sufficiently specified to begin implementation? Judge missing essential scope, not implementation difficulty or confidence that the code will pass verification. Treat the supplied passing readinessChecks as established facts. Concrete file, export, input and behavior requirements are sufficient; do not require a build setup, design decisions or background that the task does not need.", candidates: ["ready", "blocked"], policyChecks: readinessChecks, criteria: { true: "All readinessChecks pass and a coding worker can start the bounded change from the stated acceptance criteria without asking the operator an essential scope question.", false: "A readinessCheck fails, or an essential expected behavior or scope decision is missing or contradictory, so implementation needs operator input." } },
+    { ...common, decisionId: decisionId(inputData, "complexity"), kind: "complexity", answerType: "score", question: "How much implementation scope does this single issue require? Judge the issue itself, not the whole project. Level 0 is a local mechanical edit; level 1 requires interacting files within an established design; level 2 spans subsystems or unresolved architecture.", candidates: [...complexityLevels], threshold: 0 },
+    { ...common, decisionId: decisionId(inputData, "risk"), kind: "risk", answerType: "score", question: "How much correctness or operational risk does the requested change introduce? Level 0 is reversible local behavior; level 1 requires ordinary review; level 2 affects authorization, production data integrity or hard-to-reverse external changes. Do not score high merely because the product operates in a regulated domain.", candidates: [...riskLevels], threshold: 0 },
+    { ...common, decisionId: decisionId(inputData, "reasoning-class"), kind: "reasoning-class", question: "Which is the least demanding reasoning class sufficient for this single issue? Use the stated task, acceptance conditions and supplied complexity/risk assessments. Judge the actual implementation obligations, not the product domain in general. Reviewing, landing or merging an existing PR requires independent correctness review and belongs to deep; do not classify that as routine merely because implementation already exists. For new implementation use implementation unless the stated work actually requires unresolved architecture or high-risk diagnosis.", candidates: Object.keys(reasoningCriteria), criteria: reasoningCriteria },
+    { ...common, decisionId: decisionId(inputData, "route"), kind: "route", question: "Which offered model role best fits the primary work of this single issue within the selected reasoning class? Use the maintained strengths and avoid criteria to distinguish roles. Probe costs and latency are observations, not workload prices or quality scores. Choose no-verified-route if no offered model can perform the work. When the issue asks to review, land or merge an existing PR, use the correctness review role; the feature size describes existing code rather than new construction. Confidence is conditional on this class; it is not end-to-end success probability.", candidates: routeCandidates, policyChecks: [{ name: "verified-model", result: models.length > 0 ? "pass" : "fail" }], criteria: routeCriteria, nonApplyingCandidates: ["no-verified-route", "clarification"] },
+    { ...common, decisionId: decisionId(inputData, "agent"), kind: "agent", question: "Which available agent profile best supports this issue? Select generalist for bounded implementation or documentation. Select specialist only when the issue explicitly requires deep domain expertise or a broad investigation.", candidates: [...(inputData.agents ?? defaultAgents)], criteria: Object.fromEntries((inputData.agents ?? defaultAgents).map(agent => [agent, agent === "generalist" ? "Default coding role for bounded implementation, documentation, ordinary diagnosis, verification, review and landing an existing PR in an established design. This role can perform correctness reviews; specialist subject matter alone does not require another role." : agent === "specialist" ? "Use only for unresolved architectural research or an explicitly required domain-specialist investigation; subject matter alone is insufficient." : `Configured agent role ${agent}; no additional responsibilities or specialist capabilities are declared.`])) },
   ];
 }
 
@@ -99,24 +102,67 @@ function fallbackDecision(request: DecisionRequest, choice: string, reason: stri
 }
 
 function appendFallback(audit: DecisionAuditLog, requests: readonly DecisionRequest[], route: Route, reason: string): AppliedDecision[] {
-  const decisions = requests.map(request => fallbackDecision(request, request.kind === "readiness" ? "blocked" : request.kind === "route" ? route.model : "escalate", reason));
-  for (const [index, decision] of decisions.entries()) audit.append({ request: requests[index]!, response: decision, recordedAt: new Date().toISOString() });
-  return decisions;
+  return requests.map(request => {
+    const saved = audit.get(request.decisionId);
+    if (saved) return saved.response;
+    const response = fallbackDecision(request, request.kind === "readiness" ? "blocked" : request.kind === "route" ? route.model : "escalate", reason);
+    audit.append({ request, response, recordedAt: new Date().toISOString() });
+    return response;
+  });
+}
+
+/** A single route policy for fresh plans, durable replay and controller dispatch. */
+export function preflightRoute(input: Pick<PreflightInput, "verifiedModels" | "defaultRoute">, routeDecision: AppliedDecision, classDecision?: AppliedDecision): Route {
+  const requestedClass = classDecision?.applied && (classDecision.choice === "routine" || classDecision.choice === "implementation" || classDecision.choice === "deep") ? classDecision.choice : "deep";
+  const eligible = modelsForClass(input.verifiedModels, requestedClass);
+  const selected = routeDecision.applied && !routeDecision.escalated ? eligible.find(model => model.model === routeDecision.choice) : undefined;
+  const jevSelected = classDecision?.applied && selected !== undefined;
+  const fallbackReason = jevSelected ? undefined : [...(!classDecision?.applied ? classDecision?.reasons ?? ["Reasoning-class assessment unavailable."] : []), ...(!routeDecision.applied ? routeDecision.reasons : !selected ? ["The recorded model is no longer verified and available in the selected class."] : [])].join(" ");
+  const model = selected ?? conservativeModel(eligible) ?? conservativeModel(input.verifiedModels);
+  const reasoningClass = (model ? modelReasoningClass(model.model) : undefined) ?? requestedClass;
+  const levels: Record<ReasoningClass, "low" | "medium" | "high"> = { routine: "low", implementation: "medium", deep: "high" };
+  return { ...input.defaultRoute, ...(model ? { model: model.model, provider: model.provider } : {}), label: jevSelected ? "jev" : "fallback", decisionId: routeDecision.decisionId, reasoningClass, reasoningLevel: levels[reasoningClass], ...(fallbackReason ? { fallbackReason } : {}) };
 }
 
 export async function planPreflight(inputData: PreflightInput, core: JevDecisionCore, audit: DecisionAuditLog): Promise<PreflightPlan> {
   const requests = makeRequests(inputData);
+  const initial = requests.filter(request => request.kind !== "route" && request.kind !== "reasoning-class");
+  const classRequest = requests.find(request => request.kind === "reasoning-class")!;
+  const routeRequest = requests.find(request => request.kind === "route")!;
   try {
-    const result = await core.preflight(requests);
-    const routeDecision = result.decisions.find(decision => decision.kind === "route")!;
-    const selected = routeDecision.applied ? inputData.verifiedModels.find(model => model.model === routeDecision.choice && model.available !== false) : undefined;
-    const route: Route = { ...inputData.defaultRoute, ...(selected ? { model: selected.model, provider: selected.provider } : {}), label: selected ? "jev" : "fallback", decisionId: routeDecision.decisionId };
-    return { executionId: inputData.executionId, route, decisions: result.decisions, response: result.response, fallback: false };
+    const pending = initial.filter(request => !audit.get(request.decisionId));
+    const evaluated = await core.preflight(pending);
+    const result = { ...evaluated, decisions: initial.map(request => audit.replay(request.decisionId)) };
+    const assessments = Object.fromEntries(result.decisions.filter(decision => decision.kind === "complexity" || decision.kind === "risk").map(decision => [decision.kind, { score: decision.score ?? null, confidence: decision.confidence, probabilities: decision.probabilities ?? {} }]));
+    const fullState = issueState(inputData, initial.find(request => request.kind === "readiness")?.policyChecks ?? []);
+    const baseState = { issue: fullState.issue, readinessChecks: fullState.readinessChecks, routingPolicyVersion: ROUTING_POLICY_VERSION };
+    classRequest.state = { ...baseState, routingAssessment: assessments };
+    const classDecision = audit.get(classRequest.decisionId) ? audit.replay(classRequest.decisionId) : await core.decide(classRequest);
+    const observedClass = classDecision.choice === "routine" || classDecision.choice === "implementation" || classDecision.choice === "deep" ? classDecision.choice : undefined;
+    const reasoningClass = classDecision.applied ? observedClass : "deep";
+    const eligible = reasoningClass ? modelsForClass(inputData.verifiedModels, reasoningClass) : [];
+    routeRequest.state = { ...baseState, routingAssessment: { ...assessments, reasoningClass: reasoningClass ?? "unknown", classConfidence: classDecision.confidence, observedClass: observedClass ?? "unknown", classSource: classDecision.applied ? "jev" : "conservative-fallback" } };
+    routeRequest.candidates = [...eligible.map(model => model.model), "no-verified-route"];
+    routeRequest.criteria = { ...modelCriteria(eligible), "no-verified-route": "No offered model role fits this issue or the selected class has no available profiled model." };
+    // Choice requires two alternatives. No eligible model is a deterministic constraint failure.
+    const routeDecision = audit.get(routeRequest.decisionId) ? audit.replay(routeRequest.decisionId) : eligible.length
+      ? await core.decide(routeRequest)
+      : core.apply({ ...routeRequest, policyChecks: [{ name: "class-model-available", result: "fail", reason: `No available profiled model in reasoning class ${reasoningClass ?? "unknown"}.` }] }, undefined);
+    result.decisions.push(classDecision, routeDecision);
+    for (const decision of [classDecision, routeDecision]) {
+      const raw = audit.get(decision.decisionId)?.rawAnswer;
+      if (raw) result.response.answers[decision.decisionId] = raw;
+    }
+    result.response.model = routeDecision.model ?? classDecision.model ?? result.response.model;
+    const route = preflightRoute(inputData, routeDecision, classDecision);
+    return { executionId: inputData.executionId, route, decisions: result.decisions, response: result.response, fallback: route.label === "fallback" };
   } catch (error) {
     if (!(error instanceof JevUnavailableError)) throw error;
     const reason = error.message;
-    const route: Route = { ...inputData.defaultRoute, label: "fallback", decisionId: decisionId(inputData, "route") };
-    return { executionId: inputData.executionId, route, decisions: appendFallback(audit, requests, route, `Jev unavailable. Default route is labelled fallback. ${reason}`), fallback: true, outage: reason };
+    const fallbackModel = conservativeModel(inputData.verifiedModels);
+    const reasoningClass = modelReasoningClass(fallbackModel?.model ?? inputData.defaultRoute.model);
+    const route: Route = { ...inputData.defaultRoute, ...(fallbackModel ? { model: fallbackModel.model, provider: fallbackModel.provider } : {}), label: "fallback", fallbackReason: `Jev unavailable: ${reason}`, ...(reasoningClass ? { reasoningClass, reasoningLevel: reasoningClass === "deep" ? "high" : reasoningClass === "implementation" ? "medium" : "low" } : {}), decisionId: decisionId(inputData, "route") };
+    return { executionId: inputData.executionId, route, decisions: appendFallback(audit, requests, route, `Jev unavailable. Conservative route is labelled fallback. ${reason}`), fallback: true, outage: reason };
   }
 }
 
