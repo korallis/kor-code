@@ -13,7 +13,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-test:
+  portable:
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_TARGET == 'wsl' && '["self-hosted","Linux","X64","wsl","kor-code"]' || '["self-hosted","macOS","ARM64","mac-ci","kor-code"]') }}
+    env:
+      DISABLE_AUTOUPDATER: "1"
+    steps:
+      - name: Prepare isolated home
+        run: |
+          echo "npm_config_store_dir=${npm_config_store_dir:-$HOME/.local/share/pnpm/store}" >> "$GITHUB_ENV"
+          echo "HOME=$RUNNER_TEMP/kor-home" >> "$GITHUB_ENV"
+          echo "CLAUDE_CONFIG_DIR=$RUNNER_TEMP/kor-claude" >> "$GITHUB_ENV"
+          echo "XDG_CONFIG_HOME=$RUNNER_TEMP/kor-home/.config" >> "$GITHUB_ENV"
+          echo "XDG_STATE_HOME=$RUNNER_TEMP/kor-home/.local/state" >> "$GITHUB_ENV"
+          echo "XDG_DATA_HOME=$RUNNER_TEMP/kor-home/.local/share" >> "$GITHUB_ENV"
+          echo "KOR_PROOF_DIR=$RUNNER_TEMP/kor-proof" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/kor-home" "$RUNNER_TEMP/kor-claude" "$RUNNER_TEMP/kor-proof"
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.9.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - name: Install Claude Code
+        run: |
+          npm install --prefix "$RUNNER_TEMP/kor-tools" @anthropic-ai/claude-code@2.1.299
+          echo "$RUNNER_TEMP/kor-tools/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Prepare
+        run: fm-heavy bash -c 'pnpm install --frozen-lockfile && pnpm build'
+      - name: Lint public skills and prove rejection rules
+        run: fm-heavy bash -c 'bin/kor skills lint && bin/kor skills guard && node scripts/skills-lint-proof.mjs'
+      - name: Typecheck and validate plugin
+        run: fm-heavy pnpm typecheck
+      - name: Offline proofs
+        run: fm-heavy bash -c 'pnpm jev:fixture && pnpm gateway:quota-proof && pnpm controller:fixture && pnpm phase5:proof && pnpm verification:proof && pnpm cockpit:proof'
+
+  linux-proofs:
     runs-on: [self-hosted, linux, x64, wsl, kor-code]
     env:
       DISABLE_AUTOUPDATER: "1"
@@ -40,10 +76,19 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/kor-tools" @anthropic-ai/claude-code@2.1.299
           echo "$RUNNER_TEMP/kor-tools/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Prepare
-        run: pnpm install --frozen-lockfile && pnpm build
-      - name: Lint public skills and prove rejection rules
-        run: bin/kor skills lint && bin/kor skills guard && node scripts/skills-lint-proof.mjs
-      - name: Typecheck and validate plugin
-        run: pnpm typecheck
-      - name: Offline proofs
-        run: pnpm jev:fixture && pnpm gateway:quota-proof && pnpm controller:fixture && pnpm phase5:proof && pnpm verification:proof && pnpm daemon:proof && pnpm shipping:proof && pnpm calibration:proof && pnpm cockpit:proof
+        run: fm-heavy bash -c 'pnpm install --frozen-lockfile && pnpm build'
+      - name: Linux process lifecycle proofs
+        run: fm-heavy bash -c 'pnpm daemon:proof && pnpm shipping:proof && pnpm calibration:proof'
+
+  build-test:
+    needs: [portable, linux-proofs]
+    if: ${{ always() }}
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_TARGET == 'wsl' && '["self-hosted","Linux","X64","wsl","kor-code"]' || '["self-hosted","macOS","ARM64","mac-ci","kor-code"]') }}
+    steps:
+      - name: Require portable checks and Linux lifecycle proofs
+        env:
+          PORTABLE_RESULT: ${{ needs.portable.result }}
+          LINUX_RESULT: ${{ needs.linux-proofs.result }}
+        run: |
+          test "$PORTABLE_RESULT" = success
+          test "$LINUX_RESULT" = success
