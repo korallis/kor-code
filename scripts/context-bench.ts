@@ -38,7 +38,9 @@ const cases = [
 const selected = option("--case") ? cases.filter(item => item.id === option("--case")) : cases;
 if (!selected.length) throw new Error("Unknown --case");
 const routeSchema = runSchema.shape.route.extend({ label: z.literal("jev"), decisionId: z.string().min(1) })
-  .transform(({ reasoningLevel, ...route }) => ({ ...route, ...(reasoningLevel ? { reasoningLevel } : {}) }));
+  .transform(({ reasoningLevel, reasoningClass, fallbackReason, ...route }) => ({ ...route,
+    ...(reasoningLevel ? { reasoningLevel } : {}), ...(reasoningClass ? { reasoningClass } : {}),
+    ...(fallbackReason !== undefined ? { fallbackReason } : {}) }));
 const routes = z.record(z.string(), routeSchema).parse(JSON.parse(await readFile(resolve(routeFile), "utf8")));
 for (const issue of selected) if (!routes[issue.id]) throw new Error(`Missing Jev route for ${issue.id}`);
 const output = option("--output") ? resolve(option("--output")!) : await mkdtemp(join(tmpdir(), "kor-context-bench-"));

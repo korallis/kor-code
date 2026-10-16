@@ -21,6 +21,8 @@ It does not establish acceptance or waive repository policy. An unavailable or
 invalid answer is recorded as unavailable, never as a successful readiness answer.
 The daemon may use an explicitly labelled route fallback during an outage;
 unavailable acceptance judgment still prevents completion.
+A saved Jev scope veto still blocks dispatch when a sibling question is unavailable.
+Only an unavailable readiness judgment itself permits the outage fallback.
 
 ## Model routing
 
@@ -28,11 +30,12 @@ unavailable acceptance judgment still prevents completion.
 the least sufficient class: routine mechanical work, implementation within an
 established design, or deep research/review/interacting-system work. Both class
 and conditional model Choice retain their 0.70 confidence thresholds. If class
-confidence is low, code uses the deep class, records that conservative fallback,
-and asks the model question within that class. If model confidence is low, code
-uses a verified, profiled conservative route and preserves the reason.
-It first retains the selected class when a compatible model remains available;
-otherwise the effective class and effort follow the fallback model.
+confidence is low, code asks the conditional model question in the deep class,
+but keeps the execution labelled fallback. An uncertain class/model or a Jev
+outage uses the configured default when it is verified and profiled; only an
+ineligible default needs a conservative replacement. The effective class follows
+the actual model. Configured reasoning effort is preserved; class-derived effort
+is used only for a Jev selection with no configured effort.
 
 Candidates contain explicit strengths, exclusions, reasoning class, qualitative
 cost/speed policy, verified streaming/tool/structured-output capabilities, and
@@ -58,6 +61,13 @@ Errors also receive audit records. Retries replay immutable answers without
 calling Jev. The routing policy and profiles participate in the input fingerprint;
 changed issue scope, model eligibility or routing policy creates a new revision.
 Historical readiness answers keep their original symmetric policy on replay.
+Configured defaults participate in the routing fingerprint. Calibration preserves
+the effective class and fallback reason alongside the other route fields.
+
+Preflight makes up to six Jev requests per ticket: four independent assessments
+in parallel, then class and model. Acceptance makes one request per criterion.
+This increases request volume relative to the old batch; an immutable replay
+makes no new calls.
 
 ## Tools, context and guidance
 

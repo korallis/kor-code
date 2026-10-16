@@ -2,7 +2,7 @@ import type { CatalogueModel } from "@kor-code/core";
 import type { JevJsonValue } from "./contracts.js";
 
 /** Operator routing policy, not a benchmark or a claim about provider prices. */
-export const ROUTING_POLICY_VERSION = "jev-routing-2";
+export const ROUTING_POLICY_VERSION = "jev-routing-3";
 export type ReasoningClass = "routine" | "implementation" | "deep";
 interface ModelProfile {
   reasoningClass: ReasoningClass;

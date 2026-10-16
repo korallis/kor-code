@@ -18,7 +18,7 @@ P(yes). A small Noul is often a correct negative, not an uncertain answer.
 | Readiness | Full issue, acceptance, dependencies and checks; ready/blocked Noul | P(ready) >= .70; five of eight refused despite passing deterministic checks | .661 (8) | Symmetric positive gate confused uncertainty with missing scope. New records use a .90 negative scope veto; deterministic failures still block. |
 | Complexity | Full issue plus irrelevant model metadata; three ordered levels from bounded to cross-system | 0, advisory score | .383 (8) | Isolate scope question and give concrete levels. Feed score and distribution to class selection. |
 | Risk | Same oversized shared state; three levels from low to high risk | 0, advisory score | .460 (8) | Distinguish actual authorization/data-integrity changes from the application's subject matter. Feed assessment into class selection. |
-| Route | Six model identities with effectively identical transport flags and incomparable probe observations; controller path omitted criteria | .70; configured Sonnet fallback on 8/8 decisions | .263 (8) | No task-role distinction or class hierarchy. Now class first, then only in-class profiles with explicit strengths/exclusions; verified conservative fallback retains its reason. |
+| Route | Six model identities with effectively identical transport flags and incomparable probe observations; controller path omitted criteria | .70; configured Sonnet fallback on 8/8 decisions | .263 (8) | No task-role distinction or class hierarchy. Now class first, then only in-class profiles with explicit strengths/exclusions; verified configured default fallback retains its reason. |
 | Agent | Generalist/specialist roster and generic role descriptions | .70; unapplied preference; dispatcher did not use it as a readiness gate | .600 (8) | Clarify that ordinary implementation, diagnosis and existing-PR review fit generalist; specialist is explicit research/domain-specialist work. Custom roles retain explicit “capabilities undeclared” criteria. |
 | Context | Bounded issue and repository path/purpose/content hints; source IDs with null criteria | 0, advisory ranking; outage silently retained deterministic ordering | .683 (3) | Add path/purpose relevance criteria. Core audits outages; manifest reports fallback ordering. Mandatory rules remain mandatory. |
 | Tools | Four capability Nouls; task attached only to first pending question | P(yes) >= .80; lean tools; every negative appeared escalated | .453 (28) | Put task in every question, including partial replay. Apply supported no at P(yes) <= .20. Policy-absent tools record deterministic no without an API call or fabricated confidence. 21/28 old P(yes) values were below .80; that is not 21 outages. |
@@ -38,7 +38,8 @@ unverified reasoning tier.
 Question state is now scoped to the decision. Full routing identity lives in
 audit inputs/fingerprints; an in-class model choice no longer sees out-of-class
 profiles as competing options. Each independent successful answer persists before
-an outage is surfaced. Immutable replay retains the original Noul policy. Changed
+an outage is surfaced. A real readiness veto still blocks when a sibling question
+is unavailable. Only readiness unavailability itself allows the outage fallback. Immutable replay retains the original Noul policy. Changed
 routing policy/profile inputs get a new revision; partial outages can be retried
 without overwriting old records. One route materialization function handles fresh
 plans and durable replay so fallback provenance survives retries.
@@ -58,7 +59,9 @@ risk, not proof of contamination; equivalent models should not acquire invented
 certainty; preserve acceptance/merge and distinguish errors from uncertainty.
 The challenge favored deterministic selection within a semantic class. The final
 proposal retains model Choice where maintained task roles differ, and makes
-uncertain class/model fallbacks explicit.
+uncertain class/model fallbacks explicit. The configured default remains the
+fallback when verified and profiled; only an ineligible default needs a verified
+conservative replacement. Configured reasoning effort is retained.
 
 Jev 1.14 was given both reports, corrected confidence semantics, the research
 truncation, costs/risks and the owner's explicit version/proof requirements.
@@ -76,23 +79,26 @@ was changed or executed. The five additional issues cover parsing, knowledge,
 status, backups and CI operations; all ten had passing deterministic dependency
 checks. The final scoped run used Jev 1.14 and the live available verified registry.
 
-| Issue | Effective class | Class confidence | Chosen model | Model confidence | P(ready) | Source |
-| --- | --- | ---: | --- | ---: | ---: | --- |
-| LEE-1193 | deep | 0.91 | gpt-6-astra | 0.95 | 0.59 | jev |
-| LEE-1196 | deep | 0.95 | gpt-6-astra | 0.99 | 0.88 | jev |
-| LEE-1197 | deep | 0.97 | gpt-6-astra | 1.00 | 0.94 | jev |
-| LEE-1220 | implementation | 0.91 | claude-sonnet-5-5 | 1.00 | 0.94 | jev |
-| LEE-1224 | deep | 1.00 | gpt-6-astra | 1.00 | 0.77 | jev |
-| LEE-1235 | implementation | 0.80 | gpt-6.1-sol | 1.00 | 0.83 | jev |
-| LEE-1252 | deep | 0.64 | claude-opus-5-5 | 1.00 | 0.58 | fallback |
-| LEE-1302 | implementation | 0.95 | gpt-6.1-sol | 1.00 | 0.67 | jev |
-| LEE-1307 | deep | 0.43 | claude-opus-5-5 | 0.95 | 0.38 | fallback |
-| LEE-1312 | deep | 0.28 | gpt-6-astra | 0.65 | 0.46 | fallback |
+| Issue | Effective class | Class confidence | Effective model | Raw conditional model choice | Model confidence | P(ready) | Source |
+| --- | --- | ---: | --- | --- | ---: | ---: | --- |
+| LEE-1193 | deep | 0.92 | gpt-6-astra | gpt-6-astra | 0.96 | 0.59 | jev |
+| LEE-1196 | deep | 0.97 | gpt-6-astra | gpt-6-astra | 0.99 | 0.89 | jev |
+| LEE-1197 | deep | 0.97 | gpt-6-astra | gpt-6-astra | 1.00 | 0.95 | jev |
+| LEE-1220 | implementation | 0.88 | claude-sonnet-5-5 | claude-sonnet-5-5 | 1.00 | 0.94 | jev |
+| LEE-1224 | deep | 1.00 | gpt-6-astra | gpt-6-astra | 1.00 | 0.79 | jev |
+| LEE-1235 | implementation | 0.74 | gpt-6.1-sol | gpt-6.1-sol | 1.00 | 0.83 | jev |
+| LEE-1252 | implementation | 0.66 | claude-sonnet-5-5 | claude-opus-5-5 | 1.00 | 0.64 | fallback |
+| LEE-1302 | implementation | 0.98 | gpt-6.1-sol | gpt-6.1-sol | 1.00 | 0.65 | jev |
+| LEE-1307 | implementation | 0.37 | claude-sonnet-5-5 | claude-opus-5-5 | 0.95 | 0.38 | fallback |
+| LEE-1312 | implementation | 0.18 | claude-sonnet-5-5 | claude-opus-5-5 | 0.53 | 0.40 | fallback |
 
 Readiness passed 10/10. Conditional model confidence cleared .70 on 9/10;
-class confidence cleared .70 on 7/10. Four different models were allocated.
-LEE-1252 and LEE-1307 use a labelled deep-class fallback; LEE-1312 also retains
-model uncertainty and a conservative Astra fallback. These are not reported as
+class confidence cleared .70 on 7/10. Three different models were allocated.
+LEE-1252, LEE-1307 and LEE-1312 use the verified configured Sonnet default because
+class selection was uncertain. Their conditional model judgments were evaluated
+in the conservative deep class; those probabilities describe the raw model
+judgment, not confidence in the configured fallback shown in the table. LEE-1312
+also had uncertain conditional model selection (.53). These are not reported as
 confident Jev selections. A previous iteration received an invalid upstream
 Choice; typed validation rejected it and recorded the fallback. These ten issues
 are operational evidence, not a confidence-calibration or reasoning benchmark.
@@ -141,6 +147,15 @@ an unavailable model fallback retained the actual model's class and effort.
 Credentials were read into process memory,
 never printed or saved in proof artifacts. No user configuration was changed.
 
-Validation: workspace build, workspace typecheck, real ten-issue replay and the
-isolated execution. No new tests were added. Project-wide drive behavior belongs
+The independent review found that the calibration fixture lacked structured
+output and chose the first new class candidate despite offering only Sonnet.
+Updating its capability declaration and scripted class choice preserves the
+production routing policy. No new tests were added. It also found a real scope
+veto bypass during a sibling outage and fallback model/effort overrides; both
+were reproduced before the fix and checked through the actual serve/controller
+paths afterwards. Calibration now retains class and fallback provenance; the
+context benchmark normalizes these optional fields at its typed route boundary.
+
+Validation includes the full existing CI proof list, both calibration modes,
+workspace build/typecheck, fresh ten-issue live replay and the isolated execution. Project-wide drive behavior belongs
 to LEE-1325 and model auto-probing to LEE-1324.

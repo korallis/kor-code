@@ -55,9 +55,19 @@ export function issueReadinessChecks(issue: PreflightIssue): DecisionBundle["pol
   });
 }
 
+/** A sibling outage cannot cancel a real readiness veto or deterministic failure. */
+export function readinessBlocksDispatch(readiness: AppliedDecision | undefined): boolean {
+  if (!readiness) return true;
+  if (readiness.policyChecks.some(check => check.result === "fail" && check.name !== "jev-available")) return true;
+  const unavailable = !readiness.model && (readiness.policyChecks.some(check => check.name === "jev-available" && check.result === "fail")
+    || readiness.reasons.some(reason => reason.startsWith("Jev unavailable.")));
+  return !unavailable && (!readiness.applied || readiness.choice !== "ready");
+}
+
 function issueState(input: PreflightInput, readinessChecks: DecisionBundle["policyChecks"]): Record<string, JsonValue> {
   return {
     routingPolicyVersion: ROUTING_POLICY_VERSION,
+    defaultRoute: { ...input.defaultRoute },
     modelProfiles: modelCriteria(input.verifiedModels),
     issue: { id: input.issue.id, title: input.issue.title, description: input.issue.description ?? "", acceptance: input.issue.acceptanceCriteria, dependencies: input.issue.dependencies, labels: input.issue.labels ?? [], hasScreenshot: input.issue.hasScreenshot ?? false },
     verifiedModels: input.verifiedModels.map(model => ({ model: model.model, provider: model.provider, capabilities: Object.fromEntries(model.capabilities.map(capability => [capability.name, capability.supported])), ...(model.costUsd !== undefined ? { costUsd: model.costUsd } : {}), ...(model.durationMs !== undefined ? { durationMs: model.durationMs } : {}) })),
@@ -118,10 +128,21 @@ export function preflightRoute(input: Pick<PreflightInput, "verifiedModels" | "d
   const selected = routeDecision.applied && !routeDecision.escalated ? eligible.find(model => model.model === routeDecision.choice) : undefined;
   const jevSelected = classDecision?.applied && selected !== undefined;
   const fallbackReason = jevSelected ? undefined : [...(!classDecision?.applied ? classDecision?.reasons ?? ["Reasoning-class assessment unavailable."] : []), ...(!routeDecision.applied ? routeDecision.reasons : !selected ? ["The recorded model is no longer verified and available in the selected class."] : [])].join(" ");
-  const model = selected ?? conservativeModel(eligible) ?? conservativeModel(input.verifiedModels);
-  const reasoningClass = (model ? modelReasoningClass(model.model) : undefined) ?? requestedClass;
+  if (!jevSelected || !selected) return fallbackRoute(input, routeDecision.decisionId, fallbackReason ?? "No executable Jev route.");
+  const reasoningClass = modelReasoningClass(selected.model) ?? requestedClass;
   const levels: Record<ReasoningClass, "low" | "medium" | "high"> = { routine: "low", implementation: "medium", deep: "high" };
-  return { ...input.defaultRoute, ...(model ? { model: model.model, provider: model.provider } : {}), label: jevSelected ? "jev" : "fallback", decisionId: routeDecision.decisionId, reasoningClass, reasoningLevel: levels[reasoningClass], ...(fallbackReason ? { fallbackReason } : {}) };
+  return { ...input.defaultRoute, model: selected.model, provider: selected.provider, label: "jev", decisionId: routeDecision.decisionId, reasoningClass, reasoningLevel: input.defaultRoute.reasoningLevel ?? levels[reasoningClass] };
+}
+
+function fallbackRoute(input: Pick<PreflightInput, "verifiedModels" | "defaultRoute">, decisionId: string, reason: string): Route {
+  const configured = input.verifiedModels.find(model => model.model === input.defaultRoute.model && model.provider === input.defaultRoute.provider && isRoutableModel(model));
+  const model = configured ?? conservativeModel(input.verifiedModels);
+  const reasoningClass = modelReasoningClass(model?.model ?? input.defaultRoute.model);
+  const selectionReason = configured ? "Using the verified configured default route."
+    : model ? "The configured default is unavailable or lacks verified capabilities/profile; using a verified conservative replacement."
+      : "No verified profiled fallback is available; dispatch remains blocked.";
+  return { ...input.defaultRoute, ...(model ? { model: model.model, provider: model.provider } : {}), label: "fallback", decisionId,
+    ...(reasoningClass ? { reasoningClass } : {}), fallbackReason: `${reason} ${selectionReason}` };
 }
 
 export async function planPreflight(inputData: PreflightInput, core: JevDecisionCore, audit: DecisionAuditLog): Promise<PreflightPlan> {
@@ -159,10 +180,8 @@ export async function planPreflight(inputData: PreflightInput, core: JevDecision
   } catch (error) {
     if (!(error instanceof JevUnavailableError)) throw error;
     const reason = error.message;
-    const fallbackModel = conservativeModel(inputData.verifiedModels);
-    const reasoningClass = modelReasoningClass(fallbackModel?.model ?? inputData.defaultRoute.model);
-    const route: Route = { ...inputData.defaultRoute, ...(fallbackModel ? { model: fallbackModel.model, provider: fallbackModel.provider } : {}), label: "fallback", fallbackReason: `Jev unavailable: ${reason}`, ...(reasoningClass ? { reasoningClass, reasoningLevel: reasoningClass === "deep" ? "high" : reasoningClass === "implementation" ? "medium" : "low" } : {}), decisionId: decisionId(inputData, "route") };
-    return { executionId: inputData.executionId, route, decisions: appendFallback(audit, requests, route, `Jev unavailable. Conservative route is labelled fallback. ${reason}`), fallback: true, outage: reason };
+    const route = fallbackRoute(inputData, decisionId(inputData, "route"), `Jev unavailable: ${reason}`);
+    return { executionId: inputData.executionId, route, decisions: appendFallback(audit, requests, route, `Jev unavailable. ${route.fallbackReason}`), fallback: true, outage: reason };
   }
 }
 

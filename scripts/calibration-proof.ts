@@ -24,7 +24,7 @@ await mkdir(repositoryPath);
 await execFile("git", ["-C", repositoryPath, "init", "-q", "-b", "main"]);
 await execFile("git", ["-C", repositoryPath, "-c", "user.email=calibration-proof@example.invalid", "-c", "user.name=Calibration Proof", "commit", "--allow-empty", "-qm", "proof-base"]);
 const config = parseKorConfig({ repos: { proof: { path: repositoryPath, linearTeam: "LEE", checks: ["test \"$(cat hello.txt)\" = hello"] } }, calibration: { sampleRate: 1 } });
-const catalogue: CatalogueModel[] = [{ provider: "anthropic", model: "claude-sonnet-5-5", capabilities: [{ name: "streaming", supported: true }, { name: "tool_calls", supported: true }] }];
+const catalogue: CatalogueModel[] = [{ provider: "anthropic", model: "claude-sonnet-5-5", capabilities: [{ name: "streaming", supported: true }, { name: "tool_calls", supported: true }, { name: "structured_output", supported: true }] }];
 const issue: LinearIssue = { ...fakeIssue("LEE-57"), title: "Create hello.txt containing hello", description: "Create a single text file hello.txt containing hello followed by a newline. No dependencies or other changes.", acceptanceCriteria: ["hello.txt contains exactly hello followed by a newline."], dependencies: [], stateType: "unstarted", labels: ["kor"] };
 const linear = new FakeLinearClient([issue]);
 const audit = new CalibrationStore(paths.databaseFile);
@@ -38,9 +38,9 @@ const client = {
     const answers = Object.fromEntries(Object.entries(questions).map(([id, question]) => {
       if (question.type === "choice") {
         const candidates = Object.keys(question.criteria);
-        const choice = candidates[0];
+        const choice = id.startsWith("reasoning-class-") ? "implementation" : candidates[0];
         if (!choice) throw new Error("Proof Choice requires candidates");
-        return [id, { type: "choice" as const, choice, confidence: 1, probabilities: Object.fromEntries(candidates.map((candidate, index) => [candidate, index === 0 ? 1 : 0])) }];
+        return [id, { type: "choice" as const, choice, confidence: 1, probabilities: Object.fromEntries(candidates.map(candidate => [candidate, candidate === choice ? 1 : 0])) }];
       }
       if (question.type === "noul") return [id, { type: "noul" as const, noul: 1 }];
       return [id, { type: "score" as const, score: 0, confidence: 1, probabilities: { "0": 1, "1": 0, "2": 0 }, legend: { "0": "low", "1": "medium", "2": "high" } }];

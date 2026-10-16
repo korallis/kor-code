@@ -1,7 +1,7 @@
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { cp, mkdir } from "node:fs/promises";
 import type { CatalogueModel, ContextManifest, Evidence, Execution, Route, SessionSpend } from "@kor-code/core";
-import { JevDecisionCore, redact, preflightRequests, type SessionOverrides } from "@kor-code/jev";
+import { JevDecisionCore, redact, preflightRequests, readinessBlocksDispatch, type SessionOverrides } from "@kor-code/jev";
 import type { TrackerClient, TrackerIssue, WorkflowMapping, ExecutionClaim } from "@kor-code/tracker";
 import { AgentSessionWriter, DurableQueue, ExecutionLease, TrackerStore, SnapshotReader, hasScreenshot } from "@kor-code/tracker";
 import { createHash, randomUUID } from "node:crypto";
@@ -99,7 +99,7 @@ async function chooseRoute(options: ControllerOptions, executionId: string, issu
   }
   const plan = await jev.planIssue({ ...input, decisionRevision });
   const readiness = plan.decisions.find(decision => decision.kind === "readiness");
-  if (readiness?.policyChecks.some(check => check.result === "fail" && check.name !== "jev-available") || !plan.outage && (!readiness?.applied || readiness.choice !== "ready")) throw new Error(readiness?.reasons.join(" ") ?? "Issue readiness could not be established");
+  if (readinessBlocksDispatch(readiness)) throw new Error(readiness?.reasons.join(" ") ?? "Issue readiness could not be established");
   return { route: plan.route, ...(plan.route.decisionId ? { decisionId: plan.route.decisionId } : {}) };
 }
 

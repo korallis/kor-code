@@ -39,6 +39,16 @@ Kor selects text models from every provider. Family matching ignores route prefi
 
 Each selected model runs one built-in prompt in a fresh sandbox HOME, config and working directory. The prompt requests a Write tool call, an independent Bash read and a final JSON object. The table reports `pass`, `fail`, or `absent` for streaming, tool calls, thinking and structured output. Routing requires streaming, tools and JSON. Thinking is recorded as `pass` only when a thinking block is observed. Without one it is `absent` (unknown), never `fail`: this neutral prompt cannot disprove thinking support. Older saved `thinking: false` observations are also read as unknown. A route can request positively observed thinking explicitly. A model without visible thinking can qualify for coding.
 
+Ticket routing also requires a maintained reasoning profile for the exact model
+identity in `packages/jev/src/routing.ts`. Capability probes establish compatibility,
+not reasoning quality. If every verified model is unprofiled, dispatch blocks
+instead of guessing a model's role from its name. Select and verify one of the
+profiled models, or have a maintainer add a profile for the exact gateway ID with
+its class, strengths, exclusions and cost/speed policy. Profiles cannot currently
+be supplied through configuration. Jev fallbacks prefer the verified, profiled
+configured default; only an ineligible default needs a conservative replacement.
+Configured reasoning effort remains unchanged.
+
 Failures print to stderr and remain in the registry's `error` field. Kor saves each completed result, so interrupting a long sweep preserves completed probes. Quota, account access and upstream tool restrictions can prevent an advertised model from passing.
 
 List verified models that are currently advertised by the gateway:

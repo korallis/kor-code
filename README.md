@@ -299,14 +299,22 @@ block missing acceptance, incomplete dependencies and missing UI screenshots.
 With those checks passing, Jev blocks only when it finds missing essential scope
 with at least 0.90 probability. Uncertainty can begin bounded implementation;
 acceptance still needs positive evidence at 0.70 and merge at 0.90.
+A real missing-scope veto still blocks when another Jev question is unavailable.
 
 Routing first selects the reasoning class, then a verified model with explicit
 role criteria. Model profiles distinguish backend implementation, UI integration,
 research and correctness review. Probe cost/latency remain observations; unknown
-context limits are not invented. Low-confidence class or model decisions use a
-visible conservative fallback. Mission Control shows the effective class and
+context limits are not invented. Uncertain class/model decisions and Jev outages
+use the configured default route when it is verified and profiled. Only an
+unavailable or unprofiled default needs a verified conservative replacement.
+Configured reasoning effort is preserved for both Jev choices and fallbacks.
+Mission Control shows the effective class and
 fallback reason alongside the raw decisions. See the [Jev audit](docs/jev-decision-audit.md)
 for measurements and the [preflight contract](docs/specs/jev-preflight.md) for policy.
+
+Automatic routing currently requires an exact maintained model profile. If all
+verified models are unprofiled, dispatch stops: select a supported model as the
+default, or add a profile as described in [model compatibility](docs/model-compatibility.md).
 
 Once an execution is ready, **Request changes**, operator answers and the intake
 label retain the verdict while issue scope, dependencies, eligible models and

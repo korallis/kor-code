@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { hasScreenshot } from "@kor-code/tracker";
 import type { CatalogueModel, Route } from "@kor-code/core";
 import { NeedsInputError, type DaemonOptions, type DescribePullRequest, type MergeIntelligence } from "@kor-code/daemon";
-import { JevClient, JevDecisionCore, JevUnavailableError, redact, planPreflight, preflightRequests, preflightRoute, modelCriteria, modelsForClass, type DecisionAuditLog } from "@kor-code/jev";
+import { JevClient, JevDecisionCore, JevUnavailableError, redact, planPreflight, preflightRequests, preflightRoute, readinessBlocksDispatch, modelCriteria, modelsForClass, type DecisionAuditLog } from "@kor-code/jev";
 
 /** Identify architecture families from model IDs, independent of gateway providers. */
 export function modelFamily(model: string): string | undefined {
@@ -64,7 +64,7 @@ export function createServeRouting(options: {
     let route: Route;
     if (options.audit.get(decisionId)) {
       const readiness = options.audit.replay(readinessId);
-      if ((readiness.model || readiness.policyChecks.some(check => check.result === "fail" && check.name !== "jev-available")) && (!readiness.applied || readiness.choice !== 'ready')) throw new NeedsInputError(readiness.reasons.join(' ') || 'Jev readiness is blocked or uncertain. Clarify the issue or complete its dependencies, then retry.');
+      if (readinessBlocksDispatch(readiness)) throw new NeedsInputError(readiness.reasons.join(' ') || 'Jev readiness is blocked or uncertain. Clarify the issue or complete its dependencies, then retry.');
       const decision = options.audit.replay(decisionId);
       const classDecision = options.audit.get(`reasoning-class-${executionId}${suffix}`)?.response;
       route = preflightRoute({ verifiedModels: models, defaultRoute: options.defaultRoute }, decision, classDecision);
@@ -72,7 +72,7 @@ export function createServeRouting(options: {
       const core = catalogueFailure ? new JevDecisionCore({ evaluate: async () => { throw catalogueFailure; } }, options.audit) : jev;
       const plan = await planPreflight({ ...input, ...(decisionRevision ? { decisionRevision } : {}) }, core, options.audit);
       const readiness = plan.decisions.find(decision => decision.kind === 'readiness');
-      if (readiness?.policyChecks.some(check => check.result === 'fail' && check.name !== 'jev-available') || !plan.outage && (!readiness?.applied || readiness.choice !== 'ready')) throw new NeedsInputError(readiness?.reasons.join(' ') || 'Jev readiness is blocked or uncertain. Clarify the issue or complete its dependencies, then retry.');
+      if (readinessBlocksDispatch(readiness)) throw new NeedsInputError(readiness?.reasons.join(' ') || 'Jev readiness is blocked or uncertain. Clarify the issue or complete its dependencies, then retry.');
       route = plan.route;
     }
     return { route, source: route.label === "jev" ? "jev" : "fallback" };
