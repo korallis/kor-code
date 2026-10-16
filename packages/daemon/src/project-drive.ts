@@ -45,7 +45,8 @@ export class ProjectDrives {
   release(issueId: string): void {
     for (const drive of this.drives) for (const issue of drive.issues) if (issue.issueId === issueId && !issue.manual) {
       issue.manual = true;
-      issue.status = "held";
+      const assignment = this.daemon.store.findAssignment(issueId);
+      issue.status = assignment?.status === "queued" ? "queued" : assignment?.status === "running" ? "running" : "review";
       issue.reason = "Operator queued this issue independently of the drive";
       this.revisions.set(drive.id, (this.revisions.get(drive.id) ?? 0) + 1);
       this.save(drive);
@@ -155,7 +156,12 @@ export class ProjectDrives {
         const issue = rows.get(entry.issueId);
         if (!issue) { entry.status = "held"; entry.reason = "Issue was removed from this project"; continue; }
         if (issue.stateType === "completed") { entry.status = "done"; entry.reason = null; continue; }
-        if (entry.manual) continue;
+        if (entry.manual) {
+          const assignment = this.daemon.store.findAssignment(entry.issueId);
+          entry.status = assignment?.status === "queued" ? "queued" : assignment?.status === "running" ? "running" : assignment && ["shipping", "review", "waiting", "complete"].includes(assignment.status) ? "review" : "held";
+          entry.reason = entry.status === "held" ? assignment?.lastError ?? "Manual run needs operator attention" : "Operator queued this issue independently; monitoring its ordinary execution gates";
+          continue;
+        }
         if (issue.stateType === "canceled" || issue.stateType === "duplicate") { entry.status = "held"; entry.reason = "Issue is canceled or duplicate"; continue; }
         if (entry.admission !== null || entry.status === "held") continue;
         // Bound each pass so ready work starts before the entire project has been assessed.
@@ -245,7 +251,7 @@ export class ProjectDrives {
         this.daemon.store.setPriority(issue.id, issue.priority);
         if (entry.admission && !audit.get(entry.admission)?.response.observedOutcome) core.recordOutcome(entry.admission, { action: "queue", issueId: issue.id, driveId: drive.id, blockersDone: true });
       }
-      const progressing = drive.issues.some(entry => !entry.manual && (entry.admission === null && entry.status === "pending" || ["queued", "running", "review"].includes(entry.status)));
+      const progressing = drive.issues.some(entry => !entry.manual && entry.admission === null && entry.status === "pending" || ["queued", "running", "review"].includes(entry.status));
       if (!progressing) for (const entry of drive.issues) if (entry.status === "pending") { entry.status = "held"; entry.reason = `No runnable path: ${entry.reason ?? "dependency cycle or external blocker"}`; }
       if (drive.issues.every(entry => entry.status === "done" || entry.status === "held")) drive.status = "finished";
       drive.error = null;
