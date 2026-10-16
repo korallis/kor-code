@@ -4,7 +4,7 @@ import type { JevDecisionCore, SessionOverrides } from "@kor-code/jev";
 import { metricFromSession, type CalibrationStore } from "@kor-code/calibration";
 import type { Repository } from "./repository.js";
 import type { SessionLauncherLike, SessionResult } from "./launcher.js";
-import { repairPrompt, verifyAttempt, verificationSettings } from "./verification.js";
+import { ExecutionVerificationError, repairPrompt, verifyAttempt, verificationSettings } from "./verification.js";
 import { DEFAULT_ALLOWED_TOOLS, sessionPermissions } from "./session-permissions.js";
 import { planSessionTools } from "./tool-plan.js";
 
@@ -32,8 +32,9 @@ export async function runVerifiedSessions(input: {
   overrides?: () => SessionOverrides;
 }) {
   const { execution, repository, settings } = input;
-  const attempts: VerificationAttempt[] = [];
-  const costs: Array<number | undefined> = [];
+  const attempts: VerificationAttempt[] = [...(execution.continueVerification ? execution.verification?.attempts ?? [] : [])];
+  if (attempts.length > settings.maxRepairs) throw new ExecutionVerificationError({ attempts, passed: false });
+  const costs: Array<number | undefined> = execution.continueVerification && execution.verification ? [execution.verification.costUsd] : [];
   const race = <T>(action: Promise<T>): Promise<T> => input.leaseFailure ? Promise.race([action, input.leaseFailure]) : action;
   for (let repair = 0; ; repair += 1) {
     const attemptNumber = input.calibration?.nextAttempt(execution.id) ?? attempts.length + 1;
@@ -83,7 +84,7 @@ export async function runVerifiedSessions(input: {
     if (input.calibration && execution.route) input.calibration.recordAttempt(metricFromSession({ executionId: execution.id, attempt: attemptNumber, attemptId,
       ...(input.decisionId ? { decisionId: input.decisionId } : {}), route: execution.route, startedAt, finishedAt: new Date().toISOString(), session,
       verificationFailures: attempt.blockers.length > 0 ? 1 : 0, findings: attempt.findings, verified: attempt.blockers.length === 0 }));
-    if (attempt.blockers.length === 0 || repair >= settings.maxRepairs) {
+    if (attempt.blockers.length === 0 || attempts.length >= settings.maxRepairs + 1) {
       const measured = costs.filter((cost): cost is number => cost !== undefined);
       return { session, latest: attempt, verificationReport: { attempts, passed: attempt.blockers.length === 0, ...(measured.length === costs.length ? { costUsd: measured.reduce((sum, cost) => sum + cost, 0) } : {}) } };
     }

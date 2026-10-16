@@ -56,8 +56,9 @@ export type ShippingStage =
   | { kind: "pipeline"; head: string; runId?: string }
   | { kind: "publish"; head: string }
   | { kind: "review" | "merged" | "closed"; mode: "no-mistakes" | "direct"; head: string; url: string; number: number; runId?: string };
-export interface ShippingReport { stage: ShippingStage; evidence: Evidence[]; cleanup: "pending" | "removed" | "retained"; error?: string }
-export interface Execution { id: string; issueId: string; repository: string; worktree: string; branch: string; status: ExecutionStatus; route?: Route; manifest?: ExecutionManifest; verification?: VerificationReport; shipping?: ShippingReport }
+export interface IndependentReview { summary: string; head: string; model: string; family: string; decisionId: string; verdict: "approve" | "changes-requested"; findings: string[] }
+export interface ShippingReport { mergeEnabled?: boolean; review?: IndependentReview; mergeDecision?: DecisionBundle; repairReason?: string; stage: ShippingStage; evidence: Evidence[]; cleanup: "pending" | "removed" | "retained"; error?: string }
+export interface Execution { continueVerification?: boolean; writerModels?: string[]; id: string; issueId: string; repository: string; worktree: string; branch: string; status: ExecutionStatus; route?: Route; manifest?: ExecutionManifest; verification?: VerificationReport; shipping?: ShippingReport }
 export type AccountPolicy = "fill-first" | "manual" | "least-used";
 export interface GatewayStrategyObservation { value: string; observedAt: string }
 export type ReasoningLevel = "low" | "medium" | "high";

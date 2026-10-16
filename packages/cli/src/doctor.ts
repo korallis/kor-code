@@ -180,7 +180,8 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     await checkManagement(environment, paths, options.fetcher ?? globalThis.fetch),
     await checkCommand("quota-axi", "quota-axi", ["--json", "--no-credential-refresh"], command),
     await checkCommand("Claude Code", "claude", ["--version"], command),
-    await checkCommand("no-mistakes daemon", "no-mistakes", ["daemon", "status"], command),
+    ...(config && Object.values(config.config.repos).some(repository => repository.ship !== "merge")
+      ? [await checkCommand("no-mistakes daemon", "no-mistakes", ["daemon", "status"], command)] : []),
   ];
   if (config) {
     checks.push(...await checkRepositories(config, command, mission, environment));

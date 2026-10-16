@@ -1,7 +1,9 @@
 # Shipping verified issues
 
 `kor serve` owns delivery after the controller's checks and acceptance judgments pass.
-It commits the execution worktree on `kor/<issue identifier>`, then chooses the gate
+The fresh installer scaffold’s `ship: merge` commits the verified files, publishes
+directly, and uses Kor’s independent review and GitHub checks as the delivery gate. In `ship: approve`
+and `ship: auto`, it commits on `kor/<issue identifier>`, then chooses the gate
 from `no-mistakes axi status` in that worktree:
 
 - An initialized repository uses `no-mistakes axi run --intent … --no-publish-intent --base-branch … --wait 1s`.
@@ -10,7 +12,7 @@ from `no-mistakes axi status` in that worktree:
 - An unavailable binary or invalid response keeps delivery blocked. For an
   initialized repository, an unavailable daemon, approval gate or failed pipeline
   also blocks delivery. An explicit uninitialized-repository response permits
-  direct delivery even with the daemon stopped. None of these paths merges.
+  direct delivery even with the daemon stopped. These two cautious modes leave merging to the owner.
 
 The adapter supports the TOON contract exposed by no-mistakes 1.84. GitHub
 reads and PR creation use the REST API with `GH_TOKEN`, `GITHUB_TOKEN`, a token
@@ -134,7 +136,7 @@ The Linear outbox links the PR with `attachmentLinkGitHubPR`, comments with evid
 and moves the issue to In Review. An absent In Review state blocks execution before
 the model launches.
 
-`complete` means GitHub returned a non-null merge timestamp. Kor does not merge.
+`complete` means GitHub returned a non-null merge timestamp. `ship: merge` can request the merge after the gates below; the other modes observe the owner’s merge.
 It durably queues the Done write before cleanup. A closed, unmerged PR is `failed`;
 it keeps the issue out of Done and retains the worktree for inspection. When
 calibration is enabled, these observations record merged or rejected outcomes
@@ -188,8 +190,7 @@ pnpm kor status --json
 pnpm kor logs EXECUTION-ID
 ```
 
-The configured poll interval controls delivery and merge observations. There is no
-automatic merge, force push, branch deletion, or shared infrastructure administration.
+The configured poll interval controls delivery and merge observations. There is no force push, branch deletion, branch-protection bypass, or shared infrastructure administration.
 
 ## Validation scope
 
@@ -276,3 +277,42 @@ in the diagnostic; remove or rename it and reverify. CI evidence changes update
 the existing Linear shipping comment even when the lifecycle state is unchanged.
 Only regular committed template blobs are rendered, and placeholder expansion is
 one pass, so command output containing template syntax remains literal.
+
+## Guarded automatic merge
+
+Fresh installer configs explicitly use `merge`. Omitted `ship` retains `auto`,
+an omitted tool allowlist retains `[]`, and omitted limits retain 2 total / 1 per
+repository. Mission Control adds projects with `approve` and an empty allowlist.
+Explicit `auto` publishes without merging; explicit `approve` also waits for publication approval.
+New scaffolds allow Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch and
+Agent without command scoping, with limits of 6 total / 4 per repository.
+Installation preserves existing config files.
+
+Jev selects one available, verified reviewer whose model family differs from
+every writer recorded for the run. Unknown families, unavailable reviewers,
+binary or incomplete PR diffs fail closed. The reviewer sees the current PR’s
+complete textual patches and returns an approve/changes-requested verdict,
+findings and change summary. An invalid structured response becomes a blocking
+verdict, so idle polls do not repeat the paid review at the same head. The review
+is persisted before further decisions.
+
+GitHub must report the PR clean and mergeable. Completed checks with success,
+neutral or skipped conclusions satisfy the check gate, matching GitHub rules;
+pending, red, missing or truncated evidence prevents merging. A PR with no
+reported checks can proceed only when GitHub reports clean mergeability.
+Jev then receives the review verdict, findings, check evidence and change summary
+and records a Noul decision with merge/wait candidates and threshold 0.90.
+The decision is persisted before the merge request. Mission Control shows both
+records and permits an audited override of the current merge/wait choice.
+Overrides cannot waive the review or GitHub gates.
+
+A blocking verdict or probability below 0.90 requests another verified session
+on the existing branch, sharing the original two-repair budget. The original
+verification base and attempt history survive these automatic repairs. An
+exhausted budget leaves the PR open with a reason. Explicit owner-requested
+changes retain their existing fresh-session behavior.
+
+Reviews and decisions are bound to the head SHA. GitHub’s ordinary merge API
+receives that SHA, with no admin or bypass option. Kor observes the merge on the
+next poll before writing Done or cleaning up. Red checks still prevent a merge
+when the owner overrides Jev’s probability decision.

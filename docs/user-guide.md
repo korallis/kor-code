@@ -46,12 +46,13 @@ You write a Linear issue with acceptance criteria. Kor then:
    judges each acceptance criterion. A failure goes back to the session as
    evidence, for up to two repair attempts.
 5. **Waits for you** when the repository has `ship: approve`: a verified run
-   stays `waiting` until you approve it or request changes. With `ship: auto` it
+   stays `waiting` until you approve it or request changes. With `ship: auto` or `ship: merge` it
    carries straight on.
 6. **Ships**: commits the verified files on `kor/<issue key>`, runs the
    repository's delivery gate and opens a pull request.
 7. **Reports** to Linear throughout: comments, In Progress, In Review when the
-   pull request opens, and Done once *you* merge it.
+   pull request opens, and Done after GitHub confirms a merge. In `ship: merge`,
+   Kor performs the guarded merge described below.
 
 A run is `queued`, `running`, `waiting`, `shipping`, `review`, `complete`,
 `failed`, `blocked` or `canceled`. `blocked` always carries a reason and waits for
@@ -68,7 +69,7 @@ supervise, verify, synchronise.
 | A running [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) | The local gateway that holds your model accounts, at `http://127.0.0.1:8317` by default. |
 | A Linear personal API key | To read issues and write progress. Kor uses only Linear's API: no webhook or Linear app to install. |
 | A TypeSafe API key | For Jev. |
-| To ship: a GitHub `origin`, Git identity, GitHub write access and the `no-mistakes` CLI (plus its daemon for pipeline repositories) | To commit, push and open the pull request. |
+| To ship: a GitHub `origin`, Git identity and GitHub write access | To commit, push, open the PR and, with `ship: merge`, merge it. Automatic review needs verified models from two families. `approve` / `auto` also need the `no-mistakes` CLI (and its daemon for pipeline repositories). |
 
 Install with one command:
 
@@ -120,7 +121,7 @@ What the installer writes:
   `PATH` if it is not there. Keep the checkout: the CLI and Mission Control run
   from it.
 - `~/.config/kor/config.yaml`, a scaffold with your first project's checkout, team key,
-  default branch and `ship: approve` ([next section](#configure-a-repository)). An existing config is
+  default branch and `ship: merge` ([next section](#configure-a-repository)). An existing config is
   kept.
 - A systemd user unit, installed but not started. `--no-systemd` skips it, and a
   machine without a user manager skips it automatically. You do not need the
@@ -182,9 +183,10 @@ It supplies the GitHub credential helper for shipping itself, so
 
 ## Configure a repository
 
-Kor reads `~/.config/kor/config.yaml`. The scaffold sets `ship: approve` and leaves
-`checks` and `toolAllowlist` empty on purpose: they are your policy. This is the config
-used for this guide:
+Kor reads `~/.config/kor/config.yaml`. New scaffolds set `ship: merge`, an unscoped tool allowlist, and limits of
+6 total / 4 per repository. Existing config files are never overwritten.
+Set `checks` explicitly for your repository; Kor does not detect check commands.
+For example:
 
 ```yaml
 repos:
@@ -193,21 +195,13 @@ repos:
     linearTeam: LEE
     linearProject: 743496b4-29be-4be5-8cd6-68b3bc39dbbc
     defaultBranch: main
-    ship: approve
+    ship: merge
     checks:
       - git diff --check
-    toolAllowlist:
-      - Read
-      - Write
-      - Edit
-      - "Bash(git status*)"
-      - "Bash(git diff*)"
-      - "Bash(ls*)"
-      - "Bash(cat*)"
-      - "Bash(grep*)"
+    toolAllowlist: [Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Agent]
 limits:
-  total: 2
-  perRepository: 1
+  total: 6
+  perRepository: 4
 launchProfile: lean
 pollIntervalSeconds: 60
 intakeLabel: kor
@@ -228,8 +222,12 @@ intakeLabel: kor
   session needs shell, web, browser or sub-agent tools; web tools and `Agent`
   need a Jev probability of at least 0.8 and a matching allowlist entry. Jev
   never widens your command permissions.
-- **`ship`** is `approve` (verified runs wait for you) or `auto` (the default
-  when absent). Projects added in Mission Control start as `approve`.
+- **`ship: merge`** is written by the installer for a fresh config: open the
+  verified PR and merge after independent review, green GitHub checks and a Jev
+  merge probability of at least 0.90.
+  Choose `auto` to publish automatically but merge yourself, or `approve` to
+  approve publication first and then merge yourself. Omitted `ship` retains
+  `auto`; projects added in Mission Control retain `approve`.
 - **`remote`** (optional) is the GitHub URL; `kor doctor` then checks that
   `origin` matches.
 - **`limits`** cap concurrent runs (`total`, `perRepository`, optional
@@ -252,7 +250,8 @@ writes the first. Add more in either of two ways:
 
 - **Mission Control → Settings → Projects:** enter a project key, the checkout
   path and the Linear team, then **Add project** and **Save configuration**. The
-  new project starts as `ship: approve`; set its checks and tool allowlist under
+  new project starts as `ship: approve` with an empty tool allowlist; choose
+  `merge` explicitly for automatic merging and set checks and tool access under
   the project's **Repository settings**.
 - **`config.yaml`:** add another entry under `repos:` and restart the daemon.
 
@@ -583,7 +582,7 @@ probability, risk, agent, policy checks and the next step.
 
 **Approve and ship** is enabled only while the run waits. It commits the verified
 files, runs the delivery gate and opens the pull request
-([what happens next](#what-happens-after-approval)). It never merges.
+([what happens next](#what-happens-after-approval)). This cautious mode leaves merging to you.
 
 ### Request changes
 
@@ -748,13 +747,15 @@ starting a new project.
 
 ## What happens after approval
 
-With `ship: approve`, **Approve and ship** starts shipping; with `ship: auto` it
-starts as soon as the run verifies. The daemon:
+With `ship: approve`, **Approve and ship** starts shipping; with `ship: auto`
+or `ship: merge` it starts as soon as the run verifies. The daemon:
 
 1. Commits **only the verified files** on `kor/<issue key>`. Unrelated files and
    likely secrets (`.env*`, keys, credential files, agent config directories,
    logs) are left out; a secret the session staged or committed blocks shipping.
-2. Asks the `no-mistakes` CLI which delivery gate the repository uses. A
+2. In `ship: merge`, publishes directly and uses Kor’s independent review and
+   GitHub checks below. In `approve` and `auto`, asks the `no-mistakes` CLI
+   which delivery gate the repository uses. A
    repository initialised for no-mistakes goes through its pipeline; only an
    explicit "not initialized" answer allows a direct push and pull request. An
    unreachable daemon or a failed pipeline keeps shipping blocked for an initialised
@@ -772,10 +773,31 @@ starts as soon as the run verifies. The daemon:
    Nonvisual changes omit Screenshots; changelog and checklist lines contain only
    the change and acceptance condition. If no Jev route or override can be reused, the
    body says it fell back to the issue text. Linear moves to **In Review**.
-4. Waits. When you merge, Kor moves Linear to **Done**, marks the run `complete`
-   and removes its clean worktree.
+4. In `ship: merge`, asks Jev to select one verified reviewer from a different
+   model family than all writers in the run. The reviewer examines the current
+   PR diff. An unavailable reviewer, unknown model family or incomplete diff
+   leaves the PR open with a reason. Blocking findings go back to a fix attempt.
+5. Waits for GitHub checks to finish green and for GitHub to report the PR clean
+   and mergeable. Pending, red, unavailable or incomplete checks never permit a
+   merge. Repositories with no checks may merge only when GitHub reports a clean
+   PR with no unsatisfied branch rules.
+6. Asks Jev whether the reviewed commit is safe to merge, with the review verdict,
+   check results and change summary. The recorded decision includes candidates
+   (`merge` / `wait`), reasons and probability; automatic merge needs at least
+   **0.90**. A lower answer goes back to a fix attempt within the same run’s
+   existing two-repair budget, shared with verification repairs. Once that budget
+   is exhausted, the PR stays open with its reason in Mission Control.
+7. Mission Control shows the independent review and merge decision under Linear.
+   **Explore alternatives** lets you override the current merge/wait decision.
+   An override cannot waive independent review, green checks or branch protection.
+   Reviews and decisions apply only to the recorded head commit; changed commits
+   require a new review and decision. Kor requests a normal merge bound to that
+   exact SHA. It never uses a branch-protection bypass.
+8. After GitHub confirms the merge, moves Linear to **Done**, marks the run
+   `complete` and removes its clean worktree. In `approve` and `auto`, Kor waits
+   for you to merge before this step.
 
-Kor never merges or force-pushes. Only an explicit uninstall with `--purge`
+Kor never force-pushes. Only an explicit uninstall with `--purge`
 deletes its local issue branches. A shipping failure blocks the
 run with the reason; **Retry** resumes shipping without rerunning the session.
 
@@ -783,7 +805,11 @@ run with the reason; **Retry** resumes shipping without rerunning the session.
 shipping (step 3) has been exercised live against a private scratch repository,
 opening ready pull requests that were closed unmerged. The no-mistakes pipeline
 path and the merge-to-Done step are covered by the recorded replay
-(`pnpm shipping:proof`) rather than a live run; see the
+(`pnpm shipping:proof`) rather than a live run. Merge mode was additionally
+exercised through the real daemon, SQLite audit and local Git pushes and merges
+in throwaway repositories, with deterministic GitHub, Linear, Jev and reviewer
+adapters. Pending/red checks, review findings, bounded repairs and owner overrides
+were exercised; this does not claim a hosted merge or live model review. See the
 [shipping specification](specs/shipping.md).
 
 ## The CLI and the Claude Code status line

@@ -82,8 +82,11 @@ export class OverrideStore {
   }
 
   /** The route override in force for an execution: the latest applied one. */
-  activeRoute(executionId: string): OverrideRecord | undefined {
-    const row = this.db.prepare("SELECT * FROM override_audit WHERE execution_id=? AND target='route' AND status='applied' ORDER BY recorded_at DESC, rowid DESC LIMIT 1").get(executionId) as Row | undefined;
+  activeRoute(executionId: string): OverrideRecord | undefined { return this.activeDecision(executionId, "route"); }
+
+  /** Read the current decision override without the snapshot's display limit. */
+  activeDecision(executionId: string, target: string): OverrideRecord | undefined {
+    const row = this.db.prepare("SELECT * FROM override_audit WHERE execution_id=? AND target=? AND status='applied' ORDER BY recorded_at DESC, rowid DESC LIMIT 1").get(executionId, target) as Row | undefined;
     return row ? this.parse(row) : undefined;
   }
 

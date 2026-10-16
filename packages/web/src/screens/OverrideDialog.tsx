@@ -58,7 +58,7 @@ export function OverrideDialog({ run, decisions, onClose }: { run: MissionRun; d
           <div {...stylex.props(layout.row)}><span {...stylex.props(styles.kind)}>{decision.kind}</span><span {...stylex.props(text.mono, text.sm)}>{decision.choice}</span><span {...stylex.props(text.mono, text.muted, text.xs)}>{prob(decision.confidence)}</span></div>
           <span {...stylex.props(styles.reasons)}>{decision.reasons.join(' · ')}</span>
           <div {...stylex.props(layout.rowWrap)}>
-            {decision.candidates.filter(candidate => candidate !== decision.choice).map(candidate => (
+            {decision.candidates.filter(candidate => candidate !== decision.choice || decision.kind === "merge").map(candidate => (
               <Button key={candidate} size="sm" busy={override.isPending && override.variables?.choice === candidate} onClick={() => override.mutate({ executionId: run.executionId, target: decision.decisionId, choice: candidate, decisionId: decision.decisionId })}>{candidate}</Button>
             ))}
             {decision.candidates.length <= 1 && <span {...stylex.props(styles.reasons)}>Jev considered no alternative.</span>}

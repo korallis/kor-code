@@ -49,7 +49,9 @@ Use the repository's configured workflow mapping. Kor starts opted-in Todo work,
 sets In Progress on execution, and uses In Review when completion includes a PR
 and a review state is configured; otherwise it uses the configured completed
 state. State names differ by team. Confirm policy before moving work to Done;
-a PR link does not prove it was merged. Kor does not merge PRs.
+a PR link does not prove it was merged. With `ship: merge`, Kor merges only after
+independent review, passing GitHub checks and a Jev merge decision at or above
+0.90. With `ship: auto` or `ship: approve`, the owner merges.
 
 Readiness means explicit, checkable acceptance, resolved product decisions and
 completed dependencies. A plan without live access names proposed changes and

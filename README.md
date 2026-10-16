@@ -5,7 +5,9 @@ acceptance criteria. Kor plans it, runs [Claude Code](https://code.claude.com/do
 on it in an isolated git worktree, checks the result against your repository's
 checks and your acceptance criteria, and reports progress on the Linear issue.
 You run it from Mission Control, a web app the Kor daemon serves on your own
-machine. Kor never merges anything; you do.
+machine. With a fresh installer config’s `ship: merge`, Kor independently reviews and merges
+verified pull requests when GitHub checks are green and Jev gives at least 90%
+probability of a safe merge. You can choose manual approval and merging instead.
 
 You install Kor once, and it works on any number of projects at the same time.
 Each project is a Git checkout on your machine, mapped to a Linear team, and runs
@@ -30,7 +32,9 @@ Approve   you review the diff and the evidence (with ship: approve)
    ▼
 Ship      commit on kor/LEE-123, your delivery gate, a pull request
    ▼
-Linear    comments throughout; In Review when the PR opens, Done after you merge
+Merge     different-family review, green GitHub checks, Jev probability ≥ 0.90
+   ▼
+Linear    comments throughout; In Review when the PR opens, Done after merge
 ```
 
 Jev is the decision service Kor calls through the TypeSafe API. It makes every
@@ -55,9 +59,10 @@ recovered denial does not automatically block a verified change.
 - A TypeSafe API key, for Jev.
 - To ship: a GitHub `origin`, Git `user.name` and `user.email`, GitHub write
   access through GitHub CLI (`gh auth login`) or `GH_TOKEN` / `GITHUB_TOKEN`,
-  and the `no-mistakes` CLI. Repositories initialised for its pipeline also need
-  its daemon running; an explicit "not initialized" response uses direct PR
-  delivery. `gh-axi` is optional: GitHub connections, pull request lists and PR
+  plus verified models from two different families for automatic review.
+  The cautious `approve` and `auto` modes use the `no-mistakes` CLI; repositories
+  initialised for its pipeline also need its daemon running. An explicit
+  "not initialized" response uses direct PR delivery. `gh-axi` is optional: GitHub connections, pull request lists and PR
   creation use the API.
   Tokens need repository contents write and pull request write access.
 
@@ -104,7 +109,7 @@ covers forks, private mirrors and a manual build.
 
 **1. Set your repository policy** in `~/.config/kor/config.yaml`. The installer
 writes a scaffold with your first project (its checkout, team key, default
-branch and `ship: approve`) under `repos:`. Add the checks that decide whether
+branch and `ship: merge`) under `repos:`. Add the checks that decide whether
 work is accepted and the tools sessions may use:
 
 ```yaml
@@ -113,18 +118,13 @@ repos:
     path: /home/you/code/my-project
     linearTeam: APP
     defaultBranch: main
-    ship: approve          # verified runs wait for you; auto ships straight away
+    ship: merge            # guarded automatic merge; auto or approve leave merging to you
     checks:
       - pnpm test
-    toolAllowlist:
-      - Read
-      - Write
-      - Edit
-      - "Bash(pnpm test*)"
-      - "Bash(git diff*)"
+    toolAllowlist: [Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Agent]
 limits:
-  total: 2
-  perRepository: 1
+  total: 6
+  perRepository: 4
 launchProfile: lean
 pollIntervalSeconds: 60
 intakeLabel: kor
@@ -143,7 +143,7 @@ the first. Add another in either of two ways:
   project key (any name you like), its checkout path and its Linear team, then
   choose **Add project** and **Save configuration**. The daemon validates the
   file, applies it without a restart once no work is running and keeps the old
-  one as `config.yaml.bak`. A project added here starts with `ship: approve`; set
+  one as `config.yaml.bak`. A project added here starts with `ship: merge`; set
   its checks and tool allowlist under the project's **Repository settings**.
 - **In `config.yaml`:** add another entry under `repos:`, then stop and restart
   the daemon (`kor ui` starts it again) so it rereads the file.
@@ -383,11 +383,26 @@ baseline paired comparison.
 
 ### Ship
 
-With `ship: approve`, **Approve and ship** commits the verified files on
-`kor/<issue>`, runs the repository's delivery gate, and opens a pull request
-written to the [PR standard](skills/pr-standard/SKILL.md) (or your repository's
-PR template). Linear moves to In Review. When you merge on GitHub, Kor moves the
-issue to Done. See [what happens after approval](docs/user-guide.md#what-happens-after-approval).
+New installs use `ship: merge`: Kor commits and opens a PR, asks Jev to choose
+one verified reviewer from a different model family than every writer, and waits
+for green GitHub checks and clean branch protection status. Jev then judges the
+review, checks and change summary; automatic merge needs a probability of at least
+0.90. Blocking findings or lower probabilities go back for repair within the
+run's existing two-repair budget. Otherwise the PR stays open with a reason.
+Mission Control shows the review, merge decision and override controls. An owner
+can override Jev's merge/wait choice; review and GitHub safeguards still apply.
+Kor never force-pushes or bypasses branch protection. Linear reaches Done after
+GitHub confirms the merge.
+
+For more control, choose `ship: auto` to open verified PRs automatically and merge
+them yourself, or `ship: approve` to approve publication in Mission Control and
+then merge yourself. These modes retain the repository's existing delivery gate.
+Existing config files are preserved on installation. New scaffolds allow
+`Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Agent` without command
+scoping, with concurrency limits of 6 total and 4 per repository. Narrow the
+allowlist and limits in Settings or YAML if preferred. Configure your repository
+checks explicitly; Kor does not detect check commands.
+See [what happens after approval](docs/user-guide.md#what-happens-after-approval).
 
 ## Configuration
 

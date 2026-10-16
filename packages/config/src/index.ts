@@ -21,8 +21,8 @@ export const repositorySchema = z.strictObject({
     never: z.array(nonempty).default([]),
     budget: positiveInteger.default(4_000),
   }).optional(),
-  /** Existing repositories retain automatic publication; Mission Control can gate it. */
-  ship: z.enum(["approve", "auto"]).default("auto"),
+  /** Omitted settings retain automatic publication; merge explicitly opts into guarded merging. */
+  ship: z.enum(["approve", "auto", "merge"]).default("auto"),
 });
 export const routeSchema = z.strictObject({
   provider: nonempty.default("anthropic"),

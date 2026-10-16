@@ -12,7 +12,7 @@ import { openUi, daemonQueueAction } from "./ui.js";
 import { createServeRouting } from "./serve-routing.js";
 import { ensureRuntimeDirectories, loadGatewayEnvironment, loadKorConfig, repositoryKeyForIssue, runtimePaths, type KorConfig } from "@kor-code/config";
 import { HttpLinearClient, LinearStore, attachLinearImage } from "@kor-code/linear";
-import { GitHubShipping, KorDaemon, MissionServices, OverrideStore, processMatches, readExecutionStatus, readStatus, type DaemonOptions, type DescribePullRequest } from "@kor-code/daemon";
+import { GitHubShipping, KorDaemon, MissionServices, OverrideStore, processMatches, readExecutionStatus, readStatus, type DaemonOptions, type DescribePullRequest, type MergeIntelligence } from "@kor-code/daemon";
 import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController, type Controller } from "@kor-code/controller";
 import { loadAvailableVerifiedModels, modelProvider, readModelRegistry, writeModelRegistry } from "@kor-code/gateway-adapter";
 import { PersistentDecisionAuditLog, foldSessionEdits } from "@kor-code/jev";
@@ -234,6 +234,7 @@ async function serve(args: readonly string[]): Promise<number> {
   const store = new LinearStore(paths.databaseFile);
   const audit = calibration ?? new PersistentDecisionAuditLog({ read: id => store.readDecisionAudit(id), write: (id, at, payload) => store.writeDecisionAudit(id, at, payload), update: (id, at, payload) => store.updateDecisionAudit(id, at, payload) });
   let describePullRequest: DescribePullRequest;
+  let mergeIntelligence: MergeIntelligence;
   const runtime = (config: KorConfig): { controller: Controller; chooseRoute: NonNullable<DaemonOptions["chooseRoute"]> } => {
     const repositories = new RepositoryRegistry(Object.entries(config.repos).map(([key, repository]) => ({ key, path: repository.path, defaultBranch: repository.defaultBranch, allowedTools: repository.toolAllowlist, checks: repository.checks, ...(repository.tools ? { tools: repository.tools } : {}) })));
     const routing = createServeRouting({ audit, intakeLabel: config.intakeLabel, defaultRoute: config.defaultRoute, client: { evaluate: (state, questions) => mission.jev().evaluate(state, questions) }, models: async () => {
@@ -241,6 +242,7 @@ async function serve(args: readonly string[]): Promise<number> {
       return (await loadAvailableVerifiedModels(registry, async () => (await mission.gateway()).listModels())).map(result => ({ provider: modelProvider(result.model, result.provider), model: result.model, capabilities: Object.entries(result.capabilities).map(([name, supported]) => ({ name, supported: supported === true })), ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) }));
     }, complete: async (prompt, route) => (await mission.gateway()).streamCompletion(prompt, route.model, { provider: route.provider, ...(route.decisionId ? { decisionId: route.decisionId } : {}) }) });
     describePullRequest = routing.describePullRequest;
+    mergeIntelligence = routing.mergeIntelligence;
     const controller = createController({
       repositories,
       reserveAttempt: (executionId, attempt) => store.reserveVerificationAttempt(executionId, attempt),
@@ -266,7 +268,7 @@ async function serve(args: readonly string[]): Promise<number> {
     if (!catalogue.ok) throw new Error("The skill catalogue is invalid; run kor skills doctor");
     return { catalogue, stackTags: await repositoryStackTags(repositoryPath) };
   };
-  const daemon = new KorDaemon({ paths, config: loaded.config, store, linear: mission.linear(), ...initial, sessionPolicy, shipping: new GitHubShipping((file, args, cwd) => mission.shippingCommand(file, args, cwd), input => describePullRequest(input), (path, body) => mission.github(path, body)), port, gateway, verifiedModels, webRoot, missionServices: mission, reconfigure: runtime });
+  const daemon = new KorDaemon({ paths, config: loaded.config, store, linear: mission.linear(), ...initial, sessionPolicy, shipping: new GitHubShipping((file, args, cwd) => mission.shippingCommand(file, args, cwd), input => describePullRequest(input), (path, body, method) => mission.github(path, body, process.env, method), { review: input => mergeIntelligence.review(input), decide: input => mergeIntelligence.decide(input) }), port, gateway, verifiedModels, webRoot, missionServices: mission, reconfigure: runtime });
   const handle = await daemon.start();
   process.stdout.write(`kor daemon listening on ${statusUrl}\n`);
   await new Promise<void>(resolve => {
