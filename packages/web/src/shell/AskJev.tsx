@@ -7,7 +7,8 @@ import type { LucideIcon } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import type { AskResponse, SuggestedAction } from '@kor-code/mission-control';
 import { ApiFailure } from '../api/client';
-import { useAsk, useQueue, useRunAction } from '../api/queries';
+import { useAsk, useQueue, useRunAction, useQueuedAsk, useVerifyModels } from '../api/queries';
+import { ModelVerification } from '../screens/ModelVerification';
 import { navigate } from '../router';
 import { color, font, fontSize, glow, gradient, radius, space, tint } from '../theme/tokens.stylex';
 import { animate, delayBy } from '../theme/animate';
@@ -48,19 +49,21 @@ function words(answer: string): ReactNode[] {
   });
 }
 
-const ACTION_ICON: Record<SuggestedAction['kind'], LucideIcon> = { queue: Play, retry: RotateCcw, cancel: Square, approve: Check, 'open-pr': GitPullRequest, navigate: ArrowRight };
+const ACTION_ICON: Record<SuggestedAction['kind'], LucideIcon> = { 'verify-models': Play, queue: Play, retry: RotateCcw, cancel: Square, approve: Check, 'open-pr': GitPullRequest, navigate: ArrowRight };
 
 function ActionButton({ action, index, first, wordCount }: { action: SuggestedAction; index: number; first: boolean; wordCount: number }) {
   const queue = useQueue();
   const run = useRunAction();
-  const busy = queue.isPending || run.isPending;
+  const verify = useVerifyModels();
+  const busy = queue.isPending || run.isPending || verify.isPending;
   const done = queue.isSuccess || run.isSuccess;
   const onClick = () => {
-    if (action.kind === 'queue') queue.mutate({ issueIds: action.issueIds });
+    if (action.kind === 'verify-models') verify.mutate();
+    else if (action.kind === 'queue') queue.mutate({ issueIds: action.issueIds });
     else if (action.kind === 'retry' || action.kind === 'cancel' || action.kind === 'approve') run.mutate({ action: action.kind, executionId: action.executionId });
     else if (action.kind === 'navigate') navigate(action.screen === 'settings' ? 'settings' : action.screen);
   };
-  const error = queue.error ?? run.error;
+  const error = queue.error ?? run.error ?? verify.error;
   return (
     <span {...stylex.props(animate.fadeIn, delayBy.ms(Math.min(wordCount, 240) * 9 + 120 + index * 60))}>
       <Button size="sm" variant={first ? 'primary' : action.kind === 'cancel' ? 'danger' : 'default'} icon={done ? Check : ACTION_ICON[action.kind]} busy={busy}
@@ -76,7 +79,7 @@ export function AskAnswer({ response, onFollowUp }: { response: AskResponse; onF
   const count = response.answer.split(/\s+/).length;
   return (
     <div {...stylex.props(styles.answer, animate.fadeInFast)} aria-live="polite">
-      <div {...stylex.props(styles.who)}><JevOrb size={26} state="deciding" playKey={response.id} /><b {...stylex.props(styles.name)}>Jev</b><span {...stylex.props(text.mono, text.muted, text.xs)}>just now · {response.provenance === 'unavailable' ? 'Jev unavailable' : response.provenance === 'uncertain' ? 'needs clarification' : 'live decision'}</span></div>
+      <div {...stylex.props(styles.who)}><JevOrb size={26} state="deciding" playKey={response.id} /><b {...stylex.props(styles.name)}>Jev</b><span {...stylex.props(text.mono, text.muted, text.xs)}>just now · {response.status === 'waiting-for-models' ? 'waiting for model verification' : response.provenance === 'unavailable' ? 'Jev unavailable' : response.provenance === 'uncertain' ? 'needs clarification' : 'live decision'}</span></div>
       <div {...stylex.props(styles.txt)}>{words(response.answer)}</div>
       {response.links && response.links.length > 0 && <div {...stylex.props(styles.acts)}>{response.links.map(link => <Button key={link.url} size="sm" variant="ghost" href={link.url} external={link.url.startsWith('https://')}>{link.label}</Button>)}</div>}
       {(response.actions.length > 0 || onFollowUp) && (
@@ -93,11 +96,18 @@ export function AskAnswer({ response, onFollowUp }: { response: AskResponse; onF
 export function AskJev({ executionId, initial = '', autoFocus = false, placeholder = 'Ask Jev — queue an issue, explain a decision, change a route…', idle }: { executionId?: string; initial?: string; autoFocus?: boolean; placeholder?: string; idle?: ReactNode }) {
   const [message, setMessage] = useState(initial);
   const ask = useAsk();
+  const [pendingId, setPendingId] = useState<string | undefined>(() => sessionStorage.getItem('kor-pending-ask') ?? undefined);
+  const queued = useQueuedAsk(pendingId);
+  const response = queued.data ?? ask.data;
   const submit = (value = message) => {
     const trimmed = value.trim();
     if (!trimmed || ask.isPending) return;
     setMessage(trimmed);
-    ask.mutate({ message: trimmed, requestId: crypto.randomUUID(), ...(executionId ? { executionId } : {}) });
+    setPendingId(undefined);
+    sessionStorage.removeItem('kor-pending-ask');
+    ask.mutate({ message: trimmed, requestId: crypto.randomUUID(), ...(executionId ? { executionId } : {}) }, { onSuccess: response => {
+      if (response.status === 'waiting-for-models') { sessionStorage.setItem('kor-pending-ask', response.id); setPendingId(response.id); }
+    } });
   };
   const insert = (token: string) => setMessage(current => `${current}${current && !current.endsWith(' ') ? ' ' : ''}${token}`);
   const refocus = (node: HTMLInputElement | null) => { if (node && autoFocus) node.focus(); };
@@ -124,7 +134,8 @@ export function AskJev({ executionId, initial = '', autoFocus = false, placehold
         </div>
       </form>
       {ask.error && <div {...stylex.props(layout.mt3)}><Notice title={ask.error.message} hint={ask.error instanceof ApiFailure ? ask.error.hint : undefined} /></div>}
-      {ask.data ? <AskAnswer key={ask.data.id} response={ask.data} onFollowUp={() => setMessage('')} /> : !ask.isPending && idle}
+      <ModelVerification />
+      {response ? <AskAnswer key={response.id} response={response} onFollowUp={() => setMessage('')} /> : !ask.isPending && idle}
     </div>
   );
 }

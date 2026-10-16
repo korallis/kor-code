@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { loadGatewayEnvironment, loadKorConfig, parseDotEnv, runtimePaths, type GatewayEnvironment, type KorPaths, type KorRepositoryConfig } from "@kor-code/config";
 import { MissionServices } from "@kor-code/daemon";
 import { sessionPermissions, sessionTools } from "@kor-code/controller";
+import { readModelRegistry } from "@kor-code/gateway-adapter";
 
 const execFileAsync = promisify(execFile);
 
@@ -183,6 +184,10 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     ...(config && Object.values(config.config.repos).some(repository => repository.ship !== "merge")
       ? [await checkCommand("no-mistakes daemon", "no-mistakes", ["daemon", "status"], command)] : []),
   ];
+  try {
+    const verified = (await readModelRegistry(paths.modelsFile)).models.filter(model => model.verified).length;
+    checks.push({ name: "Verified models", status: verified ? "ok" : "error", detail: verified ? `${verified} verified` : "zero verified models; start `kor serve` for automatic verification, or click Verify models now in Mission Control. For a manual check: `kor models probe --model MODEL`. Work requests wait until a model passes." });
+  } catch { checks.push({ name: "Verified models", status: "error", detail: "Model registry unreadable; restore models.json, then start `kor serve` or use Verify models now in Mission Control." }); }
   if (config) {
     for (const tracker of mission.tracker(config.config).github) {
       try {

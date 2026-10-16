@@ -23,6 +23,8 @@ import { MissionServices, atomicPrivateFile, live, unavailable } from "./mission
 import { ensureUiToken } from "./ui-token.js";
 import { askJev } from "./ask.js";
 import { stateSignature } from "./observations.js";
+import { PendingIntake } from "./pending-intake.js";
+import { readModelRegistry } from "@kor-code/gateway-adapter";
 export { ensureUiToken } from "./ui-token.js";
 export { MissionServices } from "./mission-services.js";
 export { GitHubShipping, type ShippingDriver, type ShippingCommand, type DescribePullRequest, type MergeIntelligence } from "./shipping.js";
@@ -186,11 +188,40 @@ export class KorDaemon {
   private lastQuotaAt = 0;
   private token = "";
   private reconfiguring = false;
+  private readonly pendingIntake: PendingIntake;
+  private readonly intakeActive = new Map<string, { input: AskRequest; operation: Promise<AskResponse> }>();
 
   get paths(): KorPaths { return this.options.paths; }
   get config(): KorConfig { return this.options.config; }
   trackerClient(): TrackerClient | undefined { return this.options.tracker; }
-  ask(input: AskRequest): Promise<AskResponse> { return askJev(this, input); }
+  ask(input: AskRequest): Promise<AskResponse> {
+    const requestId = input.requestId ?? randomUUID();
+    const request = { ...input, requestId };
+    const saved = this.pendingIntake.existing(request);
+    if (saved) return Promise.resolve(saved);
+    const active = this.intakeActive.get(requestId);
+    if (active) {
+      if (active.input.message !== request.message || active.input.executionId !== request.executionId) throw new ApiFailure(409, "conflict", "Request ID was already used for another message");
+      return active.operation;
+    }
+    const operation = askJev(this, request).finally(() => { this.intakeActive.delete(requestId); });
+    this.intakeActive.set(requestId, { input: request, operation });
+    return operation;
+  }
+  queuedAsk(id: string): AskResponse | undefined { return this.pendingIntake.get(id); }
+  async deferAsk(input: AskRequest & { requestId: string }): Promise<AskResponse> {
+    const result = await this.pendingIntake.defer(input);
+    void this.mission.verification.check();
+    void this.resumeIntake();
+    return result;
+  }
+  private resumeIntake(): Promise<void> {
+    return this.pendingIntake.resume(
+      async () => (await readModelRegistry(this.paths.modelsFile)).models.some(model => model.verified),
+      input => askJev(this, input),
+      response => this.events.publish({ kind: "ask", response }),
+    ).catch(error => this.reportError(error));
+  }
 
   constructor(private readonly options: DaemonOptions) {
     this.now = options.now ?? Date.now;
@@ -207,6 +238,7 @@ export class KorDaemon {
     this.overrides = new OverrideStore(options.paths.databaseFile, this.now);
     this.mission = options.missionServices ?? new MissionServices(options.paths, options.probeModel);
     if (!options.tracker && options.linear) options.tracker = new TrackerRouter(options.config, options.linear, (path, body, method) => this.mission.github(path, body, process.env, method));
+    this.pendingIntake = new PendingIntake(join(options.paths.stateDir, "pending-intake.json"));
     this.startedAt = new Date(this.now()).toISOString();
   }
 
@@ -220,9 +252,15 @@ export class KorDaemon {
       await mkdir(this.options.paths.logsDir, { recursive: true, mode: 0o700 });
       this.token = await ensureUiToken(this.options.paths);
       await this.mission.initialize();
+      await this.pendingIntake.initialize();
       await this.reconcile();
       const api = new MissionApi(this, this.token, this.options.webRoot);
       this.api = api;
+      this.mission.verification.onChange(() => {
+        api.observations.clear("models");
+        this.events.publish({ kind: "invalidate", resources: ["models"] });
+        if (!this.stopping) void this.resumeIntake();
+      });
       const server = createServer((request, response) => {
         const address = server.address();
         const port = address && typeof address !== "string" ? address.port : this.port;
@@ -240,6 +278,8 @@ export class KorDaemon {
       });
       const address = server.address();
       if (address && typeof address !== "string") await atomicPrivateFile(join(this.paths.stateDir, "ui-address.json"), `${JSON.stringify({ pid: process.pid, url: `http://127.0.0.1:${address.port}/` })}\n`);
+      void this.mission.verification.check();
+      void this.resumeIntake();
       await this.tick();
       this.timer = setInterval(() => { void this.tick(); }, 100);
       this.observationTimer = setInterval(() => { void api.observations.refresh(); }, 3_000);
@@ -260,6 +300,8 @@ export class KorDaemon {
     if (this.observationTimer) clearInterval(this.observationTimer);
     this.api?.observations.close();
     for (const run of this.active.values()) run.abort.abort(new Error("daemon stopping"));
+    await this.mission.verification.stop();
+    await this.pendingIntake.settle();
     await this.cycle;
     await this.poll;
     await Promise.all(this.scopePolls.values());
@@ -305,6 +347,8 @@ export class KorDaemon {
   }
   private async pollIssues(): Promise<number> {
     const candidates = Promise.all(trackerScopes(this.config).map(key => this.pollScope(key)));
+    void this.mission.verification.check();
+    void this.resumeIntake();
     await this.refreshAccounts();
     await this.flushOverrideComments();
     try {
@@ -603,6 +647,7 @@ export class KorDaemon {
       await this.refreshAccounts();
     }
     this.events.publish({ kind: "invalidate", resources: ["connections", "models", "pool", "issues", "pulls", "brain"] });
+    if (provider === "gateway" || provider === "jev") void this.mission.verification.check(true);
   }
   refreshQuota(): Promise<Labelled<JsonValue | null>> {
     if (this.quotaPoll) return this.quotaPoll;
@@ -928,7 +973,8 @@ export class KorDaemon {
         const previous = this.scopePolledAt.get(key);
         if (!this.scopePolls.has(key) && (previous === undefined || this.now() - previous >= this.pollIntervalMs)) void this.pollScope(key);
       }
-      if (this.options.tracker && (this.options.runner || this.options.controller)) {
+      const modelsReady = !this.mission.canProbe || (await readModelRegistry(this.paths.modelsFile)).models.some(model => model.verified);
+      if (modelsReady && this.options.tracker && (this.options.runner || this.options.controller)) {
         while (!this.stopping && this.active.size < this.options.config.limits.total) {
           const claim = this.store.claim(this.owner, this.leaseTtlMs, undefined, [...this.active.keys()]);
           if (!claim) break;

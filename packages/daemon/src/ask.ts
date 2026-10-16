@@ -110,7 +110,8 @@ export async function askJev(daemon: KorDaemon, input: AskRequest): Promise<AskR
       if (!tracker.createProjectIssue) throw new ApiFailure(503, "unavailable", "Tracker issue creation is unavailable");
       const catalogue = await daemon.mission.models();
       const models = catalogue.models.value.filter(model => model.compatibility === "verified");
-      if (catalogue.models.provenance !== "live" || !models.length) return respond("No verified model is available to draft the issue. Restore the gateway and probe a model, then retry. Nothing was created.");
+      if (catalogue.models.provenance !== "live") return respond("The gateway model catalogue is unavailable. Check the gateway connection in Settings and retry. Nothing was created.");
+      if (!models.length) return daemon.deferAsk({ ...input, requestId: id });
       const configured = models.find(model => model.id === daemon.config.defaultRoute.model) ?? (models.length === 1 ? models[0] : undefined);
       const model = configured?.id ?? await choose("draft-model", "Select a verified text model to draft a concise engineering issue. All candidates are available and verified.", Object.fromEntries(models.map(model => [model.id, { provider: model.provider ?? null, capabilities: model.capabilities }])));
       let draft;

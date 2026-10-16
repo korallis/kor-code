@@ -251,9 +251,18 @@ write-only and never sent back to the browser.
 
 ![Settings: Linear, GitHub, Gateway and Jev connected](docs/images/mc-settings.webp)
 
-**5. Probe models.** Kor only uses models that pass a short compatibility probe
-(streaming, tool calls and a final JSON answer). Probe from **Models → Probe a
-model**, or:
+**5. Let Kor verify models.** On the first daemon start, Jev chooses a strong
+and a cheap coding model per available family from the live gateway catalogue.
+Kor probes them in the background for streaming, tool calls and a final JSON
+answer. Home and **Models** show progress. A work request submitted before the
+first model passes is saved, shows that it is waiting, and continues automatically.
+**Verify models now** starts or retries verification with one click.
+
+Automatic probes reserve at most $0.10 each within a persisted $2 daily budget
+(reset at midnight UTC). Kor checks catalogue changes every minute, refreshes
+selected models after seven days and retries failures after 24 hours.
+`kor doctor` reports **FAIL Verified models** until at least one model passes.
+Manual probes remain available:
 
 ```sh
 kor models probe --dry-run           # list the chat and coding models the gateway offers
@@ -492,7 +501,10 @@ external key files and the gateway's key entry stay; remove them yourself.
 
 - **`FAIL <command>: … Hint: …`.** Every failure is one line with the next step.
 - **`HTTP 401` from the gateway.** CLIProxyAPI does not have Kor's key in `api-keys` yet.
-- **`route: no-verified-route`.** No model has passed `kor models probe`.
+- **`route: no-verified-route` / `FAIL Verified models`.** No model has passed
+  verification. Start `kor serve` or use **Verify models now** in Mission Control.
+  Check the visible verification reason if it pauses. Home work requests are saved
+  while waiting; a healthy gateway is shown separately from model readiness.
 - **A permission denial.** Jev checks whether the session recovered with allowed
   tools. If a required command is missing from `toolAllowlist`, add its narrow
   permission, restart the daemon and retry.

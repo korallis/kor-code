@@ -62,7 +62,16 @@ export interface IssueResponse { schemaVersion: 1; issue: TrackerIssue }
 export interface DocumentsResponse { schemaVersion: 1; documents: Labelled<TrackerDocumentSummary[]> }
 export interface PullRequest { number: number; title: string; url: string; state: "open" | "closed"; draft: boolean; merged: boolean; head: string }
 export interface PullsResponse { schemaVersion: 1; pulls: Labelled<PullRequest[]>; bounded: true }
-export interface ModelsResponse { schemaVersion: 1; models: Labelled<GatewayModel[]> }
+export interface ModelVerification {
+  phase: "idle" | "selecting" | "probing" | "paused";
+  currentModel: string | null;
+  completed: number;
+  total: number;
+  reason: string | null;
+  dailyLimitUsd: number;
+  reservedUsd: number;
+}
+export interface ModelsResponse { schemaVersion: 1; models: Labelled<GatewayModel[]>; verification?: ModelVerification }
 export interface PoolResponse { schemaVersion: 1; accounts: Labelled<GatewayAccountHealth[]>; quota: Labelled<JsonValue | null> }
 /** What outcome learning changed in Jev's skill selection, and the per-skill evidence behind it. A new install has no skills and no changes. */
 export interface LearningsReport {
@@ -115,6 +124,7 @@ export type ConnectRequest =
 export interface ProbeResponse { schemaVersion: 1; model: string; verified: boolean }
 export interface AccountResponse { schemaVersion: 1; accountId: string; paused: boolean }
 export type SuggestedAction =
+  | { kind: "verify-models"; label: string }
   | { kind: "queue"; issueIds: [string, ...string[]]; label: string }
   | { kind: "retry" | "cancel" | "approve"; executionId: string; label: string }
   | { kind: "open-pr"; url: string; label: string }
@@ -124,6 +134,7 @@ export interface AskResponse {
   schemaVersion: 1;
   id: string;
   answer: string;
+  status?: "waiting-for-models";
   provenance: "jev" | "unavailable" | "uncertain";
   actions: SuggestedAction[];
   links?: Array<{ label: string; url: string }>;
@@ -169,6 +180,7 @@ export interface MissionControlApi {
   "GET /api/linear/issues": Endpoint<never, IssuesResponse>;
   "GET /api/github/pulls": Endpoint<never, PullsResponse>;
   "GET /api/models": Endpoint<never, ModelsResponse>;
+  "GET /api/ask/:id": Endpoint<never, AskResponse>;
   "GET /api/pool": Endpoint<never, PoolResponse>;
   "GET /api/quota": Endpoint<never, PoolResponse["quota"]>;
   "GET /api/brain": Endpoint<never, BrainResponse>;
@@ -188,6 +200,7 @@ export interface MissionControlApi {
   "PUT /api/config": Endpoint<KorConfig, ConfigResponse>;
   "PUT /api/projects/:project": Endpoint<KorConfig["repos"][string], ConfigResponse>;
   "POST /api/models/:id/probe": Endpoint<Record<string, never>, ProbeResponse>;
+  "POST /api/models/verify": Endpoint<Record<string, never>, ModelsResponse>;
   "POST /api/accounts/:id/pause": Endpoint<Record<string, never>, AccountResponse>;
   "POST /api/accounts/:id/resume": Endpoint<Record<string, never>, AccountResponse>;
   "POST /api/connections": Endpoint<ConnectRequest, ConnectionsResponse>;

@@ -3,6 +3,7 @@
 import * as stylex from '@stylexjs/stylex';
 import { Check, CircleCheck, CircleX, FlaskConical, KeyRound, Minus, Pause, Plug, Play, Plus, RefreshCw, Route as RouteIcon, Shuffle } from 'lucide-react';
 import { useState } from 'react';
+import { ModelVerification } from './ModelVerification';
 import type { KorConfig } from '@kor-code/config';
 import type { GatewayAccountHealth } from '@kor-code/core';
 import { ApiFailure } from '../api/client';
@@ -238,6 +239,7 @@ export function ModelsPool() {
             </Card>
             <Card index={7} clip label="Verified models">
               <CardHeader icon={FlaskConical} title="Verified models" count={`${verifiedCount} of ${modelList.length}`} aside={<span {...stylex.props(text.mono, text.xs, text.muted)}>Streaming, tools and JSON required · thinking measured separately</span>} />
+              <ModelVerification />
               <div {...stylex.props(styles.tableWrap)}>
                 <Table label="Verified models">
                   <thead><tr><Th>Model</Th><Th align="center">Streaming</Th><Th align="center">Tool calls</Th><Th align="center">Thinking</Th><Th align="center">Structured</Th><Th align="right">Runs</Th><Th align="right">Verified</Th><Th /></tr></thead>

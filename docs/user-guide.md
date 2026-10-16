@@ -411,7 +411,9 @@ existing issues. Questions do not create issues, queue runs or approve work.
 
 If the project or issue is ambiguous, specify its name or key. If Jev cannot be
 reached, returns invalid data or lacks confidence, the reply says so and takes
-no action. Issue drafting also needs a verified gateway model. Every Jev choice,
+no action. Issue drafting also needs a verified gateway model. If no model has
+verified yet, Kor saves your request and shows that it is waiting. Background
+verification resumes it automatically; **Verify models now** retries the check. Every Jev choice,
 including request interpretation and project selection, is recorded in the same
 decision audit as execution decisions and appears in **Jev Brain**.
 
@@ -424,7 +426,15 @@ omitted; use the run's Ask Jev box to scope a question to it.
 
 Kor routes only to models that pass a short probe in a sandbox session:
 streaming, tool calls and a final JSON answer. Thinking is recorded when the
-model shows it but is not required. Preview what the gateway offers, then probe:
+model shows it but is not required. On first daemon start Jev chooses a strong
+and a cheap model per available family and Kor probes them in the background.
+Home and Models show progress and the **Verify models now** button. Catalogue
+changes are checked every minute; selected models refresh after seven days, and
+failed probes retry after 24 hours. Automatic probes reserve $0.10 each within
+a $2 daily budget that resets at midnight UTC. Work waits for the first verified
+model, and `kor doctor` reports a failure until one passes.
+
+You can also preview the catalogue and run a manual probe:
 
 ```text
 $ kor models probe --dry-run

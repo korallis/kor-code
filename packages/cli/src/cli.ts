@@ -210,27 +210,21 @@ async function serve(args: readonly string[]): Promise<number> {
   const port = portValue ? Number(portValue) : 8327;
   if (!Number.isSafeInteger(port) || port < 0 || port > 65_535 || port === 8317) throw new CliFailure("invalid_port", "--port must be a valid non-8317 TCP port", "choose an available TCP port between 0 and 65535");
   const statusUrl = `http://127.0.0.1:${port}/status`;
-  const jevEnabled = args.includes("--jev");
   const calibrationEnabled = !args.includes("--no-calibration");
   const sampleRateValue = valueAfter(args, "--calibration-rate");
   const sampleRate = sampleRateValue === undefined ? loaded.config.calibration.sampleRate : Number(sampleRateValue);
   if (!Number.isFinite(sampleRate) || sampleRate < 0 || sampleRate > 1) throw new CliFailure("invalid_arguments", "--calibration-rate must be between 0 and 1", "use kor serve --calibration-rate RATE with RATE between 0 and 1", 2);
   const baselineModel = valueAfter(args, "--baseline-model");
   const calibrationConfig = { ...loaded.config.calibration, sampleRate, baselineRoute: { ...loaded.config.calibration.baselineRoute, ...(baselineModel ? { model: baselineModel } : {}) } };
-  const mission: MissionServices = new MissionServices(paths, async model => {
+  const mission: MissionServices = new MissionServices(paths, async (model, budget) => {
     const catalogue = await (await mission.gateway()).listModels();
-    const result = await probeModel(model, { gateway: await mission.sessionGateway(), provider: catalogue.data?.find(item => item.id === model)?.owned_by });
+    const result = await probeModel(model, { gateway: await mission.sessionGateway(), provider: catalogue.data?.find(item => item.id === model)?.owned_by, ...budget });
     const registry = await readModelRegistry(paths.modelsFile);
     await writeModelRegistry([...registry.models.filter(item => item.model !== model), result], paths.modelsFile);
     return result.verified;
   });
   await mission.initialize();
   const calibration = calibrationEnabled ? new CalibrationStore(paths.databaseFile) : undefined;
-  if (jevEnabled) {
-    const gatewayAdapter = await mission.gateway();
-    const models = (await loadAvailableVerifiedModels(await readModelRegistry(paths.modelsFile), () => gatewayAdapter.listModels())).filter(model => model.capabilities.streaming && model.capabilities.tool_calls);
-    if (models.length === 0) throw new Error("--jev requires at least one verified gateway model");
-  }
   await validateSessionSkills(loaded.config, paths);
   const store = new TrackerStore(paths.databaseFile);
   const audit = calibration ?? new PersistentDecisionAuditLog({ read: id => store.readDecisionAudit(id), write: (id, at, payload) => store.writeDecisionAudit(id, at, payload), update: (id, at, payload) => store.updateDecisionAudit(id, at, payload) });
