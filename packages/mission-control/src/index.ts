@@ -116,8 +116,15 @@ export type SuggestedAction =
   | { kind: "retry" | "cancel" | "approve"; executionId: string; label: string }
   | { kind: "open-pr"; url: string; label: string }
   | { kind: "navigate"; screen: "home" | "projects" | "agents" | "models" | "brain" | "settings"; label: string };
-export interface AskRequest { message: string; executionId?: string }
-export interface AskResponse { schemaVersion: 1; id: string; answer: string; actions: SuggestedAction[] }
+export interface AskRequest { message: string; executionId?: string; requestId?: string }
+export interface AskResponse {
+  schemaVersion: 1;
+  id: string;
+  answer: string;
+  provenance: "jev" | "unavailable" | "uncertain";
+  actions: SuggestedAction[];
+  links?: Array<{ label: string; url: string }>;
+}
 export type EventPayload =
   | { kind: "snapshot"; status: KorStatusResponse; runs: MissionRun[] }
   | { kind: "run"; run: MissionRun }

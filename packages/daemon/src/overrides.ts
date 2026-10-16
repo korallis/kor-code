@@ -100,14 +100,15 @@ export class OverrideStore {
   }
 
   /** Jev decisions for an execution, oldest first; empty until something records them. */
-  decisions(executionId: string): DecisionRecord[] {
+  decisions(executionId?: string): DecisionRecord[] {
     let rows: Row[];
     // `decision_audit` belongs to the queue store (`kor plan` and the daemon's preflight write it).
-    try { rows = this.db.prepare("SELECT payload FROM decision_audit WHERE instr(payload, ?) > 0 ORDER BY recorded_at").all(JSON.stringify(executionId)) as Row[]; }
+    try { rows = executionId ? this.db.prepare("SELECT payload FROM decision_audit WHERE instr(payload, ?) > 0 ORDER BY recorded_at").all(JSON.stringify(executionId)) as Row[]
+      : this.db.prepare("SELECT payload FROM (SELECT payload,recorded_at FROM decision_audit ORDER BY recorded_at DESC, rowid DESC LIMIT 100) ORDER BY recorded_at").all() as Row[]; }
     catch { return []; }
     return rows.flatMap(row => {
       const decision = typeof row.payload === "string" ? decisionFrom(row.payload) : undefined;
-      return decision && decision.executionId === executionId ? [decision] : [];
+      return decision && (!executionId || decision.executionId === executionId) ? [decision] : [];
     });
   }
 

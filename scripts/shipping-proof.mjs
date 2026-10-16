@@ -335,5 +335,5 @@ assert.equal(migrated.getAssignment(manifest.issueId).status, 'shipping');
 assert.equal(migrated.retry(manifest.issueId), false); assert.equal(migrated.claim('new-daemon'), undefined);
 migrated.close();
 const migratedDb = new DatabaseSync(migrationFile);
-assert.equal(migratedDb.prepare('PRAGMA user_version').get().user_version, 7); migratedDb.close();
-console.log('migration proof: v4 -> v7; execution/lease/metadata/outbox preserved; shipping not claimable; retry does not rerun verified work');
+assert.equal(migratedDb.prepare('PRAGMA user_version').get().user_version, 8); migratedDb.close();
+console.log('migration proof: v4 -> v8; execution/lease/metadata/outbox preserved; shipping not claimable; retry does not rerun verified work');

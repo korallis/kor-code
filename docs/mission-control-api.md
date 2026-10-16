@@ -81,7 +81,7 @@ and there is no learned-memory store in the current foundation.
 | `POST /api/runs/:id/approve` | Release a verified execution waiting at the publication gate |
 | `POST /api/runs/:id/request-changes` | Persist feedback, invalidate approval and verification, retain verification history, and rerun the same issue branch |
 | `POST /api/overrides`, `POST /api/overrides/:id/revert` | Override policy, durable audit and Linear comments. `target` is `route`, `skills`, `playbook`, `tools` or a decision ID; `overBudget: true` accepts a skill plan above the repository budget. A refused override is a 409 carrying its audited record; skill and playbook edits also return `tokens: { before, after }` |
-| `POST /api/ask` | Jev selects a grounded recommendation over bounded live run summaries; the user invokes its typed action separately |
+| `POST /api/ask` | Jev classifies a question, new work or an existing-work action; Kor executes non-destructive actions and returns issue/run links. `requestId` is an optional UUID used for stable issue creation. Replies identify unavailable or uncertain Jev responses. Stops return a confirmation action. |
 | `PUT /api/config`, `PUT /api/projects/:project` | Parse the config schema, write an atomic private backup and replacement, then reload the idle controller |
 | `POST /api/models/:id/probe` | Run the CLI's isolated compatibility probe and persist the result in the same model registry |
 | `POST /api/accounts/:id/pause`, `.../resume` | Resolve the opaque account slot inside the gateway adapter and update its actual management status |

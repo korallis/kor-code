@@ -64,7 +64,7 @@ export function useRevertOverride() {
 }
 
 export function useAsk() {
-  return useMutation({ mutationFn: (body: { message: string; executionId?: string }) => post('POST /api/ask', '/api/ask', body.executionId ? { message: body.message, executionId: body.executionId } : { message: body.message }) });
+  return useMutation({ mutationFn: (body: { message: string; executionId?: string; requestId?: string }) => post('POST /api/ask', '/api/ask', body), onSuccess: () => refresh(['runs'], ['status'], ['brain'], ['issues']) });
 }
 
 export function useSaveConfig() {

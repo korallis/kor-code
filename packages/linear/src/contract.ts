@@ -44,6 +44,8 @@ export type LinearWrite =
 export interface LinearClientCapabilities { agentSessions?: boolean }
 
 export interface LinearClient {
+  createIssue?(input: { id: string; teamKey: string; projectId: string; title: string; description: string; labels: string[] }): Promise<LinearIssue>;
+  setPriority?(issueId: string, priority: number): Promise<void>;
   fetchImage?(url: string): Promise<Response>;
   getIssue(id: string): Promise<LinearIssue>;
   listIssues(teamKey: string, limit?: number): Promise<LinearIssue[]>;

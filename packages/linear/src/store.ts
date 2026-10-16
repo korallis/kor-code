@@ -99,7 +99,7 @@ export class LinearStore {
       INSERT OR IGNORE INTO writer(id) VALUES (1);`);
     this.transaction(() => {
       const version = number(this.db.prepare('PRAGMA user_version').get()?.user_version);
-      if (version > 7) throw new Error('Kor database schema is newer than this binary');
+      if (version > 8) throw new Error('Kor database schema is newer than this binary');
       if (version >= 2) return;
       const columns = new Set(this.db.prepare('PRAGMA table_info(assignments)').all().map(row => string(row.name)));
       for (const [name, definition] of [
@@ -173,6 +173,10 @@ export class LinearStore {
         ALTER TABLE assignments ADD COLUMN started_at INTEGER;
         ALTER TABLE assignments ADD COLUMN completed_at INTEGER;
         PRAGMA user_version=7;`);
+    });
+    this.transaction(() => {
+      if (number(this.db.prepare('PRAGMA user_version').get()?.user_version) >= 8) return;
+      this.db.exec('ALTER TABLE assignments ADD COLUMN priority INTEGER NOT NULL DEFAULT 0; PRAGMA user_version=8;');
     });
     this.db.exec(`CREATE TABLE IF NOT EXISTS session_spend (
       attempt_id TEXT PRIMARY KEY, execution_id TEXT NOT NULL, recorded_at TEXT NOT NULL, payload TEXT NOT NULL
@@ -322,7 +326,7 @@ export class LinearStore {
       const excluded = excludedIssueIds.length > 0 ? ` AND issue_id NOT IN (${excludedIssueIds.map(() => "?").join(",")})` : "";
       const row = issueId
         ? this.db.prepare(`SELECT * FROM assignments WHERE issue_id=? AND status = 'queued' AND available_at <= ? AND token IS NULL${excluded}`).get(issueId, this.now(), ...excludedIssueIds)
-        : this.db.prepare(`SELECT * FROM assignments WHERE status = 'queued' AND available_at <= ? AND token IS NULL${excluded} ORDER BY available_at, rowid LIMIT 1`).get(this.now(), ...excludedIssueIds);
+        : this.db.prepare(`SELECT * FROM assignments WHERE status = 'queued' AND available_at <= ? AND token IS NULL${excluded} ORDER BY CASE WHEN priority=0 THEN 5 ELSE priority END, available_at, rowid LIMIT 1`).get(this.now(), ...excludedIssueIds);
       if (!row) return undefined;
       const assignment = parseAssignment(row);
       const token = randomUUID();
@@ -333,6 +337,10 @@ export class LinearStore {
   }
   private validateTTL(ttlMs: number): void {
     if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0) throw new Error('Lease TTL must be positive');
+  }
+  setPriority(issueId: string, priority: number): void {
+    if (!Number.isInteger(priority) || priority < 0 || priority > 4) throw new Error('Linear priority must be 0..4');
+    this.db.prepare('UPDATE assignments SET priority=? WHERE issue_id=?').run(priority, issueId);
   }
   private assertLease(claim: ExecutionClaim): void {
     const row = this.db.prepare('SELECT token, expires_at FROM assignments WHERE issue_id=?').get(claim.assignment.issueId);

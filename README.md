@@ -140,10 +140,11 @@ and Mission Control's **Projects** page shows each one. The installer only wrote
 the first. Add another in either of two ways:
 
 - **In Mission Control:** open **Settings**, find the **Projects** card, enter a
-  project key (any name you like), its checkout path and its Linear team, then
+  project key (any name you like), its checkout path, Linear team and Linear
+  project ID, then
   choose **Add project** and **Save configuration**. The daemon validates the
   file, applies it without a restart once no work is running and keeps the old
-  one as `config.yaml.bak`. A project added here starts with `ship: merge`; set
+  one as `config.yaml.bak`. A project added here starts with `ship: approve`; set
   its checks and tool allowlist under the project's **Repository settings**.
 - **In `config.yaml`:** add another entry under `repos:`, then stop and restart
   the daemon (`kor ui` starts it again) so it rereads the file.
@@ -296,8 +297,21 @@ opens **Ask Jev** anywhere. Execution failures also appear in **Needs you** with
 **Cancel run** dismisses a failed run from **Needs you**. Retrying reuses the
 recorded route while task inputs and eligible models are unchanged; Kor's
 failure label does not trigger another route decision.
-Ask Jev accepts questions up to 2,000 characters and uses a bounded run summary,
-so growing decision history does not fill its request.
+Ask Jev accepts requests up to 2,000 characters. Give it work, for example
+“Kor-Code: fix the release label and add acceptance criteria.” Jev identifies
+the project, Kor drafts a scoped Linear issue, labels it `kor` and queues a run.
+A free slot starts it through the usual Jev route, model and skill selection.
+The reply links the issue and run. “Approve and ship LEE-123”, “retry LEE-123”,
+“queue LEE-123” and “make LEE-123 high priority” carry out those actions.
+Stopping work asks for confirmation. Questions read the live snapshot without
+creating issues or changing runs; recommendation buttons perform their named
+action. An unreachable or uncertain Jev is identified plainly, with no action.
+Every Jev choice is recorded in the decision audit.
+
+When adding a project in **Settings**, enter its checkout path, Linear team and
+Linear project ID. Absolute paths stay as entered. Give repositories on the same
+team different Linear project mappings: ambiguous intake is refused and shown
+on Home.
 
 **Agents** streams each run's real output, its seven stages, tokens and cost,
 with **Stop run**, **Retry** and a **Note for Jev**.

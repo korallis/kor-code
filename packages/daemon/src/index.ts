@@ -13,13 +13,14 @@ import { AgentSessionWriter, LinearStore, flushLinearWrites, hasScreenshot, stab
 import { captureProcess, processExists, processMatches, stopSession } from "./process.js";
 import { OverrideStore } from "./overrides.js";
 import type { ShippingDriver } from "./shipping.js";
-import type { IssuesResponse, LinearSync, MissionRun, SessionOption, SessionPackResponse, Stage } from "@kor-code/mission-control";
+import type { AskRequest, AskResponse, IssuesResponse, LinearSync, MissionRun, SessionOption, SessionPackResponse, Stage } from "@kor-code/mission-control";
 import type { JsonValue } from "@kor-code/core";
 import { DEFAULT_SKILL_BUDGET, SESSION_TARGETS, applySkillOverrides, emptySkillPlan, foldSessionEdits, labelEdits, parseSessionEdit, redact, reviewSessionEdit, runtimeSecrets, screenshotReadinessCheck, sessionEditChoice, type SessionEdit, type SessionEditContext, type SkillCandidate, type SkillTier } from "@kor-code/jev";
 import { ApiFailure, MissionApi } from "./api.js";
 import { MissionEvents } from "./events.js";
 import { MissionServices, atomicPrivateFile, live, unavailable } from "./mission-services.js";
 import { ensureUiToken } from "./ui-token.js";
+import { askJev } from "./ask.js";
 export { ensureUiToken } from "./ui-token.js";
 export { MissionServices } from "./mission-services.js";
 export { GitHubShipping, type ShippingDriver, type ShippingCommand, type DescribePullRequest, type MergeIntelligence } from "./shipping.js";
@@ -178,6 +179,8 @@ export class KorDaemon {
 
   get paths(): KorPaths { return this.options.paths; }
   get config(): KorConfig { return this.options.config; }
+  linearClient(): LinearClient | undefined { return this.options.linear; }
+  ask(input: AskRequest): Promise<AskResponse> { return askJev(this, input); }
 
   constructor(private readonly options: DaemonOptions) {
     this.now = options.now ?? Date.now;
@@ -302,7 +305,11 @@ export class KorDaemon {
           if (this.stopping) break;
           this.remember(issue.id, issue);
           if (issue.stateType !== "unstarted" || !issue.labels.some(label => label.toLowerCase() === this.options.config.intakeLabel.toLowerCase())) continue;
-          this.store.enqueue(issue.id, { issueKey: issue.identifier ?? issue.id, issueTitle: issue.title, repository: repositoryKeyForIssue(issue, this.config) });
+          try {
+            const repository = repositoryKeyForIssue(issue, this.config);
+            this.store.enqueue(issue.id, { issueKey: issue.identifier ?? issue.id, issueTitle: issue.title, repository });
+            this.store.setPriority(issue.id, issue.priority);
+          } catch (error) { writeError = error; continue; }
           found++;
         }
       }
@@ -447,8 +454,10 @@ export class KorDaemon {
     for (const issue of issues) {
       this.remember(issue.id, issue);
       this.store.enqueue(issue.id, { issueKey: issue.identifier ?? issue.id, issueTitle: issue.title, repository: repositoryKeyForIssue(issue, this.config) });
+      this.store.setPriority(issue.id, issue.priority);
     }
     await this.writeSnapshot();
+    await this.tick();
     return issues.map(issue => this.missionRun(issue.id));
   }
   async runAction(executionId: string, action: "cancel" | "retry" | "answer" | "approve" | "request-changes" | "note", message?: string, origin: "CLI" | "Mission Control" = "Mission Control"): Promise<LinearSync> {
@@ -569,7 +578,7 @@ export class KorDaemon {
       daemon: { pid: process.pid, startedAt: this.startedAt, pollIntervalSeconds: this.pollIntervalMs / 1_000, ...(this.lastPollAt ? { lastPollAt: this.lastPollAt } : {}), ...(this.lastError ? { lastError: this.lastError } : {}) },
       runs: this.store.listAssignments().map(assignment => runStatus(assignment, observedAt, this.facts(assignment))),
       ...(this.accounts ? { accounts: this.accounts } : {}),
-      decisions: { value: this.store.listAssignments().flatMap(assignment => this.overrides.decisions(assignment.executionId)), provenance: "live", observedAt },
+      decisions: { value: this.overrides.decisions(), provenance: "live", observedAt },
       overrides: this.overrides.list().map(({ commentId: _, ...record }) => record),
     };
   }
