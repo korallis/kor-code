@@ -72,7 +72,7 @@ const resultSchema = z.object({ type: z.literal("result"), result: z.string(), i
     });
   }
 
-export async function probeModel(model: string, options: { gateway?: { baseUrl: string; key: string | undefined }; provider?: string | undefined } = {}): Promise<ModelProbeResult> {
+export async function probeModel(model: string, options: { gateway?: { baseUrl: string; key: string | undefined }; provider?: string | undefined; maxBudgetUsd?: number } = {}): Promise<ModelProbeResult> {
     const started = Date.now();
     const scratch = await mkdtemp(join(tmpdir(), "kor-model-probe-"));
     const sessionRoot = await mkdtemp(join(tmpdir(), "kor-model-home-"));
@@ -84,7 +84,7 @@ export async function probeModel(model: string, options: { gateway?: { baseUrl: 
     try {
       if (!isTextModel(model)) throw new Error("Model is for media generation, not chat/coding");
       const gateway = options.gateway ?? await loadGatewayEnvironment();
-      const result = await runSandbox([sandbox, "--run", "claude", "-p", prompt, "--model", model, "--effort", "high", "--permission-mode", "acceptEdits", "--allowedTools", "Write", "Bash", "--output-format", "stream-json", "--include-partial-messages", "--verbose", "--no-session-persistence", "--setting-sources", ""], { ...process.env, KOR_GATEWAY_URL: gateway.baseUrl, KOR_GATEWAY_KEY: gateway.key ?? "", KOR_SANDBOX_ROOT: sessionRoot, KOR_CLAUDE_BIN_DIR: claudeBinDir(), KOR_SANDBOX_HOME: join(sessionRoot, "home"), KOR_SANDBOX_CONFIG: join(sessionRoot, "config") }, Number(process.env.KOR_MODEL_PROBE_TIMEOUT_MS ?? 180_000), scratch);
+      const result = await runSandbox([sandbox, "--run", "claude", "-p", prompt, "--model", model, "--effort", "high", "--permission-mode", "acceptEdits", "--allowedTools", "Write", "Bash", "--output-format", "stream-json", "--include-partial-messages", "--verbose", "--no-session-persistence", "--setting-sources", "", ...(options.maxBudgetUsd === undefined ? [] : ["--max-budget-usd", String(options.maxBudgetUsd)])], { ...process.env, KOR_GATEWAY_URL: gateway.baseUrl, KOR_GATEWAY_KEY: gateway.key ?? "", KOR_SANDBOX_ROOT: sessionRoot, KOR_CLAUDE_BIN_DIR: claudeBinDir(), KOR_SANDBOX_HOME: join(sessionRoot, "home"), KOR_SANDBOX_CONFIG: join(sessionRoot, "config") }, Number(process.env.KOR_MODEL_PROBE_TIMEOUT_MS ?? 180_000), scratch);
       const stream = result.stdout;
       const event = resultEvent(stream);
       const decodedResult = event?.result;

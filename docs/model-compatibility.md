@@ -2,7 +2,31 @@
 
 Kor records model checks in `~/.local/state/kor/models.json`. Set `KOR_MODEL_REGISTRY` to use another file during a probe or a local proof.
 
-Run a probe against the live `/v1/models` catalogue:
+The daemon automatically verifies a small default set on first start. Jev chooses
+one strong and one cheap coding model per available text-model family from the
+live `/v1/models` catalogue; a family with only one model shares that choice.
+Home and Models show selection, the current probe, completed count and budget.
+No manual probe is required before submitting work: the home box persists a
+request that needs a model and resumes it when the first model verifies. A browser
+reload restores the latest waiting request in that tab; daemon restarts retain
+the queue. **Verify models now** retries immediately within the same budget.
+If the gateway catalogue itself is unavailable, the reply says so separately.
+
+Automatic verification reserves $0.10 per session before launch and passes that
+limit to Claude Code's `--max-budget-usd`. The persisted reservation budget is
+$2 per UTC day; unsuccessful and interrupted probes keep their reservation.
+Manual per-model probes are explicit calls outside that automatic budget. Jev
+selection calls are separate from the gateway session budget. The daemon checks
+for catalogue changes every minute, refreshes its selected probes after seven
+days and cools down failed probes for 24 hours. The selection and budget live in
+`~/.local/state/kor/model-verification.json`; waiting work lives in
+`pending-intake.json` beside it. An unreadable budget pauses verification rather
+than resetting the cap. An exhausted budget resumes after midnight UTC.
+
+`kor doctor` exits with a failure and a concrete fix when zero models are verified.
+Queued runs also wait before claiming an execution until a model is verified.
+
+To run an explicit probe against the live catalogue:
 
 ```sh
 kor models probe --dry-run

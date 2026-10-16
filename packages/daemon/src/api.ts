@@ -98,6 +98,12 @@ export class MissionApi {
           })); return;
         }
         if (path === "/api/models") { send(200, await this.observations.read(path, "models", () => services.models())); return; }
+        const queuedAsk = /^\/api\/ask\/([^/]+)$/.exec(path);
+        if (queuedAsk?.[1]) {
+          const answer = this.daemon.queuedAsk(decodeURIComponent(queuedAsk[1]));
+          if (!answer) throw new ApiFailure(404, "not_found", "Queued request not found");
+          send(200, answer); return;
+        }
         if (path === "/api/brain") { send(200, await services.brain(this.daemon.status(), () => this.daemon.skillCatalogue())); return; }
         if (path === "/api/connections") { send(200, await this.observations.read(path, "connections", () => services.connections(this.daemon.config), Infinity)); return; }
         if (path === "/api/config") { send(200, { schemaVersion: 1, config: this.daemon.config, restartRequired: false } satisfies ConfigResponse); return; }
@@ -170,6 +176,11 @@ export class MissionApi {
           send(200, connections); return;
         }
         const probe = /^\/api\/models\/([^/]+)\/probe$/.exec(path);
+        if (path === "/api/models/verify") {
+          empty.parse(input);
+          void services.verification.check(true);
+          send(202, await services.models()); return;
+        }
         if (probe?.[1]) {
           empty.parse(input); const model = decodeURIComponent(probe[1]);
           const verified = await services.probeModel(model);

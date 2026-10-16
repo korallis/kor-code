@@ -14,6 +14,7 @@ import { redact, runtimeSecrets } from "@kor-code/jev";
 import { CalibrationStore, buildReport, buildSkillsReport, skillLearningChanges } from "@kor-code/calibration";
 import type { BrainResponse, LearningsReport, ConnectRequest, ConnectionsResponse, ModelsResponse, PullsResponse } from "@kor-code/mission-control";
 import type { JsonValue, Labelled, KorStatusSnapshot, GatewayStrategyObservation } from "@kor-code/core";
+import { ModelVerifier } from "./model-verification.js";
 
 const exec = promisify(execFile);
 const secret = z.string().min(1).max(8192).regex(/^[^\r\n\0]+$/);
@@ -36,7 +37,9 @@ export class MissionServices {
   private gatewaySecrets: string[] = [];
   private probeSequence: Promise<void> = Promise.resolve();
   private connectionWrite: Promise<void> = Promise.resolve();
-  constructor(readonly paths: KorPaths, private readonly probe?: (id: string) => Promise<boolean>) {}
+  readonly verification = new ModelVerifier(this);
+  get canProbe(): boolean { return this.probe !== undefined; }
+  constructor(readonly paths: KorPaths, private readonly probe?: (id: string, options?: { maxBudgetUsd: number }) => Promise<boolean>) {}
   async initialize(): Promise<void> {
     try { this.credentials = credentialsSchema.parse(JSON.parse(await readFile(join(this.paths.stateDir, "connections.json"), "utf8"))); }
     catch (error) { if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw new Error("Kor connection credentials are unreadable"); }
@@ -135,11 +138,11 @@ export class MissionServices {
       const adapter = await this.gateway();
       const catalogue = await adapter.listModels();
       const registry = await readModelRegistry(this.paths.modelsFile);
-      return { schemaVersion: 1, models: live((catalogue.data ?? []).map(model => {
+      return { schemaVersion: 1, verification: this.verification.status, models: live((catalogue.data ?? []).map(model => {
         const probe = registry.models.find(item => item.model === model.id);
         return { id: model.id, ...(model.owned_by ? { provider: model.owned_by } : {}), capabilities: probe?.capabilities ?? model.capabilities ?? {}, compatibility: probe?.verified ? "verified" : "unverified" };
       })) };
-    } catch { return { schemaVersion: 1, models: unavailable([], "Gateway model catalogue unavailable") }; }
+    } catch { return { schemaVersion: 1, verification: this.verification.status, models: unavailable([], "Gateway model catalogue unavailable") }; }
   }
   async quota(): Promise<Labelled<JsonValue | null>> {
     try { const value = await (await this.gateway()).readQuota(); return value === null ? unavailable(null, "Quota measurement unavailable") : live(value); }
@@ -172,10 +175,10 @@ export class MissionServices {
       return { schemaVersion: 1, decisions: snapshot.decisions ?? unavailable([], "No decision audit available"), calibration: live(buildReport(store)), learnings: learned };
     } finally { store.close(); }
   }
-  async probeModel(id: string): Promise<boolean> {
+  async probeModel(id: string, options?: { maxBudgetUsd: number }): Promise<boolean> {
     const probe = this.probe;
     if (!probe) throw new Error("Model compatibility probe unavailable");
-    const operation = this.probeSequence.then(() => probe(id));
+    const operation = this.probeSequence.then(() => probe(id, options));
     this.probeSequence = operation.then(() => undefined, () => undefined);
     return operation;
   }

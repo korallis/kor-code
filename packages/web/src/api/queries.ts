@@ -64,6 +64,12 @@ export function useRevertOverride() {
 export function useAsk() {
   return useMutation({ mutationFn: (body: { message: string; executionId?: string; requestId?: string }) => post('POST /api/ask', '/api/ask', body), onSuccess: () => refresh(['runs'], ['status'], ['brain'], ['issues']) });
 }
+export function useQueuedAsk(id: string | undefined) {
+  return useQuery({ queryKey: ['ask', id], enabled: id !== undefined, queryFn: () => get('GET /api/ask/:id', path('GET /api/ask/:id', '/api/ask/:id', { id: id ?? '' })), refetchInterval: query => query.state.data?.status === 'waiting-for-models' ? 3_000 : false });
+}
+export function useVerifyModels() {
+  return useMutation({ mutationFn: () => post('POST /api/models/verify', '/api/models/verify', {}), onSuccess: () => refresh(['models']) });
+}
 
 export function useSaveConfig() {
   return useMutation({ mutationFn: (config: KorConfig) => put('PUT /api/config', '/api/config', config), onSuccess: () => refresh(['config'], ['projects']) });
