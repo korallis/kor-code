@@ -2,20 +2,47 @@
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "baseUrl": ".",
     "paths": {
-      "@kor-code/core": ["../packages/core/src/index.ts"],
-      "@kor-code/config": ["../packages/config/src/index.ts"],
-      "@kor-code/linear": ["../packages/linear/src/index.ts"],
-      "@kor-code/jev": ["../packages/jev/src/index.ts"],
-      "@kor-code/gateway-adapter": ["../packages/gateway-adapter/src/index.ts"],
-      "@kor-code/controller": ["../packages/controller/src/index.ts"],
-      "@kor-code/context": ["../packages/context/src/index.ts"],
-      "@kor-code/verification": ["../packages/verification/src/index.ts"],
-      "@kor-code/daemon": ["../packages/daemon/src/index.ts"],
-      "@kor-code/calibration": ["../packages/calibration/src/index.ts"]
+      "@kor-code/core": [
+        "../packages/core/src/index.ts"
+      ],
+      "@kor-code/config": [
+        "../packages/config/src/index.ts"
+      ],
+      "@kor-code/linear": [
+        "../packages/linear/src/index.ts"
+      ],
+      "@kor-code/jev": [
+        "../packages/jev/src/index.ts"
+      ],
+      "@kor-code/gateway-adapter": [
+        "../packages/gateway-adapter/src/index.ts"
+      ],
+      "@kor-code/controller": [
+        "../packages/controller/src/index.ts"
+      ],
+      "@kor-code/context": [
+        "../packages/context/src/index.ts"
+      ],
+      "@kor-code/verification": [
+        "../packages/verification/src/index.ts"
+      ],
+      "@kor-code/daemon": [
+        "../packages/daemon/src/index.ts"
+      ],
+      "@kor-code/calibration": [
+        "../packages/calibration/src/index.ts"
+      ],
+      "@kor-code/tracker": [
+        "../packages/tracker/src/index.ts"
+      ]
     }
   },
-  "include": ["*.ts"]
+  "include": [
+    "*.ts"
+  ]
 }

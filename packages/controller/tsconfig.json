@@ -1,6 +1,31 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": "src", "outDir": "dist", "composite": true },
-  "include": ["src/**/*.ts"],
-  "references": [{ "path": "../core" }, { "path": "../jev" }, { "path": "../linear" }, { "path": "../calibration" }, { "path": "../context" }]
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "composite": true
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../jev"
+    },
+    {
+      "path": "../linear"
+    },
+    {
+      "path": "../calibration"
+    },
+    {
+      "path": "../context"
+    },
+    {
+      "path": "../tracker"
+    }
+  ]
 }

@@ -7,13 +7,21 @@ say() { printf '%s\n' "$*"; }
 main() {
 pilot=
 linear_team=
+tracker=
+github_repository=
+github_project_owner=
+github_project_number=
 systemd=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --pilot) [ "$#" -ge 2 ] && [ -n "$2" ] || fail '--pilot needs a Git checkout path'; pilot=$2; shift 2 ;;
+    --tracker) [ "$#" -ge 2 ] && [ -n "$2" ] || fail '--tracker needs linear or github'; tracker=$2; shift 2 ;;
+    --github-repository) [ "$#" -ge 2 ] && [ -n "$2" ] || fail '--github-repository needs OWNER/REPO'; github_repository=$2; shift 2 ;;
+    --github-project-owner) [ "$#" -ge 2 ] && [ -n "$2" ] || fail '--github-project-owner needs OWNER'; github_project_owner=$2; shift 2 ;;
+    --github-project-number) [ "$#" -ge 2 ] && [ -n "$2" ] || fail '--github-project-number needs N'; github_project_number=$2; shift 2 ;;
     --linear-team) [ "$#" -ge 2 ] && [ -n "$2" ] || fail '--linear-team needs a Linear team key'; linear_team=$2; shift 2 ;;
     --no-systemd) systemd=no; shift ;;
-    --help|-h) say 'Usage: install.sh [--pilot CHECKOUT] [--linear-team KEY] [--no-systemd]'; say 'Environment: KOR_HOME, KOR_GATEWAY_URL, KOR_REPOSITORY, KOR_REF'; exit 0 ;;
+    --help|-h) say 'Usage: install.sh [--pilot CHECKOUT] [--tracker linear|github] [--linear-team KEY] [--github-repository OWNER/REPO] [--github-project-owner OWNER] [--github-project-number N] [--no-systemd]'; say 'Environment: KOR_HOME, KOR_GATEWAY_URL, KOR_REPOSITORY, KOR_REF'; exit 0 ;;
     *) fail "Unknown option: $1 (use --help)" ;;
   esac
 done
@@ -93,7 +101,16 @@ if [ -n "$pilot" ]; then
   pilot=$(cd "$pilot" 2>/dev/null && pwd -P) || fail 'The --pilot directory does not exist.'
   [ "$(git -C "$pilot" rev-parse --show-toplevel 2>/dev/null)" = "$pilot" ] || fail '--pilot must be a Git checkout root.'
 fi
-if [ ! -f "${XDG_CONFIG_HOME:-$HOME/.config}/kor/config.yaml" ] && [ -z "$linear_team" ]; then
+if [ ! -f "${XDG_CONFIG_HOME:-$HOME/.config}/kor/config.yaml" ] && [ -z "$tracker" ]; then
+  if [ -n "$linear_team" ]; then tracker=linear
+  else
+    printf 'Issue tracker: linear or github [linear]: ' 2>/dev/null >/dev/tty || fail 'No terminal available; pass --tracker linear or --tracker github.'
+    IFS= read -r tracker </dev/tty || fail 'Could not read tracker.'
+    tracker=${tracker:-linear}
+  fi
+fi
+case "$tracker" in ''|linear|github) ;; *) fail '--tracker must be linear or github' ;; esac
+if [ ! -f "${XDG_CONFIG_HOME:-$HOME/.config}/kor/config.yaml" ] && [ "$tracker" = linear ] && [ -z "$linear_team" ]; then
   printf 'Linear team key (for example APP): ' 2>/dev/null >/dev/tty || fail 'No terminal available; pass --linear-team KEY.'
   IFS= read -r linear_team </dev/tty || fail 'Could not read Linear team key; pass --linear-team KEY.'
   [ -n "$linear_team" ] || fail 'Pass --linear-team KEY.'
@@ -114,7 +131,11 @@ if [ -z "$systemd" ]; then
 fi
 set -- install
 [ -z "$pilot" ] || set -- "$@" --pilot "$pilot"
+[ -z "$tracker" ] || set -- "$@" --tracker "$tracker"
 [ -z "$linear_team" ] || set -- "$@" --linear-team "$linear_team"
+[ -z "$github_repository" ] || set -- "$@" --github-repository "$github_repository"
+[ -z "$github_project_owner" ] || set -- "$@" --github-project-owner "$github_project_owner"
+[ -z "$github_project_number" ] || set -- "$@" --github-project-number "$github_project_number"
 [ "$systemd" = yes ] || set -- "$@" --no-systemd
 node packages/cli/dist/cli.js "$@"
 case ":$PATH:" in

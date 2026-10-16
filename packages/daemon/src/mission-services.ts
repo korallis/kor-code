@@ -1,3 +1,4 @@
+import { TrackerRouter, type TrackerClient } from "@kor-code/tracker";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
@@ -5,7 +6,7 @@ import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import { githubRequest } from "./github.js";
-import { loadGatewayEnvironment, type KorPaths } from "@kor-code/config";
+import { loadGatewayEnvironment, type KorPaths, type KorConfig } from "@kor-code/config";
 import { GatewayAdapter, readModelRegistry } from "@kor-code/gateway-adapter";
 import { HttpLinearClient, type LinearClient } from "@kor-code/linear";
 import { JevClient, resolveJevApiKey } from "@kor-code/jev";
@@ -50,6 +51,7 @@ export class MissionServices {
     return { ...environment, strategy };
   }
   linear(): LinearClient { return new HttpLinearClient({ ...(this.credentials.linear ? { apiKey: this.credentials.linear } : {}), writes: {} }); }
+  tracker(config: KorConfig, linear: TrackerClient = this.linear()): TrackerRouter { return new TrackerRouter(config, linear, (path, body, method) => this.github(path, body, process.env, method)); }
   async gateway(): Promise<GatewayAdapter> {
     if (this.gatewayAdapter) return this.gatewayAdapter;
     const config = this.credentials.gateway;
@@ -78,7 +80,7 @@ export class MissionServices {
     this.credentials = parsed;
     this.gatewayAdapter = undefined;
   }
-  github(path: string, body?: unknown, environment: NodeJS.ProcessEnv = process.env, method?: "PUT"): Promise<unknown> {
+  github(path: string, body?: unknown, environment: NodeJS.ProcessEnv = process.env, method?: "PUT" | "PATCH" | "DELETE"): Promise<unknown> {
     return githubRequest(path, body, { ...environment, ...(this.credentials.github ? { GH_TOKEN: this.credentials.github } : {}) }, method);
   }
   shippingEnvironment(environment: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -114,13 +116,15 @@ export class MissionServices {
     }
   }
   jev(): JevClient { return new JevClient(this.credentials.jev ? { apiKey: this.credentials.jev } : {}); }
-  async connections(): Promise<ConnectionsResponse> {
+  async connections(config?: KorConfig): Promise<ConnectionsResponse> {
     const [linear, github, gateway, jev] = await Promise.allSettled([
-      this.linear().checkConnection(), this.github("/user"), this.gateway().then(adapter => adapter.listModels()), this.jevApiKey(),
+      config && !Object.values(config.repos).some(repo => repo.tracker === "linear") ? Promise.resolve() : this.linear().checkConnection?.(), this.github("/user"), this.gateway().then(adapter => adapter.listModels()), this.jevApiKey(),
     ]);
+    const trackers = config ? await Promise.allSettled(this.tracker(config).github.map(async tracker => { await tracker.checkAccess(); return tracker.repositoryKey; })) : [];
+    const trackerFailure = trackers.some(result => result.status === "rejected");
     return { schemaVersion: 1, connections: [
-      { id: "linear", status: linear.status === "fulfilled" ? "connected" : "unavailable", reason: linear.status === "fulfilled" ? null : "Linear credentials or API unavailable" },
-      { id: "github", status: github.status === "fulfilled" ? "connected" : "unavailable", reason: github.status === "fulfilled" ? null : "GitHub credentials or API unavailable" },
+      { id: "linear", status: linear.status === "fulfilled" ? "connected" : "unavailable", reason: config && !Object.values(config.repos).some(repo => repo.tracker === "linear") ? "Not required by configured projects" : linear.status === "fulfilled" ? null : "Linear credentials or API unavailable" },
+      { id: "github", status: github.status === "fulfilled" && !trackerFailure ? "connected" : "unavailable", reason: trackerFailure ? "GitHub tracker access unavailable; grant Issues read/write and Project read/write (classic repo, project scopes), and check Status mappings" : github.status === "fulfilled" ? null : "GitHub credentials or API unavailable" },
       { id: "gateway", status: gateway.status === "fulfilled" ? "connected" : "unavailable", reason: gateway.status === "fulfilled" ? null : "Gateway credentials or API unavailable" },
       { id: "jev", status: jev.status === "fulfilled" && jev.value ? "connected" : "unavailable", reason: jev.status === "rejected" ? "Unable to read TypeSafe runtime credential file" : jev.value ? null : "Jev credential not configured; set TYPESAFE_API_KEY or ~/.config/typesafe/env" },
     ] };

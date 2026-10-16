@@ -2,8 +2,8 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { cp, mkdir } from "node:fs/promises";
 import type { CatalogueModel, ContextManifest, Evidence, Execution, Route, SessionSpend } from "@kor-code/core";
 import { JevDecisionCore, redact, routeFromDecision, type SessionOverrides } from "@kor-code/jev";
-import type { LinearClient, LinearIssue, WorkflowMapping, ExecutionClaim } from "@kor-code/linear";
-import { AgentSessionWriter, DurableQueue, ExecutionLease, LinearStore, SnapshotReader } from "@kor-code/linear";
+import type { TrackerClient, TrackerIssue, WorkflowMapping, ExecutionClaim } from "@kor-code/tracker";
+import { AgentSessionWriter, DurableQueue, ExecutionLease, TrackerStore, SnapshotReader } from "@kor-code/tracker";
 import { randomUUID } from "node:crypto";
 import { RepositoryRegistry, type RepositoryLookup, type Repository } from "./repository.js";
 import { type Worktree, type WorktreeManager } from "./worktree.js";
@@ -27,13 +27,16 @@ export * from "./tool-plan.js";
 export * from "./reconcile.js";
 export * from "./verification.js";
 
-export interface ControllerLinearRuntime { store: LinearStore; client: LinearClient; workflow: WorkflowMapping }
+export interface ControllerTrackerRuntime { store: TrackerStore; client: TrackerClient; workflow: WorkflowMapping }
 export type VerificationFactory = (execution: Execution) => VerificationTracker;
 export interface ControllerOptions {
   repositories: RepositoryLookup;
   worktrees: WorktreeManager;
   launcher: SessionLauncherLike;
-  linear?: ControllerLinearRuntime;
+  tracker?: ControllerTrackerRuntime;
+  fetchImage?: (url: string) => Promise<Response>;
+  /** @deprecated */
+  linear?: ControllerTrackerRuntime;
   jev?: JevDecisionCore;
   catalogue?: readonly CatalogueModel[];
   limits?: ConcurrencyLimiter;
@@ -56,7 +59,7 @@ export interface ControllerOptions {
 export interface CalibrationBaseline { purpose: "route" | "skills"; model: string; status: "started" | Exclude<CalibrationRun["status"], "running">; costUsd?: number }
 export interface ControllerRunResult {
   execution: Execution;
-  issue: LinearIssue;
+  issue: TrackerIssue;
   repository: Repository;
   worktree: Worktree;
   session: SessionResult;
@@ -64,20 +67,20 @@ export interface ControllerRunResult {
 }
 export interface Controller {
   canRepair(execution: Execution): boolean;
-  dispatch(execution: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }): Promise<ControllerRunResult>;
+  dispatch(execution: Execution & { issue?: TrackerIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }): Promise<ControllerRunResult>;
   runIssue(issueId: string, evidence?: Evidence[]): Promise<ControllerRunResult>;
   runNext(): Promise<ControllerRunResult | undefined>;
   reconcile(): Promise<ReconciliationReport>;
   recordTerminalOutcome(executionId: string, outcome: RunOutcome): void;
 }
 
-function acceptance(issue: LinearIssue) { return issue.acceptanceCriteria.map((description, index) => ({ id: `acceptance-${index + 1}`, description, required: true })); }
-function promptFor(issue: LinearIssue, prefix = ""): string {
+function acceptance(issue: TrackerIssue) { return issue.acceptanceCriteria.map((description, index) => ({ id: `acceptance-${index + 1}`, description, required: true })); }
+function promptFor(issue: TrackerIssue, prefix = ""): string {
   const criteria = issue.acceptanceCriteria.length > 0 ? issue.acceptanceCriteria.map(item => `- ${item}`).join("\n") : "- No explicit acceptance criteria were supplied.";
-  return `${prefix}Linear issue ${issue.id}: ${issue.title}\n\n${issue.description ?? ""}\n\nAcceptance criteria:\n${criteria}`.trim();
+  return `${prefix}tracker issue ${issue.id}: ${issue.title}\n\n${issue.description ?? ""}\n\nAcceptance criteria:\n${criteria}`.trim();
 }
 interface ChosenRoute { route?: Route; decisionId?: string }
-async function chooseRoute(options: ControllerOptions, executionId: string, issue: LinearIssue, existing?: Route): Promise<ChosenRoute> {
+async function chooseRoute(options: ControllerOptions, executionId: string, issue: TrackerIssue, existing?: Route): Promise<ChosenRoute> {
   if (existing) return { route: existing, ...(existing.decisionId ? { decisionId: existing.decisionId } : {}) };
   const catalogue = options.catalogue ?? [];
   if (!options.jev || catalogue.length === 0) return { ...(options.defaultRoute ? { route: options.defaultRoute } : {}) };
@@ -96,7 +99,7 @@ async function chooseRoute(options: ControllerOptions, executionId: string, issu
       return { ...(options.defaultRoute ? { route: { ...options.defaultRoute, label: "fallback" } } : {}), decisionId };
     }
   }
-  const decision = await options.jev.selectRoute({ decisionId, executionId, kind: "route", question: "Select the available model route that best fits this Linear issue and its acceptance conditions.", state: { issueId: issue.id, title: issue.title, description: issue.description ?? "", acceptance: issue.acceptanceCriteria, dependencies: issue.dependencies }, inputs: [{ name: "issue", value: issue.title, source: "linear" }], candidates, policyChecks: [{ name: "catalogue-nonempty", result: "pass" }] });
+  const decision = await options.jev.selectRoute({ decisionId, executionId, kind: "route", question: "Select the available model route that best fits this tracker issue and its acceptance conditions.", state: { issueId: issue.id, title: issue.title, description: issue.description ?? "", acceptance: issue.acceptanceCriteria, dependencies: issue.dependencies }, inputs: [{ name: "issue", value: issue.title, source: "tracker" }], candidates, policyChecks: [{ name: "catalogue-nonempty", result: "pass" }] });
   if (decision.escalated) return { ...(options.defaultRoute ? { route: { ...options.defaultRoute, label: "fallback" } } : {}), decisionId };
   return { route: { ...routeFromDecision(decision, catalogue, { accountPolicy: "fill-first", sessionAffinity: true }), label: "jev" }, decisionId: decision.decisionId };
 }
@@ -112,25 +115,26 @@ class ExecutionController implements Controller {
   private readonly leaseTtlMs: number;
   private readonly reserveAttempt: (executionId: string, attempt: number) => string;
   constructor(private readonly options: ControllerOptions) {
+    if (!options.tracker && options.linear) options.tracker = options.linear;
     this.limiter = options.limits ?? new ConcurrencyLimiter({ total: 1 });
     this.leaseTtlMs = options.leaseTtlMs ?? 60_000;
     if (!Number.isSafeInteger(this.leaseTtlMs) || this.leaseTtlMs <= 0) throw new Error("Lease TTL must be positive");
-    this.reserveAttempt = options.reserveAttempt ?? ((executionId, attempt) => options.linear?.store.reserveVerificationAttempt(executionId, attempt) ?? randomUUID());
+    this.reserveAttempt = options.reserveAttempt ?? ((executionId, attempt) => options.tracker?.store.reserveVerificationAttempt(executionId, attempt) ?? randomUUID());
     this.owner = options.owner ?? `controller-${process.pid}-${randomUUID()}`;
-    if (options.linear) {
-      this.queue = new DurableQueue(options.linear.store);
-      this.lease = new ExecutionLease(options.linear.store);
-      this.writer = new AgentSessionWriter(options.linear.store, options.linear.client, options.linear.workflow);
-      this.snapshots = new SnapshotReader(options.linear.client);
-      this.reconciler = new RestartReconciler(options.linear.store, options.worktrees);
+    if (options.tracker) {
+      this.queue = new DurableQueue(options.tracker.store);
+      this.lease = new ExecutionLease(options.tracker.store);
+      this.writer = new AgentSessionWriter(options.tracker.store, options.tracker.client, options.tracker.workflow);
+      this.snapshots = new SnapshotReader(options.tracker.client);
+      this.reconciler = new RestartReconciler(options.tracker.store, options.worktrees);
     }
   }
   canRepair(execution: Execution): boolean {
     return (execution.verification?.attempts.length ?? 0) <= verificationSettings(this.options.verificationOptions).maxRepairs;
   }
-  async dispatch(input: Execution & { issue?: LinearIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }): Promise<ControllerRunResult> {
+  async dispatch(input: Execution & { issue?: TrackerIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }): Promise<ControllerRunResult> {
     const issue = input.issue ?? (this.snapshots ? (await this.snapshots.read(input.issueId)).issue : undefined);
-    if (!issue) throw new Error("Controller dispatch requires an issue or a Linear runtime");
+    if (!issue) throw new Error("Controller dispatch requires an issue or a tracker runtime");
     const repository = await this.options.repositories.resolve(input.repository);
     const chosen = await chooseRoute(this.options, input.id, issue, input.route);
     const route = chosen.route;
@@ -167,7 +171,7 @@ class ExecutionController implements Controller {
         else this.options.calibration.store.beginRun({ executionId: input.id, pairId: input.id, issueId: input.issueId, arm, baseRevision, route: calibrationRoute, sampled: arm === "jev" && sampledPair(input.id, this.options.calibration.sampleRate ?? 0.25), startedAt: calibrationStartedAt, status: "running" });
       }
       const taskPrompt = input.prompt ?? promptFor(issue, this.options.promptPrefix);
-      const fetchImage = this.options.linear?.client.fetchImage?.bind(this.options.linear.client);
+      const fetchImage = this.options.fetchImage ?? this.options.tracker?.client.fetchImage?.bind(this.options.tracker.client);
       const contextBuild = buildContextManifest({ executionId: input.id, repository: repository.key, worktree: worktree.path,
         task: taskPrompt, documents: issue.documents, ...(input.evidence ? { evidence: input.evidence } : {}), includeFiles: true, maxCharacters: 24_000, maxSourceCharacters: 600,
         images: ticketImages([issue.description ?? "", ...issue.comments.map(comment => comment.body), ...issue.documents.map(document => document.content)], issue.resources),
@@ -213,8 +217,8 @@ class ExecutionController implements Controller {
     } catch (error) {
       const run = this.options.calibration?.store.run(input.id);
       if (run?.status === "running") this.finishCalibration(input.id, error instanceof ExecutionVerificationError || error instanceof VerificationError ? "failed" : error instanceof Error && /Jev escalated route selection/.test(error.message) ? "escalated" : "interrupted", error instanceof ExecutionVerificationError || error instanceof VerificationError ? "controller.verification-block" : error instanceof Error && /Jev escalated route selection/.test(error.message) ? "controller.escalated" : "controller.abandoned");
-      if (claim && this.options.linear && !input.signal) {
-        try { this.options.linear.store.release(claim, 1_000); } catch { /* expired claims are reclaimed on restart */ }
+      if (claim && this.options.tracker && !input.signal) {
+        try { this.options.tracker.store.release(claim, 1_000); } catch { /* expired claims are reclaimed on restart */ }
       }
       throw error;
     } finally {
@@ -237,7 +241,7 @@ class ExecutionController implements Controller {
     if (run.status !== status) calibration.store.finishRun(executionId, status);
     calibration.store.recordExecutionOutcome(executionId, outcome);
   }
-  private async runBaselineIfSampled(input: { execution: Execution; issue: LinearIssue; repository: Repository; baseRevision: string; initialPrompt: string; context: ContextManifest; settings: ReturnType<typeof verificationSettings>; calibration?: NonNullable<ControllerOptions["calibration"]>; onSpawn?: (pid: number) => void }): Promise<void> {
+  private async runBaselineIfSampled(input: { execution: Execution; issue: TrackerIssue; repository: Repository; baseRevision: string; initialPrompt: string; context: ContextManifest; settings: ReturnType<typeof verificationSettings>; calibration?: NonNullable<ControllerOptions["calibration"]>; onSpawn?: (pid: number) => void }): Promise<void> {
     const calibration = input.calibration;
     const run = calibration?.store.run(input.execution.id);
     if (!calibration || run?.arm !== "jev" || !run.sampled) return;
@@ -245,7 +249,7 @@ class ExecutionController implements Controller {
     const offered = calibration.store.decisions("skills").some(record => record.request.executionId === input.execution.id && record.response.plan?.skills.some(skill => skill.tier !== "hidden"));
     if (offered) await this.runBaseline({ ...input, calibration, purpose: "skills" });
   }
-  private async runBaseline(input: { purpose?: "skills"; execution: Execution; issue: LinearIssue; repository: Repository; baseRevision: string; initialPrompt: string; context: ContextManifest; settings: ReturnType<typeof verificationSettings>; calibration: NonNullable<ControllerOptions["calibration"]>; leaseFailure?: Promise<never>; onSpawn?: (pid: number) => void }): Promise<void> {
+  private async runBaseline(input: { purpose?: "skills"; execution: Execution; issue: TrackerIssue; repository: Repository; baseRevision: string; initialPrompt: string; context: ContextManifest; settings: ReturnType<typeof verificationSettings>; calibration: NonNullable<ControllerOptions["calibration"]>; leaseFailure?: Promise<never>; onSpawn?: (pid: number) => void }): Promise<void> {
     const { execution, issue, repository, baseRevision, initialPrompt, settings, calibration } = input;
     const skillsBaseline = input.purpose === "skills";
     const route = skillsBaseline ? execution.route : calibration.baselineRoute;
@@ -292,15 +296,15 @@ class ExecutionController implements Controller {
     return { failed, stop: () => { if (timer) clearInterval(timer); } };
   }
   async runIssue(issueId: string, evidence: Evidence[] = []): Promise<ControllerRunResult> {
-    if (!this.queue || !this.snapshots) throw new Error("runIssue requires a Linear runtime");
+    if (!this.queue || !this.snapshots) throw new Error("runIssue requires a tracker runtime");
     this.queue.enqueue(issueId);
     const issue = (await this.snapshots.read(issueId)).issue;
-    const assignment = this.options.linear?.store.getAssignment(issueId);
-    if (!assignment) throw new Error(`Linear assignment missing for ${issueId}`);
+    const assignment = this.options.tracker?.store.getAssignment(issueId);
+    if (!assignment) throw new Error(`tracker assignment missing for ${issueId}`);
     return this.dispatch({ id: assignment.executionId, issueId, repository: issue.repository ?? issue.teamKey, worktree: "", branch: `kor/${issue.identifier}`, status: "queued", issue, evidence });
   }
   async runNext(): Promise<ControllerRunResult | undefined> {
-    if (!this.lease || !this.snapshots) throw new Error("runNext requires a Linear runtime");
+    if (!this.lease || !this.snapshots) throw new Error("runNext requires a tracker runtime");
     const claim = this.lease.claim(this.owner, this.leaseTtlMs);
     if (!claim) return undefined;
     const issue = (await this.snapshots.read(claim.assignment.issueId)).issue;
@@ -313,3 +317,6 @@ export function createController(options?: ControllerOptions): Controller {
   if (!options) throw new Error("Phase 2 controller requires repository, worktree, and launcher dependencies");
   return new ExecutionController(options);
 }
+
+/** @deprecated */
+export type ControllerLinearRuntime = ControllerTrackerRuntime;

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { repositoryKeyForIssue } from "@kor-code/config";
-import { stableId } from "@kor-code/linear";
+import { stableId } from "@kor-code/tracker";
 import { JevDecisionCore, JevUnavailableError, PersistentDecisionAuditLog, type DecisionRequest, type JevJsonValue } from "@kor-code/jev";
 import type { AskRequest, AskResponse, MissionRun, SuggestedAction } from "@kor-code/mission-control";
 import type { KorDaemon } from "./index.js";
@@ -12,7 +12,7 @@ class UncertainRequest extends Error {}
 
 function runLinks(run: MissionRun): NonNullable<AskResponse["links"]> {
   return [
-    ...(run.issueUrl ? [{ label: run.issueKey ?? "Linear issue", url: run.issueUrl }] : []),
+    ...(run.issueUrl ? [{ label: run.issueKey ?? "tracker issue", url: run.issueUrl }] : []),
     { label: `Run ${run.issueKey ?? run.executionId}`, url: `#/agents/${encodeURIComponent(run.executionId)}` },
     ...(run.pullRequestUrl ? [{ label: "Pull request", url: run.pullRequestUrl }] : []),
   ];
@@ -63,7 +63,7 @@ export async function askJev(daemon: KorDaemon, input: AskRequest): Promise<AskR
       retry: "Retry an existing failed, blocked or canceled run",
       stop: "Stop an existing run; requires destructive-action confirmation",
       prioritise: "Change the priority of an existing issue",
-      queue: "Start or queue an existing Linear issue",
+      queue: "Start or queue an existing tracker issue",
       clarify: "The request does not specify an intelligible question or action",
     });
     if (intent === "clarify") return respond("Specify a project and the work you want, an issue to act on, or a question about current work. Nothing was changed.");
@@ -77,7 +77,7 @@ export async function askJev(daemon: KorDaemon, input: AskRequest): Promise<AskR
         status: runs.length ? describe(runs) : "There are no runs. Give me a work request and its project to create an issue and queue a run.",
         blockers: blocked.length ? describe(blocked) : "No runs currently need your input or report a failure.",
         shipping: ready.length ? describe(ready) : "No runs are currently waiting for approval or have a pull request to review.",
-        projects: Object.entries(daemon.config.repos).map(([key, repo]) => `${key}: Linear team ${repo.linearTeam ?? key}, project ${repo.linearProject ?? "not configured"}`).join(". ") || "No projects are configured. Add one in Settings with its Linear team and project.",
+        projects: Object.entries(daemon.config.repos).map(([key, repo]) => `${key}: ${repo.tracker} ${repo.github?.repository ?? repo.linearProject ?? repo.linearTeam ?? key}`).join(". ") || "No projects are configured. Add one in Settings with its tracker team and project.",
         decisions: decisions.length ? decisions.map(decision => `${decision.kind}: ${decision.choice} (${Math.round(decision.confidence * 100)}%). ${decision.reasons.join(" ").slice(0, 200)}`).join(" ") : "There are no execution decisions in this run summary yet.",
         other: "I can answer questions about current runs, blockers, work ready to ship, configured projects and Jev decisions. I cannot answer this question from the live snapshot. Nothing was changed.",
       };
@@ -85,7 +85,7 @@ export async function askJev(daemon: KorDaemon, input: AskRequest): Promise<AskR
         status: "General overview: what is running, current progress or status",
         blockers: "What is blocked, failed, or needs the operator's input",
         shipping: "What can ship today, is ready for approval, or has a pull request",
-        projects: "Which repositories or Linear projects are configured",
+        projects: "Which repositories or tracker projects are configured",
         decisions: "Why Jev chose a route, model, skill or another decision",
         other: "The question needs facts outside these topics or not present in the supplied snapshot, such as elapsed time, estimates or general knowledge",
       });
@@ -96,21 +96,18 @@ export async function askJev(daemon: KorDaemon, input: AskRequest): Promise<AskR
       return respond(`${answer}${context.omittedRuns ? ` Showing ${runs.length} of ${context.totalRuns} runs; open Agents for the rest.` : ""}`, actions, (topic === "shipping" ? ready : topic === "blockers" ? blocked : runs).flatMap(runLinks));
     }
 
-    const linear = daemon.linearClient();
-    if (!linear) throw new ApiFailure(503, "unavailable", "Linear is unavailable. No work was started.", "Connect Linear in Settings");
+    const tracker = daemon.trackerClient();
+    if (!tracker) throw new ApiFailure(503, "unavailable", "tracker is unavailable. No work was started.", "Connect tracker in Settings");
     if (intent === "new-work") {
       const projects = Object.entries(daemon.config.repos).slice(0, 50);
-      if (!projects.length) return respond("Add a project in Settings with its checkout, Linear team and Linear project before giving Kor work. Nothing was created.");
+      if (!projects.length) return respond("Add a project in Settings with its checkout, tracker team and tracker project before giving Kor work. Nothing was created.");
       const selected = await choose("project", "Select exactly one configured repository explicitly named or clearly implied by the request. If more than one could apply, choose none. A single configured repository can be the default.", {
-        ...Object.fromEntries(projects.map(([key, repo]) => [`project:${key}`, { repository: key, linearTeam: repo.linearTeam ?? key, linearProject: repo.linearProject ?? null }])), none: "No unique matching project; ask for its name",
+        ...Object.fromEntries(projects.map(([key, repo]) => [`project:${key}`, { repository: key, tracker: repo.tracker }])), none: "No unique matching project; ask for its name",
       });
       const project = projects.find(([key]) => selected === `project:${key}`);
       if (!project) return respond("I could not identify one project. Name the configured project for this work. Nothing was created.");
-      const [key, repository] = project;
-      if (!repository.linearProject) return respond(`Set the Linear project for ${key} in Settings before creating work. Nothing was created.`);
-      const teamKey = repository.linearTeam ?? key.split("/")[0] ?? key;
-      if (repositoryKeyForIssue({ teamKey, projectId: repository.linearProject }, daemon.config) !== key) throw new Error("Project resolves to a different repository");
-      if (!linear.createIssue) throw new ApiFailure(503, "unavailable", "Linear issue creation is unavailable");
+      const [key] = project;
+      if (!tracker.createProjectIssue) throw new ApiFailure(503, "unavailable", "Tracker issue creation is unavailable");
       const catalogue = await daemon.mission.models();
       const models = catalogue.models.value.filter(model => model.compatibility === "verified");
       if (catalogue.models.provenance !== "live" || !models.length) return respond("No verified model is available to draft the issue. Restore the gateway and probe a model, then retry. Nothing was created.");
@@ -120,7 +117,7 @@ export async function askJev(daemon: KorDaemon, input: AskRequest): Promise<AskR
       try { draft = await daemon.mission.draftWork(input.message, key, model); }
       catch { return respond("The issue drafting model is unavailable or returned invalid data. No issue was created. Check the gateway and verified models, then retry."); }
       const description = `${draft.summary}\n\n## Original request\n\n${input.message}\n\n## Acceptance\n\n${draft.acceptanceCriteria.map(criterion => `- ${criterion}`).join("\n")}`;
-      const issue = await linear.createIssue({ id: stableId("kor-ask", id), teamKey, projectId: repository.linearProject, title: draft.title, description, labels: [...new Set(["kor", daemon.config.intakeLabel])] });
+      const issue = await tracker.createProjectIssue({ id: stableId("kor-ask", id), repositoryKey: key, title: draft.title, description, labels: [...new Set(["kor", daemon.config.intakeLabel])] });
       let run;
       try { [run] = await daemon.queueIssues([issue.id]); }
       catch { return respond(`Created ${issue.identifier ?? issue.id} in ${key}, but its run could not be queued. Check the project mapping and queue the issue from Projects.`, [], issue.url ? [{ label: issue.identifier ?? issue.id, url: issue.url }] : []); }
@@ -131,22 +128,22 @@ export async function askJev(daemon: KorDaemon, input: AskRequest): Promise<AskR
 
     const issues = await daemon.missionIssues(null);
     const candidates = [...new Map([...runs.map(run => ({ id: run.issueId, label: run.issueKey ?? run.issueId, title: run.issueTitle ?? "" })), ...(issues.issues.provenance === "live" ? issues.issues.value.map(issue => ({ id: issue.id, label: issue.identifier ?? issue.id, title: issue.title })) : [])].map(issue => [issue.id, issue])).values()].slice(0, 100);
-    if (!candidates.length) return respond(issues.issues.provenance === "live" ? "There are no existing issues to act on. Give me a work request and its project to create one." : "Existing issues are unavailable. Check the Linear connection and try again. Nothing was changed.");
+    if (!candidates.length) return respond(issues.issues.provenance === "live" ? "There are no existing issues to act on. Give me a work request and its project to create one." : "Existing issues are unavailable. Check the tracker connection and try again. Nothing was changed.");
     const target = await choose("target", "Select the one existing issue explicitly referred to by the user's action, or the scoped run. Never guess between issues. Choose none if missing or ambiguous.", {
       ...Object.fromEntries(candidates.map(issue => [`issue:${issue.id}`, issue])), none: "No unique existing issue",
     }, { ...context, scopedExecution: input.executionId ?? null });
     const issue = candidates.find(issue => target === `issue:${issue.id}`);
     if (!issue) return respond("Specify the issue key or run to act on. Nothing was changed.");
-    const fact = await linear.getIssue(issue.id);
+    const fact = await tracker.getIssue(issue.id);
     repositoryKeyForIssue(fact, daemon.config);
     if (intent === "prioritise") {
-      const priority = await choose("priority", "Select the Linear priority explicitly requested. If no priority was specified, choose unspecified.", { "0": "No priority", "1": "Urgent", "2": "High", "3": "Normal", "4": "Low", unspecified: "No priority specified" });
+      const priority = await choose("priority", "Select the tracker priority explicitly requested. If no priority was specified, choose unspecified.", { "0": "No priority", "1": "Urgent", "2": "High", "3": "Normal", "4": "Low", unspecified: "No priority specified" });
       if (priority === "unspecified") return respond(`Specify urgent, high, normal, low or no priority for ${issue.label}. Nothing was changed.`);
-      if (!linear.setPriority) throw new ApiFailure(503, "unavailable", "Linear priority changes are unavailable");
-      await linear.setPriority(issue.id, Number(priority));
+      if (!tracker.setPriority) throw new ApiFailure(503, "unavailable", "tracker priority changes are unavailable");
+      await tracker.setPriority(issue.id, Number(priority));
       daemon.store.setPriority(issue.id, Number(priority));
       core.recordOutcome(`intake-${id}-priority`, { issueId: issue.id, priority: Number(priority), applied: true });
-      return respond(`Changed ${issue.label} to ${["no priority", "urgent", "high", "normal", "low"][Number(priority)]} priority in Linear and the run queue.`, [], fact.url ? [{ label: issue.label, url: fact.url }] : []);
+      return respond(`Changed ${issue.label} to ${["no priority", "urgent", "high", "normal", "low"][Number(priority)]} priority in tracker and the run queue.`, [], fact.url ? [{ label: issue.label, url: fact.url }] : []);
     }
     if (intent === "queue") {
       const [run] = await daemon.queueIssues([issue.id]);

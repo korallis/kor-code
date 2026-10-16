@@ -26,6 +26,7 @@
     "@kor-code/linear": "workspace:*",
     "zod": "^4.6.6",
     "@kor-code/mission-control": "workspace:*",
-    "yaml": "^2.8.1"
+    "yaml": "^2.8.1",
+    "@kor-code/tracker": "workspace:*"
   }
 }

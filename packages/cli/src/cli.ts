@@ -1,8 +1,9 @@
 #!/usr/bin/env node
+import { TrackerStore } from "@kor-code/tracker";
 import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
 import { basename, join } from "node:path";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { formatDoctor, runDoctor } from "./doctor.js";
 import { runPlan } from "./plan.js";
 import { linearLintUsage, runLinearLint } from "./linear.js";
@@ -11,7 +12,7 @@ import { runModels, probeModel } from "./models.js";
 import { openUi, daemonQueueAction } from "./ui.js";
 import { createServeRouting } from "./serve-routing.js";
 import { ensureRuntimeDirectories, loadGatewayEnvironment, loadKorConfig, repositoryKeyForIssue, runtimePaths, type KorConfig } from "@kor-code/config";
-import { HttpLinearClient, LinearStore, attachLinearImage } from "@kor-code/linear";
+import { attachLinearImage } from "@kor-code/linear";
 import { GitHubShipping, KorDaemon, MissionServices, OverrideStore, processMatches, readExecutionStatus, readStatus, type DaemonOptions, type DescribePullRequest, type MergeIntelligence } from "@kor-code/daemon";
 import { ConcurrencyLimiter, GitWorktreeManager, RepositoryRegistry, SessionLauncher, createController, type Controller } from "@kor-code/controller";
 import { loadAvailableVerifiedModels, modelProvider, readModelRegistry, writeModelRegistry } from "@kor-code/gateway-adapter";
@@ -42,7 +43,7 @@ function errorHint(command: string, error: unknown): string {
   if (command === "install") return "check the reported path and `kor install --help`; if recovery is required, run `kor uninstall --purge`";
   if (command === "uninstall") return "save any later edits; restore the reported installed snapshot, then retry `kor uninstall`";
   if (command === "serve") return "check the Kor configuration and daemon state, then retry";
-  if (command === "run" || command === "plan") return "check the issue identifier, the Linear credentials, and that config.yaml maps the issue's team or project to a repository, then retry";
+  if (command === "run" || command === "plan") return "check the issue identifier, the tracker credentials, and that config.yaml maps the issue to a repository, then retry";
   if (command === "linear attach-image") return "check the PNG, caption, issue identifier and Linear write credentials; rerun identical inputs to resume a partial upload";
   if (command === "linear") return "check the issue or project identifier and Linear credentials";
   if (command === "status" || command === "cancel" || command === "retry" || command === "logs") return "check the execution ID or issue key, then retry";
@@ -67,10 +68,10 @@ function validateInstallArgs(args: readonly string[]): void {
   const seen = new Set<string>();
   for (let index = 0; index < args.length; index++) {
     const flag = args[index];
-    if (!flag || seen.has(flag)) usageFailure("kor install --pilot CHECKOUT [--scope local|user] [--linear-team KEY] [--no-systemd] [--json]");
+    if (!flag || seen.has(flag)) usageFailure("kor install --pilot CHECKOUT [--scope local|user] [--tracker linear|github] [--linear-team KEY] [--github-repository OWNER/REPO] [--github-project-owner OWNER] [--github-project-number N] [--no-systemd] [--json]");
     seen.add(flag);
     if (flag === "--no-systemd" || flag === "--json") continue;
-    if (flag !== "--pilot" && flag !== "--scope" && flag !== "--linear-team") throw new CliFailure("invalid_arguments", `unknown install option: ${flag}`, "run `kor install --help`", 2);
+    if (flag !== "--pilot" && flag !== "--scope" && flag !== "--linear-team" && flag !== "--tracker" && flag !== "--github-repository" && flag !== "--github-project-owner" && flag !== "--github-project-number") throw new CliFailure("invalid_arguments", `unknown install option: ${flag}`, "run `kor install --help`", 2);
     const value = args[++index];
     if (!value || value.startsWith("--")) throw new CliFailure("invalid_arguments", `${flag} needs a value`, "run `kor install --help`", 2);
   }
@@ -81,7 +82,7 @@ function print(value: unknown, json: boolean): void {
 async function canonicalIssue(reference: string): Promise<{ id: string; identifier: string; title: string; repository: string }> {
   const mission = new MissionServices(runtimePaths());
   await mission.initialize();
-  const client = mission.linear();
+  const client = mission.tracker((await loadKorConfig()).config);
   const issue = await client.getIssue(reference);
   const loaded = await loadKorConfig();
   return { id: issue.id, identifier: issue.identifier ?? reference, title: issue.title, repository: repositoryKeyForIssue(issue, loaded.config) };
@@ -124,7 +125,7 @@ async function runIssue(args: readonly string[]): Promise<number> {
   const loaded = await loadKorConfig(paths.configFile, { home: paths.home });
   const issue = await canonicalIssue(issueReference);
   if (dryRun) {
-    const store = new LinearStore(paths.databaseFile);
+    const store = new TrackerStore(paths.databaseFile);
     const overrides = new OverrideStore(paths.databaseFile);
     try {
       const executionId = store.previewExecutionId(issue.id);
@@ -135,12 +136,12 @@ async function runIssue(args: readonly string[]): Promise<number> {
       const routing = createServeRouting({ audit, intakeLabel: loaded.config.intakeLabel, defaultRoute: loaded.config.defaultRoute, client: { evaluate: (state, questions) => mission.jev().evaluate(state, questions) }, models: async () =>
         (await loadAvailableVerifiedModels(await readModelRegistry(paths.modelsFile), async () => (await mission.gateway()).listModels())).map(result => ({ provider: modelProvider(result.model, result.provider), model: result.model, capabilities: Object.entries(result.capabilities).map(([name, supported]) => ({ name, supported: supported === true })), ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) })),
       });
-      const route = override ? { ...loaded.config.defaultRoute, model: override.choice } : (await routing.chooseRoute({ executionId, issue: await mission.linear().getIssue(issue.id) })).route;
+      const route = override ? { ...loaded.config.defaultRoute, model: override.choice } : (await routing.chooseRoute({ executionId, issue: await mission.tracker(loaded.config).getIssue(issue.id) })).route;
       print({ issueId: issue.identifier, canonicalIssueId: issue.id, title: issue.title, executionId, dryRun: true, intake: loaded.config.intakeLabel, route, planned: ["enqueue durable assignment", "run isolated session when kor serve is active"] }, json);
       return 0;
     } finally { overrides.close(); store.close(); }
   }
-  const store = new LinearStore(paths.databaseFile);
+  const store = new TrackerStore(paths.databaseFile);
   try {
     const assignment = store.enqueue(issue.id, { issueKey: issue.identifier, issueTitle: issue.title, repository: issue.repository });
     print({ schemaVersion: 1, issueId: issue.identifier, canonicalIssueId: issue.id, executionId: assignment.executionId, status: assignment.status, queued: assignment.status === "queued" }, json);
@@ -153,7 +154,7 @@ async function updateQueue(command: "cancel" | "retry", args: readonly string[])
   const issueReference = references[0];
   if (references.length !== 1 || !issueReference || issueReference.startsWith("-")) usageFailure(`kor ${command} EXECUTION-ID|ISSUE-ID [--json]`);
   const paths = runtimePaths();
-  const store = new LinearStore(paths.databaseFile);
+  const store = new TrackerStore(paths.databaseFile);
   try {
     const assignment = store.findAssignment(issueReference);
     if (!assignment) throw new CliFailure("execution_not_found", "execution not found", "check the execution ID, issue ID, or stored issue key");
@@ -231,7 +232,7 @@ async function serve(args: readonly string[]): Promise<number> {
     if (models.length === 0) throw new Error("--jev requires at least one verified gateway model");
   }
   await validateSessionSkills(loaded.config, paths);
-  const store = new LinearStore(paths.databaseFile);
+  const store = new TrackerStore(paths.databaseFile);
   const audit = calibration ?? new PersistentDecisionAuditLog({ read: id => store.readDecisionAudit(id), write: (id, at, payload) => store.writeDecisionAudit(id, at, payload), update: (id, at, payload) => store.updateDecisionAudit(id, at, payload) });
   let describePullRequest: DescribePullRequest;
   let mergeIntelligence: MergeIntelligence;
@@ -245,6 +246,7 @@ async function serve(args: readonly string[]): Promise<number> {
     mergeIntelligence = routing.mergeIntelligence;
     const controller = createController({
       repositories,
+      fetchImage: url => mission.tracker(config).fetchImage(url),
       reserveAttempt: (executionId, attempt) => store.reserveVerificationAttempt(executionId, attempt),
       onStage: (executionId, stage) => daemon.setStage(executionId, stage),
       onSpend: (executionId, spend) => store.recordSpend(executionId, spend),
@@ -268,7 +270,7 @@ async function serve(args: readonly string[]): Promise<number> {
     if (!catalogue.ok) throw new Error("The skill catalogue is invalid; run kor skills doctor");
     return { catalogue, stackTags: await repositoryStackTags(repositoryPath) };
   };
-  const daemon = new KorDaemon({ paths, config: loaded.config, store, linear: mission.linear(), ...initial, sessionPolicy, shipping: new GitHubShipping((file, args, cwd) => mission.shippingCommand(file, args, cwd), input => describePullRequest(input), (path, body, method) => mission.github(path, body, process.env, method), { review: input => mergeIntelligence.review(input), decide: input => mergeIntelligence.decide(input) }), port, gateway, verifiedModels, webRoot, missionServices: mission, reconfigure: runtime });
+  const daemon = new KorDaemon({ paths, config: loaded.config, store, tracker: mission.tracker(loaded.config), ...initial, sessionPolicy, shipping: new GitHubShipping((file, args, cwd) => mission.shippingCommand(file, args, cwd), input => describePullRequest(input), (path, body, method) => mission.github(path, body, process.env, method), { review: input => mergeIntelligence.review(input), decide: input => mergeIntelligence.decide(input) }), port, gateway, verifiedModels, webRoot, missionServices: mission, reconfigure: runtime });
   const handle = await daemon.start();
   process.stdout.write(`kor daemon listening on ${statusUrl}\n`);
   await new Promise<void>(resolve => {
@@ -284,6 +286,22 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
   const cleanArgs = args.filter(arg => arg !== "--debug");
   const command = cleanArgs[0] ?? "help";
   try {
+    if (command === "github") {
+      const usage = 'kor github attach-image OWNER/REPO#N FILE --alt "SCREEN ROUTE STATE" [--json]';
+      if (cleanArgs.includes('--help')) { print(usage, false); return 0; }
+      const [, action, reference, file, ...flags] = cleanArgs;
+      if (action !== 'attach-image' || !reference || !file || flags.some((flag, i) => flag !== '--json' && flag !== '--alt' && flags[i - 1] !== '--alt') || !valueAfter(flags, '--alt')) usageFailure(usage);
+      const paths = runtimePaths();
+      const mission = new MissionServices(paths);
+      await mission.initialize();
+      const loaded = await loadKorConfig();
+      const image = await stat(file);
+      if (!image.isFile() || image.size > 5 * 1024 * 1024) throw new Error('Image must be a regular PNG no larger than 5 MiB');
+      const bytes = await readFile(file);
+      const result = await mission.tracker(loaded.config).attachImage(reference, bytes, valueAfter(flags, '--alt') ?? '');
+      print(jsonFlag(args) ? result : `${result.issue}: image verified (${result.bytes} bytes, sha256 ${result.sha256})`, jsonFlag(args));
+      return 0;
+    }
     if (command === "linear") {
       const imageUsage = 'kor linear attach-image ISSUE FILE --alt "SCREEN ROUTE STATE" [--screen ID] [--json]';
       const usage = `${linearLintUsage} | ${imageUsage}`;
@@ -464,7 +482,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
         const { plan } = result;
         process.stdout.write(`${JSON.stringify({ schemaVersion: 1, planId: plan.executionId, ready: !blocked, route: plan.route, fallback: plan.fallback, ...(plan.outage ? { outage: plan.outage } : {}), decisions: plan.decisions.map(decision => ({ kind: decision.kind, choice: decision.choice, confidence: decision.confidence, applied: decision.applied, escalated: decision.escalated, policyChecks: decision.policyChecks, reasons: decision.reasons })), commentWritten: result.commentWritten })}\n`);
       } else {
-        process.stdout.write(`${result.output}\n${result.commentWritten ? "linear: preflight report written" : "linear: no comment written"}\n`);
+        process.stdout.write(`${result.output}\n${result.commentWritten ? "tracker: preflight report written" : "tracker: no comment written"}\n`);
         if (blocked) process.stderr.write("FAIL plan: preflight needs attention. Hint: follow the readiness guidance and resolve any other reported decisions, then retry\n");
       }
       return blocked ? 1 : 0;
@@ -478,16 +496,24 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     if (command === "ui") return await openUi(cleanArgs.slice(1));
     if (command === "models") return await runModels(cleanArgs.slice(1));
     if ((command === "install" || command === "uninstall") && cleanArgs.slice(1).some(arg => arg === "--help" || arg === "-h")) {
-      process.stdout.write(command === "install" ? "Usage: kor install --pilot CHECKOUT [--scope local|user] [--linear-team KEY] [--no-systemd] [--json]\nLocal scope requires a standalone checkout. User scope defaults --pilot to the source checkout. Build first; configure credentials and repository policy before starting the installed unit.\n" : "Usage: kor uninstall [--purge] [--json]\nRestore the installation manifest. Without --purge, retain Kor data and recovery backups. Run through the source CLI to purge after the link has been removed.\n");
+      process.stdout.write(command === "install" ? "Usage: kor install --pilot CHECKOUT [--scope local|user] [--tracker linear|github] [--linear-team KEY] [--github-repository OWNER/REPO] [--github-project-owner OWNER] [--github-project-number N] [--no-systemd] [--json]\nLocal scope requires a standalone checkout. User scope defaults --pilot to the source checkout. Build first; configure credentials and repository policy before starting the installed unit.\n" : "Usage: kor uninstall [--purge] [--json]\nRestore the installation manifest. Without --purge, retain Kor data and recovery backups. Run through the source CLI to purge after the link has been removed.\n");
       return 0;
     }
     if (command === "install") {
       validateInstallArgs(cleanArgs.slice(1));
       const pilot = valueAfter(cleanArgs.slice(1), "--pilot");
       const scope = installScope(cleanArgs.slice(1));
-      if (scope === "local" && !pilot) usageFailure("kor install --pilot CHECKOUT [--scope local|user] [--linear-team KEY] [--no-systemd]");
+      if (scope === "local" && !pilot) usageFailure("kor install --pilot CHECKOUT [--scope local|user] [--tracker linear|github] [--linear-team KEY] [--github-repository OWNER/REPO] [--github-project-owner OWNER] [--github-project-number N] [--no-systemd]");
       const linearTeam = valueAfter(cleanArgs, "--linear-team");
-      const result = await installKor({ scope, ...(linearTeam ? { linearTeam } : {}), ...(pilot ? { pilot } : {}), systemd: !cleanArgs.includes("--no-systemd") });
+      const tracker = valueAfter(cleanArgs, "--tracker");
+      if (tracker && tracker !== "linear" && tracker !== "github") usageFailure("--tracker must be linear or github");
+      const githubRepository = valueAfter(cleanArgs, "--github-repository");
+      if (githubRepository && !/^[\w.-]+\/[\w.-]+$/.test(githubRepository)) usageFailure("--github-repository must be OWNER/REPO");
+      const githubProjectOwner = valueAfter(cleanArgs, "--github-project-owner");
+      const githubProject = valueAfter(cleanArgs, "--github-project-number");
+      const githubProjectNumber = githubProject ? Number(githubProject) : undefined;
+      if (githubProjectNumber !== undefined && (!Number.isSafeInteger(githubProjectNumber) || githubProjectNumber < 1)) usageFailure("--github-project-number must be a positive integer");
+      const result = await installKor({ scope, ...(tracker === "linear" || tracker === "github" ? { tracker } : {}), ...(githubRepository ? { githubRepository } : {}), ...(githubProjectOwner ? { githubProjectOwner } : {}), ...(githubProjectNumber ? { githubProjectNumber } : {}), ...(linearTeam ? { linearTeam } : {}), ...(pilot ? { pilot } : {}), systemd: !cleanArgs.includes("--no-systemd") });
       print(jsonFlag(cleanArgs) ? result : result.output, jsonFlag(cleanArgs));
       return 0;
     }
@@ -508,7 +534,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     if (debug && error instanceof Error && error.stack) process.stderr.write(`${error.stack}\n`);
     return failure instanceof CliFailure ? failure.exitCode : 1;
   }
-  process.stdout.write("Usage: kor linear attach-image ISSUE FILE --alt CAPTION [--screen ID] [--json] | kor skills report [--since ISO-8601] [--json] | kor skills init [--json] | kor skills import --from DIRECTORY [--dry-run] [--skip-invalid] [--json] | kor skills guard [DIRECTORY] [--json] | kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json] | kor skills add|update --help | kor ui | kor serve [--ui-dir DIST] [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--context] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor linear lint ISSUE-ID [--json] | kor linear lint --project PROJECT-ID [--json] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--linear-team KEY] [--no-systemd] | kor uninstall [--purge] | kor models list [--all] | kor models probe [--family family] [--model model] [--dry-run]\n");
+  process.stdout.write("Usage: kor github attach-image OWNER/REPO#N FILE --alt CAPTION [--json] | kor linear attach-image ISSUE FILE --alt CAPTION [--screen ID] [--json] | kor skills report [--since ISO-8601] [--json] | kor skills init [--json] | kor skills import --from DIRECTORY [--dry-run] [--skip-invalid] [--json] | kor skills guard [DIRECTORY] [--json] | kor skills lint [DIRECTORY] [--json] | kor skills index|list|show|doctor [--from DIRECTORY]... [--estimate] [--json] | kor skills add|update --help | kor ui | kor serve [--ui-dir DIST] [--jev] [--no-calibration] [--calibration-rate RATE] [--baseline-model MODEL] | kor calibrate report [--since ISO-8601] [--context] [--json] | kor status [--json] [EXECUTION-ID|ISSUE-ID] | kor linear lint ISSUE-ID [--json] | kor linear lint --project PROJECT-ID [--json] | kor plan ISSUE-ID [--json] | kor run ISSUE-ID [--dry-run] [--json] | kor cancel EXECUTION-ID|ISSUE-ID [--json] | kor retry EXECUTION-ID|ISSUE-ID [--json] | kor logs EXECUTION-ID | kor doctor [--json] | kor install [--pilot CHECKOUT] [--scope local|user] [--tracker linear|github] [--linear-team KEY] [--github-repository OWNER/REPO] [--github-project-owner OWNER] [--github-project-number N] [--no-systemd] | kor uninstall [--purge] | kor models list [--all] | kor models probe [--family family] [--model model] [--dry-run]\n");
   return 0;
 }
 

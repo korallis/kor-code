@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import type { KorPaths } from "@kor-code/config";
 import type { KorCliError, KorExecutionStatusResponse, KorStatusResponse, KorStatusSnapshot } from "@kor-code/core";
-import { LinearStore } from "@kor-code/linear";
+import { TrackerStore } from "@kor-code/tracker";
 import { processMatches } from "./process.js";
 
 const runSchema = z.object({ executionId: z.string().min(1), issueId: z.string().min(1), status: z.enum(["queued", "ready", "evaluating", "running", "waiting", "verifying", "repairing", "shipping", "review", "blocked", "complete", "failed", "escalated", "canceled"]), attempts: z.number().int().nonnegative(), observedAt: z.string().datetime(), pullRequestUrl: z.string().url().optional(), costUsd: z.number().nonnegative().finite().optional() }).passthrough();
@@ -48,7 +48,7 @@ export async function readExecutionStatus(paths: KorPaths, reference: string, ma
     return { schemaVersion: 1, provenance: "unavailable", observedAt, run: null, reason, error: unavailableError("execution_database_unavailable", reason, "run `kor run ISSUE-ID` before requesting execution status") };
   }
   const snapshot = await readStatus(paths, maxAgeMs);
-  const store = new LinearStore(paths.databaseFile);
+  const store = new TrackerStore(paths.databaseFile);
   try {
     const assignment = store.findAssignment(reference);
     if (!assignment) {

@@ -18,7 +18,7 @@ export function buildActivity(runs: readonly MissionRun[], overrides: readonly O
     const detail = [checks && `${checks.passed}/${checks.total} checks`, acceptance && `${acceptance.passed}/${acceptance.total} acceptance conditions`].filter(Boolean).join(', ');
     switch (run.status) {
       case 'complete': out.push({ ...base, id: `${run.executionId}:c`, tone: 'green', icon: run.pullRequestUrl ? GitMerge : CircleCheck, text: run.pullRequestUrl ? `merged ${prNumber(run.pullRequestUrl) ?? ''}` : 'complete' }); break;
-      case 'review': out.push({ ...base, id: `${run.executionId}:r`, tone: 'violet', icon: GitPullRequest, text: `PR ${prNumber(run.pullRequestUrl) ?? ''} opened · Linear moved to ${run.issueState ?? 'In Review'}` }); break;
+      case 'review': out.push({ ...base, id: `${run.executionId}:r`, tone: 'violet', icon: GitPullRequest, text: `PR ${prNumber(run.pullRequestUrl) ?? ''} opened · issue moved to ${run.issueState ?? 'In Review'}` }); break;
       case 'waiting': out.push({ ...base, id: `${run.executionId}:w`, tone: 'green', icon: CircleCheck, text: `verified${detail ? `: ${detail}` : ''} · waiting for you` }); break;
       case 'failed': out.push({ ...base, id: `${run.executionId}:f`, tone: 'rose', icon: CircleX, text: `failed${run.error ? `: ${run.error}` : ''}` }); break;
       case 'blocked': case 'escalated': out.push({ ...base, id: `${run.executionId}:b`, tone: 'amber', icon: TriangleAlert, text: `${run.status}${run.needsInput?.reason ? `: ${run.needsInput.reason}` : run.error ? `: ${run.error}` : ''}` }); break;

@@ -6,14 +6,14 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
 import type { DecisionRecord, Execution, GatewayAccountHealth, KorRunSnapshot, KorStatusResponse, KorStatusSnapshot, Labelled, OverrideRecord, Route, RouteSource, RunStatus, SessionProcessIdentity } from "@kor-code/core";
-import { repositoryKeyForIssue, type KorConfig, type KorPaths } from "@kor-code/config";
+import { repositoryKeyForIssue, trackerScope, type KorConfig, type KorPaths } from "@kor-code/config";
 import { ExecutionVerificationError, policyTools, type CalibrationBaseline, type Controller } from "@kor-code/controller";
-import type { LinearClient, LinearIssue, LinearIssueSummary } from "@kor-code/linear";
-import { AgentSessionWriter, LinearStore, flushLinearWrites, hasScreenshot, stableId, workflowMapping, type LinearWrite, type AssignmentRecord, type ExecutionClaim } from "@kor-code/linear";
+import type { TrackerClient, TrackerIssue, TrackerIssueSummary } from "@kor-code/tracker";
+import { AgentSessionWriter, TrackerRouter, TrackerStore, flushTrackerWrites, hasScreenshot, stableId, workflowMapping, type TrackerWrite, type AssignmentRecord, type ExecutionClaim } from "@kor-code/tracker";
 import { captureProcess, processExists, processMatches, stopSession } from "./process.js";
 import { OverrideStore } from "./overrides.js";
 import type { ShippingDriver } from "./shipping.js";
-import type { AskRequest, AskResponse, IssuesResponse, DocumentsResponse, IssueResponse, LinearSync, MissionRun, PoolResponse, SessionOption, SessionPackResponse, Stage } from "@kor-code/mission-control";
+import type { AskRequest, AskResponse, IssuesResponse, DocumentsResponse, IssueResponse, TrackerSync, MissionRun, PoolResponse, SessionOption, SessionPackResponse, Stage } from "@kor-code/mission-control";
 import type { JsonValue } from "@kor-code/core";
 import { DEFAULT_SKILL_BUDGET, SESSION_TARGETS, applySkillOverrides, emptySkillPlan, foldSessionEdits, labelEdits, parseSessionEdit, redact, reviewSessionEdit, runtimeSecrets, screenshotReadinessCheck, sessionEditChoice, type SessionEdit, type SessionEditContext, type SkillCandidate, type SkillTier } from "@kor-code/jev";
 import { ApiFailure, MissionApi } from "./api.js";
@@ -34,7 +34,7 @@ const exec = promisify(execFile);
 export class NeedsInputError extends Error {}
 export interface DaemonRunInput {
   claim: ExecutionClaim;
-  issue: LinearIssue;
+  issue: TrackerIssue;
   /** The runner must settle only after its work has stopped. */
   signal: AbortSignal;
   onSpawn: (pid: number) => void;
@@ -43,8 +43,10 @@ export type DaemonRunner = (input: DaemonRunInput) => Promise<void | { execution
 export interface DaemonOptions {
   paths: KorPaths;
   config: KorConfig;
-  store?: LinearStore;
-  linear?: LinearClient;
+  store?: TrackerStore;
+  tracker?: TrackerClient;
+  /** @deprecated Inject tracker instead. */
+  linear?: TrackerClient;
   controller?: Controller;
   /** When enabled, verified executions remain shipping/review until GitHub reports a merge. */
   shipping?: ShippingDriver;
@@ -64,7 +66,7 @@ export interface DaemonOptions {
    * error leaves the configured default standing, labelled `fallback`; it never
    * fails the run.
    */
-  chooseRoute?: (input: { executionId: string; issue: LinearIssue; previousDecisionId?: string }) => Promise<RouteChoice>;
+  chooseRoute?: (input: { executionId: string; issue: TrackerIssue; previousDecisionId?: string }) => Promise<RouteChoice>;
   /** Built web assets. The CLI defaults to packages/web/dist. */
   webRoot?: string;
   missionServices?: MissionServices;
@@ -86,12 +88,12 @@ interface ActiveRun { claim: ExecutionClaim; abort: AbortController; done: Promi
 const markerSchema = z.object({ executionId: z.string().regex(/^[\w-]+$/), path: z.string(), repository: z.string() });
 
 function safeMessage(error: unknown): string { return error instanceof Error ? error.message.slice(0, 500) : "unknown daemon error"; }
-/** The Linear teams to poll: each repository's `linearTeam`, else its map key's team part. */
-function teamKeys(config: KorConfig): string[] {
-  return [...new Set(Object.entries(config.repos).map(([key, repository]) => repository.linearTeam ?? key.split("/", 1)[0] ?? key))].filter(Boolean);
+/** Each configured project resolves its provider scope inside the tracker. */
+function trackerScopes(config: KorConfig): string[] {
+  return [...new Set(Object.entries(config.repos).map(([key, repository]) => trackerScope(key, repository)))];
 }
 const FINISHED = new Set<RunStatus["status"]>(["complete", "canceled", "failed"]);
-const LABEL_ORIGIN = "Linear label";
+const LABEL_ORIGIN = "Tracker label";
 const SKILL_TIERS: readonly SkillTier[] = ["pinned", "listed", "armed", "hidden"];
 const SESSION_GRAMMAR: Record<typeof SESSION_TARGETS[number], string> = {
   skills: "Use skill:+NAME, skill:-NAME or skill:NAME=pinned|listed|armed|hidden.",
@@ -142,7 +144,7 @@ function runStatus(assignment: AssignmentRecord, observedAt: string, facts: RunF
 
 /** One process owns recovery and scheduling for a database. Claims stay fenced until work stops. */
 export class KorDaemon {
-  readonly store: LinearStore;
+  readonly store: TrackerStore;
   private readonly now: () => number;
   private readonly owner: string;
   private readonly leaseTtlMs: number;
@@ -167,7 +169,7 @@ export class KorDaemon {
   readonly overrides: OverrideStore;
   /** Issue facts by assignment issue ID, kept from polls and claims for display. */
   private readonly issues = new Map<string, IssueFacts>();
-  private readonly issueLists = new Map<string, Labelled<LinearIssueSummary[]>>();
+  private readonly issueLists = new Map<string, Labelled<TrackerIssueSummary[]>>();
   private accounts: Labelled<GatewayAccountHealth[]> | undefined;
   readonly mission: MissionServices;
   readonly events = new MissionEvents(() => [this.token, ...runtimeSecrets(), ...this.mission.secrets()]);
@@ -183,7 +185,7 @@ export class KorDaemon {
 
   get paths(): KorPaths { return this.options.paths; }
   get config(): KorConfig { return this.options.config; }
-  linearClient(): LinearClient | undefined { return this.options.linear; }
+  trackerClient(): TrackerClient | undefined { return this.options.tracker; }
   ask(input: AskRequest): Promise<AskResponse> { return askJev(this, input); }
 
   constructor(private readonly options: DaemonOptions) {
@@ -197,9 +199,10 @@ export class KorDaemon {
     if (!Number.isSafeInteger(this.pollIntervalMs) || this.pollIntervalMs < 100) throw new Error("Poll interval must be at least 100ms");
     if (this.host !== "127.0.0.1") throw new Error("Status must bind to 127.0.0.1");
     if (!Number.isSafeInteger(this.port) || this.port < 0 || this.port > 65_535 || this.port === 8317) throw new Error("Status port must be a valid non-8317 port");
-    this.store = options.store ?? new LinearStore(options.paths.databaseFile);
+    this.store = options.store ?? new TrackerStore(options.paths.databaseFile);
     this.overrides = new OverrideStore(options.paths.databaseFile, this.now);
     this.mission = options.missionServices ?? new MissionServices(options.paths, options.probeModel);
+    if (!options.tracker && options.linear) options.tracker = new TrackerRouter(options.config, options.linear, (path, body, method) => this.mission.github(path, body, process.env, method));
     this.startedAt = new Date(this.now()).toISOString();
   }
 
@@ -300,17 +303,17 @@ export class KorDaemon {
     await this.flushOverrideComments();
     try {
       let writeError: unknown;
-      if (this.options.linear) {
-        try { await flushLinearWrites(this.store, this.options.linear); }
+      if (this.options.tracker) {
+        try { await flushTrackerWrites(this.store, this.options.tracker); }
         catch (error) { writeError = error; }
       }
       await this.advanceShipping();
       if (this.now() - this.lastQuotaAt >= 60_000) void this.refreshQuota();
       let found = 0;
-      if (this.options.linear) for (const key of teamKeys(this.options.config)) {
-        let issues: LinearIssueSummary[];
-        try { issues = await this.options.linear.listIssues(key); }
-        catch (error) { this.observeIssues(key, unavailable([], "Linear issues unavailable")); throw error; }
+      if (this.options.tracker) for (const key of trackerScopes(this.options.config)) {
+        let issues: TrackerIssueSummary[];
+        try { issues = await this.options.tracker.listIssues(key); }
+        catch (error) { this.observeIssues(key, unavailable([], "Tracker issues unavailable")); throw error; }
         this.observeIssues(key, live(issues));
         for (const issue of issues) {
           if (this.stopping) break;
@@ -336,8 +339,8 @@ export class KorDaemon {
   }
   /** One daemon owns these stages; no execution lease or model session is reopened. */
   private async advanceShipping(): Promise<void> {
-    const { shipping, linear } = this.options;
-    if (!shipping || !linear) return;
+    const { shipping, tracker } = this.options;
+    if (!shipping || !tracker) return;
     for (const assignment of this.store.listAssignments()) {
       const previous = assignment.manifest;
       if (this.stopping || !previous?.shipping) continue;
@@ -345,13 +348,13 @@ export class KorDaemon {
       if (!['shipping', 'review', 'blocked', 'complete', 'failed'].includes(assignment.status)) continue;
       this.shippingActive.add(assignment.executionId);
       try {
-        const issue = await linear.getIssue(assignment.issueId);
+        const issue = await tracker.getIssue(assignment.issueId);
         this.remember(assignment.issueId, issue);
         const repository = this.options.config.repos[previous.repository];
         if (!repository) throw new Error(`Shipping repository missing: ${previous.repository}`);
-        const states = workflowMapping(await linear.listWorkflowStates(issue.teamKey));
-        if (!states.review) throw new Error(`Linear team ${issue.teamKey} has no In Review state`);
-        const writer = new AgentSessionWriter(this.store, linear, states);
+        const states = workflowMapping(await tracker.listWorkflowStates(issue.teamKey));
+        if (!states.review) throw new Error(`Tracker team ${issue.teamKey} has no In Review state`);
+        const writer = new AgentSessionWriter(this.store, tracker, states);
         try { await writer.flush(); } catch (error) { await this.reportError(error); }
         const decisionId = previous.shipping.mergeDecision?.decisionId;
         const mergeOverride = decisionId ? this.overrides.activeDecision(previous.id, decisionId) : undefined;
@@ -363,7 +366,7 @@ export class KorDaemon {
         // Keep the final held reason stable even when a previous queue attempt failed.
         if (heldReason && (!canRepair || previous.shipping.error === heldReason)) report.error = heldReason;
         const changed = previous.shipping.stage.kind !== report.stage.kind || previous.status !== execution.status || previous.shipping.error !== report.error || JSON.stringify(previous.shipping.evidence) !== JSON.stringify(report.evidence);
-        const writes: LinearWrite[] = [];
+        const writes: TrackerWrite[] = [];
         if (changed) {
           writes.push({ kind: 'label', issueId: issue.id, name: 'kor:blocked', present: execution.status === 'blocked' });
           const stage = report.stage;
@@ -443,7 +446,7 @@ export class KorDaemon {
     if (!run) throw new ApiFailure(404, "not_found", "Execution not found");
     return run;
   }
-  private observeIssues(team: string, observation: Labelled<LinearIssueSummary[]>): void {
+  private observeIssues(team: string, observation: Labelled<TrackerIssueSummary[]>): void {
     const changed = stateSignature(this.issueLists.get(team)) !== stateSignature(observation);
     this.issueLists.set(team, observation);
     if (changed) this.events.publish({ kind: "invalidate", resources: ["issues"] });
@@ -451,33 +454,26 @@ export class KorDaemon {
   async missionIssues(project: string | null): Promise<IssuesResponse> {
     const repositories = project ? [[project, this.config.repos[project]]] as const : Object.entries(this.config.repos);
     if (project && !this.config.repos[project]) throw new ApiFailure(404, "not_found", "Configured project not found");
-    const linear = this.options.linear;
-    if (!linear) return { schemaVersion: 1, bounded: true, issues: unavailable([], "Linear connection unavailable") };
-    const lists = repositories.map(([key, repository]) => this.issueLists.get(repository?.linearTeam ?? key.split("/")[0] ?? key));
-    const issues = repositories.flatMap(([, repository], index) => {
-      const all = lists[index]?.value ?? [];
-      return repository?.linearProject ? all.filter(issue => issue.projectId === repository.linearProject) : all;
-    });
-    const value = [...new Map(issues.map(issue => [issue.id, issue])).values()];
+    if (!this.options.tracker) return { schemaVersion: 1, bounded: true, issues: unavailable([], "Tracker connection unavailable") };
+    const lists = repositories.map(([key, repository]) => this.issueLists.get(repository ? trackerScope(key, repository) : key));
+    const value = [...new Map(lists.flatMap(list => list?.value ?? []).map(issue => [issue.id, issue])).values()];
     const ready = lists.every(list => list?.provenance === "live");
-    return { schemaVersion: 1, bounded: true, issues: ready ? live(value) : unavailable(value, "Waiting for the daemon's Linear intake observation") };
+    return { schemaVersion: 1, bounded: true, issues: ready ? live(value) : unavailable(value, "Waiting for the daemon's tracker intake observation") };
   }
   async missionIssue(id: string): Promise<IssueResponse> {
-    if (!this.options.linear) throw new ApiFailure(503, "unavailable", "Linear connection unavailable");
-    return { schemaVersion: 1, issue: await this.options.linear.getIssue(id) };
+    if (!this.options.tracker) throw new ApiFailure(503, "unavailable", "Tracker connection unavailable");
+    return { schemaVersion: 1, issue: await this.options.tracker.getIssue(id) };
   }
   async missionDocuments(project: string): Promise<DocumentsResponse> {
-    const repository = this.config.repos[project];
-    if (!repository) throw new ApiFailure(404, "not_found", "Configured project not found");
-    if (!this.options.linear) return { schemaVersion: 1, documents: unavailable([], "Linear connection unavailable") };
-    if (!repository.linearProject) return { schemaVersion: 1, documents: unavailable([], "Map a Linear project to read its documents") };
-    try { return { schemaVersion: 1, documents: live(await this.options.linear.listProjectDocuments(repository.linearProject)) }; }
-    catch { return { schemaVersion: 1, documents: unavailable([], "Linear documents unavailable") }; }
+    if (!this.config.repos[project]) throw new ApiFailure(404, "not_found", "Configured project not found");
+    if (!this.options.tracker?.listProjectDocuments) return { schemaVersion: 1, documents: unavailable([], "Tracker documents unavailable") };
+    try { return { schemaVersion: 1, documents: live(await this.options.tracker.listProjectDocuments(`project:${project}`)) }; }
+    catch { return { schemaVersion: 1, documents: unavailable([], "Tracker documents unavailable") }; }
   }
   async queueIssues(references: string[]): Promise<MissionRun[]> {
-    const linear = this.options.linear;
-    if (!linear) throw new ApiFailure(503, "unavailable", "Linear connection unavailable");
-    const issues = await Promise.all(references.map(reference => linear.getIssue(reference)));
+    const tracker = this.options.tracker;
+    if (!tracker) throw new ApiFailure(503, "unavailable", "Tracker connection unavailable");
+    const issues = await Promise.all(references.map(reference => tracker.getIssue(reference)));
     // Validate the full batch before queueing any of it.
     for (const issue of issues) repositoryKeyForIssue(issue, this.config);
     for (const issue of issues) {
@@ -489,7 +485,7 @@ export class KorDaemon {
     await this.tick();
     return issues.map(issue => this.missionRun(issue.id));
   }
-  async runAction(executionId: string, action: "cancel" | "retry" | "answer" | "approve" | "request-changes" | "note", message?: string, origin: "CLI" | "Mission Control" = "Mission Control"): Promise<LinearSync> {
+  async runAction(executionId: string, action: "cancel" | "retry" | "answer" | "approve" | "request-changes" | "note", message?: string, origin: "CLI" | "Mission Control" = "Mission Control"): Promise<TrackerSync> {
     const assignment = this.store.findAssignment(executionId);
     if (!assignment) throw new ApiFailure(404, "not_found", "Execution not found");
     if (this.shippingActive.has(executionId)) throw new ApiFailure(409, "conflict", "Publication is advancing; wait for it to settle");
@@ -516,9 +512,9 @@ export class KorDaemon {
     }
     if (!accepted) throw new ApiFailure(409, "conflict", "This action is not available in the execution's current state");
     // The durable action has already applied. Ancillary failures must not ask
-    // clients to repeat it; unacknowledged Linear writes retry on the next poll.
+    // clients to repeat it; unacknowledged Tracker writes retry on the next poll.
     await this.log(executionId, `${action} accepted from ${origin}`).catch(error => this.reportError(error));
-    if (this.options.linear) await flushLinearWrites(this.store, this.options.linear).catch(error => this.reportError(error));
+    if (this.options.tracker) await flushTrackerWrites(this.store, this.options.tracker).catch(error => this.reportError(error));
     await this.writeSnapshot().catch(error => this.reportError(error));
     const { pendingWrites } = this.store.counts();
     return pendingWrites ? { status: "pending", pendingWrites } : { status: "synced" };
@@ -535,10 +531,16 @@ export class KorDaemon {
     });
     if (previous !== undefined) await atomicPrivateFile(`${this.paths.configFile}.bak`, previous);
     await atomicPrivateFile(this.paths.configFile, `${JSON.stringify(config, null, 2)}\n`);
-    if (stateSignature(this.options.config.repos) !== stateSignature(config.repos)) this.api?.observations.clear("pulls");
+    if (stateSignature(this.options.config.repos) !== stateSignature(config.repos)) {
+      this.api?.observations.clear("pulls");
+      this.api?.observations.clear("connections");
+      this.issueLists.clear();
+      this.lastPollAt = undefined;
+    }
     this.options.config = config;
+    this.options.tracker = this.mission.tracker(config, this.options.linear);
     this.pollIntervalMs = config.pollIntervalSeconds * 1000;
-    for (const team of this.issueLists.keys()) if (!teamKeys(config).includes(team)) this.issueLists.delete(team);
+    for (const team of this.issueLists.keys()) if (!trackerScopes(config).includes(team)) this.issueLists.delete(team);
     if (runtime) { this.options.controller = runtime.controller; this.options.chooseRoute = runtime.chooseRoute; }
     await this.writeSnapshot();
     this.events.publish({ kind: "config", restartRequired: false });
@@ -546,7 +548,7 @@ export class KorDaemon {
   }
   async connectionsChanged(provider: string): Promise<void> {
     this.api?.observations.clear();
-    if (provider === "linear") { this.options.linear = this.mission.linear(); this.issueLists.clear(); this.lastPollAt = undefined; }
+    if (provider === "linear" || provider === "github") { this.options.tracker = this.mission.tracker(this.config); this.issueLists.clear(); this.lastPollAt = undefined; }
     if (provider === "gateway") {
       this.options.gateway = await this.mission.gateway();
       // Observations from another gateway must not survive a connection switch.
@@ -637,7 +639,7 @@ export class KorDaemon {
     return { ...(issue ? { issue } : {}), route: base, routeSource, decisions };
   }
 
-  private remember(key: string, issue: LinearIssueSummary): void {
+  private remember(key: string, issue: TrackerIssueSummary): void {
     this.issues.set(key, { key: issue.identifier ?? issue.id, title: issue.title, ...(issue.url ? { url: issue.url } : {}), ...(issue.stateName ? { state: issue.stateName } : {}) });
   }
 
@@ -662,7 +664,7 @@ export class KorDaemon {
 
   /**
    * Judges a cockpit override against policy, records it in the override audit
-   * whatever the outcome, and comments on the Linear issue when it applies. A
+   * whatever the outcome, and comments on the Tracker issue when it applies. A
    * route override takes effect from the execution's next attempt.
    */
   async override(request: OverrideRequest): Promise<OverrideAnswer> {
@@ -831,11 +833,11 @@ export class KorDaemon {
 
   /** Writes each pending override comment once; the stable comment ID makes a retry idempotent. */
   private async flushOverrideComments(): Promise<void> {
-    const linear = this.options.linear;
-    if (!linear) return;
+    const tracker = this.options.tracker;
+    if (!tracker) return;
     for (const record of this.overrides.pendingComments()) {
       try {
-        await linear.apply({ kind: "comment", id: record.commentId, issueId: record.issueId, body: overrideComment(record) });
+        await tracker.apply({ kind: "comment", id: record.commentId, issueId: record.issueId, body: overrideComment(record) });
         this.overrides.markComment(record.id, "written");
       } catch (error) {
         this.overrides.markComment(record.id, "failed");
@@ -878,7 +880,7 @@ export class KorDaemon {
     this.busy = true;
     this.cycle = (async () => {
       if (!this.lastPollAt || this.now() - Date.parse(this.lastPollAt) >= this.pollIntervalMs) void this.pollOnce();
-      if (this.options.linear && (this.options.runner || this.options.controller)) {
+      if (this.options.tracker && (this.options.runner || this.options.controller)) {
         while (!this.stopping && this.active.size < this.options.config.limits.total) {
           const claim = this.store.claim(this.owner, this.leaseTtlMs, undefined, [...this.active.keys()]);
           if (!claim) break;
@@ -914,8 +916,8 @@ export class KorDaemon {
     };
     try {
       await this.log(id, "execution started");
-      if (!this.options.linear) throw new Error("Linear client unavailable");
-      const issue = await this.options.linear.getIssue(claim.assignment.issueId);
+      if (!this.options.tracker) throw new Error("Tracker client unavailable");
+      const issue = await this.options.tracker.getIssue(claim.assignment.issueId);
       this.setStage(id, "discover");
       const messages = this.store.operatorMessages(id);
       const answers = messages.filter(message => message.kind === "answer");
@@ -924,9 +926,9 @@ export class KorDaemon {
       if (messages.length) issue.description = `${issue.description ?? ""}\n\nOperator guidance:\n${messages.map(message => `${message.kind}: ${message.message}`).join("\n\n")}`;
       this.remember(claim.assignment.issueId, issue);
       this.store.setIssueMetadata(claim, issue.identifier ?? issue.id, issue.title);
-      if (issue.acceptanceCriteria.length === 0) throw new NeedsInputError("Add a # Acceptance section with explicit criteria to the Linear issue, then retry this execution.");
-      if (issue.dependencies.some(dependency => dependency.stateType !== 'completed')) throw new NeedsInputError('Complete the blocking dependencies in Linear, then retry this execution.');
-      // The configured mapping (linearProject, then linearTeam) names the checkout.
+      if (issue.acceptanceCriteria.length === 0) throw new NeedsInputError("Add a # Acceptance section with explicit criteria to the Tracker issue, then retry this execution.");
+      if (issue.dependencies.some(dependency => dependency.stateType !== 'completed')) throw new NeedsInputError('Complete the blocking dependencies in Tracker, then retry this execution.');
+      // The tracker identity maps to exactly one configured checkout.
       const repository = repositoryKeyForIssue(issue, this.options.config);
       this.setStage(id, "preflight");
       const screenshotCheck = screenshotReadinessCheck({ labels: issue.labels, hasScreenshot: hasScreenshot(issue) });
@@ -938,9 +940,9 @@ export class KorDaemon {
       await this.syncLabelOverrides(id, issue.labels);
       if (issue.labels.includes('kor:blocked')) this.store.record(claim, [{ kind: 'label', issueId: issue.id, name: 'kor:blocked', present: false }]);
       if (this.options.shipping) {
-        const states = workflowMapping(await this.options.linear.listWorkflowStates(issue.teamKey));
-        if (!states.review) throw new Error(`Linear team ${issue.teamKey} has no In Review state`);
-        const writer = new AgentSessionWriter(this.store, this.options.linear, states);
+        const states = workflowMapping(await this.options.tracker.listWorkflowStates(issue.teamKey));
+        if (!states.review) throw new Error(`Tracker team ${issue.teamKey} has no In Review state`);
+        const writer = new AgentSessionWriter(this.store, this.options.tracker, states);
         writer.start(claim, manifest);
         await writer.flush();
       }
@@ -984,7 +986,7 @@ export class KorDaemon {
       else {
         const gated = this.options.config.repos[result.execution.repository]?.ship === "approve";
         const latest = result.execution.verification.attempts.at(-1);
-        const writes: LinearWrite[] = gated ? [{ kind: 'comment', id: stableId('kor-progress', `${id}:verified:${latest?.attemptId ?? latest?.attempt ?? 0}`), issueId: result.execution.issueId,
+        const writes: TrackerWrite[] = gated ? [{ kind: 'comment', id: stableId('kor-progress', `${id}:verified:${latest?.attemptId ?? latest?.attempt ?? 0}`), issueId: result.execution.issueId,
           body: [`Kor execution ${id} verified and is waiting for approval to publish.`,
             ...(latest?.checks.map(check => `${check.command}: ${check.status} (exit ${check.exitCode})`) ?? []),
             ...(latest?.findings.map(finding => `${finding.conditionId}: ${finding.status}`) ?? []),
@@ -1005,7 +1007,7 @@ export class KorDaemon {
   }
 
   /** An applied override wins; then Jev's preflight (planned once per execution); then the default route. */
-  private async routeFor(executionId: string, issue: LinearIssue): Promise<Route | undefined> {
+  private async routeFor(executionId: string, issue: TrackerIssue): Promise<Route | undefined> {
     const defaultRoute = this.options.config.defaultRoute;
     const override = this.overrides.activeRoute(executionId);
     if (override) return { ...defaultRoute, model: override.choice, label: "override", decisionId: override.id };

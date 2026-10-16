@@ -1,7 +1,7 @@
 /** Browser-safe Mission Control protocol. No server modules execute on import. */
 import type { KorConfig } from "@kor-code/config";
 import type { CalibrationReport } from "@kor-code/calibration";
-import type { LinearIssue, LinearIssueSummary, LinearDocumentSummary } from "@kor-code/linear";
+import type { TrackerIssue, TrackerIssueSummary, TrackerDocumentSummary } from "@kor-code/tracker";
 import type { DecisionRecord, GatewayAccountHealth, SessionSpend, GatewayModel, JsonValue, KorStatusResponse, Labelled, OverrideRecord, RunStatus, VerificationAttempt, VerificationReport } from "@kor-code/core";
 import type { RunMetric, SkillLearningChange, SkillStats } from "@kor-code/calibration";
 
@@ -56,9 +56,9 @@ export interface ProjectsResponse { schemaVersion: 1; projects: Project[] }
 export interface RunsResponse { schemaVersion: 1; runs: MissionRun[] }
 export interface RunResponse { schemaVersion: 1; run: MissionRun }
 export interface TerminalResponse { schemaVersion: 1; executionId: string; content: string; offset: number }
-export interface IssuesResponse { schemaVersion: 1; issues: Labelled<LinearIssueSummary[]>; bounded: true }
-export interface IssueResponse { schemaVersion: 1; issue: LinearIssue }
-export interface DocumentsResponse { schemaVersion: 1; documents: Labelled<LinearDocumentSummary[]> }
+export interface IssuesResponse { schemaVersion: 1; issues: Labelled<TrackerIssueSummary[]>; bounded: true }
+export interface IssueResponse { schemaVersion: 1; issue: TrackerIssue }
+export interface DocumentsResponse { schemaVersion: 1; documents: Labelled<TrackerDocumentSummary[]> }
 export interface PullRequest { number: number; title: string; url: string; state: "open" | "closed"; draft: boolean; merged: boolean; head: string }
 export interface PullsResponse { schemaVersion: 1; pulls: Labelled<PullRequest[]>; bounded: true }
 export interface ModelsResponse { schemaVersion: 1; models: Labelled<GatewayModel[]> }
@@ -101,10 +101,10 @@ export interface SessionPackResponse {
   playbook: { selected: string | null; jev: string | null; options: SessionOption[] };
   tools: { eligible: string[]; overrides: Array<{ name: string; present: boolean }>; options: SessionOption[] };
 }
-/** Pending writes remain durable and are retried by the daemon's Linear poll.
+/** Pending writes remain durable and are retried by the daemon's tracker poll.
  * The count covers the daemon's entire outbox, including earlier actions. */
-export type LinearSync = { status: "synced" } | { status: "pending"; pendingWrites: number };
-export interface ActionResponse { schemaVersion: 1; executionId: string; accepted: true; run: MissionRun; linearSync: LinearSync }
+export type TrackerSync = { status: "synced" } | { status: "pending"; pendingWrites: number };
+export interface ActionResponse { schemaVersion: 1; executionId: string; accepted: true; run: MissionRun; trackerSync: TrackerSync; /** @deprecated */ linearSync: TrackerSync }
 export type ConnectRequest =
   | { provider: "linear"; apiKey: string }
   | { provider: "github"; token: string }
@@ -150,7 +150,7 @@ export type MissionEvent = EventPayload & { schemaVersion: 1; id: string; observ
 type Endpoint<Request, Response> = { request: Request; response: ApiResult<Response> };
 /** :id is an executionId, :project is a configured repository key. Encode path
  * segments with encodeURIComponent. All JSON writes require Content-Type JSON.
- * GET /api/linear/issues?project=<key>, /api/github/pulls?repo=<key>.
+ * GET /api/issues?project=<key>, /api/github/pulls?repo=<key>.
  */
 export interface MissionControlApi {
   "GET /api/status": Endpoint<never, KorStatusResponse>;
@@ -159,6 +159,9 @@ export interface MissionControlApi {
   "GET /api/runs/:id": Endpoint<never, RunResponse>;
   "GET /api/runs/:id/terminal": Endpoint<never, TerminalResponse>;
   "GET /api/runs/:id/session": Endpoint<never, SessionPackResponse>;
+  "GET /api/issues": Endpoint<never, IssuesResponse>;
+  "GET /api/issues/:id": Endpoint<never, IssueResponse>;
+  "GET /api/documents": Endpoint<never, DocumentsResponse>;
   "GET /api/linear/issues/:id": Endpoint<never, IssueResponse>;
   "GET /api/linear/documents": Endpoint<never, DocumentsResponse>;
   "GET /api/linear/issues": Endpoint<never, IssuesResponse>;
@@ -189,3 +192,6 @@ export interface MissionControlApi {
 }
 export type ApiRequest<K extends keyof MissionControlApi> = MissionControlApi[K]["request"];
 export type ApiResponse<K extends keyof MissionControlApi> = MissionControlApi[K]["response"];
+
+/** @deprecated Use TrackerSync. */
+export type LinearSync = TrackerSync;

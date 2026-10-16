@@ -1,23 +1,23 @@
 # Kor Code
 
-**Kor turns Linear issues into verified pull requests.** You write an issue with
+**Kor turns Linear or GitHub issues into verified pull requests.** You write an issue with
 acceptance criteria. Kor plans it, runs [Claude Code](https://code.claude.com/docs/en/overview)
 on it in an isolated git worktree, checks the result against your repository's
-checks and your acceptance criteria, and reports progress on the Linear issue.
+checks and your acceptance criteria, and reports progress on the issue in its selected tracker.
 You run it from Mission Control, a web app the Kor daemon serves on your own
 machine. With a fresh installer config’s `ship: merge`, Kor independently reviews and merges
 verified pull requests when GitHub checks are green and Jev gives at least 90%
 probability of a safe merge. You can choose manual approval and merging instead.
 
 You install Kor once, and it works on any number of projects at the same time.
-Each project is a Git checkout on your machine, mapped to a Linear team, and runs
+Each project is a Git checkout on your machine, mapped to Linear or GitHub Issues (optionally a GitHub Project v2), and runs
 from different projects proceed in parallel
 ([working on several projects](#work-on-several-projects)).
 
 ![Mission Control's Command Centre: one run needing an answer, two verified runs ready to ship, and the Jev learned card](docs/images/mc-command-centre.webp)
 
 ```text
-Linear issue (Todo)
+Issue (Todo, in Linear or GitHub)
    │  Start or Queue in Mission Control, kor run LEE-123, or the label "kor"
    ▼
 Plan      Jev judges readiness, risk, the model, the skills and the tools
@@ -34,7 +34,7 @@ Ship      commit on kor/LEE-123, your delivery gate, a pull request
    ▼
 Merge     different-family review, green GitHub checks, Jev probability ≥ 0.90
    ▼
-Linear    comments throughout; In Review when the PR opens, Done after merge
+Tracker   comments throughout; In Review when the PR opens, Done after merge
 ```
 
 Jev is the decision service Kor calls through the TypeSafe API. It makes every
@@ -48,13 +48,21 @@ If repair cannot resolve them, the run stops as `blocked` with a reason. Jev
 judges recorded permission denials alongside the diff and tool results; a
 recovered denial does not automatically block a verified change.
 
+Each project chooses its tracker in **Settings → Add project**, or with
+`kor install --tracker github --github-repository OWNER/REPO`. Existing projects
+keep Linear by default. GitHub supports intake labels, priority, Project v2 Status
+mappings, comments, PR links, image attachments and home-box issue creation.
+Linear is optional when every configured project uses GitHub.
+See [tracker configuration and setup](docs/specs/tracker-integration.md) for
+permissions, plain Issues and Project v2 examples (LEE-1323).
+
 ## Requirements
 
 - Linux (built and tested on Ubuntu under WSL2) with Node 24+, Corepack and Git.
 - Claude Code 2.1.299 or newer, and a browser.
 - A running [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) gateway
   holding your model accounts. Kor expects it at `http://127.0.0.1:8317`.
-- A Linear personal API key. Kor reaches Linear only through its API: there is no
+- A Linear personal API key for projects that use Linear. Kor reaches Linear only through its API: there is no
   webhook or Linear app to install.
 - A TypeSafe API key, for Jev.
 - To ship: a GitHub `origin`, Git `user.name` and `user.email`, GitHub write
@@ -79,7 +87,8 @@ curl -fsSL https://raw.githubusercontent.com/korallis/kor-code/main/scripts/inst
 The installer checks the requirements, clones Kor into `~/.local/share/kor-code`,
 builds the CLI, daemon and Mission Control, and installs `kor` into
 `~/.local/bin`. It also asks for one project to start with: the Git checkout
-path and the Linear team key for that project. That is only the first entry in
+path and its tracker. Linear projects ask for a team key; GitHub projects infer
+`owner/repository` from origin or accept `--github-repository`. That is only the first entry in
 Kor's config. You can add more projects afterwards in Mission Control or in
 `config.yaml` ([working on several projects](#work-on-several-projects)), and
 you do not rerun the installer for them. To answer up front, or without a
@@ -97,7 +106,7 @@ and reload the proxy. Kor never edits the proxy. Keep the checkout on disk; the
 
 The first project cannot be skipped: with no `--pilot` and no terminal the
 installer stops and asks you to pass one, and the path must be a Git checkout
-root. The Linear team key is only asked for when `~/.config/kor/config.yaml` does
+root. The tracker and (for Linear) team key are only asked for when `~/.config/kor/config.yaml` does
 not exist yet; rerunning the installer to update reuses the first project and
 never touches an existing config.
 
@@ -108,7 +117,7 @@ covers forks, private mirrors and a manual build.
 ## First run
 
 **1. Set your repository policy** in `~/.config/kor/config.yaml`. The installer
-writes a scaffold with your first project (its checkout, team key, default
+writes a scaffold with your first project (its checkout, tracker settings, default
 branch and `ship: merge`) under `repos:`. Add the checks that decide whether
 work is accepted and the tools sessions may use:
 
@@ -140,8 +149,8 @@ and Mission Control's **Projects** page shows each one. The installer only wrote
 the first. Add another in either of two ways:
 
 - **In Mission Control:** open **Settings**, find the **Projects** card, enter a
-  project key (any name you like), its checkout path, Linear team and Linear
-  project ID, then
+  project key (any name you like), its checkout path and tracker. Enter a Linear
+  team and project ID, or a GitHub repository with an optional Project v2, then
   choose **Add project** and **Save configuration**. The daemon validates the
   file, applies it without a restart once no work is running and keeps the old
   one as `config.yaml.bak`. A project added here starts with `ship: approve`; set
@@ -150,8 +159,9 @@ the first. Add another in either of two ways:
   the daemon (`kor ui` starts it again) so it rereads the file.
 
 Two projects look like this. Each entry needs its own checkout and its own
-`linearTeam` (or `linearProject`), because that is how Kor routes an issue to the
-right repository:
+`linearTeam` (or `linearProject`) when using Linear. GitHub projects instead set
+`tracker: github` and `github.repository` ([configuration](docs/specs/tracker-integration.md)).
+These mappings route issues to the right repository:
 
 ```yaml
 repos:
@@ -301,15 +311,15 @@ changes and terminal output. You do not need to refresh the page.
 
 **Home** shows what needs you, what is ready to ship, running agents, spend and
 **Next up**. A run that needs an answer lands in **Needs you**: type the answer
-and **Send and retry** writes it to the Linear issue and runs again. Ctrl+K (⌘K)
+and **Send and retry** writes it to the issue and runs again. Ctrl+K (⌘K)
 opens **Ask Jev** anywhere. Execution failures also appear in **Needs you** with
-**Retry**, and Kor posts the reason and a `kor:blocked` label to Linear.
+**Retry**, and Kor posts the reason and a `kor:blocked` label to the tracker.
 **Cancel run** dismisses a failed run from **Needs you**. Retrying reuses the
 recorded route while task inputs and eligible models are unchanged; Kor's
 failure label does not trigger another route decision.
 Ask Jev accepts requests up to 2,000 characters. Give it work, for example
 “Kor-Code: fix the release label and add acceptance criteria.” Jev identifies
-the project, Kor drafts a scoped Linear issue, labels it `kor` and queues a run.
+the project, Kor drafts a scoped issue in that project’s tracker, labels it `kor` and queues a run.
 A free slot starts it through the usual Jev route, model and skill selection.
 The reply links the issue and run. “Approve and ship LEE-123”, “retry LEE-123”,
 “queue LEE-123” and “make LEE-123 high priority” carry out those actions.
@@ -318,11 +328,12 @@ creating issues or changing runs; recommendation buttons perform their named
 action. An unreachable or uncertain Jev is identified plainly, with no action.
 Every Jev choice is recorded in the decision audit.
 
-When adding a project in **Settings**, enter its checkout path, Linear team and
-Linear project ID. Enter a full checkout path starting with `/` or `~/`;
+When adding a project in **Settings**, enter its checkout path and select its
+tracker. Supply its Linear team and project, or GitHub repository and optional
+Project v2. Enter a full checkout path starting with `/` or `~/`;
 Mission Control rejects relative paths instead of joining the install directory.
-Absolute paths stay as entered. Give repositories on the same
-team different Linear project mappings: ambiguous intake is refused and shown
+Absolute paths stay as entered. For Linear, give repositories on the same
+team different project mappings: ambiguous intake is refused and shown
 on Home.
 
 **Agents** streams each run's real output, its seven stages, tokens and cost,
@@ -330,13 +341,13 @@ with **Stop run**, **Retry** and a **Note for Jev**.
 
 ![Agents: a verified run's live output, stages, acceptance and cost](docs/images/mc-agents.webp)
 
-**Linear** is the decision workspace for a run: the issue, Jev's reasoning, the
+**Issues** is the decision workspace for a run: the issue, Jev's reasoning, the
 diff, the checks and each acceptance judgement, with **Approve and ship**,
 **Request changes** (`R`) and **Explore alternatives** (`E`).
 
 ![The decision workspace for a verified run waiting for approval](docs/images/mc-decision.webp)
 
-**Projects** shows each repository's Linear issues with their runs, health and
+**Projects** shows each repository's tracker issues with their runs, health and
 pull requests, and its repository settings. **Models** shows verified models,
 the gateway's account slots and the routing policy. **Jev Brain** shows the
 decision audit, calibration and what Jev has learned about skills.

@@ -18,6 +18,7 @@
     "@kor-code/jev": "workspace:*",
     "@kor-code/linear": "workspace:*",
     "@kor-code/verification": "workspace:*",
-    "@kor-code/calibration": "workspace:*"
+    "@kor-code/calibration": "workspace:*",
+    "@kor-code/tracker": "workspace:*"
   }
 }

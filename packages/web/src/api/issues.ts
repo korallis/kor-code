@@ -1,14 +1,14 @@
-// Linear issues for every configured project, one cached query each.
+// Tracker issues for every configured project, one cached query each.
 import { useQueries } from '@tanstack/react-query';
-import type { LinearIssueSummary } from '@kor-code/linear';
+import type { TrackerIssueSummary } from '@kor-code/tracker';
 import type { Project } from '@kor-code/mission-control';
 import type { Provenance } from '@kor-code/core';
 import { get, path } from './client';
 
-export interface ProjectIssues { project: Project; issues: LinearIssueSummary[]; provenance: Provenance | 'loading'; reason?: string | undefined; observedAt?: string | undefined }
+export interface ProjectIssues { project: Project; issues: TrackerIssueSummary[]; provenance: Provenance | 'loading'; reason?: string | undefined; observedAt?: string | undefined }
 
 export function issuesQuery(project: string) {
-  return { queryKey: ['issues', project], staleTime: 60_000, queryFn: () => get('GET /api/linear/issues', path('GET /api/linear/issues', '/api/linear/issues', {}, { project })) };
+  return { queryKey: ['issues', project], staleTime: 60_000, queryFn: () => get('GET /api/issues', path('GET /api/issues', '/api/issues', {}, { project })) };
 }
 export function pullsQuery(repo: string) {
   return { queryKey: ['pulls', repo], staleTime: 60_000, queryFn: () => get('GET /api/github/pulls', path('GET /api/github/pulls', '/api/github/pulls', {}, { repo })) };
@@ -30,5 +30,5 @@ export function useAllPulls(projects: readonly Project[]) {
 }
 
 /** Issues Kor may start: labelled with the intake label, not started, with no run yet. */
-export function isOpen(issue: LinearIssueSummary): boolean { return issue.stateType !== 'completed' && issue.stateType !== 'canceled' && issue.stateType !== 'duplicate'; }
-export function issueKey(issue: LinearIssueSummary): string { return issue.identifier ?? issue.id.slice(0, 8); }
+export function isOpen(issue: TrackerIssueSummary): boolean { return issue.stateType !== 'completed' && issue.stateType !== 'canceled' && issue.stateType !== 'duplicate'; }
+export function issueKey(issue: TrackerIssueSummary): string { return issue.identifier ?? issue.id.slice(0, 8); }

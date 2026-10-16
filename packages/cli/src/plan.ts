@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { hasScreenshot, resolveLinearApiKey } from "@kor-code/linear";
-import { HttpLinearClient } from "@kor-code/linear";
-import { LinearStore } from "@kor-code/linear";
+import { hasScreenshot } from "@kor-code/tracker";
+import { MissionServices } from "@kor-code/daemon";
+import { TrackerStore } from "@kor-code/tracker";
 import { JevClient, JevDecisionCore, PersistentDecisionAuditLog, planPreflight, type PreflightPlan } from "@kor-code/jev";
 import { GatewayAdapter, loadAvailableVerifiedModels, modelProvider, readModelRegistry } from "@kor-code/gateway-adapter";
 import { loadKorConfig, runtimePaths } from "@kor-code/config";
@@ -22,15 +22,15 @@ function formatPlan(plan: PreflightPlan): string {
   return lines.join("\n");
 }
 export async function runPlan(issueId: string, environment: NodeJS.ProcessEnv = process.env): Promise<{ plan: PreflightPlan; output: string; commentWritten: boolean }> {
-  if (!/^([A-Z][A-Z0-9]+)-[0-9]+$/.test(issueId)) throw new Error("Plan requires a Linear issue identifier such as LEE-57");
   const paths = runtimePaths(environment);
   const config = await loadKorConfig(paths.configFile, { home: paths.home });
-  const apiKey = await resolveLinearApiKey();
-  const client = new HttpLinearClient({ apiKey, writes: {} });
+  const mission = new MissionServices(paths);
+  await mission.initialize();
+  const client = mission.tracker(config.config);
   const issue = await client.getIssue(issueId);
   const registry = await readModelRegistry(paths.modelsFile);
   const verifiedModels = (await loadAvailableVerifiedModels(registry, () => new GatewayAdapter().listModels())).map(result => ({ provider: modelProvider(result.model, result.provider), model: result.model, capabilities: Object.entries(result.capabilities).map(([name, supported]) => ({ name, supported })), ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) }));
-  const store = new LinearStore(paths.databaseFile);
+  const store = new TrackerStore(paths.databaseFile);
   const audit = new PersistentDecisionAuditLog({ read: decisionId => store.readDecisionAudit(decisionId), write: (decisionId, recordedAt, payload) => store.writeDecisionAudit(decisionId, recordedAt, payload), update: (decisionId, recordedAt, payload) => store.updateDecisionAudit(decisionId, recordedAt, payload) });
   const jevKey = environment.TYPESAFE_API_KEY ?? environment.TYPESAFE_KEY ?? environment.JEV_API_KEY;
   const core = new JevDecisionCore(new JevClient(jevKey ? { apiKey: jevKey } : {}), audit);

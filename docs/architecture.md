@@ -84,3 +84,12 @@ sequenceDiagram
 6. Every destructive or policy-sensitive operation passes deterministic guards.
 7. Linear remains the only project and issue management system.
 8. A Jev outage leaves a safe, explicit fallback path.
+
+## Tracker boundary (LEE-1323)
+
+`@kor-code/tracker` owns shared issue/workflow contracts, the queue and durable
+outbox, and repository routing. Linear and GitHub implement that contract.
+GitHub uses paged Issues and Project v2 APIs; plain Issues use status labels.
+The controller, daemon and Mission Control use the selected tracker for the same
+execution lifecycle. Legacy Linear exports retain source compatibility without
+creating a second queue or changing existing stored assignments.

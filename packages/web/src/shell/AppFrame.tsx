@@ -178,7 +178,7 @@ function SideBar({ active, project }: { active: Screen; project?: string }) {
   const items: NavItem[] = [
     { screen: 'home', label: 'Home', icon: House, count: attention || undefined, tone: 'warn' },
     { screen: 'projects', label: 'Projects', icon: FolderKanban, count: projects.data?.projects.length },
-    { screen: 'linear', label: 'Linear', brand: 'linear', count: openIssues || undefined },
+    { screen: 'linear', label: 'Issues', brand: 'linear', count: openIssues || undefined },
     { screen: 'agents', label: 'Agents', icon: Bot, count: activeRuns || undefined, tone: 'hot' },
     { screen: 'models', label: 'Models', icon: Cpu, count: models.data?.models.value.length },
     { screen: 'brain', label: 'Jev Brain', icon: BrainCircuit },
@@ -220,7 +220,7 @@ function SideBar({ active, project }: { active: Screen; project?: string }) {
       {projects.isError && <span {...stylex.props(styles.navLabel)}><ProvenanceChip provenance="unavailable" reason={projects.error.message}>projects unavailable</ProvenanceChip></span>}
       <div {...stylex.props(styles.spacer)} />
       <a href={href('settings')} {...stylex.props(styles.conn)} aria-label="Connections">
-        {connRow('linear', 'Linear', <BrandMark brand="linear" size={14} style={styles.connIcon} />, 'connected')}
+        {projects.data?.projects.some(project => project.repository.tracker === 'linear') && connRow('linear', 'Linear', <BrandMark brand="linear" size={14} style={styles.connIcon} />, 'connected')}
         {connRow('github', 'GitHub', <BrandMark brand="github" size={14} style={styles.connIcon} />, 'GitHub API')}
         {connRow('gateway', 'Gateway', <Icon icon={Network} size={14} style={styles.connIcon} />, 'CLIProxyAPI')}
       </a>

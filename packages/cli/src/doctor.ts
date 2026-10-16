@@ -174,7 +174,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   const checks: DoctorCheck[] = [
     configCheck,
     ...(connections ? [connections] : []),
-    await checkCredential("Linear key", ["LINEAR_API_KEY"], resolve(paths.home, ".config", "linear", "env"), environment),
+    ...(config && !Object.values(config.config.repos).some(repo => repo.tracker === "linear") ? [] : [await checkCredential("Linear key", ["LINEAR_API_KEY"], resolve(paths.home, ".config", "linear", "env"), environment)]),
     jevKey,
     await checkGateway(environment, paths, options.fetcher ?? globalThis.fetch),
     await checkManagement(environment, paths, options.fetcher ?? globalThis.fetch),
@@ -184,6 +184,10 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
       ? [await checkCommand("no-mistakes daemon", "no-mistakes", ["daemon", "status"], command)] : []),
   ];
   if (config) {
+    for (const tracker of mission.tracker(config.config).github) {
+      try { await tracker.checkAccess(); checks.push({ name: `repo ${tracker.repositoryKey} GitHub tracker`, status: "ok", detail: tracker.settings.project ? "Issues and Project v2 accessible; status mappings verified" : "Issues accessible with repository write access" }); }
+      catch (error) { checks.push({ name: `repo ${tracker.repositoryKey} GitHub tracker`, status: "error", detail: error instanceof Error ? error.message : "Grant Issues read/write and Project read/write; classic tokens need repo and project scopes" }); }
+    }
     checks.push(...await checkRepositories(config, command, mission, environment));
     if (Object.keys(config.config.repos).length === 0) checks.push({ name: "Repositories", status: "error", detail: "none configured" });
   }
