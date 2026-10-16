@@ -86,9 +86,11 @@ export class ModelVerifier {
       await atomicPrivateFile(file, JSON.stringify(ledger));
     }
     const registry = await readModelRegistry(this.services.paths.modelsFile);
-    const pending = ledger.selection.models.filter(id => {
+    const selection = ledger.selection;
+    const pending = selection.models.filter(id => {
       const result = registry.models.find(model => model.model === id);
-      return (!result?.verified || Date.now() - Date.parse(result.observedAt) > 7 * DAY)
+      const observedAt = result ? Date.parse(result.observedAt) : 0;
+      return (!result?.verified || !Number.isFinite(observedAt) || observedAt < selection.at || Date.now() - observedAt > 7 * DAY)
         && (force || Date.now() - (ledger.attempts[id] ?? 0) >= DAY);
     });
     if (!pending.length) {
