@@ -34,6 +34,7 @@ import { prob, shortModel, usd } from '../lib/format';
 import { FINISHED, isActive, keyOf, needsYou, prNumber, latestDecision, runUpdatedAt } from '../lib/runs';
 import { ago, shortDate, useNow } from '../lib/time';
 import { page, QueryError } from './shared';
+import { ProjectDrives } from './ProjectDrives';
 
 // config.yaml's default per-turn guidance budget for a repository.
 const DEFAULT_SKILL_BUDGET = 4_000;
@@ -306,6 +307,7 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
           <Button icon={SettingsIcon} onClick={() => setTab('settings')}>Settings</Button>
           <Button variant="primary" icon={Play} busy={queue.isPending} disabled={readyIds.length === 0} onClick={() => queueSelected(selectedReady.length ? selectedReady : readyIds)}>Queue {queueCount} {queueCount === 1 ? 'issue' : 'issues'} for Kor</Button>
         </Card>
+        <ProjectDrives repository={project.id} />
         <Tabs value={tab} onChange={setTab} items={tabs} label="Project views" />
         {tab === 'overview' && (
           <div {...stylex.props(styles.body)}>

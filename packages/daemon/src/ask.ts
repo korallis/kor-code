@@ -56,8 +56,9 @@ export async function askJev(daemon: KorDaemon, input: AskRequest): Promise<AskR
   };
 
   try {
-    const intent = await choose("intent", "Classify the user's request. Questions, explanations, hypothetical or quoted actions are question. new-work explicitly asks to build, fix or create work. Actions require an explicit instruction on existing work. Do not turn a question into an action. Select clarify if the request cannot be understood.", {
+    const intent = await choose("intent", "Classify the user's request. Questions, explanations, hypothetical or quoted actions are question. project-drive explicitly asks to work through, finish or complete a whole project's existing issues, including parallel development, monitoring and fixing. new-work explicitly asks to build, fix or create one new piece of work. Actions require an explicit instruction on existing work. Do not turn a question into an action. Select clarify if the request cannot be understood.", {
       question: "Answer a question using live facts; no side effects",
+      "project-drive": "Drive a whole existing project to completion: queue ready issues, follow dependencies, monitor, repair and verify in parallel",
       "new-work": "Create a scoped engineering issue and start implementing it",
       approve: "Approve an existing verified run for publication (approve and ship)",
       retry: "Retry an existing failed, blocked or canceled run",
@@ -98,6 +99,19 @@ export async function askJev(daemon: KorDaemon, input: AskRequest): Promise<AskR
 
     const tracker = daemon.trackerClient();
     if (!tracker) throw new ApiFailure(503, "unavailable", "tracker is unavailable. No work was started.", "Connect tracker in Settings");
+    if (intent === "project-drive") {
+      const projects = await daemon.drives.projects();
+      if (!projects.length) return respond("Configure a Linear project and checkout in Settings before starting a project drive. Nothing was queued.");
+      const selected = await choose("drive-project", "Resolve the one project explicitly named or clearly implied by the request using the live Linear project names and configured repository keys. Choose none if ambiguous or no match. A single configured project can be the default.", {
+        ...Object.fromEntries(projects.map(item => [`project:${item.repository}`, { repository: item.repository, ...item.project }])), none: "No unique matching configured Linear project",
+      });
+      const target = projects.find(item => selected === `project:${item.repository}`);
+      if (!target) return respond("I could not identify one configured project. Name its Linear project or repository. Nothing was queued.");
+      const drive = await daemon.drives.start(target.repository, target.project, stableId("kor-drive", id));
+      const count = (status: string) => drive.issues.filter(issue => issue.status === status).length;
+      core.recordOutcome(`intake-${id}-intent`, { action: "project-drive", driveId: drive.id, repository: drive.repository, applied: true });
+      return respond(`Project drive for ${drive.name}: ${count("queued")} queued, ${count("pending")} waiting for blockers, ${count("running")} running, ${count("review")} in review, ${count("done")} Done and ${count("held")} held. Kor runs within your limits and keeps verification and merge gates. ${drive.status === "paused" ? "This drive is paused; resume it in Mission Control." : "Pause or stop it in Mission Control."}${drive.error ? ` Synchronization will retry: ${drive.error}` : ""}`, [], [{ label: drive.name, url: drive.url }, { label: "Project drive progress", url: `#/projects/${encodeURIComponent(drive.repository)}` }]);
+    }
     if (intent === "new-work") {
       const projects = Object.entries(daemon.config.repos).slice(0, 50);
       if (!projects.length) return respond("Add a project in Settings with its checkout, tracker team and tracker project before giving Kor work. Nothing was created.");

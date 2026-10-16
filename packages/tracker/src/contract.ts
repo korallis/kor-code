@@ -26,11 +26,18 @@ export interface TrackerIssue extends Issue {
   identifier?: string;
   url?: string;
   stateName?: string;
+  milestoneId?: string;
 }
 
 /** Candidate rows omit execution context; hydrate once work is selected. */
 export type TrackerIssueSummary = Omit<TrackerIssue, 'description' | 'acceptanceCriteria' | 'documents' | 'comments' | 'sessions' | 'resources'>;
 export interface TrackerDocumentSummary { id: string; title: string; url: string }
+export interface TrackerProjectSnapshot {
+  id: string;
+  name: string;
+  url: string;
+  milestones: Array<{ id: string; name: string; targetDate: string | null; sortOrder: number }>;
+}
 export function issueSummary(issue: TrackerIssue): TrackerIssueSummary {
   const { description, acceptanceCriteria, documents, comments, sessions, resources, ...summary } = issue;
   return summary;
@@ -67,6 +74,7 @@ export interface TrackerClient {
   getIssue(id: string): Promise<TrackerIssue>;
   listIssues(teamKey: string, limit?: number): Promise<TrackerIssueSummary[]>;
   listProjectIssues?(projectId: string): Promise<TrackerIssueSummary[]>;
+  getProject?(projectId: string): Promise<TrackerProjectSnapshot>;
   listWorkflowStates(teamKey: string): Promise<TrackerWorkflowState[]>;
   apply(write: TrackerWrite): Promise<void>;
   recordExecution(execution: Execution): Promise<void>;

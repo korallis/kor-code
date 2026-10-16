@@ -204,6 +204,30 @@ and a second `web-app` issue waits for the first. Raise `total` and
 they are **Runs at once** and **Runs per repository** under **Settings**. Waiting
 runs do not hold a slot.
 
+### Drive an existing Linear project
+
+In the home box, ask **“Work through the Example project to completion in
+parallel, monitoring, fixing and testing its existing issues.”** Jev resolves the
+live Linear project name to its configured checkout. Kor creates a persistent
+project drive, queues ready issues in priority and milestone order, and waits for
+each blocking issue to be Done before admitting its dependents. No new issue is
+drafted for this request.
+
+Home and the project workspace show live counts, each issue's state and hold
+reason, and **Pause drive**, **Resume drive** and **Stop drive**. Pause prevents
+new execution while started runs finish; stop also cancels queued and executing
+runs. Published pull requests retain their review gates.
+
+The drive uses configured concurrency limits, repository checks, acceptance
+verification and shipping policy. `ship: approve` still waits for your approval;
+`ship: merge` can continue through guarded automatic merging to Linear Done.
+Dependent executions use the freshly fetched default branch, including their
+blockers' merged changes. Transient failures get at most two Jev-approved
+retries; verification and review fixes keep their existing repair budget.
+Server-side checks, owner-only checks, missing scope, exhausted repairs and
+unresolved dependency paths are held with a reason. A drive finishes when every
+issue is Done or held. Drives and their Jev decisions survive a restart.
+
 **2. Check the setup.** This is `kor doctor` in the throwaway home used for
 these docs:
 

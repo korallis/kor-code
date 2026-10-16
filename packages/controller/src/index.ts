@@ -67,7 +67,7 @@ export interface ControllerRunResult {
 }
 export interface Controller {
   canRepair(execution: Execution): boolean;
-  dispatch(execution: Execution & { issue?: TrackerIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }): Promise<ControllerRunResult>;
+  dispatch(execution: Execution & { issue?: TrackerIssue; baseRevision?: string; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }): Promise<ControllerRunResult>;
   runIssue(issueId: string, evidence?: Evidence[]): Promise<ControllerRunResult>;
   runNext(): Promise<ControllerRunResult | undefined>;
   reconcile(): Promise<ReconciliationReport>;
@@ -131,7 +131,7 @@ class ExecutionController implements Controller {
   canRepair(execution: Execution): boolean {
     return (execution.verification?.attempts.length ?? 0) <= verificationSettings(this.options.verificationOptions).maxRepairs;
   }
-  async dispatch(input: Execution & { issue?: TrackerIssue; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }): Promise<ControllerRunResult> {
+  async dispatch(input: Execution & { issue?: TrackerIssue; baseRevision?: string; prompt?: string; claim?: ExecutionClaim; evidence?: Evidence[]; onSpawn?: (pid: number) => void; signal?: AbortSignal }): Promise<ControllerRunResult> {
     const issue = input.issue ?? (this.snapshots ? (await this.snapshots.read(input.issueId)).issue : undefined);
     if (!issue) throw new Error("Controller dispatch requires an issue or a tracker runtime");
     const repository = await this.options.repositories.resolve(input.repository);
@@ -150,7 +150,7 @@ class ExecutionController implements Controller {
         if (!claim) throw new Error(`No execution lease available for ${input.issueId}`);
       }
       this.options.onStage?.(input.id, "context");
-      worktree = await this.options.worktrees.create({ executionId: input.id, issueId: input.issueId, repository, branch: input.branch });
+      worktree = await this.options.worktrees.create({ executionId: input.id, issueId: input.issueId, repository, branch: input.branch, ...(input.baseRevision ? { baseRevision: input.baseRevision } : {}) });
       const execution: Execution = { ...input, writerModels: [...new Set([...(input.writerModels ?? []), ...(route ? [route.model] : [])])], repository: repository.key, worktree: worktree.path, branch: worktree.branch, status: "running", ...(route ? { route } : {}), manifest: { executionId: input.id, issueId: input.issueId, repository: repository.key, worktree: worktree.path, branch: worktree.branch, agents: [], acceptance: acceptance(issue) } };
       const verification = this.options.verification?.(execution) ?? (this.writer ? new VerificationTracker(execution.manifest?.acceptance ?? [], execution.id) : undefined);
       const calibrationRoute = route ?? this.options.calibration?.baselineRoute;

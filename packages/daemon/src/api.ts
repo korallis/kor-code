@@ -73,7 +73,7 @@ export class MissionApi {
         }
         if (path === "/api/runs") { send(200, { schemaVersion: 1, runs: this.daemon.missionRuns() } satisfies RunsResponse); return; }
         if (path === "/api/projects") {
-          send(200, { schemaVersion: 1, projects: Object.entries(this.daemon.config.repos).map(([key, repository]) => ({ id: key, name: key, repository, runs: this.daemon.missionRuns().filter(run => run.repository === key) })) } satisfies ProjectsResponse); return;
+          send(200, { schemaVersion: 1, projects: Object.entries(this.daemon.config.repos).map(([key, repository]) => ({ id: key, name: key, repository, runs: this.daemon.missionRuns().filter(run => run.repository === key), drives: this.daemon.drives.list(key) })) } satisfies ProjectsResponse); return;
         }
         const runPath = /^\/api\/runs\/([^/]+)(?:\/(terminal|session))?$/.exec(path);
         if (runPath?.[1]) {
@@ -139,6 +139,12 @@ export class MissionApi {
           await write; return;
         }
         if (method !== "POST") throw new ApiFailure(404, "not_found", "API endpoint not found");
+        const drivePath = /^\/api\/drives\/([^/]+)\/(pause|resume|stop)$/.exec(path);
+        if (drivePath?.[1] && drivePath[2]) {
+          empty.parse(input);
+          const action = z.enum(["pause", "resume", "stop"]).parse(drivePath[2]);
+          send(200, { schemaVersion: 1, drive: await this.daemon.drives.control(decodeURIComponent(drivePath[1]), action) }); return;
+        }
         if (path === "/api/runs") {
           const body = z.strictObject({ issueIds: z.array(id).min(1).max(100) }).parse(input);
           send(202, { schemaVersion: 1, runs: await this.daemon.queueIssues(body.issueIds) }); return;

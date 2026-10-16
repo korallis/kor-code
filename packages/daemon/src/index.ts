@@ -25,6 +25,7 @@ import { askJev } from "./ask.js";
 import { stateSignature } from "./observations.js";
 import { PendingIntake } from "./pending-intake.js";
 import { readModelRegistry } from "@kor-code/gateway-adapter";
+import { ProjectDrives } from "./project-drive.js";
 export { ensureUiToken } from "./ui-token.js";
 export { MissionServices } from "./mission-services.js";
 export { GitHubShipping, type ShippingDriver, type ShippingCommand, type DescribePullRequest, type MergeIntelligence } from "./shipping.js";
@@ -178,6 +179,7 @@ export class KorDaemon {
   private readonly issueLists = new Map<string, Labelled<TrackerIssueSummary[]>>();
   private accounts: Labelled<GatewayAccountHealth[]> | undefined;
   readonly mission: MissionServices;
+  readonly drives: ProjectDrives;
   readonly events = new MissionEvents(() => [this.token, ...runtimeSecrets(), ...this.mission.secrets()]);
   private readonly stages = new Map<string, Stage>();
   private readonly shippingActive = new Set<string>();
@@ -239,6 +241,7 @@ export class KorDaemon {
     this.mission = options.missionServices ?? new MissionServices(options.paths, options.probeModel);
     if (!options.tracker && options.linear) options.tracker = new TrackerRouter(options.config, options.linear, (path, body, method) => this.mission.github(path, body, process.env, method));
     this.pendingIntake = new PendingIntake(join(options.paths.stateDir, "pending-intake.json"));
+    this.drives = new ProjectDrives(this);
     this.startedAt = new Date(this.now()).toISOString();
   }
 
@@ -358,6 +361,7 @@ export class KorDaemon {
         catch (error) { writeError = error; }
       }
       await this.advanceShipping();
+      await this.drives.reconcile();
       if (this.now() - this.lastQuotaAt >= 60_000) void this.refreshQuota();
       const found = (await candidates).reduce((sum, count) => sum + count, 0);
       this.lastPollAt = new Date(this.now()).toISOString();
@@ -384,6 +388,7 @@ export class KorDaemon {
         this.observeIssues(key, live(issues));
         for (const issue of issues) {
           this.remember(issue.id, issue);
+          if (this.drives.owns(issue.id)) continue;
           if (issue.stateType !== 'unstarted' || issue.intakeBlockedReason || !issue.labels.some(label => label.toLowerCase() === this.config.intakeLabel.toLowerCase())) continue;
           try {
             this.store.enqueue(issue.id, { issueKey: issue.identifier ?? issue.id, issueTitle: issue.title, repository: repositoryKeyForIssue(issue, this.config) });
@@ -976,7 +981,11 @@ export class KorDaemon {
       const modelsReady = !this.mission.canProbe || (await readModelRegistry(this.paths.modelsFile)).models.some(model => model.verified);
       if (modelsReady && this.options.tracker && (this.options.runner || this.options.controller)) {
         while (!this.stopping && this.active.size < this.options.config.limits.total) {
-          const claim = this.store.claim(this.owner, this.leaseTtlMs, undefined, [...this.active.keys()]);
+          const assignments = this.store.listAssignments();
+          const busyRepositories = new Map<string, number>();
+          for (const assignment of assignments) if (this.active.has(assignment.issueId) && assignment.manifest) busyRepositories.set(assignment.manifest.repository, (busyRepositories.get(assignment.manifest.repository) ?? 0) + 1);
+          const saturated = assignments.filter(assignment => assignment.manifest && (busyRepositories.get(assignment.manifest.repository) ?? 0) >= this.config.limits.perRepository).map(assignment => assignment.issueId);
+          const claim = this.store.claim(this.owner, this.leaseTtlMs, undefined, [...this.active.keys(), ...this.drives.excluded(), ...saturated]);
           if (!claim) break;
           const abort = new AbortController();
           const run: ActiveRun = { claim, abort, done: Promise.resolve() };
@@ -1043,7 +1052,10 @@ export class KorDaemon {
       }
       abort.signal.throwIfAborted();
       if (this.options.runner) result = await this.options.runner({ claim, issue, onSpawn, signal: abort.signal });
-      else if (this.options.controller) result = await this.options.controller.dispatch({ ...manifest, status: "queued", issue, claim, onSpawn, signal: abort.signal });
+      else if (this.options.controller) {
+        const baseRevision = this.drives.owns(issue.id) && !previous?.worktree ? await this.drives.baseRevision(repository) : undefined;
+        result = await this.options.controller.dispatch({ ...manifest, status: "queued", issue, claim, onSpawn, signal: abort.signal, ...(baseRevision ? { baseRevision } : {}) });
+      }
       else throw new Error("Daemon controller unavailable");
       abort.signal.throwIfAborted();
     } catch (error) { failure = error; }

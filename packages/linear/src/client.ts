@@ -4,7 +4,7 @@ import { array, connection, object, parseIssue, parseIssueSummary, stableId, sta
 
 const page = 'pageInfo { hasNextPage endCursor }';
 const PAGE_SIZE = 50;
-const summaryFields = `id identifier url title updatedAt priority team { id key } state { id type name } project { id }
+const summaryFields = `id identifier url title updatedAt priority team { id key } state { id type name } project { id } projectMilestone { id }
   labels(first: 50) { nodes { name } ${page} }
   children(first: 50) { nodes { id } ${page} }
   inverseRelations(first: 50) { nodes { type issue { id state { type } } } ${page} }`;
@@ -226,6 +226,19 @@ export class HttpLinearClient implements LinearClient {
     const issues = [];
     for (const node of nodes) issues.push(await this.hydrateSummary(node));
     return issues;
+  }
+
+  async getProject(projectId: string) {
+    const data = await this.query('query KorDriveProject($id: String!) { project(id: $id) { id name url } }', { id: projectId });
+    const project = object(data.project);
+    const milestones = await this.pages(`query KorDriveMilestones($id: String!, $after: String) {
+      project(id: $id) { projectMilestones(first: 50, after: $after) { nodes { id name targetDate sortOrder } ${page} } }
+    }`, { id: projectId }, data => object(data.project).projectMilestones);
+    return { id: string(project.id), name: string(project.name), url: string(project.url), milestones: milestones.map(value => {
+      const milestone = object(value);
+      if (typeof milestone.sortOrder !== 'number') throw new Error('Invalid milestone order');
+      return { id: string(milestone.id), name: string(milestone.name), targetDate: milestone.targetDate === null ? null : string(milestone.targetDate), sortOrder: milestone.sortOrder };
+    }) };
   }
 
   async listProjectDocuments(projectId: string) {

@@ -596,6 +596,41 @@ verify again before approval becomes available.
 
 ![Home shows the execution failure, Retry, and the earlier verified run](images/execution-failure-after.webp)
 
+### Drive a whole project
+
+Ask the home box to **“Work through the Example project to completion in parallel,
+monitoring, fixing and testing its existing issues.”** Use the Linear project
+name or its configured repository key. The repository must have a Linear project
+ID in Settings. Jev resolves the live project and assesses the existing issues;
+this request does not create another issue or require a drafting model.
+
+The reply links to Linear and the drive in Mission Control and reports queued,
+waiting, running, review, Done and held counts. Home and the project workspace
+update those counts live. Issues enter the queue in priority, then milestone
+target-date/order, then stable issue order. Blocking relations take precedence:
+a dependent starts only after all blockers are Done in Linear. Each new drive
+execution fetches the project's default branch before creating its worktree.
+
+Kor respects `limits.total` and `limits.perRepository`. Repository checks,
+acceptance verification, bounded repairs, independent review and merge gates
+continue to apply. Use `ship: merge` for unattended completion through Done;
+`approve` waits for approval, and `auto` waits for merging. Kor does not bypass
+either policy to finish a drive.
+
+Server-side validation and owner-only checks are held with a reason. Missing
+acceptance criteria, canceled issues, work already started outside Kor,
+unresolvable dependencies and exhausted repairs are held too. Transient failed
+executions may be retried at most twice when Jev approves; the verification
+repair budget is not reset. A drive ends when every issue is Done or held.
+Correct held issues and ask for another drive to assess them again.
+
+**Pause drive** prevents new executions and lets started runs finish.
+**Resume drive** continues scheduling. **Stop drive** also cancels queued and
+executing runs; published pull requests retain their review gates. These
+controls and admission/retry decisions are recorded by Jev. Restarting the daemon
+restores the drive and its pause state from SQLite. A repeated request reuses an
+active drive for the same repository.
+
 ### Answer a question
 
 A run that cannot go on without you lands in **Needs you** on Home with Jev's
