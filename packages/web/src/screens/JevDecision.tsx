@@ -13,7 +13,7 @@ import { useDecisions, useMissionRuns } from '../api/data';
 import { isOpen, issueKey, useAllIssues } from '../api/issues';
 import { useLive } from '../api/live';
 import { useRunTerminal } from '../api/terminal';
-import { useConfig, useIssue, useModels, useOverride, useProjects, useQueue, useRunAction, useRunMessage } from '../api/queries';
+import { useConfig, useIssue, useIssueImages, useModels, useOverride, useProjects, useQueue, useRunAction, useRunMessage } from '../api/queries';
 import { href } from '../router';
 import { AppFrame } from '../shell/AppFrame';
 import { initials, projectTone } from '../shell/projectTone';
@@ -65,6 +65,7 @@ const styles = stylex.create({
   av: { width: '30px', height: '30px', borderRadius: '50%', display: 'grid', placeItems: 'center', fontFamily: font.display, fontWeight: 600, fontSize: fontSize.sm, backgroundImage: tint.avatar, color: color.violetBright, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairlineStrong },
   who: { fontSize: fontSize.base, fontWeight: 600, display: 'flex', gap: space.s2, alignItems: 'baseline' },
   when: { fontFamily: font.mono, fontSize: fontSize.microPlus, color: color.textFaint, fontWeight: 400 },
+  screen: { maxWidth: '100%', maxHeight: '360px', objectFit: 'contain' },
   txt: { marginTop: space.s1, fontSize: fontSize.basePlus, color: color.textSecondary, lineHeight: 1.55, whiteSpace: 'pre-wrap' },
   meta: { marginTop: space.s1h, fontFamily: font.mono, fontSize: fontSize.xs, color: color.textMuted },
   steps: { marginTop: space.s2, display: 'grid', gap: '1px', fontFamily: font.mono, fontSize: fontSize.xsPlus },
@@ -260,6 +261,14 @@ function DecisionPanel({ run, decisions, issue, onRequestChanges }: { run: Missi
   );
 }
 
+function IssueScreens({ id }: { id: string }) {
+  const screens = useIssueImages(id);
+  return <>{screens.data?.images.map((image, index) => <figure key={index}>
+    {image.dataUrl ? <img src={image.dataUrl} alt={image.title} {...stylex.props(styles.screen)} /> : <p>{image.reason}</p>}
+    <figcaption {...stylex.props(text.muted, text.xs)}>{image.title}</figcaption>
+  </figure>)}</>;
+}
+
 function Workspace({ run, issue, decisions, composerRef }: { run: MissionRun; issue: TrackerIssue | undefined; decisions: DecisionRecord[]; composerRef: React.RefObject<HTMLInputElement | null> }) {
   const terminal = useRunTerminal(run.executionId);
   const models = useModels();
@@ -308,6 +317,7 @@ function Workspace({ run, issue, decisions, composerRef }: { run: MissionRun; is
           <div>
             <div {...stylex.props(styles.who)}>Issue <span {...stylex.props(styles.when)}>{issue ? issueKey(issue) : ''}</span></div>
             <div {...stylex.props(styles.txt)}>{issue?.description?.trim() || run.issueTitle || 'The issue description has not been read yet.'}</div>
+            {issue && <IssueScreens id={issue.id} />}
             <div {...stylex.props(styles.meta)}>{issue ? `${issue.acceptanceCriteria.length} acceptance criteria · labels ${issue.labels.join(', ') || 'none'}` : 'reading issue…'}</div>
           </div>
         </div>
@@ -407,7 +417,7 @@ export function JevDecision({ executionId }: { executionId?: string }) {
   const done = projectRuns.filter(run => run.status === 'complete' || run.status === 'canceled').filter(run => match(keyOf(run), run.issueTitle ?? ''));
   const intake = config.data?.config.intakeLabel ?? 'kor';
   const runIssues = new Set(runs.map(run => run.issueId));
-  const ready = projectIssues.filter(one => isOpen(one) && !runIssues.has(one.id) && one.labels.includes(intake)).filter(one => match(issueKey(one), one.title));
+  const ready = projectIssues.filter(one => isOpen(one) && !one.intakeBlockedReason && !runIssues.has(one.id) && one.labels.includes(intake)).filter(one => match(issueKey(one), one.title));
   const runDecisions = selected ? decisionsFor(decisions, selected.executionId) : [];
   const projectIndex = project ? projectList.indexOf(project) : 0;
   const runItem = (run: MissionRun) => (

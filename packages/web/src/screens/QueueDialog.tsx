@@ -32,7 +32,7 @@ export function QueueDialog({ onClose, projectId }: { onClose: () => void; proje
   const running = new Set(runs.filter(run => !['complete', 'failed', 'canceled'].includes(run.status)).map(run => run.issueId));
   const needle = filter.trim().toLowerCase();
   const candidates = issues.flatMap(entry => entry.issues.map(issue => ({ issue, project: entry.project })))
-    .filter(({ issue }) => isOpen(issue) && !running.has(issue.id))
+    .filter(({ issue }) => isOpen(issue) && !issue.intakeBlockedReason && !running.has(issue.id))
     .filter(({ issue }) => !needle || `${issueKey(issue)} ${issue.title}`.toLowerCase().includes(needle))
     .sort((a, b) => (a.issue.priority || 5) - (b.issue.priority || 5));
   const toggle = (id: string) => setPicked(current => current.includes(id) ? current.filter(one => one !== id) : [...current, id]);

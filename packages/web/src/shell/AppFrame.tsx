@@ -2,7 +2,7 @@
 // live status, clock), sidebar (navigation, projects, connections, Jev) and the
 // status bar (pool, windows, slots, spend, daemon).
 import * as stylex from '@stylexjs/stylex';
-import { Bell, Bot, BrainCircuit, Cpu, FolderKanban, House, Network, Settings, Sparkles, SquareTerminal, Aperture, CircleSlash2 } from 'lucide-react';
+import { Bell, Bot, BrainCircuit, Cpu, FolderKanban, House, Network, Settings, Sparkles, SquareTerminal, Aperture, CircleSlash2, ListTodo } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useConfig, useConnections, useModels, useProjects } from '../api/queries';
@@ -178,7 +178,7 @@ function SideBar({ active, project }: { active: Screen; project?: string }) {
   const items: NavItem[] = [
     { screen: 'home', label: 'Home', icon: House, count: attention || undefined, tone: 'warn' },
     { screen: 'projects', label: 'Projects', icon: FolderKanban, count: projects.data?.projects.length },
-    { screen: 'linear', label: 'Issues', brand: 'linear', count: openIssues || undefined },
+    { screen: 'linear', label: 'Issues', icon: ListTodo, count: openIssues || undefined },
     { screen: 'agents', label: 'Agents', icon: Bot, count: activeRuns || undefined, tone: 'hot' },
     { screen: 'models', label: 'Models', icon: Cpu, count: models.data?.models.value.length },
     { screen: 'brain', label: 'Jev Brain', icon: BrainCircuit },
@@ -188,6 +188,7 @@ function SideBar({ active, project }: { active: Screen; project?: string }) {
   const connection = (id: 'linear' | 'github' | 'gateway') => connections.data?.connections.find(one => one.id === id);
   const connRow = (id: 'linear' | 'github' | 'gateway', label: string, glyph: ReactNode, okText: string) => {
     const found = connection(id);
+    if (found?.status === 'not_required') return null;
     const ok = found?.status === 'connected';
     return (
       <div {...stylex.props(styles.connRow)} title={found?.reason ?? undefined}>

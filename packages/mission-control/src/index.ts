@@ -57,6 +57,7 @@ export interface RunsResponse { schemaVersion: 1; runs: MissionRun[] }
 export interface RunResponse { schemaVersion: 1; run: MissionRun }
 export interface TerminalResponse { schemaVersion: 1; executionId: string; content: string; offset: number }
 export interface IssuesResponse { schemaVersion: 1; issues: Labelled<TrackerIssueSummary[]>; bounded: true }
+export interface IssueImagesResponse { schemaVersion: 1; images: Array<{ title: string; dataUrl: string | null; reason: string | null }> }
 export interface IssueResponse { schemaVersion: 1; issue: TrackerIssue }
 export interface DocumentsResponse { schemaVersion: 1; documents: Labelled<TrackerDocumentSummary[]> }
 export interface PullRequest { number: number; title: string; url: string; state: "open" | "closed"; draft: boolean; merged: boolean; head: string }
@@ -74,7 +75,7 @@ export interface LearningsReport {
 }
 export interface BrainResponse { schemaVersion: 1; decisions: Labelled<DecisionRecord[]>; calibration: Labelled<CalibrationReport | null>; learnings: Labelled<LearningsReport> }
 export interface ConnectionsResponse { schemaVersion: 1; connections: Connection[] }
-export interface Connection { id: "linear" | "github" | "gateway" | "jev"; status: "connected" | "unavailable"; reason: string | null }
+export interface Connection { id: "linear" | "github" | "gateway" | "jev"; status: "connected" | "unavailable" | "not_required"; reason: string | null }
 export interface ConfigResponse { schemaVersion: 1; config: KorConfig; restartRequired: boolean }
 export interface QueueRequest { issueIds: [string, ...string[]] }
 export interface QueueResponse { schemaVersion: 1; runs: MissionRun[] }
@@ -161,6 +162,7 @@ export interface MissionControlApi {
   "GET /api/runs/:id/session": Endpoint<never, SessionPackResponse>;
   "GET /api/issues": Endpoint<never, IssuesResponse>;
   "GET /api/issues/:id": Endpoint<never, IssueResponse>;
+  "GET /api/issues/:id/images": Endpoint<never, IssueImagesResponse>;
   "GET /api/documents": Endpoint<never, DocumentsResponse>;
   "GET /api/linear/issues/:id": Endpoint<never, IssueResponse>;
   "GET /api/linear/documents": Endpoint<never, DocumentsResponse>;

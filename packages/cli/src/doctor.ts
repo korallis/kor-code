@@ -185,7 +185,10 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   ];
   if (config) {
     for (const tracker of mission.tracker(config.config).github) {
-      try { await tracker.checkAccess(); checks.push({ name: `repo ${tracker.repositoryKey} GitHub tracker`, status: "ok", detail: tracker.settings.project ? "Issues and Project v2 accessible; status mappings verified" : "Issues accessible with repository write access" }); }
+      try {
+        const held = await tracker.checkAccess();
+        checks.push({ name: `repo ${tracker.repositoryKey} GitHub tracker`, status: "ok", detail: tracker.settings.project ? `Issues and Project v2 accessible; status mappings verified. Unset${held.length ? ` or unmapped (${held.join(', ')})` : ''} Project Status is excluded from intake; move an issue to ${tracker.settings.project.statuses.queued} to allow intake.` : "Issues accessible with repository write access" });
+      }
       catch (error) { checks.push({ name: `repo ${tracker.repositoryKey} GitHub tracker`, status: "error", detail: error instanceof Error ? error.message : "Grant Issues read/write and Project read/write; classic tokens need repo and project scopes" }); }
     }
     checks.push(...await checkRepositories(config, command, mission, environment));

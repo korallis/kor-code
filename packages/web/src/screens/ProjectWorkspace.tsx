@@ -93,6 +93,7 @@ function IssueAction({ issue, run, intake, selected }: { issue: TrackerIssueSumm
   if (run?.pullRequestUrl) return <a href={run.pullRequestUrl} target="_blank" rel="noopener noreferrer" {...stylex.props(text.cyan, text.mono, text.sm)}>{prNumber(run.pullRequestUrl)}</a>;
   if (run?.status === 'queued') return <Pill tone="slate" small dot>queued</Pill>;
   if (!isOpen(issue)) return null;
+  if (issue.intakeBlockedReason) return <Button size="sm" disabled title={issue.intakeBlockedReason}>Status held</Button>;
   if (!issue.labels.includes(intake)) return <Button size="sm" variant="ghost" icon={Plus} href={issue.url} external title={`Label the issue ${intake} in its tracker so the daemon picks it up`}>Label</Button>;
   return <Button size="sm" variant={selected ? 'violet' : 'default'} icon={Play} title={title} busy={queue.isPending} onClick={() => queue.mutate({ issueIds: [issue.id] })}>Run with Kor</Button>;
 }
@@ -100,7 +101,7 @@ function IssueAction({ issue, run, intake, selected }: { issue: TrackerIssueSumm
 function IssuesTable({ issues, runs, intake, selected, setSelected, filter }: { issues: readonly TrackerIssueSummary[]; runs: readonly MissionRun[]; intake: string; selected: readonly string[]; setSelected: (ids: readonly string[]) => void; filter: Filter }) {
   const decisions = useDecisions();
   const rows = issues.map(issue => ({ issue, run: runFor(issue, runs) }))
-    .filter(({ issue, run }) => filter === 'all' || (filter === 'kor' && issue.labels.includes(intake)) || (filter === 'running' && run && isActive(run)) || (filter === 'needs' && run && (needsYou(run) || run.status === 'waiting')) || (filter === 'ready' && !run && isOpen(issue) && issue.labels.includes(intake)))
+    .filter(({ issue, run }) => filter === 'all' || (filter === 'kor' && issue.labels.includes(intake)) || (filter === 'running' && run && isActive(run)) || (filter === 'needs' && run && (needsYou(run) || run.status === 'waiting')) || (filter === 'ready' && !run && isOpen(issue) && !issue.intakeBlockedReason && issue.labels.includes(intake)))
     .sort((a, b) => (a.run ? 0 : 1) - (b.run ? 0 : 1) || (a.issue.priority || 5) - (b.issue.priority || 5));
   const toggle = (id: string) => setSelected(selected.includes(id) ? selected.filter(one => one !== id) : [...selected, id]);
   return (
@@ -129,7 +130,7 @@ function IssuesTable({ issues, runs, intake, selected, setSelected, filter }: { 
                     {isActive(run) || run.status === 'waiting' ? <StageTrack stage={run.stage} status={run.status} /> : null}
                     {readiness && !isActive(run) && run.status === 'queued' && <span {...stylex.props(text.mono, text.micro, text.muted)}>Jev {prob(readiness.confidence)}</span>}
                   </div>
-                ) : issue.labels.includes(intake) || !isOpen(issue) ? <span {...stylex.props(text.mono, text.xs, text.muted)}>{isOpen(issue) ? 'readiness checked on start' : '—'}</span> : <span {...stylex.props(text.mono, text.xs, text.faint)}>not labelled {intake}</span>}
+                ) : issue.intakeBlockedReason ? <span {...stylex.props(text.mono, text.xs, text.amber)}>{issue.intakeBlockedReason}</span> : issue.labels.includes(intake) || !isOpen(issue) ? <span {...stylex.props(text.mono, text.xs, text.muted)}>{isOpen(issue) ? 'readiness checked on start' : '—'}</span> : <span {...stylex.props(text.mono, text.xs, text.faint)}>not labelled {intake}</span>}
               </Td>
               <Td selected={sel || run?.status === 'waiting'} tall>{run?.route ? <div {...stylex.props(styles.mdl)}><div>{shortModel(run.route.model)}</div><div {...stylex.props(styles.mdlSub)}>{run.accountSlot.value ?? run.routeSource ?? ''}</div></div> : <span {...stylex.props(text.faint)}>—</span>}</Td>
               <Td selected={sel || run?.status === 'waiting'} tall align="right"><span {...stylex.props(text.mono)}>{usd(run?.costUsd)}</span></Td>
@@ -235,7 +236,7 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
   const scores = [checkPass, projectRuns.length ? 1 - failed7 / projectRuns.length : null].filter((value): value is number => value !== null);
   const healthScore = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
   const grade = healthScore === null ? '—' : healthScore >= 0.9 ? 'A' : healthScore >= 0.8 ? 'B' : healthScore >= 0.65 ? 'C' : 'D';
-  const readyIds = issues.filter(issue => isOpen(issue) && !projectRuns.some(run => run.issueId === issue.id && !FINISHED.has(run.status)) && issue.labels.includes(intake)).map(issue => issue.id);
+  const readyIds = issues.filter(issue => isOpen(issue) && !issue.intakeBlockedReason && !projectRuns.some(run => run.issueId === issue.id && !FINISHED.has(run.status)) && issue.labels.includes(intake)).map(issue => issue.id);
   const selectedReady = selected.filter(id => readyIds.includes(id));
   const queueCount = selectedReady.length || readyIds.length;
   const queueSelected = (ids: readonly string[]) => { const [first, ...rest] = ids; if (first) queue.mutate({ issueIds: [first, ...rest] }, { onSuccess: () => setSelected([]) }); };

@@ -23,6 +23,7 @@
     "@kor-code/mission-control": "workspace:*",
     "@kor-code/gateway-adapter": "workspace:*",
     "@kor-code/calibration": "workspace:*",
-    "@kor-code/tracker": "workspace:*"
+    "@kor-code/tracker": "workspace:*",
+    "@kor-code/context": "workspace:*"
   }
 }

@@ -511,6 +511,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
       if (githubRepository && !/^[\w.-]+\/[\w.-]+$/.test(githubRepository)) usageFailure("--github-repository must be OWNER/REPO");
       const githubProjectOwner = valueAfter(cleanArgs, "--github-project-owner");
       const githubProject = valueAfter(cleanArgs, "--github-project-number");
+      if (githubProjectOwner && !githubProject) usageFailure("--github-project-owner requires --github-project-number");
       const githubProjectNumber = githubProject ? Number(githubProject) : undefined;
       if (githubProjectNumber !== undefined && (!Number.isSafeInteger(githubProjectNumber) || githubProjectNumber < 1)) usageFailure("--github-project-number must be a positive integer");
       const result = await installKor({ scope, ...(tracker === "linear" || tracker === "github" ? { tracker } : {}), ...(githubRepository ? { githubRepository } : {}), ...(githubProjectOwner ? { githubProjectOwner } : {}), ...(githubProjectNumber ? { githubProjectNumber } : {}), ...(linearTeam ? { linearTeam } : {}), ...(pilot ? { pilot } : {}), systemd: !cleanArgs.includes("--no-systemd") });

@@ -259,7 +259,7 @@ function cumulative(points: readonly { at: number; value: number }[]): number[] 
 function NextUp({ issues, runs, intakeLabel, unavailable }: { issues: readonly TrackerIssueSummary[]; runs: readonly MissionRun[]; intakeLabel: string; unavailable: string | null }) {
   const queue = useQueue();
   const started = new Set(runs.map(run => run.issueId));
-  const next = issues.filter(issue => isOpen(issue) && issue.stateType !== 'started' && issue.labels.includes(intakeLabel) && !started.has(issue.id))
+  const next = issues.filter(issue => issue.stateType === 'unstarted' && !issue.intakeBlockedReason && issue.labels.includes(intakeLabel) && !started.has(issue.id))
     .sort((a, b) => (a.priority || 5) - (b.priority || 5)).slice(0, 4);
   if (next.length === 0 && unavailable) return <Empty slot="empty-no-issues" title="Issues unavailable.">{unavailable}</Empty>;
   if (next.length === 0) return <Empty slot="empty-no-issues" title={`No Todo issues labelled ${intakeLabel}.`}>Label an issue <b {...stylex.props(text.violet)}>{intakeLabel}</b> in its tracker and it appears here.</Empty>;

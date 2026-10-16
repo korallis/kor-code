@@ -77,7 +77,7 @@ export interface Controller {
 function acceptance(issue: TrackerIssue) { return issue.acceptanceCriteria.map((description, index) => ({ id: `acceptance-${index + 1}`, description, required: true })); }
 function promptFor(issue: TrackerIssue, prefix = ""): string {
   const criteria = issue.acceptanceCriteria.length > 0 ? issue.acceptanceCriteria.map(item => `- ${item}`).join("\n") : "- No explicit acceptance criteria were supplied.";
-  return `${prefix}tracker issue ${issue.id}: ${issue.title}\n\n${issue.description ?? ""}\n\nAcceptance criteria:\n${criteria}`.trim();
+  return `${prefix}${issue.tracker === "github" ? "GitHub" : "Linear"} issue ${issue.id}: ${issue.title}\n\n${issue.description ?? ""}\n\nAcceptance criteria:\n${criteria}`.trim();
 }
 interface ChosenRoute { route?: Route; decisionId?: string }
 async function chooseRoute(options: ControllerOptions, executionId: string, issue: TrackerIssue, existing?: Route): Promise<ChosenRoute> {
@@ -99,7 +99,7 @@ async function chooseRoute(options: ControllerOptions, executionId: string, issu
       return { ...(options.defaultRoute ? { route: { ...options.defaultRoute, label: "fallback" } } : {}), decisionId };
     }
   }
-  const decision = await options.jev.selectRoute({ decisionId, executionId, kind: "route", question: "Select the available model route that best fits this tracker issue and its acceptance conditions.", state: { issueId: issue.id, title: issue.title, description: issue.description ?? "", acceptance: issue.acceptanceCriteria, dependencies: issue.dependencies }, inputs: [{ name: "issue", value: issue.title, source: "tracker" }], candidates, policyChecks: [{ name: "catalogue-nonempty", result: "pass" }] });
+  const decision = await options.jev.selectRoute({ decisionId, executionId, kind: "route", question: `Select the available model route that best fits this ${issue.tracker === "github" ? "GitHub" : "Linear"} issue and its acceptance conditions.`, state: { issueId: issue.id, title: issue.title, description: issue.description ?? "", acceptance: issue.acceptanceCriteria, dependencies: issue.dependencies }, inputs: [{ name: "issue", value: issue.title, source: "tracker" }], candidates, policyChecks: [{ name: "catalogue-nonempty", result: "pass" }] });
   if (decision.escalated) return { ...(options.defaultRoute ? { route: { ...options.defaultRoute, label: "fallback" } } : {}), decisionId };
   return { route: { ...routeFromDecision(decision, catalogue, { accountPolicy: "fill-first", sessionAffinity: true }), label: "jev" }, decisionId: decision.decisionId };
 }

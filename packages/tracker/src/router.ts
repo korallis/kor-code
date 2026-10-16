@@ -77,11 +77,12 @@ export class TrackerRouter implements TrackerClient {
     if (!(target.client instanceof GitHubTracker)) throw new Error('Use kor linear attach-image for a Linear issue');
     return target.client.attachImage(target.reference, bytes, alt);
   }
-  async fetchImage(url: string) {
+  async fetchImage(url: string, options?: { providerOnly?: boolean }) {
     const asset = new URL(url);
-    const github = this.github.find(client => asset.hostname === 'raw.githubusercontent.com' && asset.pathname.toLowerCase().startsWith(`/${client.settings.repository.toLowerCase()}/`));
+    const github = this.github.find(client => client.handlesImage(url));
     if (github) return github.fetchImage(url);
     if (asset.hostname === 'uploads.linear.app' && this.linear.fetchImage) return this.linear.fetchImage(url);
+    if (options?.providerOnly) throw new Error('Use an image attached through the configured tracker');
     return fetch(asset, { redirect: 'error', signal: AbortSignal.timeout(15_000) });
   }
 }

@@ -43,7 +43,7 @@ const META: Record<Connection['id'], { title: string; blurb: string }> = {
 
 function ConnectionRow({ connection }: { connection: Connection }) {
   const connect = useConnect();
-  const [open, setOpen] = useState(connection.status !== 'connected');
+  const [open, setOpen] = useState(connection.status === 'unavailable');
   const [a, setA] = useState(''), [b, setB] = useState(''), [c, setC] = useState('');
   const meta = META[connection.id];
   const glyph = connection.id === 'linear' ? <BrandMark brand="linear" size={17} /> : connection.id === 'github' ? <BrandMark brand="github" size={17} /> : connection.id === 'gateway' ? <Icon icon={Network} size={17} /> : <Icon icon={Sparkles} size={17} />;
@@ -58,7 +58,7 @@ function ConnectionRow({ connection }: { connection: Connection }) {
     <div {...stylex.props(styles.conn)}>
       <span {...stylex.props(styles.badge)}>{glyph}</span>
       <div>
-        <div {...stylex.props(layout.row)}><span {...stylex.props(styles.connName)}>{meta.title}</span><Pill tone={connection.status === 'connected' ? 'green' : 'amber'} small dot>{connection.status}</Pill></div>
+        <div {...stylex.props(layout.row)}><span {...stylex.props(styles.connName)}>{meta.title}</span><Pill tone={connection.status === 'connected' ? 'green' : connection.status === 'not_required' ? 'slate' : 'amber'} small dot>{connection.status === 'not_required' ? 'not required' : connection.status}</Pill></div>
         <div {...stylex.props(text.muted, text.sm, layout.mt1)}>{connection.reason ?? meta.blurb}</div>
       </div>
       <Button size="sm" variant={connection.status === 'connected' ? 'ghost' : 'warn'} icon={KeyRound} onClick={() => setOpen(value => !value)}>{connection.status === 'connected' ? 'Replace key' : 'Connect'}</Button>

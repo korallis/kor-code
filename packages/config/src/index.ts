@@ -75,7 +75,7 @@ export type KorLimits = KorConfig["limits"];
 export type KorConfig = z.infer<typeof korConfigSchema>;
 
 export function trackerScope(key: string, repository: KorRepositoryConfig): string {
-  return `project:${key}`;
+  return repository.tracker === "linear" && !repository.linearProject ? repository.linearTeam ?? key : `project:${key}`;
 }
 
 export function repositoryKeyForIssue(issue: { teamKey: string; projectId?: string; tracker?: "linear" | "github"; repositoryKey?: string }, config: KorConfig): string {

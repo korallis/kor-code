@@ -6,6 +6,8 @@ export interface TrackerIssue extends Issue {
   repositoryKey?: string;
   /** Tracker supplies the exact PR linkage sentence. */
   pullRequestLink?: string;
+  /** A provider status that cannot safely enter Kor's workflow. */
+  intakeBlockedReason?: string;
   teamId: string;
   teamKey: string;
   stateId: string;
@@ -61,7 +63,7 @@ export interface TrackerClient {
   createProjectIssue?(input: { repositoryKey: string; id: string; title: string; description: string; labels: string[] }): Promise<TrackerIssue>;
   createIssue?(input: { id: string; teamKey: string; projectId: string; title: string; description: string; labels: string[] }): Promise<TrackerIssue>;
   setPriority?(issueId: string, priority: number): Promise<void>;
-  fetchImage?(url: string): Promise<Response>;
+  fetchImage?(url: string, options?: { providerOnly?: boolean }): Promise<Response>;
   getIssue(id: string): Promise<TrackerIssue>;
   listIssues(teamKey: string, limit?: number): Promise<TrackerIssueSummary[]>;
   listProjectIssues?(projectId: string): Promise<TrackerIssueSummary[]>;

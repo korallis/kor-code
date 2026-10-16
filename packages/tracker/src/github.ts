@@ -22,8 +22,25 @@ const projectItemSchema = z.object({ id: z.string(), fieldValues: z.object({ nod
 type ProjectItem = z.infer<typeof projectItemSchema>;
 const states = ['queued', 'running', 'review', 'complete', 'canceled'] as const;
 type State = typeof states[number];
-const stateTypes = { queued: 'unstarted', running: 'started', review: 'started', complete: 'completed', canceled: 'canceled' } as const;
-const stateNames = { queued: 'Todo', running: 'In Progress', review: 'In Review', complete: 'Done', canceled: 'Canceled' };
+const stateTypes = { queued: 'unstarted', running: 'started', review: 'started', complete: 'completed', canceled: 'canceled', unmapped: 'backlog' } as const;
+const stateNames = { queued: 'Todo', running: 'In Progress', review: 'In Review', complete: 'Done', canceled: 'Canceled', unmapped: 'No Project Status' };
+
+function imageFile(url: string, repository: string): { ref: string; path: string } | undefined {
+  const asset = new URL(url);
+  if (asset.protocol !== 'https:' || asset.username || asset.password || asset.port) return;
+  const prefix = `/${repository}/${asset.hostname === 'github.com' ? 'blob/' : ''}`;
+  if (!['github.com', 'raw.githubusercontent.com'].includes(asset.hostname) || !asset.pathname.toLowerCase().startsWith(prefix.toLowerCase())) return;
+  const [ref, ...path] = asset.pathname.slice(prefix.length).split('/');
+  if (!ref || !path.length) return;
+  return { ref: decodeURIComponent(ref), path: path.map(segment => encodeURIComponent(decodeURIComponent(segment))).join('/') };
+}
+function imageType(bytes: Buffer): string {
+  if (bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return 'image/png';
+  if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return 'image/jpeg';
+  if (/^GIF8[79]a$/.test(bytes.subarray(0, 6).toString('ascii'))) return 'image/gif';
+  if (bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
+  return 'application/octet-stream';
+}
 
 /** Issues carry repository-qualified IDs; project item IDs never become issue IDs. */
 export class GitHubTracker implements TrackerClient {
@@ -87,14 +104,15 @@ export class GitHubTracker implements TrackerClient {
   private parse(issue: z.infer<typeof issueSchema>, item?: ProjectItem): TrackerIssue {
     const project = this.settings.project;
     const projectStatus = item?.fieldValues.nodes.find(value => value.field?.name === project?.statusField)?.name;
-    const status = issue.state === 'closed' ? (issue.state_reason === 'not_planned' ? 'canceled' : 'complete') : project ? states.find(state => project.statuses[state] === projectStatus) ?? 'queued' : states.find(state => issue.labels.some(label => label.name === this.settings.statuses[state])) ?? 'queued';
+    const status = issue.state === 'closed' ? (issue.state_reason === 'not_planned' ? 'canceled' : 'complete') : project ? states.find(state => project.statuses[state] === projectStatus) ?? 'unmapped' : states.find(state => issue.labels.some(label => label.name === this.settings.statuses[state])) ?? 'queued';
+    const intakeBlockedReason = status === 'unmapped' ? `Project Status ${projectStatus ? `"${projectStatus}" is unmapped` : 'is unset'}; move this issue to "${project?.statuses.queued}" to allow Kor intake.` : undefined;
     const description = issue.body ?? '';
     const acceptance = /(?:^|\n)#{1,6}\s+Acceptance(?: criteria| conditions)?\s*\n([\s\S]*?)(?=\n#{1,6}\s|$)/i.exec(description.replace(/<!--[\s\S]*?-->/g, ''))?.[1] ?? '';
     const projectPriority = item?.fieldValues.nodes.find(value => value.field?.name === project?.priorityField);
     const namedPriority = ['urgent', 'high', 'normal', 'low'].findIndex(name => projectPriority?.name?.toLowerCase().replace(/^p[0-4]\s*[-:]?\s*/, '') === name);
     const labelPriority = this.settings.priorities.findIndex(name => issue.labels.some(label => label.name === name));
     const priority = projectPriority?.number ?? (namedPriority >= 0 ? namedPriority + 1 : labelPriority + 1);
-    return { id: `${this.scope}#${issue.number}`, tracker: 'github', repositoryKey: this.repositoryKey, identifier: `${this.settings.repository}#${issue.number}`, title: issue.title, description, url: issue.html_url, pullRequestLink: `${this.settings.pullRequestLink === 'refs' ? 'Refs' : 'Closes'} ${this.settings.repository}#${issue.number}`, acceptanceCriteria: acceptance.split('\n').map(line => line.replace(/^\s*[-*]\s*(?:\[[ x]\]\s*)?/i, '').trim()).filter(Boolean), teamId: this.scope, teamKey: this.scope, ...(project ? { projectId: `${project.owner}/${project.number}` } : {}), stateId: status, stateType: stateTypes[status], stateName: projectStatus ?? stateNames[status], updatedAt: issue.updated_at, priority, documents: [], dependencies: [], subIssueIds: [], comments: [], sessions: [], resources: [], labels: issue.labels.map(label => label.name) };
+    return { id: `${this.scope}#${issue.number}`, tracker: 'github', repositoryKey: this.repositoryKey, identifier: `${this.settings.repository}#${issue.number}`, title: issue.title, description, url: issue.html_url, pullRequestLink: `${this.settings.pullRequestLink === 'refs' ? 'Refs' : 'Closes'} ${this.settings.repository}#${issue.number}`, ...(intakeBlockedReason ? { intakeBlockedReason } : {}), acceptanceCriteria: acceptance.split('\n').map(line => line.replace(/^\s*[-*]\s*(?:\[[ x]\]\s*)?/i, '').trim()).filter(Boolean), teamId: this.scope, teamKey: this.scope, ...(project ? { projectId: `${project.owner}/${project.number}` } : {}), stateId: status, stateType: stateTypes[status], stateName: projectStatus ?? stateNames[status], updatedAt: issue.updated_at, priority, documents: [], dependencies: [], subIssueIds: [], comments: [], sessions: [], resources: [], labels: issue.labels.map(label => label.name) };
   }
   async listIssues(_scope: string, _limit = 100): Promise<TrackerIssueSummary[]> {
     const [owner, name] = this.settings.repository.split('/');
@@ -257,32 +275,36 @@ export class GitHubTracker implements TrackerClient {
     const savedFile = z.object({ sha: z.string() }).parse(await this.request(`${contentPath}?ref=${branch}`));
     const stored = z.object({ content: z.string(), encoding: z.literal('base64') }).parse(await this.request(`/repos/${this.settings.repository}/git/blobs/${savedFile.sha}`));
     if (!Buffer.from(stored.content, 'base64').equals(bytes)) throw new Error('GitHub image bytes did not match the uploaded PNG');
-    const url = `https://raw.githubusercontent.com/${this.settings.repository}/${branch}/${path}`;
+    const revision = z.object({ object: z.object({ sha: z.string() }) }).parse(await this.request(`/repos/${this.settings.repository}/git/ref/heads/${branch}`));
     const marker = `<!-- kor:image:${sha256} -->`;
+    const previousUrl = issue.description?.split(marker)[1]?.match(/!\[[^\n]*\]\((https:[^)]+)\)/)?.[1];
+    const url = previousUrl && this.handlesImage(previousUrl) ? previousUrl : `https://github.com/${this.settings.repository}/blob/${revision.object.sha}/${path}?raw=true`;
+    if (previousUrl && !Buffer.from(await (await this.fetchImage(url)).arrayBuffer()).equals(bytes)) throw new Error('Existing issue image bytes did not match the uploaded PNG');
     if (!issue.description?.includes(marker)) await this.request(`/repos/${this.settings.repository}/issues/${this.number(reference)}`, { body: `${issue.description ?? ''}\n\n## Screens\n\n${marker}\n![${alt.replace(/[\[\]\\]/g, '')}](${url})` }, 'PATCH');
     const saved = await this.getIssue(reference);
     if (!saved.description?.includes(url)) throw new Error('GitHub issue image was not saved');
     return { issue: issue.identifier ?? issue.id, url, sha256, bytes: bytes.length };
   }
+  handlesImage(url: string): boolean { return imageFile(url, this.settings.repository) !== undefined; }
   async fetchImage(url: string): Promise<Response> {
-    const asset = new URL(url);
-    if (asset.hostname === 'raw.githubusercontent.com' && !asset.username && !asset.password && !asset.port && asset.protocol === 'https:') {
-      const prefix = `/${this.settings.repository}/`;
-      if (asset.pathname.toLowerCase().startsWith(prefix.toLowerCase())) {
-        const [ref, ...path] = asset.pathname.slice(prefix.length).split('/');
-        const file = z.object({ sha: z.string() }).parse(await this.request(`/repos/${this.settings.repository}/contents/${path.join('/')}?ref=${encodeURIComponent(ref ?? '')}`));
-        const data = z.object({ content: z.string(), encoding: z.literal('base64') }).parse(await this.request(`/repos/${this.settings.repository}/git/blobs/${file.sha}`));
-        return new Response(new Uint8Array(Buffer.from(data.content, 'base64')), { headers: { 'content-type': 'image/png' } });
-      }
+    const image = imageFile(url, this.settings.repository);
+    if (image) {
+      const file = z.object({ sha: z.string() }).parse(await this.request(`/repos/${this.settings.repository}/contents/${image.path}?ref=${encodeURIComponent(image.ref)}`));
+      const data = z.object({ content: z.string(), encoding: z.literal('base64') }).parse(await this.request(`/repos/${this.settings.repository}/git/blobs/${file.sha}`));
+      const bytes = Buffer.from(data.content, 'base64');
+      return new Response(new Uint8Array(bytes), { headers: { 'content-type': imageType(bytes) } });
     }
-    return fetch(asset, { redirect: 'error', signal: AbortSignal.timeout(15_000) });
+    return fetch(url, { redirect: 'error', signal: AbortSignal.timeout(15_000) });
   }
-  async checkAccess(): Promise<void> {
+  async checkAccess(): Promise<string[]> {
     const repo = z.object({ has_issues: z.boolean(), permissions: z.object({ push: z.boolean() }).optional() }).parse(await this.request(`/repos/${this.settings.repository}`));
     if (!repo.has_issues || repo.permissions?.push !== true) throw new Error('GitHub tracker needs Issues enabled and repository write access; grant Issues read/write (repo scope for classic tokens)');
     // Actual reads detect fine-grained permission restrictions without mutating tickets.
     await this.request(`/repos/${this.settings.repository}/issues?per_page=1`);
     await this.listWorkflowStates();
+    if (!this.settings.project) return [];
+    const field = (await this.project()).fields.find(field => field.name === this.settings.project?.statusField);
+    return field?.options?.filter(option => !Object.values(this.settings.project?.statuses ?? {}).includes(option.name)).map(option => option.name) ?? [];
   }
   async recordExecution(_execution: Execution): Promise<void> { /* Durable execution state belongs to Kor. */ }
 }

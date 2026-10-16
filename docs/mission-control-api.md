@@ -202,3 +202,7 @@ replaying an event must retain its original time. Snapshot freshness is separate
 from execution, verification and billing timestamps.
 
 `GET /api/linear/issues` remains a compatibility alias for `/api/issues`. Both return the configured tracker’s issue contract. Run actions expose `trackerSync` and retain `linearSync` as a compatibility alias. See [tracker integration](specs/tracker-integration.md) (LEE-1323).
+
+`GET /api/issues/:id/images` returns up to eight authenticated tracker image previews
+as bounded image data URLs. It accepts only images hosted by the configured tracker;
+credentials stay in the daemon and image responses are limited to 5 MiB each.

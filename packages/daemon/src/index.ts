@@ -2,6 +2,7 @@ import { appendFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile, 
 import { createServer, type Server } from "node:http";
 import { basename, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
+import { imageBytes, ticketImages } from "@kor-code/context";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
@@ -13,7 +14,7 @@ import { AgentSessionWriter, TrackerRouter, TrackerStore, flushTrackerWrites, ha
 import { captureProcess, processExists, processMatches, stopSession } from "./process.js";
 import { OverrideStore } from "./overrides.js";
 import type { ShippingDriver } from "./shipping.js";
-import type { AskRequest, AskResponse, IssuesResponse, DocumentsResponse, IssueResponse, TrackerSync, MissionRun, PoolResponse, SessionOption, SessionPackResponse, Stage } from "@kor-code/mission-control";
+import type { AskRequest, AskResponse, IssuesResponse, DocumentsResponse, IssueResponse, IssueImagesResponse, TrackerSync, MissionRun, PoolResponse, SessionOption, SessionPackResponse, Stage } from "@kor-code/mission-control";
 import type { JsonValue } from "@kor-code/core";
 import { DEFAULT_SKILL_BUDGET, SESSION_TARGETS, applySkillOverrides, emptySkillPlan, foldSessionEdits, labelEdits, parseSessionEdit, redact, reviewSessionEdit, runtimeSecrets, screenshotReadinessCheck, sessionEditChoice, type SessionEdit, type SessionEditContext, type SkillCandidate, type SkillTier } from "@kor-code/jev";
 import { ApiFailure, MissionApi } from "./api.js";
@@ -166,6 +167,9 @@ export class KorDaemon {
   private stopping = false;
   private stopPromise: Promise<void> | undefined;
   private poll: Promise<number> | undefined;
+  private readonly scopePolls = new Map<string, Promise<number>>();
+  private readonly scopePolledAt = new Map<string, number>();
+  private readonly scopeErrors = new Set<string>();
   readonly overrides: OverrideStore;
   /** Issue facts by assignment issue ID, kept from polls and claims for display. */
   private readonly issues = new Map<string, IssueFacts>();
@@ -258,6 +262,7 @@ export class KorDaemon {
     for (const run of this.active.values()) run.abort.abort(new Error("daemon stopping"));
     await this.cycle;
     await this.poll;
+    await Promise.all(this.scopePolls.values());
     await Promise.all([...this.active.values()].map(run => run.done));
     await this.writeSnapshot();
     await this.terminalWrite;
@@ -299,6 +304,7 @@ export class KorDaemon {
     return this.poll;
   }
   private async pollIssues(): Promise<number> {
+    const candidates = Promise.all(trackerScopes(this.config).map(key => this.pollScope(key)));
     await this.refreshAccounts();
     await this.flushOverrideComments();
     try {
@@ -309,33 +315,52 @@ export class KorDaemon {
       }
       await this.advanceShipping();
       if (this.now() - this.lastQuotaAt >= 60_000) void this.refreshQuota();
-      let found = 0;
-      if (this.options.tracker) for (const key of trackerScopes(this.options.config)) {
-        let issues: TrackerIssueSummary[];
-        try { issues = await this.options.tracker.listIssues(key); }
-        catch (error) { this.observeIssues(key, unavailable([], "Tracker issues unavailable")); throw error; }
-        this.observeIssues(key, live(issues));
-        for (const issue of issues) {
-          if (this.stopping) break;
-          this.remember(issue.id, issue);
-          if (issue.stateType !== "unstarted" || !issue.labels.some(label => label.toLowerCase() === this.options.config.intakeLabel.toLowerCase())) continue;
-          try {
-            const repository = repositoryKeyForIssue(issue, this.config);
-            this.store.enqueue(issue.id, { issueKey: issue.identifier ?? issue.id, issueTitle: issue.title, repository });
-            this.store.setPriority(issue.id, issue.priority);
-          } catch (error) { writeError = error; continue; }
-          found++;
-        }
-      }
+      const found = (await candidates).reduce((sum, count) => sum + count, 0);
       this.lastPollAt = new Date(this.now()).toISOString();
       if (writeError) await this.reportError(writeError);
-      else this.lastError = undefined;
+      else if (this.scopeErrors.size === 0) this.lastError = undefined;
       return found;
     } catch (error) {
       this.lastPollAt = new Date(this.now()).toISOString();
       await this.reportError(error);
       return 0;
     }
+  }
+  private pollScope(key: string): Promise<number> {
+    const pending = this.scopePolls.get(key);
+    if (pending) return pending;
+    const tracker = this.options.tracker;
+    if (!tracker) return Promise.resolve(0);
+    const poll = (async () => {
+      let found = 0;
+      try {
+        const issues = await tracker.listIssues(key);
+        if (tracker !== this.options.tracker || this.stopping) return 0;
+        this.scopeErrors.delete(key);
+        this.observeIssues(key, live(issues));
+        for (const issue of issues) {
+          this.remember(issue.id, issue);
+          if (issue.stateType !== 'unstarted' || issue.intakeBlockedReason || !issue.labels.some(label => label.toLowerCase() === this.config.intakeLabel.toLowerCase())) continue;
+          try {
+            this.store.enqueue(issue.id, { issueKey: issue.identifier ?? issue.id, issueTitle: issue.title, repository: repositoryKeyForIssue(issue, this.config) });
+            this.store.setPriority(issue.id, issue.priority);
+            found++;
+          } catch (error) { await this.reportError(error); }
+        }
+      } catch (error) {
+        if (tracker === this.options.tracker && !this.stopping) {
+          this.scopeErrors.add(key);
+          this.observeIssues(key, unavailable([], 'Tracker issues unavailable'));
+          await this.reportError(error);
+        }
+      }
+      return found;
+    })().finally(() => {
+      this.scopePolls.delete(key);
+      if (tracker === this.options.tracker) this.scopePolledAt.set(key, this.now());
+    });
+    this.scopePolls.set(key, poll);
+    return poll;
   }
   /** One daemon owns these stages; no execution lease or model session is reopened. */
   private async advanceShipping(): Promise<void> {
@@ -464,6 +489,20 @@ export class KorDaemon {
     if (!this.options.tracker) throw new ApiFailure(503, "unavailable", "Tracker connection unavailable");
     return { schemaVersion: 1, issue: await this.options.tracker.getIssue(id) };
   }
+  async missionIssueImages(id: string): Promise<IssueImagesResponse> {
+    const { issue } = await this.missionIssue(id);
+    const tracker = this.options.tracker;
+    const images = await Promise.all(ticketImages([issue.description ?? ''], issue.resources).slice(0, 8).map(async image => {
+      try {
+        if (!tracker?.fetchImage) throw new Error('Tracker images unavailable');
+        const response = await tracker.fetchImage(image.url, { providerOnly: true });
+        const type = response.headers.get('content-type')?.split(';')[0];
+        const { bytes } = await imageBytes(response);
+        return { title: image.title, dataUrl: `data:${type};base64,${bytes.toString('base64')}`, reason: null };
+      } catch { return { title: image.title, dataUrl: null, reason: 'Screenshot unavailable; attach an image through the configured tracker.' }; }
+    }));
+    return { schemaVersion: 1, images };
+  }
   async missionDocuments(project: string): Promise<DocumentsResponse> {
     if (!this.config.repos[project]) throw new ApiFailure(404, "not_found", "Configured project not found");
     if (!this.options.tracker?.listProjectDocuments) return { schemaVersion: 1, documents: unavailable([], "Tracker documents unavailable") };
@@ -475,7 +514,10 @@ export class KorDaemon {
     if (!tracker) throw new ApiFailure(503, "unavailable", "Tracker connection unavailable");
     const issues = await Promise.all(references.map(reference => tracker.getIssue(reference)));
     // Validate the full batch before queueing any of it.
-    for (const issue of issues) repositoryKeyForIssue(issue, this.config);
+    for (const issue of issues) {
+      repositoryKeyForIssue(issue, this.config);
+      if (issue.intakeBlockedReason) throw new ApiFailure(409, 'conflict', issue.intakeBlockedReason);
+    }
     for (const issue of issues) {
       this.remember(issue.id, issue);
       this.store.enqueue(issue.id, { issueKey: issue.identifier ?? issue.id, issueTitle: issue.title, repository: repositoryKeyForIssue(issue, this.config) });
@@ -535,6 +577,8 @@ export class KorDaemon {
       this.api?.observations.clear("pulls");
       this.api?.observations.clear("connections");
       this.issueLists.clear();
+      this.scopePolledAt.clear();
+      this.scopeErrors.clear();
       this.lastPollAt = undefined;
     }
     this.options.config = config;
@@ -548,7 +592,7 @@ export class KorDaemon {
   }
   async connectionsChanged(provider: string): Promise<void> {
     this.api?.observations.clear();
-    if (provider === "linear" || provider === "github") { this.options.tracker = this.mission.tracker(this.config); this.issueLists.clear(); this.lastPollAt = undefined; }
+    if (provider === "linear" || provider === "github") { this.options.tracker = this.mission.tracker(this.config); this.issueLists.clear(); this.scopePolledAt.clear(); this.scopeErrors.clear(); this.lastPollAt = undefined; }
     if (provider === "gateway") {
       this.options.gateway = await this.mission.gateway();
       // Observations from another gateway must not survive a connection switch.
@@ -664,7 +708,7 @@ export class KorDaemon {
 
   /**
    * Judges a cockpit override against policy, records it in the override audit
-   * whatever the outcome, and comments on the Tracker issue when it applies. A
+   * whatever the outcome, and comments on the tracker issue when it applies. A
    * route override takes effect from the execution's next attempt.
    */
   async override(request: OverrideRequest): Promise<OverrideAnswer> {
@@ -880,6 +924,10 @@ export class KorDaemon {
     this.busy = true;
     this.cycle = (async () => {
       if (!this.lastPollAt || this.now() - Date.parse(this.lastPollAt) >= this.pollIntervalMs) void this.pollOnce();
+      for (const key of trackerScopes(this.config)) {
+        const previous = this.scopePolledAt.get(key);
+        if (!this.scopePolls.has(key) && (previous === undefined || this.now() - previous >= this.pollIntervalMs)) void this.pollScope(key);
+      }
       if (this.options.tracker && (this.options.runner || this.options.controller)) {
         while (!this.stopping && this.active.size < this.options.config.limits.total) {
           const claim = this.store.claim(this.owner, this.leaseTtlMs, undefined, [...this.active.keys()]);
@@ -926,8 +974,9 @@ export class KorDaemon {
       if (messages.length) issue.description = `${issue.description ?? ""}\n\nOperator guidance:\n${messages.map(message => `${message.kind}: ${message.message}`).join("\n\n")}`;
       this.remember(claim.assignment.issueId, issue);
       this.store.setIssueMetadata(claim, issue.identifier ?? issue.id, issue.title);
-      if (issue.acceptanceCriteria.length === 0) throw new NeedsInputError("Add a # Acceptance section with explicit criteria to the Tracker issue, then retry this execution.");
-      if (issue.dependencies.some(dependency => dependency.stateType !== 'completed')) throw new NeedsInputError('Complete the blocking dependencies in Tracker, then retry this execution.');
+      if (issue.intakeBlockedReason) throw new NeedsInputError(issue.intakeBlockedReason);
+      if (issue.acceptanceCriteria.length === 0) throw new NeedsInputError("Add a # Acceptance section with explicit criteria to the tracker issue, then retry this execution.");
+      if (issue.dependencies.some(dependency => dependency.stateType !== 'completed')) throw new NeedsInputError('Complete the blocking dependencies in the tracker, then retry this execution.');
       // The tracker identity maps to exactly one configured checkout.
       const repository = repositoryKeyForIssue(issue, this.options.config);
       this.setStage(id, "preflight");

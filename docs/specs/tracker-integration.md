@@ -2,7 +2,9 @@
 
 A configured repository chooses `tracker: linear` or `tracker: github`. Omission
 keeps Linear. A GitHub project uses repository Issues, optionally restricted to
-one GitHub Project v2. Projects can mix trackers in the same Kor daemon.
+one GitHub Project v2. Projects can mix trackers in the same Kor daemon. Each
+tracker scope polls on its own clock, so an unavailable or slow scope cannot
+starve another project.
 
 `@kor-code/tracker` owns the issue, workflow, durable queue and write contracts.
 The Linear package implements its API adapter and retains compatibility exports
@@ -44,8 +46,10 @@ Create the mapped single-select Status options in the GitHub Project first.
 GitHub's initial Status field has Todo, In Progress and Done; add In Review and
 Canceled, or configure matching existing option names. Doctor checks the mapping
 and the viewer's ability to update the Project. Draft items and PR items are
-excluded from intake. Moving an issue out of the configured Project removes it
-from that project's candidate list; an execution cannot silently switch trackers.
+excluded from intake. Unset or unmapped Status values are held outside Kor intake,
+including manual queueing. Move a held card to the mapped queued option to opt it
+in. Mission Control explains held cards and doctor lists unmapped options. Moving
+an issue out of the configured Project removes it from that project's candidate list; an execution cannot silently switch trackers.
 
 Without a Project, Kor uses these configurable `github.statuses` labels:
 `queued: kor:todo`, `running: kor:in-progress`, `review: kor:in-review`,
@@ -95,8 +99,12 @@ kor github attach-image owner/application#42 screen.png --alt "Settings /setting
 Kor stores content-addressed PNGs on a dedicated `kor-assets` branch and adds
 Markdown to the issue body. That repository must have an initial commit and the
 token needs Contents write access. The normal source branch is unchanged.
-Repeated identical uploads reuse the asset. Private raw GitHub image URLs are
-retrieved through the authenticated Contents/Blob API for execution context.
+Repeated identical uploads reuse the asset. Images use commit-pinned
+`github.com/OWNER/REPO/blob/SHA/PATH?raw=true` URLs,
+matching the GitHub attachment skill. Both these and legacy raw GitHub URLs are
+retrieved through the authenticated Contents/Blob API for execution context and
+Mission Control previews. Previews use the daemon’s authenticated image endpoint,
+so private screenshots do not depend on a browser GitHub session.
 The Linear `kor linear attach-image` command remains available for Linear issues.
 
 ## UI and CLI

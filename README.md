@@ -52,6 +52,7 @@ Each project chooses its tracker in **Settings → Add project**, or with
 `kor install --tracker github --github-repository OWNER/REPO`. Existing projects
 keep Linear by default. GitHub supports intake labels, priority, Project v2 Status
 mappings, comments, PR links, image attachments and home-box issue creation.
+Mission Control previews private tracker images through the authenticated daemon.
 Linear is optional when every configured project uses GitHub.
 See [tracker configuration and setup](docs/specs/tracker-integration.md) for
 permissions, plain Issues and Project v2 examples (LEE-1323).
@@ -278,7 +279,7 @@ LEE-1166: blocked; hasScreenshot=false
 ```
 
 Issues labelled `UI` also need a screenshot or mockup; `kor linear attach-image`
-uploads one. Then start the work in one of three ways: **Start** on Home's
+or `kor github attach-image` uploads one to the selected tracker. Then start the work in one of three ways: **Start** on Home's
 **Next up**, **Queue an issue** on Agents (or **Queue for Kor** in a project), or
 label a Todo issue `kor` and let the daemon pick it up on its next poll.
 

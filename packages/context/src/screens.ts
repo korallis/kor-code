@@ -35,7 +35,7 @@ async function screenDirectory(root: string, issue: string): Promise<string> {
   return directory;
 }
 
-async function imageBytes(response: Response): Promise<{ bytes: Buffer; extension: string }> {
+export async function imageBytes(response: Response): Promise<{ bytes: Buffer; extension: string }> {
   const extension = IMAGE_EXTENSIONS.get(response.headers.get("content-type")?.split(";")[0]?.trim() ?? "");
   if (!response.ok || !extension || !response.body) {
     await response.body?.cancel();

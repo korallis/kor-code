@@ -284,6 +284,9 @@ importers:
       '@kor-code/config':
         specifier: workspace:*
         version: link:../config
+      '@kor-code/context':
+        specifier: workspace:*
+        version: link:../context
       '@kor-code/controller':
         specifier: workspace:*
         version: link:../controller

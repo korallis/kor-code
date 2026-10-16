@@ -22,8 +22,8 @@ export type InstallScope = "local" | "user";
 export interface InstallOptions { scope: InstallScope; pilot?: string; linearTeam?: string; tracker?: "linear" | "github"; githubRepository?: string; githubProjectOwner?: string; githubProjectNumber?: number; systemd: boolean }
 async function selectTracker(options: InstallOptions): Promise<"linear" | "github"> {
   if (options.tracker) return options.tracker;
-  if (!process.stdin.isTTY || !process.stdout.isTTY) return "linear";
-  const prompt = createInterface({ input: process.stdin, output: process.stdout });
+  if (!process.stdin.isTTY || !process.stderr.isTTY) return "linear";
+  const prompt = createInterface({ input: process.stdin, output: process.stderr });
   try {
     const answer = (await prompt.question("Issue tracker: linear or github [linear]: ")).trim().toLowerCase();
     if (answer && answer !== "linear" && answer !== "github") throw new Error("Tracker must be linear or github");
