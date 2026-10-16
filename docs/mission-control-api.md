@@ -7,10 +7,15 @@ in the browser does not execute the configuration, SQLite, or provider modules.
 `MissionEvent` describes the live stream. All responses carry `schemaVersion: 1`.
 
 The daemon sends a snapshot whenever displayed status changes, including the
-override audit, and `invalidate` events for changed REST resources. External
-reads used by connected screens are observed every three seconds and compared
-without observation timestamps; a change invalidates that resource in every
-tab. Intake and shipping retain their configured poll schedule. Every connection
+override audit, and `invalidate` events for changed REST resources. Local
+mutations publish immediately. Linear issue reads use the intake cache, without
+extra requests. Pool reads return the daemon's existing observations; quota
+retains its 60-second throttle and publishes only changed values. GitHub and
+model reads share a bounded daemon cache, refreshed while connected no faster
+than the configured poll interval or once per minute. Connection probes run on
+first request and after credentials change, rather than periodically. Values are
+compared without observation timestamps. A SharedWorker shares one authenticated
+SSE connection across tabs, avoiding HTTP/1.1's per-host connection limit. Every connection
 receives a current snapshot after any cursor replay. The browser invalidates all
 cached reads on reconnect, including terminal transcripts, so an expired replay
 window cannot leave a gap. Heartbeats arrive every 15 seconds; 35 seconds of

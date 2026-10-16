@@ -42,7 +42,7 @@ export class MissionApi {
   private configWrite: Promise<void> = Promise.resolve();
   readonly observations: MissionObservations;
   constructor(private readonly daemon: KorDaemon, private readonly token: string, private readonly webRoot: string | undefined) {
-    this.observations = new MissionObservations(daemon.events);
+    this.observations = new MissionObservations(daemon.events, () => Math.max(60_000, daemon.config.pollIntervalSeconds * 1_000));
   }
   async handle(request: IncomingMessage, response: ServerResponse, port: number): Promise<void> {
     response.setHeader("x-content-type-options", "nosniff");
@@ -83,21 +83,21 @@ export class MissionApi {
           else send(200, { schemaVersion: 1, run });
           return;
         }
-        if (path === "/api/linear/issues") { send(200, await this.observations.read(url.pathname + url.search, "issues", () => this.daemon.missionIssues(url.searchParams.get("project")))); return; }
+        if (path === "/api/linear/issues") { send(200, await this.daemon.missionIssues(url.searchParams.get("project"))); return; }
         if (path === "/api/github/pulls") {
           const repository = this.daemon.config.repos[url.searchParams.get("repo") ?? ""];
           if (!repository) throw new ApiFailure(404, "not_found", "Configured repository not found");
-          send(200, await this.observations.read(url.pathname + url.search, "pulls", async (): Promise<PullsResponse> => {
+          send(200, await this.observations.read(`pulls:${url.searchParams.get("repo")}`, "pulls", async (): Promise<PullsResponse> => {
             const current = this.daemon.config.repos[url.searchParams.get("repo") ?? ""];
             return current ? services.pulls(current) : { schemaVersion: 1, bounded: true, pulls: unavailable([], "Repository removed") };
           })); return;
         }
         if (path === "/api/models") { send(200, await this.observations.read(path, "models", () => services.models())); return; }
-        if (path === "/api/brain") { send(200, await this.observations.read(path, "brain", () => services.brain(this.daemon.status(), () => this.daemon.skillCatalogue()))); return; }
-        if (path === "/api/connections") { send(200, await this.observations.read(path, "connections", () => services.connections())); return; }
+        if (path === "/api/brain") { send(200, await services.brain(this.daemon.status(), () => this.daemon.skillCatalogue())); return; }
+        if (path === "/api/connections") { send(200, await this.observations.read(path, "connections", () => services.connections(), Infinity)); return; }
         if (path === "/api/config") { send(200, { schemaVersion: 1, config: this.daemon.config, restartRequired: false } satisfies ConfigResponse); return; }
         if (path === "/api/quota" || path === "/api/pool") {
-          const pool = await this.observations.read("/api/pool", "pool", () => this.daemon.refreshPool());
+          const pool = this.daemon.pool();
           send(200, path === "/api/quota" ? pool.quota : pool);
           return;
         }
@@ -168,6 +168,7 @@ export class MissionApi {
         if (probe?.[1]) {
           empty.parse(input); const model = decodeURIComponent(probe[1]);
           const verified = await services.probeModel(model);
+          this.observations.clear("models");
           this.daemon.events.publish({ kind: "invalidate", resources: ["models"] });
           send(200, { schemaVersion: 1, model, verified }); return;
         }

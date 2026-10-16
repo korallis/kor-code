@@ -537,10 +537,13 @@ a downstream reader such as `head` closes its pipe.
 
 All screens stay live, including runs, queue and Next up, Jev decisions and
 overrides, PRs, issues, spend, quota, notifications, counters and settings. Changes
-made in another tab or through the CLI appear without refreshing. The daemon
-checks the external data used by open screens every three seconds; provider
-latency and availability still govern when an observation arrives. Intake and
-shipping continue on the configured daemon poll schedule.
+made in another tab or through the CLI appear without refreshing. Settings,
+project edits, queue changes, decisions and agent output stream immediately when
+Kor changes them. Tabs share one live connection, including background tabs.
+Linear issues reuse the daemon's intake fetches; GitHub observations refresh on
+the configured poll schedule with a minimum interval of one minute. Quota
+retains its one-minute throttle. External results reach every tab as soon as the
+daemon observes them; opening more tabs adds no upstream polling.
 
 **LIVE** appears after the event connection supplies a current snapshot.
 **RECONNECTING** and the **Live updates disconnected** banner mean the values

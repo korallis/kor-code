@@ -1,13 +1,14 @@
-// The live store: one server-sent-event stream from the daemon, held outside
-// React and read with useSyncExternalStore. It opens on the first subscriber,
-// closes on the last, and reconnects with Last-Event-ID.
+// Each tab reads this store with useSyncExternalStore. A SharedWorker holds
+// one authenticated event stream for every tab, including background tabs.
 import { useSyncExternalStore } from 'react';
-import { API_PREFIX, type LiveResource, type MissionEvent, type MissionRun, type PoolResponse } from '@kor-code/mission-control';
+import { type LiveResource, type MissionEvent, type MissionRun, type PoolResponse } from '@kor-code/mission-control';
 import type { DecisionRecord, KorStatusResponse, OverrideRecord } from '@kor-code/core';
 import { authHeaders } from './client';
 import { queryClient } from './query';
 
-export type Connection = 'connecting' | 'live' | 'reconnecting' | 'unauthorized' | 'offline';
+import type { StreamMessage } from './stream-types';
+export type { Connection } from './stream-types';
+import type { Connection } from './stream-types';
 export interface TerminalChunk { offset: number; channel: 'stdout' | 'stderr' | 'daemon'; text: string; at: number }
 export interface LiveState {
   connection: Connection;
@@ -32,17 +33,13 @@ export interface LiveState {
 
 const ACTIVE = new Set(['evaluating', 'running', 'verifying', 'repairing', 'shipping']);
 const TERMINAL_LIMIT = 4_000;
-const STREAM_TIMEOUT = 35_000;
 
 let state: LiveState = {
   connection: 'connecting', status: null, runs: [], decisions: [], overrides: [], accounts: null, quota: null,
   terminals: {}, decidedAt: {}, shippedAt: {}, activity: [], lastEventAt: null, restartRequired: false, reason: null,
 };
 const listeners = new Set<() => void>();
-let controller: AbortController | null = null;
-let lastEventId: string | null = null;
-let retryTimer: ReturnType<typeof setTimeout> | null = null;
-let retries = 0;
+let worker: SharedWorker | null = null;
 
 function invalidate(resources: readonly LiveResource[]): void {
   for (const resource of resources) void queryClient.invalidateQueries({ queryKey: [resource] });
@@ -130,106 +127,52 @@ function apply(event: MissionEvent): void {
   }
 }
 
-function parseBlock(block: string): boolean {
-  let id: string | null = null;
-  const data: string[] = [];
-  for (const line of block.split('\n')) {
-    if (line.startsWith(':') || line === '') continue;
-    const colon = line.indexOf(':');
-    const field = colon === -1 ? line : line.slice(0, colon);
-    const value = colon === -1 ? '' : line.slice(colon + 1).replace(/^ /, '');
-    if (field === 'id') id = value;
-    else if (field === 'data') data.push(value);
-  }
-  if (data.length === 0) return false;
-  try {
-    const event = JSON.parse(data.join('\n')) as MissionEvent;
-    apply(event);
-    if (id !== null) lastEventId = id;
-    return event.kind === 'snapshot';
-  } catch (error) {
-    lastEventId = null;
-    throw error;
-  }
+function connect(): void {
+  if (worker) return;
+  set({ connection: 'connecting' });
+  const headers = authHeaders();
+  const shared = new SharedWorker(new URL('./live-worker.ts', import.meta.url), { type: 'module', name: JSON.stringify(headers) });
+  worker = shared;
+  shared.port.onmessage = ({ data }: MessageEvent<StreamMessage>) => {
+    if (worker !== shared) return;
+    if (data.kind === 'event') apply(data.event);
+    else {
+      set({ connection: data.connection, reason: data.reason });
+      // Every new attachment and reconnect resyncs inactive screens and transcripts.
+      if (data.connection === 'live') void queryClient.invalidateQueries();
+    }
+  };
+  shared.onerror = () => { set({ connection: 'offline', reason: 'The shared live connection failed. Reconnect to retry.' }); };
+  shared.port.postMessage({ kind: 'subscribe', headers });
 }
 
-async function connect(): Promise<void> {
-  const abort = new AbortController();
-  controller = abort;
-  set({ connection: retries === 0 ? 'connecting' : 'reconnecting' });
-  // A pending handshake can outlive a healthy REST connection. Bound only the
-  // wait for headers; a connected event stream must remain open indefinitely.
-  let timedOut = false;
-  let timeout = setTimeout(() => { timedOut = true; abort.abort(); }, 5_000);
-  try {
-    const response = await fetch(`${API_PREFIX}/events`, {
-      headers: { ...authHeaders(), accept: 'text/event-stream', ...(lastEventId ? { 'last-event-id': lastEventId } : {}) },
-      signal: abort.signal, cache: 'no-store', credentials: 'omit',
-    });
-    clearTimeout(timeout);
-    if (controller !== abort || abort.signal.aborted) return;
-    if (response.status === 401 || response.status === 403) { set({ connection: 'unauthorized', reason: 'This browser session is not authorised. Open Mission Control with `kor ui`.' }); controller = null; return; }
-    if (!response.ok || !response.body) throw new Error(`events answered ${response.status}`);
-    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-    let buffer = '';
-    let synchronized = false;
-    for (;;) {
-      timeout = setTimeout(() => { timedOut = true; abort.abort(); }, STREAM_TIMEOUT);
-      const { value, done } = await reader.read();
-      clearTimeout(timeout);
-      if (controller !== abort) return;
-      if (timedOut) throw new Error('event stream timed out');
-      if (abort.signal.aborted) return;
-      if (done) break;
-      buffer += value.replace(/\r\n?/g, '\n');
-      let split = buffer.indexOf('\n\n');
-      while (split !== -1) {
-        const snapshot = parseBlock(buffer.slice(0, split));
-        if (!synchronized && snapshot) {
-          synchronized = true;
-          retries = 0;
-          // Inactive queries must also be stale when their screen next opens.
-          // Refetch transcripts even when replay history no longer covers a gap.
-          set({ connection: 'live', reason: null });
-          void queryClient.invalidateQueries();
-        }
-        buffer = buffer.slice(split + 2);
-        split = buffer.indexOf('\n\n');
-      }
-    }
-    throw new Error('event stream ended');
-  } catch {
-    if (controller !== abort || abort.signal.aborted && !timedOut) return;
-    abort.abort();
-    controller = null;
-    retries += 1;
-    set({ connection: retries > 2 ? 'offline' : 'reconnecting', reason: 'Lost the daemon event stream; reconnecting.' });
-    retryTimer = setTimeout(() => { retryTimer = null; if (listeners.size > 0) void connect(); }, Math.min(15_000, 1_000 * 2 ** Math.min(retries, 4)));
-  } finally {
-    clearTimeout(timeout);
-  }
+function disconnect(): void {
+  worker?.port.postMessage({ kind: 'unsubscribe' });
+  worker?.port.close();
+  worker = null;
 }
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
-  if (listeners.size === 1 && controller === null && retryTimer === null) void connect();
+  if (listeners.size === 1) {
+    connect();
+    window.addEventListener('pagehide', disconnect);
+    window.addEventListener('pageshow', connect);
+  }
   return () => {
     listeners.delete(listener);
     if (listeners.size === 0) {
-      controller?.abort();
-      controller = null;
-      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+      disconnect();
+      window.removeEventListener('pagehide', disconnect);
+      window.removeEventListener('pageshow', connect);
     }
   };
 }
 
 /** Reconnect now (the offline banner's button). */
 export function reconnect(): void {
-  controller?.abort();
-  controller = null;
-  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-  retries = 0;
-  void connect();
+  if (!worker) connect();
+  worker?.port.postMessage({ kind: 'reconnect' });
 }
 
 /** Read one slice of the live store. The selector must return a stable value (a slice of state or a primitive). */

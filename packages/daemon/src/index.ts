@@ -167,6 +167,7 @@ export class KorDaemon {
   readonly overrides: OverrideStore;
   /** Issue facts by assignment issue ID, kept from polls and claims for display. */
   private readonly issues = new Map<string, IssueFacts>();
+  private readonly issueLists = new Map<string, Labelled<LinearIssue[]>>();
   private accounts: Labelled<GatewayAccountHealth[]> | undefined;
   readonly mission: MissionServices;
   readonly events = new MissionEvents(() => [this.token, ...runtimeSecrets(), ...this.mission.secrets()]);
@@ -250,7 +251,7 @@ export class KorDaemon {
     this.stopping = true;
     if (this.timer) clearInterval(this.timer);
     if (this.observationTimer) clearInterval(this.observationTimer);
-    await this.api?.observations.close();
+    this.api?.observations.close();
     for (const run of this.active.values()) run.abort.abort(new Error("daemon stopping"));
     await this.cycle;
     await this.poll;
@@ -307,7 +308,10 @@ export class KorDaemon {
       if (this.now() - this.lastQuotaAt >= 60_000) void this.refreshQuota();
       let found = 0;
       if (this.options.linear) for (const key of teamKeys(this.options.config)) {
-        const issues = await this.options.linear.listIssues(key, 100);
+        let issues: LinearIssue[];
+        try { issues = await this.options.linear.listIssues(key, 100); }
+        catch (error) { this.observeIssues(key, unavailable([], "Linear issues unavailable")); throw error; }
+        this.observeIssues(key, live(issues));
         for (const issue of issues) {
           if (this.stopping) break;
           this.remember(issue.id, issue);
@@ -439,18 +443,24 @@ export class KorDaemon {
     if (!run) throw new ApiFailure(404, "not_found", "Execution not found");
     return run;
   }
+  private observeIssues(team: string, observation: Labelled<LinearIssue[]>): void {
+    const changed = stateSignature(this.issueLists.get(team)) !== stateSignature(observation);
+    this.issueLists.set(team, observation);
+    if (changed) this.events.publish({ kind: "invalidate", resources: ["issues"] });
+  }
   async missionIssues(project: string | null): Promise<IssuesResponse> {
     const repositories = project ? [[project, this.config.repos[project]]] as const : Object.entries(this.config.repos);
     if (project && !this.config.repos[project]) throw new ApiFailure(404, "not_found", "Configured project not found");
     const linear = this.options.linear;
     if (!linear) return { schemaVersion: 1, bounded: true, issues: unavailable([], "Linear connection unavailable") };
-    try {
-      const issues = (await Promise.all(repositories.map(async ([key, repository]) => {
-        const all = await linear.listIssues(repository?.linearTeam ?? key.split("/")[0] ?? key, 100);
-        return repository?.linearProject ? all.filter(issue => issue.projectId === repository.linearProject) : all;
-      }))).flat();
-      return { schemaVersion: 1, bounded: true, issues: { value: [...new Map(issues.map(issue => [issue.id, issue])).values()], provenance: "live", observedAt: new Date().toISOString() } };
-    } catch { return { schemaVersion: 1, bounded: true, issues: unavailable([], "Linear issues unavailable") }; }
+    const lists = repositories.map(([key, repository]) => this.issueLists.get(repository?.linearTeam ?? key.split("/")[0] ?? key));
+    const issues = repositories.flatMap(([, repository], index) => {
+      const all = lists[index]?.value ?? [];
+      return repository?.linearProject ? all.filter(issue => issue.projectId === repository.linearProject) : all;
+    });
+    const value = [...new Map(issues.map(issue => [issue.id, issue])).values()];
+    const ready = lists.every(list => list?.provenance === "live");
+    return { schemaVersion: 1, bounded: true, issues: ready ? live(value) : unavailable(value, "Waiting for the daemon's Linear intake observation") };
   }
   async queueIssues(references: string[]): Promise<MissionRun[]> {
     const linear = this.options.linear;
@@ -513,15 +523,18 @@ export class KorDaemon {
     });
     if (previous !== undefined) await atomicPrivateFile(`${this.paths.configFile}.bak`, previous);
     await atomicPrivateFile(this.paths.configFile, `${JSON.stringify(config, null, 2)}\n`);
+    if (stateSignature(this.options.config.repos) !== stateSignature(config.repos)) this.api?.observations.clear("pulls");
     this.options.config = config;
     this.pollIntervalMs = config.pollIntervalSeconds * 1000;
+    for (const team of this.issueLists.keys()) if (!teamKeys(config).includes(team)) this.issueLists.delete(team);
     if (runtime) { this.options.controller = runtime.controller; this.options.chooseRoute = runtime.chooseRoute; }
     await this.writeSnapshot();
     this.events.publish({ kind: "config", restartRequired: false });
     } finally { this.reconfiguring = false; }
   }
   async connectionsChanged(provider: string): Promise<void> {
-    if (provider === "linear") this.options.linear = this.mission.linear();
+    this.api?.observations.clear();
+    if (provider === "linear") { this.options.linear = this.mission.linear(); this.issueLists.clear(); this.lastPollAt = undefined; }
     if (provider === "gateway") {
       this.options.gateway = await this.mission.gateway();
       // Observations from another gateway must not survive a connection switch.
@@ -535,14 +548,18 @@ export class KorDaemon {
   }
   refreshQuota(): Promise<Labelled<JsonValue | null>> {
     if (this.quotaPoll) return this.quotaPoll;
-    if (this.now() - this.lastQuotaAt < 3_000) return Promise.resolve(this.quota);
+    if (this.now() - this.lastQuotaAt < 60_000) return Promise.resolve(this.quota);
     this.lastQuotaAt = this.now();
-    this.quotaPoll = this.mission.quota().then(quota => { this.quota = quota; this.events.publish({ kind: "usage", quota }); return quota; }).finally(() => { this.quotaPoll = undefined; });
+    this.quotaPoll = this.mission.quota().then(quota => {
+      const changed = stateSignature(this.quota) !== stateSignature(quota);
+      this.quota = quota;
+      if (changed) this.events.publish({ kind: "usage", quota });
+      return quota;
+    }).finally(() => { this.quotaPoll = undefined; });
     return this.quotaPoll;
   }
-  async refreshPool(): Promise<PoolResponse> {
-    const [, quota] = await Promise.all([this.refreshAccounts(), this.refreshQuota()]);
-    return { schemaVersion: 1, accounts: this.accounts ?? unavailable([], "Gateway pool unavailable"), quota };
+  pool(): PoolResponse {
+    return { schemaVersion: 1, accounts: this.accounts ?? unavailable([], "Gateway pool unavailable"), quota: this.quota };
   }
   setStage(executionId: string, stage: Stage): void {
     this.stages.set(executionId, stage);

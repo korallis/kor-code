@@ -290,8 +290,11 @@ matches regardless of letter case.
 ### Work in Mission Control
 
 Every screen updates in place over the daemon's live connection, including
-changes from the CLI and other open tabs. Linear and GitHub observations refresh
-every three seconds while Mission Control is connected. **LIVE** means the event
+changes from the CLI and other open tabs, which share one event stream. Settings,
+queue changes and agent output stream as soon as Kor changes them. Linear issues
+reuse intake observations on the configured daemon poll schedule; GitHub reads
+are shared across tabs and refresh no faster than that schedule or once a minute.
+Quota keeps its one-minute throttle. **LIVE** means the event
 stream is connected and has supplied a snapshot. If it drops, the app marks the
 displayed data as stale, reconnects automatically with backoff, and resyncs missed
 changes and terminal output. You do not need to refresh the page.
