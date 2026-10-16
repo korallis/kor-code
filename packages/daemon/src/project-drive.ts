@@ -152,10 +152,10 @@ export class ProjectDrives {
       let admissions = 0;
       for (const entry of drive.issues) {
         if (!current()) return;
-        if (entry.manual) continue;
         const issue = rows.get(entry.issueId);
         if (!issue) { entry.status = "held"; entry.reason = "Issue was removed from this project"; continue; }
         if (issue.stateType === "completed") { entry.status = "done"; entry.reason = null; continue; }
+        if (entry.manual) continue;
         if (issue.stateType === "canceled" || issue.stateType === "duplicate") { entry.status = "held"; entry.reason = "Issue is canceled or duplicate"; continue; }
         if (entry.admission !== null || entry.status === "held") continue;
         // Bound each pass so ready work starts before the entire project has been assessed.
