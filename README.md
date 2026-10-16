@@ -294,18 +294,32 @@ label a Todo issue `kor` and let the daemon pick it up on its next poll.
 
 ![The Queue an issue dialog](docs/images/mc-queue.webp)
 
-Jev judges whether essential scope is missing, rather than implementation
-difficulty. Concrete file, input and behavior requirements can suffice without
-an unrelated build setup; all readiness checks and the 0.70 threshold still apply.
+Jev 1.14 evaluates each ticket separately. Deterministic readiness checks still
+block missing acceptance, incomplete dependencies and missing UI screenshots.
+With those checks passing, Jev blocks only when it finds missing essential scope
+with at least 0.90 probability. Uncertainty can begin bounded implementation;
+acceptance still needs positive evidence at 0.70 and merge at 0.90.
+A real missing-scope veto still blocks when another Jev question is unavailable.
 
-A confidence-only readiness refusal is reported as `uncertain`, with Jev's score
-and the required threshold. All deterministic checks pass in that case; review
-the acceptance criteria in Linear, add any missing detail, then retry, or answer
-in Mission Control to ask Jev again. Once an execution is ready, **Request changes**,
-operator answers and adding the configured intake label keep that verdict while
-the underlying issue and eligible models stay unchanged. A label that also
-requires a screenshot (`UI`) still triggers that check. The intake label
-matches regardless of letter case.
+Routing first selects the reasoning class, then a verified model with explicit
+role criteria. Model profiles distinguish backend implementation, UI integration,
+research and correctness review. Probe cost/latency remain observations; unknown
+context limits are not invented. Uncertain class/model decisions and Jev outages
+use the configured default route when it is verified and profiled. Only an
+unavailable or unprofiled default needs a verified conservative replacement.
+Configured reasoning effort is preserved for both Jev choices and fallbacks.
+Mission Control shows the effective class and
+fallback reason alongside the raw decisions. See the [Jev audit](docs/jev-decision-audit.md)
+for measurements and the [preflight contract](docs/specs/jev-preflight.md) for policy.
+
+Automatic routing currently requires an exact maintained model profile. If all
+verified models are unprofiled, dispatch stops: select a supported model as the
+default, or add a profile as described in [model compatibility](docs/model-compatibility.md).
+
+Once an execution is ready, **Request changes**, operator answers and the intake
+label retain the verdict while issue scope, dependencies, eligible models and
+routing policy stay unchanged. UI screenshot requirements still apply. The intake
+label matches regardless of letter case.
 
 ### Work in Mission Control
 

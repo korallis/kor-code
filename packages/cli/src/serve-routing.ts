@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { hasScreenshot } from "@kor-code/tracker";
 import type { CatalogueModel, Route } from "@kor-code/core";
 import { NeedsInputError, type DaemonOptions, type DescribePullRequest, type MergeIntelligence } from "@kor-code/daemon";
-import { JevClient, JevDecisionCore, JevUnavailableError, redact, planPreflight, preflightRequests, routeFromDecision, type DecisionAuditLog } from "@kor-code/jev";
+import { JevClient, JevDecisionCore, JevUnavailableError, redact, planPreflight, preflightRequests, preflightRoute, readinessBlocksDispatch, modelCriteria, modelsForClass, type DecisionAuditLog } from "@kor-code/jev";
 
 /** Identify architecture families from model IDs, independent of gateway providers. */
 export function modelFamily(model: string): string | undefined {
@@ -36,24 +36,25 @@ export function createServeRouting(options: {
       issue: { id: issue.id, title: issue.title, ...(issue.description !== undefined ? { description: issue.description } : {}), acceptanceCriteria: issue.acceptanceCriteria, labels: routingLabels(issue.labels, options.intakeLabel), hasScreenshot: hasScreenshot(issue), dependencies: issue.dependencies.map(dependency => ({ id: dependency.id, state: dependency.stateType })).sort((a, b) => a.id.localeCompare(b.id)) },
       verifiedModels: models, defaultRoute: options.defaultRoute,
     };
-    const state = preflightRequests(input)[0]?.state;
+    const state = preflightRequests(input)[0]?.inputs.find(input => input.name === "routing-input")?.value;
     const original = options.audit.get(`route-${executionId}`);
     const previous = options.audit.get(previousDecisionId ?? `route-${executionId}`) ?? original;
     const previousReadiness = previous && options.audit.get(previous.request.decisionId.replace(/^route-/, 'readiness-'));
     const fingerprint = (value: unknown, excludeGuidance = false) => createHash('sha256').update(JSON.stringify(redact(value), (key, field: unknown) => {
+      if (key === 'routingAssessment') return undefined;
       if (key === 'labels' && Array.isArray(field)) return routingLabels(field, options.intakeLabel);
       if (excludeGuidance && key === 'description' && typeof field === 'string') return field.split('\n\nOperator guidance:\n')[0];
       return field;
     }) ?? 'null').digest('hex').slice(0, 16);
-    const retained = previous && previousReadiness?.response.applied && previousReadiness.response.choice === 'ready' && fingerprint(previous.request.state, true) === fingerprint(state, true) ? previous : undefined;
+    const retained = previous && previousReadiness?.response.applied && previousReadiness.response.choice === 'ready' && fingerprint(previous.request.inputs.find(input => input.name === "routing-input")?.value ?? previous.request.state, true) === fingerprint(state, true) ? previous : undefined;
     let decisionRevision = retained ? retained.request.decisionId.slice(`route-${executionId}`.length + 1) || undefined
-      : original && fingerprint(original.request.state) !== fingerprint(state) ? fingerprint(state) : undefined;
+      : original && fingerprint(original.request.inputs.find(input => input.name === "routing-input")?.value ?? original.request.state) !== fingerprint(state) ? fingerprint(state) : undefined;
     const baseRevision = decisionRevision;
     for (let retry = 1; ; retry++) {
       const saved = options.audit.get(`readiness-${executionId}${decisionRevision ? `-${decisionRevision}` : ""}`);
       const savedRoute = options.audit.get(`route-${executionId}${decisionRevision ? `-${decisionRevision}` : ""}`);
       const incomplete = Boolean(saved) !== Boolean(savedRoute);
-      const outage = saved && !saved.response.model && saved.response.reasons.some(reason => reason.startsWith("Jev unavailable."));
+      const outage = [saved, savedRoute].some(record => record && !record.response.model && (record.response.policyChecks.some(check => check.name === "jev-available" && check.result === "fail") || record.response.reasons.some(reason => reason.startsWith("Jev unavailable."))));
       if (!incomplete && !outage) break;
       decisionRevision = `${baseRevision ?? "recovery"}-retry-${retry}`;
     }
@@ -63,16 +64,15 @@ export function createServeRouting(options: {
     let route: Route;
     if (options.audit.get(decisionId)) {
       const readiness = options.audit.replay(readinessId);
-      if ((readiness.model || readiness.policyChecks.some(check => check.name === "ui-screenshot" && check.result === "fail")) && (!readiness.applied || readiness.choice !== 'ready')) throw new NeedsInputError(readiness.reasons.join(' ') || 'Jev readiness is blocked or uncertain. Clarify the issue or complete its dependencies, then retry.');
+      if (readinessBlocksDispatch(readiness)) throw new NeedsInputError(readiness.reasons.join(' ') || 'Jev readiness is blocked or uncertain. Clarify the issue or complete its dependencies, then retry.');
       const decision = options.audit.replay(decisionId);
-      route = decision.applied && !decision.escalated && models.some(model => model.model === decision.choice && model.available !== false)
-        ? routeFromDecision(decision, models, { ...options.defaultRoute, label: "jev", decisionId })
-        : { ...options.defaultRoute, label: "fallback", decisionId };
+      const classDecision = options.audit.get(`reasoning-class-${executionId}${suffix}`)?.response;
+      route = preflightRoute({ verifiedModels: models, defaultRoute: options.defaultRoute }, decision, classDecision);
     } else {
       const core = catalogueFailure ? new JevDecisionCore({ evaluate: async () => { throw catalogueFailure; } }, options.audit) : jev;
       const plan = await planPreflight({ ...input, ...(decisionRevision ? { decisionRevision } : {}) }, core, options.audit);
       const readiness = plan.decisions.find(decision => decision.kind === 'readiness');
-      if (readiness?.policyChecks.some(check => check.name === 'ui-screenshot' && check.result === 'fail') || !plan.outage && (!readiness?.applied || readiness.choice !== 'ready')) throw new NeedsInputError(readiness?.reasons.join(' ') || 'Jev readiness is blocked or uncertain. Clarify the issue or complete its dependencies, then retry.');
+      if (readinessBlocksDispatch(readiness)) throw new NeedsInputError(readiness?.reasons.join(' ') || 'Jev readiness is blocked or uncertain. Clarify the issue or complete its dependencies, then retry.');
       route = plan.route;
     }
     return { route, source: route.label === "jev" ? "jev" : "fallback" };
@@ -116,14 +116,14 @@ export function createServeRouting(options: {
       const families = writerModels.map(modelFamily);
       const family = modelFamily(writer.model);
       if (!family || families.some(family => !family)) throw new Error("Unknown writer model family; independent review requires owner attention");
-      const models = [...await options.models()].filter(model => model.available !== false && modelFamily(model.model) && !families.includes(modelFamily(model.model)));
-      if (!models.length) throw new Error("No verified reviewer from a different model family is available");
+      const models = modelsForClass(await options.models(), "deep").filter(model => modelFamily(model.model) && !families.includes(modelFamily(model.model)));
+      if (!models.length) throw new Error("No verified deep-class reviewer from a different model family is available");
       const decisionId = `review-route-${executionId}-${head}`;
       const decision = options.audit.get(decisionId) ? options.audit.replay(decisionId) : await jev.decide({
         decisionId, executionId, kind: "review-route", question: "Which independent model should review this change? Choose among the verified models from a different family than the writer, considering correctness review capabilities, cost and duration.",
         state: { writer: { ...writer }, models: models.map(model => ({ ...model, capabilities: model.capabilities.map(capability => ({ ...capability })) })), change: prompt },
-        inputs: [{ name: "writer family", value: family }, { name: "reviewed head", value: head }], candidates: models.map(model => model.model),
-        policyChecks: [{ name: "different model family", result: "pass" }],
+        inputs: [{ name: "writer family", value: family }, { name: "reviewed head", value: head }], candidates: [...models.map(model => model.model), "no-suitable-reviewer"], criteria: { ...modelCriteria(models, "review"), "no-suitable-reviewer": "None of the available independent models is suitable for correctness review." }, nonApplyingCandidates: ["no-suitable-reviewer"],
+        policyChecks: [{ name: "different model family", result: "pass" }, { name: "deep correctness review class", result: "pass" }],
       });
       const selected = models.find(model => model.model === decision.choice);
       if (!decision.applied || decision.escalated || !selected) throw new Error("Jev could not select an independent reviewer");

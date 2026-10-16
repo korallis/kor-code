@@ -35,7 +35,7 @@ export async function planSessionTools(input: {
     return [...result].sort();
   };
   if (!jev) return { tools: overridden(lean), decisions: [], fallback: true };
-  const revision = createHash("sha256").update(JSON.stringify({ task: input.task, permissions: [...input.permissions].sort(), eligible })).digest("hex").slice(0, 16);
+  const revision = createHash("sha256").update(JSON.stringify({ decisionPolicyVersion: "tools-2", task: input.task, permissions: [...input.permissions].sort(), eligible })).digest("hex").slice(0, 16);
   const requests: DecisionRequest[] = CAPABILITIES.map(capability => {
     const tools = eligible.filter(tool => capability.name === "shell" ? tool === "Bash"
       : capability.name === "web" ? WEB_TOOLS.includes(tool)
@@ -43,8 +43,8 @@ export async function planSessionTools(input: {
       : browserTool(tool));
     return {
       decisionId: `tools-${input.executionId}-${revision}-${capability.name}`, executionId: input.executionId,
-      kind: "tools", answerType: "noul", question: capability.question,
-      state: { capability: capability.name, eligibleTools: tools },
+      kind: "tools", answerType: "noul", noulPolicy: "two-sided", question: capability.question,
+      state: { task: input.task, capability: capability.name, eligibleTools: tools, decisionPolicyVersion: "tools-2" },
       inputs: [{ name: "capability", value: capability.name }, { name: "eligibleTools", value: tools, source: "repository-policy" }],
       candidates: ["yes", "no"], criteria: { true: capability.yes, false: capability.no }, threshold: TOOL_THRESHOLD,
       policyChecks: [{ name: "tools-allowed", result: tools.length ? "pass" : "fail", reason: tools.length ? "Repository policy permits this capability." : "Repository policy provides no tools for this capability." }],
@@ -53,6 +53,12 @@ export async function planSessionTools(input: {
   const decisions: AppliedDecision[] = [];
   const pending: DecisionRequest[] = [];
   for (const request of requests) {
+    const offered = request.inputs.find(input => input.name === "eligibleTools")?.value;
+    if (Array.isArray(offered) && offered.length === 0 && !jev.get(request.decisionId)) {
+      const reason = "Repository policy offers no tools for this capability; no Jev question or additional grant is needed.";
+      decisions.push(jev.recordPolicyChoice({ ...request, policyChecks: [{ name: "tools-not-granted", result: "pass", reason }] }, "no", reason));
+      continue;
+    }
     const baseId = request.decisionId;
     try {
       let previous = jev.replay(request.decisionId);
@@ -68,14 +74,13 @@ export async function planSessionTools(input: {
     }
   }
   let fallback = false;
-  if (pending[0]) pending[0].state = { task: input.task, capability: pending[0].state };
   try { decisions.push(...(await jev.preflight(pending)).decisions); }
   catch (error) {
     if (!(error instanceof JevUnavailableError)) throw error;
     fallback = true;
-    for (const request of pending) decisions.push(jev.apply({ ...request, policyChecks: [...request.policyChecks ?? [], { name: "jev-available", result: "fail", reason: "Jev unavailable; using the lean tool fallback." }] }, undefined));
+    for (const request of pending) decisions.push(jev.get(request.decisionId)?.response ?? jev.apply({ ...request, policyChecks: [...request.policyChecks ?? [], { name: "jev-available", result: "fail", reason: "Jev unavailable; using the lean tool fallback." }] }, undefined));
   }
-  fallback ||= decisions.some(decision => decision.policyChecks.some(check => check.name === "jev-available" && check.result === "fail"));
+  fallback ||= decisions.some(decision => decision.escalated);
   const tools = new Set(lean);
   for (const decision of decisions) {
     if (!decision.applied || decision.choice !== "yes" || (decision.noul ?? 0) < TOOL_THRESHOLD) continue;

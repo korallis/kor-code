@@ -66,10 +66,25 @@ Confidence is a routing signal, not permission.
 
 Record the question, inputs, candidates, result, confidence, reasons, policy checks, overrides, and observed outcome.
 
-## Phase 3 implementation
+## Implementation
 
-Status: **Validated** — `pnpm jev:fixture` applies four batched route, skill, agent, and context fixture decisions, explains them from the audit log, and replays identical results without another Jev call.
+`JevClient.evaluate` accepts typed Choice, Noul and Score questions. The endpoint
+is `https://api.typesafe.ai/v1/systemone`; the default model is `jev-1.14.0`.
+Credentials come from process memory or the TypeSafe runtime env file. Errors are
+bounded and redacted before persistence or display.
 
-The implementation uses `JevClient.evaluate` for one request containing independent typed `choice`, `noul`, or `score` questions. API failures are represented by a bounded, redacted error message (the upstream body is redacted before the message is capped at 2048 characters); credentials are read only from the process environment or `~/.config/typesafe/env` at runtime. The default endpoint is `https://api.typesafe.ai/v1/systemone` and the default model is `jev-1.13.0`.
+`JevDecisionCore.preflight` validates duplicate IDs before evaluation and sends
+one independently scoped request per decision. It saves successful partial results
+and unavailable judgments before surfacing an outage. Choice confidence gates
+selection at 0.70 by default. Noul policies are explicit: positive evidence for
+acceptance/merge, a negative scope veto for new readiness records, and two-sided
+probability thresholds for tool necessity. Historical records without the new
+policy keep their previous replay semantics.
 
-`JevDecisionCore.preflight` batches independent decision requests into one evaluation, rejects duplicate decision IDs (including IDs already present in the audit log) before evaluation, applies a confidence threshold (0.7 by default), escalates invalid, low-confidence, or policy-blocked results, and records a redacted request, raw answer, probability distribution, and applied result in `MemoryDecisionAuditLog`. An unapplied or escalated result cannot become a route. `explain` returns the complete recorded input and outcome; `recordOutcome` attaches a redacted observed outcome. `replay` re-applies the recorded raw answer without invoking Jev. `MemoryDecisionAuditLog.serialize()` and `importSerialized()` validate the JSON persistence boundary so a controller can store and reload the audit records without changing replay semantics. Route, skill, agent, and context decisions use the same typed contract; deterministic catalogue checks remain outside Jev.
+Memory and persistent audit logs retain exact requests and answers. Replay uses
+the recorded policy and raw answer, without another API request. Explain and
+outcome recording preserve the audit trail. Route conversion rejects unapplied
+or escalated model choices. A conservative fallback has explicit provenance and
+never acquires fabricated Jev confidence.
+
+See [preflight](jev-preflight.md) and [live audit](../jev-decision-audit.md).

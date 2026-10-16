@@ -1,53 +1,93 @@
 # Jev preflight
 
-`kor plan` asks Jev five independent questions in one request:
+`kor plan`, daemon intake and direct controller dispatch use the same ticket-level
+preflight on Jev `jev-1.14.0`. Each decision receives scoped state containing the
+complete issue description, acceptance conditions, dependencies and relevant
+checks or assessments. Route candidate criteria contain versioned model profiles;
+audit inputs retain the complete routing fingerprint without presenting
+out-of-class models as competing choices. Each question is evaluated in its
+own request. Independent readiness, complexity, risk and agent questions run
+concurrently; reasoning class consumes the complexity/risk assessments, then the
+model question consumes the selected class.
 
-- a Noul for readiness;
-- a Score for complexity;
-- a Score for risk;
-- a Choice over verified gateway models;
-- a Choice for the configured agent roster.
+## Readiness
 
-The CLI supplies the issue, acceptance criteria, dependency states, and verified model catalogue as structured state. Code keeps policy checks deterministic. A missing acceptance section, incomplete dependency, or empty verified catalogue fails readiness even when Jev's probability is high.
+Missing acceptance, incomplete dependencies, a missing screenshot on a UI-labelled
+issue, or no compatible profiled model blocks dispatch deterministically.
+When those checks pass, readiness uses an asymmetric scope veto: a healthy
+`P(ready) <= 0.10` blocks because `P(missing essential scope) >= 0.90`.
+An uncertain but valid answer permits bounded implementation and investigation.
+It does not establish acceptance or waive repository policy. An unavailable or
+invalid answer is recorded as unavailable, never as a successful readiness answer.
+The daemon may use an explicitly labelled route fallback during an outage;
+unavailable acceptance judgment still prevents completion.
+A saved Jev scope veto still blocks dispatch when a sibling question is unavailable.
+Only an unavailable readiness judgment itself permits the outage fallback.
 
-Each applied response is redacted and stored in the `decision_audit` table in the configured Kor SQLite database. The audit has the request, answer, probability data, confidence, and applied decision. A stable UUID derived from the canonical Linear issue ID makes clarification comments safe to retry.
+## Model routing
 
-If the TypeSafe request cannot return a valid typed response, Kor records five blocked decisions, uses the configured route with the `fallback` label, and leaves readiness `blocked`. `kor plan` writes a clarification comment and exits with status one; it never dispatches work. The daemon retains the configured route fallback on a Jev outage, but unavailable acceptance judgment prevents completion. Missing acceptance, incomplete dependencies, and a healthy readiness rejection block dispatch and produce a durable clarification comment plus `kor:blocked` on Linear. Resumed execution removes only that Kor label.
+`packages/jev/src/routing.ts` owns the versioned operator policy. Jev first picks
+the least sufficient class: routine mechanical work, implementation within an
+established design, or deep research/review/interacting-system work. Both class
+and conditional model Choice retain their 0.70 confidence thresholds. If class
+confidence is low, code asks the conditional model question in the deep class,
+but keeps the execution labelled fallback. An uncertain class/model or a Jev
+outage uses the configured default when it is verified and profiled; only an
+ineligible default needs a conservative replacement. The effective class follows
+the actual model. Configured reasoning effort is preserved; class-derived effort
+is used only for a Jev selection with no configured effort.
 
-Daemon retries replay the immutable preflight while the issue intent, dependency states, and eligible models remain identical. Changed inputs create a separate decision revision under the same execution ID, so a clarification can resolve readiness without overwriting the earlier rejection. Workflow state, comments, and labels do not invalidate the preflight.
+Candidates contain explicit strengths, exclusions, reasoning class, qualitative
+cost/speed policy, verified streaming/tool/structured-output capabilities, and
+observed probe cost/latency. Probe observations are not workload prices, reasoning
+benchmarks or context measurements. Context limits remain explicitly unknown.
+Unknown model identities require a maintained profile before automatic routing.
+Guarded merge review uses verified deep-class models from a different writer
+family. Reviewer profiles describe review responsibilities separately from writer roles.
+A singleton class still includes a no-suitable-route alternative: its confidence
+measures suitability, not superiority over absent models.
 
-The design was checked with Jev before implementation and again after the review fixes. Jev selected the separate SQLite audit, configured rosters, explicit thresholds, and the labelled fallback policy. The catalogue proposal scored 0.68 confidence because live gateway model capability data can be incomplete. The implementation therefore requires the verified registry and treats an empty registry as blocked. The repair choices were to distinguish healthy escalation from service outage (0.90), describe route candidates and readiness criteria (0.82), and use an update operation for recorded outcomes (0.38, which remains a follow-up choice for the user).
+The route records its effective class, effort and fallback reason. Mission Control
+shows the class and route fallback reason; the activity feed includes reasons for
+all escalated decisions. Raw class and model distributions remain separately
+available. Neither is an end-to-end success probability.
 
-## Tool capability decisions
+## Durable decisions
 
-Before launching each initial or repair session, the controller sends four
-independent `tools` Nouls in one request. They judge shell, live browser,
-external web evidence and sub-agents from the current task. These decisions
-are separate from the five issue preflight questions, so the actual worktree's
-resolved permissions and current repair evidence are available.
+The SQLite `decision_audit` records exact state, questions, criteria, thresholds,
+raw answers, model version, policy checks and outcomes. Successful independent
+answers survive a partial outage; only missing decisions receive fallback records.
+Errors also receive audit records. Retries replay immutable answers without
+calling Jev. The routing policy and profiles participate in the input fingerprint;
+changed issue scope, model eligibility or routing policy creates a new revision.
+Historical readiness answers keep their original symmetric policy on replay.
+Configured defaults participate in the routing fingerprint. Calibration preserves
+the effective class and fallback reason alongside the other route fields.
 
-The normal tool set is derived from effective permission base names. Optional
-web, browser and sub-agent tools are excluded until a yes probability reaches
-0.8. Code intersects every selection with repository permissions and any
-`tools` ceiling. The shell judgment is audit evidence; `Bash` stays available
-for permitted inspection and checks and never gains broader commands.
+Preflight makes up to six Jev requests per ticket: four independent assessments
+in parallel, then class and model. Acceptance makes one request per criterion.
+This increases request volume relative to the old batch; an immutable replay
+makes no new calls.
 
-Each capability has an immutable `tools-<execution>-<revision>-<capability>`
-audit record, including its Noul probability, eligible tool names and
-`tools-allowed` policy check. The revision hashes task text and effective
-policy. Identical retries replay decisions; changed repair evidence or policy
-creates a new revision. A TypeSafe outage records unapplied decisions with a
-failed `jev-available` check and keeps the lean set. Missing Jev also keeps the
-lean set. These decisions neither read nor change the task's route.
+## Tools, context and guidance
 
-## Session skills decision
+Each tools Noul includes task text, capability and eligible tools, including after
+partial replay. A yes needs `P(yes) >= 0.80`; a no is an applied negative at
+`P(yes) <= 0.20`. The middle range keeps the lean tool set with an auditable
+uncertainty reason. Repository permissions and the tool ceiling remain absolute.
+Shell permission never expands because of Jev's judgment. A capability with no
+permitted tools records a deterministic no without a Jev call, fabricated
+confidence or an outage warning.
 
-Skill selection runs at launch, after effective tools and worktree dependencies
-are known. It replaces the old `generalist/testing` placeholder. Each initial or
-repair session asks two shuffled Choices over up to 100 eligible skills plus
-`none-needed`, averages probabilities and derives a budgeted `plan` on a `skills`
-decision. The full plan, both samples and usage survive audit explain/replay.
-Outages produce a labelled fallback plan with repository `always` guidance only.
-See [skills selection](../skills.md#jev-selection-and-context-budgets) for the
-configuration, tier rules, proof commands and measurement limits. Model, provider,
-harness and effort remain owned by the independent task route decision.
+Context candidates carry their path and purpose; relevance is advisory (threshold
+zero). A context outage retains deterministic ordering and records the fallback.
+Skills retain two independently shuffled Choices with averaged probabilities,
+per-skill thresholds and token budgets. Playbook selection retains one Choice.
+Private guidance stays private. Neither guidance decision changes the task route.
+
+Acceptance asks one evidence-grounded Noul per criterion and retains its positive
+0.70 gate. Merge retains its positive 0.90 gate, independent review and check
+policies. Readiness uncertainty never relaxes those gates.
+
+See [the decision audit](../jev-decision-audit.md) for production measurements,
+design research, live replay and verification limits.

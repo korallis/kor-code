@@ -138,11 +138,14 @@ export async function buildContextManifest(options: ContextBuildOptions): Promis
     const issueCharacters = Math.min(decisionIssue.length, Math.floor(maxCharacters / 4));
     const candidates = boundedDecisionSources(ranked, Math.max(1, maxCharacters - issueCharacters));
     try {
-      const decision = await options.jev.rankContext({ decisionId: `context-${options.executionId}-${randomUUID()}`, executionId: options.executionId, kind: "context", question: "Which repository context source is most relevant to this execution?", threshold: 0, state: { issue: decisionIssue.slice(0, issueCharacters), sources: candidates.map(source => ({ id: source.id, path: source.path, purpose: source.purpose, content: source.content })) }, inputs: [{ name: "execution", value: options.executionId, source: "controller" }], candidates: candidates.map(source => source.id), policyChecks: [{ name: "worktree-only", result: "pass" }] });
+      const decision = await options.jev.rankContext({ decisionId: `context-${options.executionId}-${randomUUID()}`, executionId: options.executionId, kind: "context", question: "Which repository context source is most relevant to this execution?", threshold: 0, state: { issue: decisionIssue.slice(0, issueCharacters), sources: candidates.map(source => ({ id: source.id, path: source.path, purpose: source.purpose, content: source.content })) }, inputs: [{ name: "execution", value: options.executionId, source: "controller" }], candidates: candidates.map(source => source.id), criteria: Object.fromEntries(candidates.map(source => [source.id, { path: source.path, purpose: source.purpose, relevance: "Choose when this source most directly supports the issue and acceptance criteria. Rules remain mandatory regardless of ranking." }])), policyChecks: [{ name: "worktree-only", result: "pass" }] });
       if (decision.applied) ranked = ranked.map(source => ({ ...source, relevance: decision.probabilities?.[source.id] ?? (source.id === decision.choice ? 1 : 0) }));
-    } catch (error) { if (!(error instanceof JevUnavailableError)) throw error; }
+    } catch (error) {
+      if (!(error instanceof JevUnavailableError)) throw error;
+      relevanceOverride = { source: "fallback", reason: `Jev context unavailable; deterministic source ordering retained. ${error.message}` };
+    }
   }
-  if (options.rank) relevanceOverride = { source: "caller", reason: "caller rank callback applied before Jev relevance" };
+  if (options.rank && !relevanceOverride) relevanceOverride = { source: "caller", reason: "caller rank callback applied before Jev relevance" };
   ranked.sort((a, b) => b.relevance - a.relevance || a.id.localeCompare(b.id));
   const withScreens = await downloadScreens(ranked, { root, issue: options.issueIdentifier ?? options.executionId, images: options.images ?? [], ...(options.fetchImage ? { fetchImage: options.fetchImage } : {}) });
   const excerpts = maxSourceCharacters === undefined ? withScreens : withScreens.map(source => ({ ...source, content: source.content.slice(0, maxSourceCharacters), truncated: source.truncated || source.content.length > maxSourceCharacters }));

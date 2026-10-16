@@ -176,12 +176,13 @@ function DecisionPanel({ run, decisions, issue, onRequestChanges }: { run: Missi
           <div {...stylex.props(layout.row)}>
             <div {...stylex.props(layout.grow)}>
               <div {...stylex.props(text.strong, text.md)}>{run.route?.model ?? 'not routed yet'}</div>
-              <div {...stylex.props(text.mono, text.muted, text.micro)}>{run.accountSlot.value ?? 'slot unreported'}{run.route?.reasoningLevel ? ` · ${run.route.reasoningLevel} reasoning` : ''}</div>
+              <div {...stylex.props(text.mono, text.muted, text.micro)}>{run.accountSlot.value ?? 'slot unreported'}{run.route?.reasoningClass ? ` · ${run.route.reasoningClass}` : ''}{run.route?.reasoningLevel ? ` · ${run.route.reasoningLevel} reasoning` : ''}</div>
             </div>
             {jevChoseRoute && route && <span {...stylex.props(styles.big)}>{prob(route.confidence)}</span>}
             {run.routeSource === 'override' && <Pill tone="magenta" small dot>your override</Pill>}
             {run.routeSource === 'config' || run.routeSource === 'fallback' ? <Pill tone="slate" small>{run.routeSource === 'config' ? 'configured default' : 'fallback'}</Pill> : null}
           </div>
+          {run.routeSource === 'fallback' && <p {...stylex.props(styles.dP, layout.mt2)}>{run.route?.fallbackReason ?? route?.reasons.join(' ') ?? 'Jev did not supply an executable route. The configured route is in use.'}</p>}
           {route && !jevChoseRoute && (
             <p {...stylex.props(styles.dP, layout.mt2)}>
               {run.routeSource === 'override' ? 'You chose this route; it carries no Jev confidence. ' : 'This route did not come from the Jev decision below. '}

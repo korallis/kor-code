@@ -50,7 +50,7 @@ export interface AgentManifest { id: string; name: string; description?: string;
 export interface ExecutionManifest { executionId: string; issueId: string; repository: string; worktree: string; branch: string; agents: AgentManifest[]; acceptance: AcceptanceCondition[] }
 export interface ContextSource { id: string; path: string; purpose: "rule" | "issue" | "document" | "decision" | "evidence" | "file" | "image"; relevance: number; content: string; truncated?: boolean }
 export interface ContextSourceReference { id: string; path: string; purpose: ContextSource["purpose"] }
-export interface ContextManifest { executionId: string; repository: string; worktree: string; sources: ContextSource[]; droppedSources: ContextSourceReference[]; compacted: boolean; redacted: boolean; relevanceOverride?: { source: "caller"; reason: string } }
+export interface ContextManifest { executionId: string; repository: string; worktree: string; sources: ContextSource[]; droppedSources: ContextSourceReference[]; compacted: boolean; redacted: boolean; relevanceOverride?: { source: "caller" | "fallback"; reason: string } }
 export type ShippingStage =
   | { kind: "commit" }
   | { kind: "pipeline"; head: string; runId?: string }
@@ -62,7 +62,7 @@ export interface Execution { continueVerification?: boolean; writerModels?: stri
 export type AccountPolicy = "fill-first" | "manual" | "least-used";
 export interface GatewayStrategyObservation { value: string; observedAt: string }
 export type ReasoningLevel = "low" | "medium" | "high";
-export interface Route { provider: string; model: string; accountPolicy: AccountPolicy; sessionAffinity: boolean; reasoningLevel?: ReasoningLevel; label?: "jev" | "fallback" | "escalated" | "override"; decisionId?: string }
+export interface Route { provider: string; model: string; accountPolicy: AccountPolicy; sessionAffinity: boolean; reasoningLevel?: ReasoningLevel; label?: "jev" | "fallback" | "escalated" | "override"; decisionId?: string; reasoningClass?: "routine" | "implementation" | "deep"; fallbackReason?: string }
 export interface CatalogueCapability { name: string; supported: boolean; details?: string }
 export interface CatalogueModel { provider: string; model: string; capabilities: CatalogueCapability[]; available?: boolean; costUsd?: number; durationMs?: number }
 export interface Evidence { id: string; kind: "test" | "review" | "provider" | "git" | "policy" | "tracker" | "linear"; summary: string; source?: string; status: "pass" | "fail" | "unresolved"; acceptanceId?: string; executionId?: string }

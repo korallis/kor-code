@@ -33,7 +33,7 @@ export function buildActivity(runs: readonly MissionRun[], overrides: readonly O
   }
   for (const decision of decisions.filter(one => one.escalated)) {
     const run = runs.find(one => one.executionId === decision.executionId);
-    out.push({ id: `d:${decision.decisionId}`, at: decision.recordedAt, tone: 'amber', icon: Route, key: run ? keyOf(run) : decision.executionId.slice(0, 8), executionId: decision.executionId, text: `Jev escalated ${decision.kind}: ${decision.choice}` });
+    out.push({ id: `d:${decision.decisionId}`, at: decision.recordedAt, tone: 'amber', icon: Route, key: run ? keyOf(run) : decision.executionId.slice(0, 8), executionId: decision.executionId, text: `Jev ${decision.kind} fallback: ${decision.reasons.join(" ") || decision.choice}` });
   }
   return out.sort((a, b) => (b.at ? Date.parse(b.at) : 0) - (a.at ? Date.parse(a.at) : 0));
 }
