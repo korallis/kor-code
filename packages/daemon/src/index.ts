@@ -28,7 +28,7 @@ import { readModelRegistry } from "@kor-code/gateway-adapter";
 import { ProjectDrives } from "./project-drive.js";
 export { ensureUiToken } from "./ui-token.js";
 export { MissionServices } from "./mission-services.js";
-export { GitHubShipping, type ShippingDriver, type ShippingCommand, type DescribePullRequest, type MergeIntelligence } from "./shipping.js";
+export { GitHubShipping, ShippingDecisionHold, type ShippingDriver, type ShippingCommand, type DescribePullRequest, type MergeIntelligence } from "./shipping.js";
 
 export { OverrideStore } from "./overrides.js";
 

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { createHash } from "node:crypto";
 import { hasScreenshot } from "@kor-code/tracker";
 import type { CatalogueModel, Route } from "@kor-code/core";
-import { NeedsInputError, type DaemonOptions, type DescribePullRequest, type MergeIntelligence } from "@kor-code/daemon";
+import { NeedsInputError, ShippingDecisionHold, type DaemonOptions, type DescribePullRequest, type MergeIntelligence } from "@kor-code/daemon";
 import { JevClient, JevDecisionCore, JevUnavailableError, redact, planPreflight, preflightRequests, preflightRoute, readinessBlocksDispatch, modelCriteria, modelsForClass, type DecisionAuditLog } from "@kor-code/jev";
 
 /** Identify architecture families from model IDs, independent of gateway providers. */
@@ -118,7 +118,8 @@ export function createServeRouting(options: {
       if (!family || families.some(family => !family)) throw new Error("Unknown writer model family; independent review requires owner attention");
       const models = modelsForClass(await options.models(), "deep").filter(model => modelFamily(model.model) && !families.includes(modelFamily(model.model)));
       if (!models.length) throw new Error("No verified deep-class reviewer from a different model family is available");
-      const decisionId = `review-route-${executionId}-${head}`;
+      const eligible = createHash("sha256").update(JSON.stringify(models.map(model => model.model).sort())).digest("hex").slice(0, 16);
+      const decisionId = `review-route-${executionId}-${head}-${eligible}`;
       const decision = options.audit.get(decisionId) ? options.audit.replay(decisionId) : await jev.decide({
         decisionId, executionId, kind: "review-route", question: "Which independent model should review this change? Choose among the verified models from a different family than the writer, considering correctness review capabilities, cost and duration. Choose no-suitable-reviewer only if none is suitable.",
         state: { writer: { ...writer }, models: models.map(model => ({ ...model, capabilities: model.capabilities.map(capability => ({ ...capability })) })), change: prompt },
@@ -126,7 +127,7 @@ export function createServeRouting(options: {
         policyChecks: [{ name: "different model family", result: "pass" }, { name: "deep correctness review class", result: "pass" }],
       });
       const selected = models.find(model => model.model === decision.choice);
-      if (!decision.applied || decision.escalated || !selected) throw new Error("Jev could not select an independent reviewer");
+      if (!decision.applied || decision.escalated || !selected) throw new ShippingDecisionHold(decisionId, `Jev held independent reviewer selection: ${decision.choice} at ${decision.confidence.toFixed(2)}; ${decision.reasons.join("; ")}`);
       const reviewFamily = modelFamily(selected.model);
       if (!reviewFamily || families.includes(reviewFamily)) throw new Error("Reviewer is not independent of the writer");
       const output = await options.complete(prompt, { ...options.defaultRoute, provider: selected.provider, model: selected.model, label: "jev", decisionId });

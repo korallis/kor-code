@@ -27,6 +27,10 @@ export interface MergeIntelligence {
   review(input: { executionId: string; head: string; prompt: string; writer: Route; writerModels: string[] }): Promise<IndependentReview>;
   decide(input: { executionId: string; head: string; review: IndependentReview; checks: Evidence[]; localVerification: Evidence[]; summary: string }): Promise<DecisionBundle>;
 }
+/** A recorded decision needs operator attention; transport failures remain retryable. */
+export class ShippingDecisionHold extends Error {
+  constructor(readonly decisionId: string, message: string) { super(message); }
+}
 const descriptionSchema = z.object({
   title: z.string().trim().min(1).max(PR_TITLE_LIMIT).regex(/^(?:feat|fix|refactor|perf|docs|ci|chore)\([\w.-]+\): [^\r\n.][^\r\n]*[^.\r\n]$/),
   summary: z.string().trim().min(1).max(PR_FIELD_LIMIT),
@@ -194,10 +198,12 @@ export class GitHubShipping implements ShippingDriver {
         await this.review(input, execution, report);
       } else await this.review(input, execution, report);
       if (!report.error) report.evidence = report.evidence.filter(item => item.id !== `shipping-${execution.id}-delivery`);
+      report.evidence = report.evidence.filter(item => item.id !== `shipping-${execution.id}-decision-hold`);
     } catch (error) {
       report.error = safe(error);
       execution.status = "blocked";
       this.evidence(report, execution.id, "delivery", "policy", "unresolved", report.error);
+      if (error instanceof ShippingDecisionHold) this.evidence(report, execution.id, "decision-hold", "policy", "unresolved", report.error, error.decisionId);
     }
     return execution;
   }

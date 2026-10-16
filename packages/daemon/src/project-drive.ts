@@ -192,6 +192,12 @@ export class ProjectDrives {
         if (!entry || entry.manual || entry.admission === null || entry.status === "done" || entry.status === "held") continue;
         const assignment = this.daemon.store.findAssignment(issue.id);
         const shipping = assignment?.manifest?.shipping;
+        const decisionHold = shipping?.evidence.find(item => item.id === `shipping-${assignment?.executionId}-decision-hold`);
+        if (assignment?.status === "blocked" && decisionHold) {
+          entry.status = "held"; entry.reason = decisionHold.summary;
+          if (decisionHold.source && audit.get(decisionHold.source)) core.recordOutcome(decisionHold.source, { action: "hold", driveId: drive.id, issueId: issue.id, reason: entry.reason });
+          continue;
+        }
         // Viable repairs have already been requeued by advanceShipping. An
         // unqueued repair reason is a terminal hold for this drive, not progress.
         if (assignment && shipping?.repairReason && assignment.status !== "queued" && assignment.status !== "running") {
