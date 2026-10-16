@@ -195,7 +195,9 @@ export class ProjectDrives {
       for (const issue of issues) {
         if (!current()) return;
         const entry = drive.issues.find(one => one.issueId === issue.id);
-        if (!entry || entry.manual || entry.admission === null || entry.status === "done" || entry.status === "held") continue;
+        if (!entry || entry.manual || entry.admission === null || entry.status === "done" || ["canceled", "duplicate"].includes(issue.stateType)) continue;
+        const admission = audit.replay(entry.admission);
+        if (!admission.applied || !["ready", "monitor"].includes(admission.choice)) continue;
         const assignment = this.daemon.store.findAssignment(issue.id);
         const shipping = assignment?.manifest?.shipping;
         const decisionHold = shipping?.evidence.find(item => item.id === `shipping-${assignment?.executionId}-decision-hold`);
