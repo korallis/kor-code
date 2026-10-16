@@ -46,7 +46,7 @@ export class ProjectDrives {
     for (const drive of this.drives) for (const issue of drive.issues) if (issue.issueId === issueId && !issue.manual) {
       issue.manual = true;
       const assignment = this.daemon.store.findAssignment(issueId);
-      issue.status = assignment?.status === "queued" ? "queued" : assignment?.status === "running" ? "running" : "review";
+      issue.status = !["running", "paused"].includes(drive.status) ? "held" : assignment?.status === "queued" ? "queued" : assignment?.status === "running" ? "running" : "review";
       issue.reason = "Operator queued this issue independently of the drive";
       this.revisions.set(drive.id, (this.revisions.get(drive.id) ?? 0) + 1);
       this.save(drive);
