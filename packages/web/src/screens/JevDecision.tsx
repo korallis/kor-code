@@ -161,6 +161,15 @@ function DecisionPanel({ run, decisions, issue, onRequestChanges }: { run: Missi
         <ProvenanceChip provenance="live" />
       </div>
       <div {...stylex.props(styles.panelScroll)}>
+        {run.shipping?.review && <Section index={0} label="Independent review" right={run.shipping.review.family}>
+          <p {...stylex.props(styles.dP)}>{run.shipping.review.verdict} · {run.shipping.review.model}</p>
+          {run.shipping.review.findings.map((finding, index) => <p key={index} {...stylex.props(styles.dP)}>{finding}</p>)}
+        </Section>}
+        {run.shipping?.mergeDecision && <Section index={0} label="Merge decision" right={prob(run.shipping.mergeDecision.confidence)}>
+          <p {...stylex.props(styles.dP)}>{run.shipping.mergeDecision.choice} · needs 90% for automatic merge</p>
+          <p {...stylex.props(styles.dP)}>{run.shipping.mergeDecision.reasons.join(' · ')}</p>
+        </Section>}
+        {run.shipping?.error && <Notice tone="warn" title={run.shipping.error} />}
         <Section index={0} label="Intent" right="from Linear"><p {...stylex.props(styles.dP)}>{issue?.description?.split('\n').find(line => line.trim())?.slice(0, 280) ?? run.issueTitle ?? run.issueId}</p></Section>
         <Section index={1} label="Chosen model" right={`route · ${run.routeSource ?? '—'}`}>
           <div {...stylex.props(layout.row)}>

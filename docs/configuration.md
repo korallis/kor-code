@@ -146,8 +146,10 @@ checkout for a new config scaffold. Supply `--linear-team APP` to write the team
 mapping; without it the YAML contains `linearTeam: YOUR_TEAM_KEY`, which you must
 replace. The one-liner prompts for the key on a fresh config. Reinstall preserves
 existing config. Configure `linearTeam` or `linearProject`,
-checks, and `toolAllowlist` before enabling the service. Empty scaffold checks
-and allowlists are deliberate placeholders for repository policy.
+checks, and `toolAllowlist` before enabling the service. Scaffold checks are empty until you supply repository commands. New scaffolds
+use `ship: merge`, the unscoped allowlist `Read, Write, Edit, Glob, Grep, Bash,
+WebFetch, WebSearch, Agent`, and concurrency limits of 6 total / 4 per repository.
+Use `ship: auto` for manual merging, or `ship: approve` to also approve PR publication.
 
 Kor adds exact simple commands from `checks` to execution-session permissions. It
 also permits equivalent direct invocations of explicitly allowed `bash`/`sh`
@@ -323,7 +325,7 @@ calibration:
     reasoningLevel: medium
 ```
 
-`defaultBranch` defaults to `main`, `checks` and `toolAllowlist` default to empty lists, `tools` is derived when omitted, and the default route is `anthropic / claude-sonnet-5-5` with fill-first account selection. Unknown fields and invalid values fail before a configuration reaches the controller.
+`defaultBranch` defaults to `main`, `checks` defaults to an empty list, `toolAllowlist` defaults to `[Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Agent]`, `ship` defaults to `merge`, and concurrency limits default to 6 total / 4 per repository, `tools` is derived when omitted, and the default route is `anthropic / claude-sonnet-5-5` with fill-first account selection. Unknown fields and invalid values fail before a configuration reaches the controller.
 
 Each repository can also carry a `skills` block (`always`, `pins`, `never`, `budget`); see [skill selection](skills.md#skill-selection). Mission Control edits it under **Repository settings** and refuses skill names the catalogue does not hold.
 

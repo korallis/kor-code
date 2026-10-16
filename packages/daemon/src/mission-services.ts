@@ -81,8 +81,8 @@ export class MissionServices {
     this.credentials = parsed;
     this.gatewayAdapter = undefined;
   }
-  github(path: string, body?: unknown, environment: NodeJS.ProcessEnv = process.env): Promise<unknown> {
-    return githubRequest(path, body, { ...environment, ...(this.credentials.github ? { GH_TOKEN: this.credentials.github } : {}) });
+  github(path: string, body?: unknown, environment: NodeJS.ProcessEnv = process.env, method?: "PUT"): Promise<unknown> {
+    return githubRequest(path, body, { ...environment, ...(this.credentials.github ? { GH_TOKEN: this.credentials.github } : {}) }, method);
   }
   shippingEnvironment(environment: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = { ...environment, ...(this.credentials.github ? { GH_TOKEN: this.credentials.github } : {}), GIT_TERMINAL_PROMPT: "0" };

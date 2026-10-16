@@ -22,7 +22,7 @@ import { MissionServices, atomicPrivateFile, live, unavailable } from "./mission
 import { ensureUiToken } from "./ui-token.js";
 export { ensureUiToken } from "./ui-token.js";
 export { MissionServices } from "./mission-services.js";
-export { GitHubShipping, type ShippingDriver, type ShippingCommand, type DescribePullRequest } from "./shipping.js";
+export { GitHubShipping, type ShippingDriver, type ShippingCommand, type DescribePullRequest, type MergeIntelligence } from "./shipping.js";
 
 export { OverrideStore } from "./overrides.js";
 
@@ -335,7 +335,9 @@ export class KorDaemon {
         if (!states.review) throw new Error(`Linear team ${issue.teamKey} has no In Review state`);
         const writer = new AgentSessionWriter(this.store, linear, states);
         try { await writer.flush(); } catch (error) { await this.reportError(error); }
-        let execution = await shipping.advance({ execution: previous, issue, repository });
+        const decisionId = previous.shipping.mergeDecision?.decisionId;
+        const mergeOverride = decisionId ? this.overrides.activeDecision(previous.id, decisionId) : undefined;
+        let execution = await shipping.advance({ execution: previous, issue, repository, ...(mergeOverride ? { mergeOverride: { decisionId: mergeOverride.target, choice: mergeOverride.choice } } : {}) });
         const report = execution.shipping;
         if (!report) throw new Error('Shipping driver lost its durable report');
         const changed = previous.shipping.stage.kind !== report.stage.kind || previous.status !== execution.status || previous.shipping.error !== report.error || JSON.stringify(previous.shipping.evidence) !== JSON.stringify(report.evidence);
@@ -354,6 +356,13 @@ export class KorDaemon {
           this.options.controller?.recordTerminalOutcome(execution.id, { status: report.stage.kind === 'merged' ? 'merged' : 'rejected', recordedAt: new Date(this.now()).toISOString(), source: 'shipping.github-observed' });
         }
         this.store.updateShipping(execution, writes);
+        if (report.repairReason && this.options.controller?.canRepair(execution) && this.store.requestChanges(execution.id, { withinBudget: true })) {
+          this.store.operatorMessage(execution.id, "request-changes", `Automatic merge gate repair: ${report.repairReason}`);
+          await this.log(execution.id, "merge gate requested a repair within the existing verification budget");
+        } else if (report.repairReason) {
+          report.error = `${report.repairReason}; repair budget exhausted or repair controller unavailable. PR remains open; review in Mission Control.`;
+          this.store.updateShipping(execution);
+        }
         try { await writer.flush(); } catch (error) { await this.reportError(error); }
         if (report.stage.kind === 'merged' && report.cleanup !== 'removed' && this.store.counts().pendingWrites === 0) {
           if (resolve(execution.worktree) !== join(resolve(this.options.paths.worktreesDir), execution.id)) throw new Error('Cleanup path is outside this execution worktree');
@@ -631,6 +640,10 @@ export class KorDaemon {
       previous = run.route?.model;
     } else if (decision) {
       checks.push({ name: "choice is a candidate of the decision", result: decision.candidates.includes(request.choice) ? "pass" : "fail" });
+      if (decision.kind === "merge") {
+        checks.push({ name: "current merge decision", result: run.shipping?.mergeDecision?.decisionId === decision.decisionId ? "pass" : "fail" });
+        checks.push({ name: "publication idle", result: this.shippingActive.has(run.executionId) ? "fail" : "pass" });
+      }
       previous = decision.choice;
     } else {
       checks.push({ name: "decision recorded for this execution", result: "fail" });
@@ -865,7 +878,7 @@ export class KorDaemon {
       if (screenshotCheck.result === "fail") throw new NeedsInputError(screenshotCheck.reason);
       const route = await this.routeFor(id, issue);
       const previous = this.store.listAssignments().find(assignment => assignment.executionId === id)?.manifest;
-      const manifest: Execution = { ...(previous?.verification ? { verification: { ...previous.verification, passed: false } } : {}), id, issueId: issue.id, repository, worktree: previous?.worktree ?? "", branch: previous?.branch || `kor/${issue.identifier ?? issue.id}`, status: "running", ...(route ? { route } : {}) };
+      const manifest: Execution = { ...(previous?.continueVerification ? { continueVerification: true } : {}), writerModels: [...new Set([...(previous?.writerModels ?? []), ...(route ? [route.model] : [])])], ...(previous?.verification ? { verification: { ...previous.verification, passed: false } } : {}), id, issueId: issue.id, repository, worktree: previous?.worktree ?? "", branch: previous?.branch || `kor/${issue.identifier ?? issue.id}`, status: "running", ...(route ? { route } : {}) };
       this.store.markRunning(claim, manifest);
       await this.syncLabelOverrides(id, issue.labels);
       if (issue.labels.includes('kor:blocked')) this.store.record(claim, [{ kind: 'label', issueId: issue.id, name: 'kor:blocked', present: false }]);

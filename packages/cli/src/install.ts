@@ -78,9 +78,9 @@ async function scaffoldConfig(pilot: string, environment: NodeJS.ProcessEnv, lin
     catch { branch = await command("git", ["symbolic-ref", "--short", "HEAD"], environment, pilot); }
   }
   const { limits, launchProfile, pollIntervalSeconds, intakeLabel } = loaded.config;
-  const config = { repos: { [basename(pilot)]: { path: pilot, linearTeam: linearTeam ?? "YOUR_TEAM_KEY", defaultBranch: branch, ship: "approve", checks: [], toolAllowlist: [] } },
+  const config = { repos: { [basename(pilot)]: { path: pilot, linearTeam: linearTeam ?? "YOUR_TEAM_KEY", defaultBranch: branch, ship: "merge", checks: [], toolAllowlist: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch", "Agent"] } },
     limits, launchProfile, pollIntervalSeconds, intakeLabel };
-  await writeFile(paths.configFile, stringify(config), { mode: 0o600 });
+  await writeFile(paths.configFile, stringify(config), { mode: 0o600, flag: "wx" });
 }
 
 async function scaffoldGateway(environment: NodeJS.ProcessEnv): Promise<string | undefined> {

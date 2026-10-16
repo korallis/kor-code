@@ -13,7 +13,7 @@ export const repositorySchema = z.strictObject({
   linearProject: nonempty.optional(),
   defaultBranch: nonempty.default("main"),
   checks: z.array(nonempty).default([]),
-  toolAllowlist: z.array(nonempty).default([]),
+  toolAllowlist: z.array(nonempty).default(["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch", "Agent"]),
   tools: z.array(z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/)).optional(),
   skills: z.strictObject({
     always: z.array(nonempty).default([]),
@@ -21,8 +21,8 @@ export const repositorySchema = z.strictObject({
     never: z.array(nonempty).default([]),
     budget: positiveInteger.default(4_000),
   }).optional(),
-  /** Existing repositories retain automatic publication; Mission Control can gate it. */
-  ship: z.enum(["approve", "auto"]).default("auto"),
+  /** Explicit approve/auto retain manual merge; merge adds the guarded merge gate. */
+  ship: z.enum(["approve", "auto", "merge"]).default("merge"),
 });
 export const routeSchema = z.strictObject({
   provider: nonempty.default("anthropic"),
@@ -45,8 +45,8 @@ export const skillsConfigSchema = z.strictObject({
 export const korConfigSchema = z.strictObject({
   repos: z.record(nonempty, repositorySchema).default({}),
   limits: z.strictObject({
-    total: positiveInteger.default(2),
-    perRepository: positiveInteger.default(1),
+    total: positiveInteger.default(6),
+    perRepository: positiveInteger.default(4),
     perProvider: positiveInteger.optional(),
   }).prefault({}),
   defaultRoute: routeSchema.prefault({}),
