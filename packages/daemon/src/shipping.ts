@@ -25,7 +25,7 @@ export interface ShippingInput { execution: Execution; issue: TrackerIssue; repo
 export type DescribePullRequest = (input: { executionId: string; head: string; prompt: string; route?: Route }) => Promise<string | null | { kind: "fallback"; reason: string }>;
 export interface MergeIntelligence {
   review(input: { executionId: string; head: string; prompt: string; writer: Route; writerModels: string[] }): Promise<IndependentReview>;
-  decide(input: { executionId: string; head: string; review: IndependentReview; checks: Evidence[]; summary: string }): Promise<DecisionBundle>;
+  decide(input: { executionId: string; head: string; review: IndependentReview; checks: Evidence[]; localVerification: Evidence[]; summary: string }): Promise<DecisionBundle>;
 }
 const descriptionSchema = z.object({
   title: z.string().trim().min(1).max(PR_TITLE_LIMIT).regex(/^(?:feat|fix|refactor|perf|docs|ci|chore)\([\w.-]+\): [^\r\n.][^\r\n]*[^.\r\n]$/),
@@ -314,9 +314,10 @@ export class GitHubShipping implements ShippingDriver {
       report.error = "Waiting for green GitHub checks and clean branch protection status";
       return;
     }
-    if (!report.mergeDecision) {
-      report.mergeDecision = await this.merge.decide({ executionId: execution.id, head: pr.head.sha, review: report.review, checks,
-        summary: report.review.summary });
+    const localVerification = (execution.verification?.attempts.at(-1)?.evidence ?? []).map(item => ({ ...item, summary: publicText(item.summary, input), ...(item.source ? { source: publicText(item.source, input) } : {}) }));
+    const evaluated = await this.merge.decide({ executionId: execution.id, head: pr.head.sha, review: report.review, checks, localVerification, summary: report.review.summary });
+    if (report.mergeDecision?.decisionId !== evaluated.decisionId) {
+      report.mergeDecision = evaluated;
       this.evidence(report, execution.id, "merge-decision", "policy", report.mergeDecision.choice === "merge" && report.mergeDecision.confidence >= 0.9 ? "pass" : "unresolved",
         `Jev: ${report.mergeDecision.choice}; probability=${report.mergeDecision.confidence}; ${report.mergeDecision.reasons.join('; ')}`, pr.html_url);
       return; // Persist the decision so Mission Control can show and override it.

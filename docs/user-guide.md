@@ -224,7 +224,10 @@ intakeLabel: kor
   never widens your command permissions.
 - **`ship: merge`** is written by the installer for a fresh config: open the
   verified PR and merge after independent review, green GitHub checks and a Jev
-  merge probability of at least 0.90.
+  merge probability of at least 0.90. Jev receives the recorded local checks and
+  acceptance findings alongside the independent review and GitHub check results.
+  A repository with no GitHub CI still needs passing local verification and clean
+  GitHub mergeability.
   Choose `auto` to publish automatically but merge yourself, or `approve` to
   approve publication first and then merge yourself. Omitted `ship` retains
   `auto`; projects added in Mission Control retain `approve`.
