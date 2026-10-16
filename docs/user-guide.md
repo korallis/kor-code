@@ -487,7 +487,7 @@ LEE-1166: blocked; hasScreenshot=false
   acceptance-criteria: Add explicit acceptance criteria to the issue.
 ```
 
-`kor linear lint --project PROJECT-ID` checks up to 100 issues at once. Lint
+`kor linear lint --project PROJECT-ID` walks all issue pages and checks each issue individually. Lint
 also blocks unfinished blocking dependencies, and an issue labelled `UI` without
 a screenshot or mockup. To attach a PNG to an issue and verify it landed:
 
@@ -567,8 +567,8 @@ after restarting the daemon.
 
 - **Home → Next up** lists Todo issues labelled `kor`, each with **Start**.
 - **Agents → Queue an issue** lists every open issue Kor is not running. Filter,
-  tick one or more and **Queue for Kor**; issues without criteria are marked
-  `no criteria`.
+  tick one or more and **Queue for Kor**. Readiness, including acceptance
+  criteria, is checked when you start an issue.
 - **Projects** rows have **Run with Kor**, or tick several and **Queue for Kor**.
 - **Label a Todo issue `kor`** in Linear and the daemon queues it on its next
   poll. LEE-1164 was started this way and was `waiting` for approval 15 seconds

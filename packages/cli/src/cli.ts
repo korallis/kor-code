@@ -44,7 +44,7 @@ function errorHint(command: string, error: unknown): string {
   if (command === "serve") return "check the Kor configuration and daemon state, then retry";
   if (command === "run" || command === "plan") return "check the issue identifier, the Linear credentials, and that config.yaml maps the issue's team or project to a repository, then retry";
   if (command === "linear attach-image") return "check the PNG, caption, issue identifier and Linear write credentials; rerun identical inputs to resume a partial upload";
-  if (command === "linear") return "check the issue or project identifier and Linear credentials; for projects above 100 issues, lint individual issues";
+  if (command === "linear") return "check the issue or project identifier and Linear credentials";
   if (command === "status" || command === "cancel" || command === "retry" || command === "logs") return "check the execution ID or issue key, then retry";
   return `run \`kor ${command} --help\` or retry with --debug for details`;
 }

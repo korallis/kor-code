@@ -83,6 +83,9 @@ export class MissionApi {
           else send(200, { schemaVersion: 1, run });
           return;
         }
+        if (path === "/api/linear/documents") { send(200, await this.daemon.missionDocuments(url.searchParams.get("project") ?? "")); return; }
+        const issuePath = /^\/api\/linear\/issues\/([^/]+)$/.exec(path);
+        if (issuePath?.[1]) { send(200, await this.daemon.missionIssue(decodeURIComponent(issuePath[1]))); return; }
         if (path === "/api/linear/issues") { send(200, await this.daemon.missionIssues(url.searchParams.get("project"))); return; }
         if (path === "/api/github/pulls") {
           const repository = this.daemon.config.repos[url.searchParams.get("repo") ?? ""];

@@ -72,7 +72,9 @@ remain forbidden. The browser always uses the authenticated `/api` routes.
 | `/api/runs`, `/api/runs/:id` | Run status, current stage, needs-input reason and account provenance |
 | `/api/runs/:id/terminal` | A bounded terminal tail plus the full byte offset for stream continuation |
 | `/api/runs/:id/session` | The next session's skills plan with overrides applied, the playbook, the tools, and each possible edit's per-turn token change or refusal reason; 409 until the run's repository is known |
-| `/api/linear/issues?project=<repository-key>` | Up to 100 issues per mapped team, filtered by the mapped Linear project |
+| `/api/linear/issues?project=<repository-key>` | All visible issue summaries from the daemon's paged team observation, filtered by mapped Linear project when present; excludes descriptions, comments and documents |
+| `/api/linear/issues/:id` | Full context for one issue, including paged comments, documents and other nested connections |
+| `/api/linear/documents?project=<repository-key>` | Paged project-document metadata (ID, title and Linear URL), without document bodies |
 | `/api/github/pulls?repo=<repository-key>` | Up to 100 pull requests from the actual GitHub repository |
 | `/api/models` | Gateway catalogue joined to Kor's compatibility registry |
 | `/api/pool`, `/api/quota` | Gateway account health and measured quota, with provenance |

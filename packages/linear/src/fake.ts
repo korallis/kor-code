@@ -1,3 +1,4 @@
+import { issueSummary } from './contract.js';
 import type { Execution } from '@kor-code/core';
 import { linearIssueFixture, workflowStatesFixture } from './fixture.js';
 import type { AgentSessionRecord, LinearClient, LinearIssue, LinearWorkflowState, LinearWrite } from './contract.js';
@@ -40,13 +41,20 @@ export class FakeLinearClient implements LinearClient {
     return this.issue(session.issueId);
   }
 
+  async checkConnection(): Promise<void> {}
+
   async getIssue(id: string): Promise<LinearIssue> { return structuredClone(this.issue(id)); }
 
-  async listIssues(teamKey: string, limit = 50): Promise<LinearIssue[]> {
-    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('Linear issue limit must be 1..100');
+  async listIssues(teamKey: string, pageSize = 50) {
+    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) throw new Error('Linear issue page size must be 1..100');
     const teamId = this.teamIds.get(teamKey);
-    return [...this.issues.values()].filter(issue => issue.teamId === teamId).slice(0, limit).map(issue => structuredClone(issue));
+    return [...this.issues.values()].filter(issue => issue.teamId === teamId).map(issue => issueSummary(structuredClone(issue)));
   }
+
+  async listProjectIssues(projectId: string) {
+    return [...this.issues.values()].filter(issue => issue.projectId === projectId).map(issue => issueSummary(structuredClone(issue)));
+  }
+  async listProjectDocuments(_projectId: string) { return []; }
 
   async listWorkflowStates(_teamKey: string): Promise<LinearWorkflowState[]> {
     return structuredClone(this.workflowStates);

@@ -87,10 +87,11 @@ async function readImageIssue(client: HttpLinearClient, id: string) {
   let issue: Record<string, unknown> = {};
   const attachments: { id: string; title: string; url: string }[] = [];
   const cursors = new Set<string>();
+  let pageNumber = 0;
   do {
     const data = await client.query(`query KorImageIssue($id: String!, $after: String) {
       issue(id: $id) { id identifier description attachments(first: 100, after: $after) { nodes { id title url } pageInfo { hasNextPage endCursor } } }
-    }`, { id, after: cursor });
+    }`, { id, after: cursor }, ++pageNumber);
     issue = object(data.issue);
     const page = object(issue.attachments);
     if (!Array.isArray(page.nodes)) throw new Error('Linear image attachment page is invalid');

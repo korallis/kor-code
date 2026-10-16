@@ -22,6 +22,15 @@ export interface LinearIssue extends Issue {
   stateName?: string;
 }
 
+/** List rows deliberately omit execution context; open an issue to read its body. */
+export type LinearIssueSummary = Omit<LinearIssue, 'description' | 'acceptanceCriteria' | 'documents' | 'comments' | 'sessions' | 'resources'>;
+export interface LinearDocumentSummary { id: string; title: string; url: string }
+
+export function issueSummary(issue: LinearIssue): LinearIssueSummary {
+  const { description, acceptanceCriteria, documents, comments, sessions, resources, ...summary } = issue;
+  return summary;
+}
+
 export type LinearStateType = "backlog" | "unstarted" | "started" | "completed" | "canceled" | "triage" | "duplicate";
 export interface LinearWorkflowState { id: string; type: LinearStateType; name?: string }
 
@@ -44,11 +53,15 @@ export type LinearWrite =
 export interface LinearClientCapabilities { agentSessions?: boolean }
 
 export interface LinearClient {
+  /** Authenticate without walking any issue connection. */
+  checkConnection(): Promise<void>;
   createIssue?(input: { id: string; teamKey: string; projectId: string; title: string; description: string; labels: string[] }): Promise<LinearIssue>;
   setPriority?(issueId: string, priority: number): Promise<void>;
   fetchImage?(url: string): Promise<Response>;
   getIssue(id: string): Promise<LinearIssue>;
-  listIssues(teamKey: string, limit?: number): Promise<LinearIssue[]>;
+  listIssues(teamKey: string, pageSize?: number): Promise<LinearIssueSummary[]>;
+  listProjectIssues(projectId: string): Promise<LinearIssueSummary[]>;
+  listProjectDocuments(projectId: string): Promise<LinearDocumentSummary[]>;
   listWorkflowStates(teamKey: string): Promise<LinearWorkflowState[]>;
   apply(write: LinearWrite): Promise<void>;
   recordExecution(execution: Execution): Promise<void>;
@@ -114,13 +127,28 @@ export function connection(value: unknown): unknown[] {
 
 export function parseIssue(value: unknown): LinearIssue {
   const data = object(value);
+  const summary = parseIssueSummary(value);
   const project = data.project === null ? undefined : object(data.project);
-  const state = object(data.state);
   const description = data.description === null ? '' : string(data.description);
   const documents = [...connection(data.documents), ...(project ? connection(project.documents) : [])].map(value => {
     const document = object(value);
     return { id: string(document.id), title: string(document.title), content: document.content === null ? '' : string(document.content) };
   });
+  // Acceptance remains explicit in description; Jev owns interpretation/readiness.
+  const acceptanceSection = /(?:^|\n)#{1,6}\s+Acceptance(?: criteria| conditions)?\s*\n([\s\S]*?)(?=\n#{1,6}\s|$)/i.exec(description)?.[1] ?? '';
+  return {
+    ...summary, description, documents,
+    acceptanceCriteria: acceptanceSection.split('\n').map(line => line.replace(/^\s*[-*]\s*(?:\[[ x]\]\s*)?/i, '').trim()).filter(Boolean),
+    comments: connection(data.comments).map(value => { const comment = object(value); return { id: string(comment.id), body: string(comment.body) }; }),
+    sessions: connection(data.agentSessions).map(value => { const session = object(value); return { id: string(session.id), status: string(session.status) }; }),
+    resources: connection(data.attachments).map(value => { const attachment = object(value); return { title: string(attachment.title), url: string(attachment.url) }; }),
+  };
+}
+
+export function parseIssueSummary(value: unknown): LinearIssueSummary {
+  const data = object(value);
+  const project = data.project === null ? undefined : object(data.project);
+  const state = object(data.state);
   const dependencies = connection(data.inverseRelations).flatMap(value => {
     const relation = object(value);
     if (relation.type !== 'blocks') return [];
@@ -128,19 +156,13 @@ export function parseIssue(value: unknown): LinearIssue {
     return [{ id: string(issue.id), stateType: stateType(object(issue.state).type) }];
   });
   if (typeof data.priority !== 'number' || !Number.isFinite(data.priority)) throw new Error('Linear priority is invalid');
-  // Acceptance remains explicit in description; Jev owns interpretation/readiness.
-  const acceptanceSection = /(?:^|\n)#{1,6}\s+Acceptance(?: criteria| conditions)?\s*\n([\s\S]*?)(?=\n#{1,6}\s|$)/i.exec(description)?.[1] ?? '';
   return {
-    id: string(data.id), title: string(data.title), description,
-    acceptanceCriteria: acceptanceSection.split('\n').map(line => line.replace(/^\s*[-*]\s*(?:\[[ x]\]\s*)?/i, '').trim()).filter(Boolean),
+    id: string(data.id), title: string(data.title),
     ...(project ? { projectId: string(project.id) } : {}),
     teamId: string(object(data.team).id), teamKey: string(object(data.team).key), stateId: string(state.id), stateType: stateType(state.type),
     ...(typeof data.identifier === 'string' ? { identifier: data.identifier } : {}), ...(typeof data.url === 'string' ? { url: data.url } : {}), ...(typeof state.name === 'string' ? { stateName: state.name } : {}),
-    updatedAt: string(data.updatedAt), priority: data.priority, documents, dependencies,
+    updatedAt: string(data.updatedAt), priority: data.priority, dependencies,
     subIssueIds: connection(data.children).map(value => string(object(value).id)),
-    comments: connection(data.comments).map(value => { const comment = object(value); return { id: string(comment.id), body: string(comment.body) }; }),
-    sessions: connection(data.agentSessions).map(value => { const session = object(value); return { id: string(session.id), status: string(session.status) }; }),
-    resources: connection(data.attachments).map(value => { const attachment = object(value); return { title: string(attachment.title), url: string(attachment.url) }; }),
     labels: data.labels === undefined ? [] : connection(data.labels).map(value => string(object(value).name)),
   };
 }
