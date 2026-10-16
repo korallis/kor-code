@@ -35,7 +35,7 @@ async function screenDirectory(root: string, issue: string): Promise<string> {
   return directory;
 }
 
-async function imageBytes(response: Response): Promise<{ bytes: Buffer; extension: string }> {
+export async function imageBytes(response: Response): Promise<{ bytes: Buffer; extension: string }> {
   const extension = IMAGE_EXTENSIONS.get(response.headers.get("content-type")?.split(";")[0]?.trim() ?? "");
   if (!response.ok || !extension || !response.body) {
     await response.body?.cancel();
@@ -71,7 +71,7 @@ export async function downloadScreens(sources: readonly ContextSource[], options
       if (url.protocol !== "https:" || url.username || url.password || url.port) throw new Error("Unsupported image URL");
       const addresses = await lookup(url.hostname.replace(/^\[|\]$/g, ""), { all: true });
       if (addresses.length === 0 || addresses.some(item => PRIVATE_ADDRESSES.check(item.address, isIP(item.address) === 6 ? "ipv6" : "ipv4"))) throw new Error("Image URL must resolve to a public address");
-      const response = url.hostname === "uploads.linear.app" && options.fetchImage
+      const response = options.fetchImage
         ? await options.fetchImage(url.href)
         : await fetch(url, { redirect: "error", signal: AbortSignal.timeout(15_000) });
       const { bytes, extension } = await imageBytes(response);

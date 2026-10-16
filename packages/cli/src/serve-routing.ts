@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import { hasScreenshot } from "@kor-code/linear";
+import { hasScreenshot } from "@kor-code/tracker";
 import type { CatalogueModel, Route } from "@kor-code/core";
 import { NeedsInputError, type DaemonOptions, type DescribePullRequest, type MergeIntelligence } from "@kor-code/daemon";
 import { JevClient, JevDecisionCore, JevUnavailableError, redact, planPreflight, preflightRequests, routeFromDecision, type DecisionAuditLog } from "@kor-code/jev";

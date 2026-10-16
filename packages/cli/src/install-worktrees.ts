@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { loadKorConfig, runtimePaths } from "@kor-code/config";
-import { LinearStore } from "@kor-code/linear";
+import { TrackerStore } from "@kor-code/tracker";
 import { missing } from "./install-journal.js";
 
 const exec = promisify(execFile);
@@ -18,7 +18,7 @@ export async function purgeKorWorktrees(): Promise<void> {
   if (!markers.length) return;
   const { config } = await loadKorConfig(paths.configFile, { home: paths.home });
   const repositories = new Set(Object.values(config.repos).map(repository => resolve(repository.path)));
-  const store = new LinearStore(paths.databaseFile);
+  const store = new TrackerStore(paths.databaseFile);
   const assignments = store.listAssignments();
   store.close();
   const owned = [];

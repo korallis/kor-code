@@ -8,6 +8,7 @@ import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import { downloadScreens, type TicketImage } from "./screens.js";
 export { ticketImages } from "./screens.js";
+export { imageBytes } from "./screens.js";
 export { contextPrompt } from "./prompt.js";
 
 const execFile = promisify(execFileCallback);

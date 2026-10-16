@@ -11,7 +11,7 @@ export function nextStep(run: MissionRun): { label: string; text: string } {
     case 'verifying': return { label: 'NEXT', text: 'Repository checks run, then Jev judges each acceptance condition.' };
     case 'repairing': return { label: 'NEXT', text: 'The session repairs what verification found, then Kor verifies again.' };
     case 'waiting': return { label: 'NEXT', text: 'Your go-ahead to ship: approve, or request changes.' };
-    case 'shipping': return { label: 'NEXT', text: 'Commit, delivery gate, then the pull request and Linear update.' };
+    case 'shipping': return { label: 'NEXT', text: 'Commit, delivery gate, then the pull request and tracker update.' };
     case 'review': return { label: 'NEXT', text: run.shipping?.mergeEnabled ? run.shipping.error ?? 'Kor checks the independent review, GitHub checks and Jev’s merge decision before merging.' : 'Review and merge the pull request on GitHub; Kor marks the issue Done after.' };
     case 'blocked': case 'escalated': return { label: 'NEEDS YOU', text: run.needsInput?.reason ?? run.error ?? 'The run stopped and needs your direction.' };
     case 'failed': return { label: 'FAILED', text: run.error ?? 'The run failed; retry it or read the log.' };

@@ -2,7 +2,7 @@ import { access } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { runtimePaths } from "@kor-code/config";
 import { processMatches } from "@kor-code/daemon";
-import { LinearStore } from "@kor-code/linear";
+import { TrackerStore } from "@kor-code/tracker";
 
 /** Signal only the daemon whose boot ID and start time still own this Kor database. */
 export async function stopLocalDaemon(): Promise<void> {
@@ -12,7 +12,7 @@ export async function stopLocalDaemon(): Promise<void> {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
     throw error;
   }
-  const store = new LinearStore(paths.databaseFile);
+  const store = new TrackerStore(paths.databaseFile);
   const owner = (() => { try { return store.daemonOwner(); } finally { store.close(); } })();
   if (!owner || !processMatches(owner.process)) return;
   process.kill(owner.process.pid, "SIGTERM");

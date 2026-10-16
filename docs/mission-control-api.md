@@ -72,9 +72,9 @@ remain forbidden. The browser always uses the authenticated `/api` routes.
 | `/api/runs`, `/api/runs/:id` | Run status, current stage, needs-input reason and account provenance |
 | `/api/runs/:id/terminal` | A bounded terminal tail plus the full byte offset for stream continuation |
 | `/api/runs/:id/session` | The next session's skills plan with overrides applied, the playbook, the tools, and each possible edit's per-turn token change or refusal reason; 409 until the run's repository is known |
-| `/api/linear/issues?project=<repository-key>` | All visible issue summaries from the daemon's paged team observation, filtered by mapped Linear project when present; excludes descriptions, comments and documents |
-| `/api/linear/issues/:id` | Full context for one issue, including paged comments, documents and other nested connections |
-| `/api/linear/documents?project=<repository-key>` | Paged project-document metadata (ID, title and Linear URL), without document bodies |
+| `/api/issues?project=<repository-key>` | All visible issue summaries from the daemon's paged tracker observation, scoped to the configured project; excludes descriptions, comments and documents |
+| `/api/issues/:id` | Full context for one issue, including paged comments, documents and other nested connections |
+| `/api/documents?project=<repository-key>` | Paged project-document metadata (ID, title and Linear URL), without document bodies |
 | `/api/github/pulls?repo=<repository-key>` | Up to 100 pull requests from the actual GitHub repository |
 | `/api/models` | Gateway catalogue joined to Kor's compatibility registry |
 | `/api/pool`, `/api/quota` | Gateway account health and measured quota, with provenance |
@@ -90,10 +90,10 @@ and there is no learned-memory store in the current foundation.
 
 | Write | Behaviour |
 | --- | --- |
-| `POST /api/runs` | Resolve and validate all Linear issues before adding any durable assignments; returns 202 |
+| `POST /api/runs` | Resolve and validate all tracker issues before adding any durable assignments; returns 202 |
 | `POST /api/runs/:id/cancel` | Request cancellation through the durable queue, abort the owned active session, or dismiss a failed run from Needs you |
 | `POST /api/runs/:id/retry` | Retry failed, canceled or blocked execution; blocked publication resumes its existing stage |
-| `POST /api/runs/:id/answer` | Persist the answer and Linear comment, then retry a needs-input run |
+| `POST /api/runs/:id/answer` | Persist the answer and tracker comment, then retry a needs-input run |
 | `POST /api/runs/:id/note` | Persist guidance and an issue comment; guidance is supplied to the next session attempt |
 | `POST /api/runs/:id/approve` | Release a verified execution waiting at the publication gate |
 | `POST /api/runs/:id/request-changes` | Persist feedback, invalidate approval and verification, retain verification history, and rerun the same issue branch |
@@ -200,3 +200,9 @@ Every SSE envelope already carries `observedAt`, the event publication time.
 For historical decision/override activity, use each record's `recordedAt`;
 replaying an event must retain its original time. Snapshot freshness is separate
 from execution, verification and billing timestamps.
+
+`GET /api/linear/issues` remains a compatibility alias for `/api/issues`. Both return the configured tracker’s issue contract. Run actions expose `trackerSync` and retain `linearSync` as a compatibility alias. See [tracker integration](specs/tracker-integration.md) (LEE-1323).
+
+`GET /api/issues/:id/images` returns up to eight authenticated tracker image previews
+as bounded image data URLs. It accepts only images hosted by the configured tracker;
+credentials stay in the daemon and image responses are limited to 5 MiB each.

@@ -1,4 +1,4 @@
-// Screen 4: the issue workspace. Issues on the left; the Linear request, Jev's
+// Screen 4: the issue workspace. Issues on the left; the issue request, Jev's
 // reply, tool steps, diff, checks, acceptance and the composer in the centre;
 // the Jev Decision panel on the right with approve, request changes and
 // explore alternatives.
@@ -6,14 +6,14 @@ import * as stylex from '@stylexjs/stylex';
 import { Check, ChevronDown, CircleCheck, CircleDashed, CircleX, GitBranch, GitPullRequest, Hash, AtSign, Play, Search, Send, Slash, Square } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { MissionRun, Project } from '@kor-code/mission-control';
-import type { LinearIssue } from '@kor-code/linear';
+import type { TrackerIssue } from '@kor-code/tracker';
 import type { DecisionRecord } from '@kor-code/core';
 import { ApiFailure } from '../api/client';
 import { useDecisions, useMissionRuns } from '../api/data';
 import { isOpen, issueKey, useAllIssues } from '../api/issues';
 import { useLive } from '../api/live';
 import { useRunTerminal } from '../api/terminal';
-import { useConfig, useIssue, useModels, useOverride, useProjects, useQueue, useRunAction, useRunMessage } from '../api/queries';
+import { useConfig, useIssue, useIssueImages, useModels, useOverride, useProjects, useQueue, useRunAction, useRunMessage } from '../api/queries';
 import { href } from '../router';
 import { AppFrame } from '../shell/AppFrame';
 import { initials, projectTone } from '../shell/projectTone';
@@ -65,6 +65,7 @@ const styles = stylex.create({
   av: { width: '30px', height: '30px', borderRadius: '50%', display: 'grid', placeItems: 'center', fontFamily: font.display, fontWeight: 600, fontSize: fontSize.sm, backgroundImage: tint.avatar, color: color.violetBright, borderWidth: '1px', borderStyle: 'solid', borderColor: color.hairlineStrong },
   who: { fontSize: fontSize.base, fontWeight: 600, display: 'flex', gap: space.s2, alignItems: 'baseline' },
   when: { fontFamily: font.mono, fontSize: fontSize.microPlus, color: color.textFaint, fontWeight: 400 },
+  screen: { maxWidth: '100%', maxHeight: '360px', objectFit: 'contain' },
   txt: { marginTop: space.s1, fontSize: fontSize.basePlus, color: color.textSecondary, lineHeight: 1.55, whiteSpace: 'pre-wrap' },
   meta: { marginTop: space.s1h, fontFamily: font.mono, fontSize: fontSize.xs, color: color.textMuted },
   steps: { marginTop: space.s2, display: 'grid', gap: '1px', fontFamily: font.mono, fontSize: fontSize.xsPlus },
@@ -118,7 +119,7 @@ function Section({ label, right, index, children }: { label: string; right?: Rea
   );
 }
 
-function DecisionPanel({ run, decisions, issue, onRequestChanges }: { run: MissionRun; decisions: DecisionRecord[]; issue: LinearIssue | undefined; onRequestChanges: () => void }) {
+function DecisionPanel({ run, decisions, issue, onRequestChanges }: { run: MissionRun; decisions: DecisionRecord[]; issue: TrackerIssue | undefined; onRequestChanges: () => void }) {
   const [menu, setMenu] = useState(false);
   const [exploring, setExploring] = useState(false);
   const action = useRunAction();
@@ -170,7 +171,7 @@ function DecisionPanel({ run, decisions, issue, onRequestChanges }: { run: Missi
           <p {...stylex.props(styles.dP)}>{run.shipping.mergeDecision.reasons.join(' · ')}</p>
         </Section>}
         {run.shipping?.error && <Notice tone="warn" title={run.shipping.error} />}
-        <Section index={0} label="Intent" right="from Linear"><p {...stylex.props(styles.dP)}>{issue?.description?.split('\n').find(line => line.trim())?.slice(0, 280) ?? run.issueTitle ?? run.issueId}</p></Section>
+        <Section index={0} label="Intent" right="from tracker"><p {...stylex.props(styles.dP)}>{issue?.description?.split('\n').find(line => line.trim())?.slice(0, 280) ?? run.issueTitle ?? run.issueId}</p></Section>
         <Section index={1} label="Chosen model" right={`route · ${run.routeSource ?? '—'}`}>
           <div {...stylex.props(layout.row)}>
             <div {...stylex.props(layout.grow)}>
@@ -260,7 +261,15 @@ function DecisionPanel({ run, decisions, issue, onRequestChanges }: { run: Missi
   );
 }
 
-function Workspace({ run, issue, decisions, composerRef }: { run: MissionRun; issue: LinearIssue | undefined; decisions: DecisionRecord[]; composerRef: React.RefObject<HTMLInputElement | null> }) {
+function IssueScreens({ id }: { id: string }) {
+  const screens = useIssueImages(id);
+  return <>{screens.data?.images.map((image, index) => <figure key={index}>
+    {image.dataUrl ? <img src={image.dataUrl} alt={image.title} {...stylex.props(styles.screen)} /> : <p>{image.reason}</p>}
+    <figcaption {...stylex.props(text.muted, text.xs)}>{image.title}</figcaption>
+  </figure>)}</>;
+}
+
+function Workspace({ run, issue, decisions, composerRef }: { run: MissionRun; issue: TrackerIssue | undefined; decisions: DecisionRecord[]; composerRef: React.RefObject<HTMLInputElement | null> }) {
   const terminal = useRunTerminal(run.executionId);
   const models = useModels();
   const message = useRunMessage();
@@ -293,7 +302,7 @@ function Workspace({ run, issue, decisions, composerRef }: { run: MissionRun; is
           <span {...stylex.props(text.key)}>{keyOf(run)}</span>
           <span {...stylex.props(layout.grow)} />
           {run.pullRequestUrl && <a href={run.pullRequestUrl} target="_blank" rel="noopener noreferrer" {...stylex.props(text.cyan, text.sm)}>{prNumber(run.pullRequestUrl)} ↗</a>}
-          {(run.issueUrl ?? issue?.url) && <a href={run.issueUrl ?? issue?.url} target="_blank" rel="noopener noreferrer" {...stylex.props(text.cyan, text.sm)}>Open in Linear ↗</a>}
+          {(run.issueUrl ?? issue?.url) && <a href={run.issueUrl ?? issue?.url} target="_blank" rel="noopener noreferrer" {...stylex.props(text.cyan, text.sm)}>Open issue ↗</a>}
         </div>
         <h1 {...stylex.props(styles.h1)}>{run.issueTitle ?? issue?.title ?? run.issueId}</h1>
         <div {...stylex.props(styles.tagRow)}>
@@ -306,9 +315,10 @@ function Workspace({ run, issue, decisions, composerRef }: { run: MissionRun; is
         <div {...stylex.props(styles.msg)}>
           <span {...stylex.props(styles.av)}>L</span>
           <div>
-            <div {...stylex.props(styles.who)}>Linear issue <span {...stylex.props(styles.when)}>{issue ? issueKey(issue) : ''}</span></div>
+            <div {...stylex.props(styles.who)}>Issue <span {...stylex.props(styles.when)}>{issue ? issueKey(issue) : ''}</span></div>
             <div {...stylex.props(styles.txt)}>{issue?.description?.trim() || run.issueTitle || 'The issue description has not been read yet.'}</div>
-            <div {...stylex.props(styles.meta)}>{issue ? `${issue.acceptanceCriteria.length} acceptance criteria · labels ${issue.labels.join(', ') || 'none'}` : 'reading Linear…'}</div>
+            {issue && <IssueScreens id={issue.id} />}
+            <div {...stylex.props(styles.meta)}>{issue ? `${issue.acceptanceCriteria.length} acceptance criteria · labels ${issue.labels.join(', ') || 'none'}` : 'reading issue…'}</div>
           </div>
         </div>
         {(readiness || run.route) && (
@@ -407,7 +417,7 @@ export function JevDecision({ executionId }: { executionId?: string }) {
   const done = projectRuns.filter(run => run.status === 'complete' || run.status === 'canceled').filter(run => match(keyOf(run), run.issueTitle ?? ''));
   const intake = config.data?.config.intakeLabel ?? 'kor';
   const runIssues = new Set(runs.map(run => run.issueId));
-  const ready = projectIssues.filter(one => isOpen(one) && !runIssues.has(one.id) && one.labels.includes(intake)).filter(one => match(issueKey(one), one.title));
+  const ready = projectIssues.filter(one => isOpen(one) && !one.intakeBlockedReason && !runIssues.has(one.id) && one.labels.includes(intake)).filter(one => match(issueKey(one), one.title));
   const runDecisions = selected ? decisionsFor(decisions, selected.executionId) : [];
   const projectIndex = project ? projectList.indexOf(project) : 0;
   const runItem = (run: MissionRun) => (
@@ -418,7 +428,7 @@ export function JevDecision({ executionId }: { executionId?: string }) {
     </a>
   );
   return (
-    <AppFrame active="linear" crumbs={[project?.name ?? 'Linear', selected ? keyOf(selected) : 'Issues']} askHint={selected ? `Ask Jev about ${keyOf(selected)} — "why ${shortModel(selected.route?.model)}?", "what would another model change?"` : undefined}>
+    <AppFrame active="linear" crumbs={[project?.name ?? 'Issues', selected ? keyOf(selected) : 'Issues']} askHint={selected ? `Ask Jev about ${keyOf(selected)} — "why ${shortModel(selected.route?.model)}?", "what would another model change?"` : undefined}>
       <div {...stylex.props(styles.grid)}>
         <Card index={0} flex style={styles.col} label="Issues">
           <div {...stylex.props(styles.lh)}>

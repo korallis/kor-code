@@ -7,7 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { readManifest } from "./install-journal.js";
 import { z } from "zod";
 import { runtimePaths } from "@kor-code/config";
-import { LinearStore } from "@kor-code/linear";
+import { TrackerStore } from "@kor-code/tracker";
 import { processMatches } from "@kor-code/daemon";
 import { ensureUiToken } from "@kor-code/daemon";
 
@@ -17,7 +17,7 @@ async function liveUiUrl(token: string): Promise<string | undefined> {
   try {
     const paths = runtimePaths();
     const { url, pid } = addressSchema.parse(JSON.parse(await readFile(join(paths.stateDir, "ui-address.json"), "utf8")));
-    const store = new LinearStore(paths.databaseFile);
+    const store = new TrackerStore(paths.databaseFile);
     try {
       const owner = store.daemonOwner();
       if (owner?.process.pid !== pid || !processMatches(owner.process)) return undefined;

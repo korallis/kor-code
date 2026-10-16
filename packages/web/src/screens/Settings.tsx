@@ -1,3 +1,4 @@
+import { TrackerSettings, defaultGitHubSettings } from './TrackerSettings';
 // Settings: connect Linear, GitHub, the gateway and Jev (write-only
 // credentials), and edit Kor's own configuration, including its projects.
 import * as stylex from '@stylexjs/stylex';
@@ -12,7 +13,7 @@ import { AppFrame } from '../shell/AppFrame';
 import { color, font, fontSize, radius, space, tint } from '../theme/tokens.stylex';
 import { Button } from '../ui/button';
 import { Card, CardBody, CardHeader } from '../ui/card';
-import { FieldLabel, TextInput } from '../ui/form';
+import { FieldLabel, Segmented, TextInput } from '../ui/form';
 import { BrandMark, Icon } from '../ui/icon';
 import { Empty, Notice } from '../ui/misc';
 import { Pill } from '../ui/pill';
@@ -35,14 +36,14 @@ const styles = stylex.create({
 
 const META: Record<Connection['id'], { title: string; blurb: string }> = {
   linear: { title: 'Linear', blurb: 'Reads issues and writes progress comments with your personal API key.' },
-  github: { title: 'GitHub', blurb: 'Opens pull requests and reads their checks.' },
+  github: { title: 'GitHub', blurb: 'Reads Issues and Projects, posts progress, and ships pull requests.' },
   gateway: { title: 'Gateway', blurb: 'CLIProxyAPI: every model call and the account pool go through it. Kor never edits its config.' },
   jev: { title: 'Jev', blurb: 'The TypeSafe decision service behind readiness, routing and acceptance.' },
 };
 
 function ConnectionRow({ connection }: { connection: Connection }) {
   const connect = useConnect();
-  const [open, setOpen] = useState(connection.status !== 'connected');
+  const [open, setOpen] = useState(connection.status === 'unavailable');
   const [a, setA] = useState(''), [b, setB] = useState(''), [c, setC] = useState('');
   const meta = META[connection.id];
   const glyph = connection.id === 'linear' ? <BrandMark brand="linear" size={17} /> : connection.id === 'github' ? <BrandMark brand="github" size={17} /> : connection.id === 'gateway' ? <Icon icon={Network} size={17} /> : <Icon icon={Sparkles} size={17} />;
@@ -57,7 +58,7 @@ function ConnectionRow({ connection }: { connection: Connection }) {
     <div {...stylex.props(styles.conn)}>
       <span {...stylex.props(styles.badge)}>{glyph}</span>
       <div>
-        <div {...stylex.props(layout.row)}><span {...stylex.props(styles.connName)}>{meta.title}</span><Pill tone={connection.status === 'connected' ? 'green' : 'amber'} small dot>{connection.status}</Pill></div>
+        <div {...stylex.props(layout.row)}><span {...stylex.props(styles.connName)}>{meta.title}</span><Pill tone={connection.status === 'connected' ? 'green' : connection.status === 'not_required' ? 'slate' : 'amber'} small dot>{connection.status === 'not_required' ? 'not required' : connection.status}</Pill></div>
         <div {...stylex.props(text.muted, text.sm, layout.mt1)}>{connection.reason ?? meta.blurb}</div>
       </div>
       <Button size="sm" variant={connection.status === 'connected' ? 'ghost' : 'warn'} icon={KeyRound} onClick={() => setOpen(value => !value)}>{connection.status === 'connected' ? 'Replace key' : 'Connect'}</Button>
@@ -80,10 +81,13 @@ function GeneralSettings({ config }: { config: KorConfig }) {
   const [draft, setDraft] = useState(config);
   const [repoKey, setRepoKey] = useState(''), [repoPath, setRepoPath] = useState(''), [repoTeam, setRepoTeam] = useState('');
   const [repoProject, setRepoProject] = useState('');
+  const [tracker, setTracker] = useState<'linear' | 'github'>('linear');
+  const [github, setGithub] = useState(defaultGitHubSettings());
+  const validRepo = repoKey.trim() && repoPath.trim() && (tracker === 'github' ? /^[\w.-]+\/[\w.-]+$/.test(github.repository) : repoTeam.trim() && repoProject.trim());
   const numberField = (value: string, apply: (n: number) => KorConfig) => { const n = Number(value); if (Number.isInteger(n) && n > 0) setDraft(apply(n)); };
   const addRepo = () => {
-    if (!repoKey.trim() || !repoPath.trim() || !repoTeam.trim() || !repoProject.trim()) return;
-    setDraft(current => ({ ...current, repos: { ...current.repos, [repoKey.trim()]: { tracker: 'linear', path: repoPath.trim(), defaultBranch: 'main', checks: [], toolAllowlist: [], ship: 'approve', linearTeam: repoTeam.trim(), linearProject: repoProject.trim() } } }));
+    if (!validRepo) return;
+    setDraft(current => ({ ...current, repos: { ...current.repos, [repoKey.trim()]: { path: repoPath.trim(), defaultBranch: 'main', checks: [], toolAllowlist: [], ship: 'approve', tracker, ...(tracker === 'github' ? { github } : { linearTeam: repoTeam.trim(), linearProject: repoProject.trim() }) } } }));
     setRepoKey(''); setRepoPath(''); setRepoTeam(''); setRepoProject('');
   };
   const removeRepo = (key: string) => setDraft(current => { const repos = { ...current.repos }; delete repos[key]; return { ...current, repos }; });
@@ -106,7 +110,7 @@ function GeneralSettings({ config }: { config: KorConfig }) {
         <CardBody>
           {Object.entries(draft.repos).map(([key, repo]) => (
             <div key={key} {...stylex.props(styles.repo)}>
-              <div><a href={href('projects', key, 'settings')} {...stylex.props(text.strong)}>{key}</a><div {...stylex.props(text.mono, text.xs, text.muted, text.ellipsis)}>{repo.path}{repo.linearTeam ? ` · team ${repo.linearTeam}` : ''}</div></div>
+              <div><a href={href('projects', key, 'settings')} {...stylex.props(text.strong)}>{key}</a><div {...stylex.props(text.mono, text.xs, text.muted, text.ellipsis)}>{repo.path}{` · ${repo.tracker}`}{repo.github ? ` · ${repo.github.repository}` : repo.linearTeam ? ` · team ${repo.linearTeam}` : ''}</div></div>
               <Button size="sm" variant="danger-ghost" icon={Trash2} onClick={() => removeRepo(key)} label={`Remove ${key}`} iconOnly />
             </div>
           ))}
@@ -114,9 +118,11 @@ function GeneralSettings({ config }: { config: KorConfig }) {
           <div {...stylex.props(styles.form, layout.mt4)}>
             <FieldLabel>Key</FieldLabel><TextInput label="Project key" mono value={repoKey} onChange={setRepoKey} placeholder="e.g. matilda-v2" />
             <FieldLabel>Checkout path</FieldLabel><TextInput label="Checkout path" mono value={repoPath} onChange={setRepoPath} placeholder="/home/you/code/project" />
+            <FieldLabel>Tracker</FieldLabel><Segmented label="Tracker" value={tracker} onChange={setTracker} options={[{ value: 'linear', label: 'Linear' }, { value: 'github', label: 'GitHub' }]} />
+            {tracker === 'github' ? <TrackerSettings value={github} onChange={setGithub} /> : <>
             <FieldLabel>Linear team</FieldLabel><TextInput label="Linear team" mono value={repoTeam} onChange={setRepoTeam} placeholder="e.g. MAT" />
-            <FieldLabel>Linear project</FieldLabel><TextInput label="Linear project" mono value={repoProject} onChange={setRepoProject} placeholder="project ID from Linear" />
-            <span /><div><Button size="sm" icon={FolderPlus} disabled={!repoKey.trim() || !repoPath.trim() || !repoTeam.trim() || !repoProject.trim()} onClick={addRepo}>Add project</Button></div>
+            <FieldLabel>Linear project</FieldLabel><TextInput label="Linear project" mono value={repoProject} onChange={setRepoProject} placeholder="project ID from Linear" /></>}
+            <span /><div><Button size="sm" icon={FolderPlus} disabled={!validRepo} onClick={addRepo}>Add project</Button></div>
           </div>
         </CardBody>
       </Card>

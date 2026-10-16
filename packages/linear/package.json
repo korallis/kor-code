@@ -16,6 +16,7 @@
     "probe:conformance": "tsx src/conformance.ts"
   },
   "dependencies": {
-    "@kor-code/core": "workspace:*"
+    "@kor-code/core": "workspace:*",
+    "@kor-code/tracker": "workspace:*"
   }
 }

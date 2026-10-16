@@ -32,6 +32,12 @@
     },
     {
       "path": "../calibration"
+    },
+    {
+      "path": "../tracker"
+    },
+    {
+      "path": "../context"
     }
   ]
 }

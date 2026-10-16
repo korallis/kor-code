@@ -1,4 +1,4 @@
-// Queue an issue: every open Linear issue across the configured projects that
+// Queue an issue: every open tracker issue across the configured projects that
 // Kor is not already running, searchable, queued with POST /api/runs.
 import * as stylex from '@stylexjs/stylex';
 import { Play, Search } from 'lucide-react';
@@ -32,7 +32,7 @@ export function QueueDialog({ onClose, projectId }: { onClose: () => void; proje
   const running = new Set(runs.filter(run => !['complete', 'failed', 'canceled'].includes(run.status)).map(run => run.issueId));
   const needle = filter.trim().toLowerCase();
   const candidates = issues.flatMap(entry => entry.issues.map(issue => ({ issue, project: entry.project })))
-    .filter(({ issue }) => isOpen(issue) && !running.has(issue.id))
+    .filter(({ issue }) => isOpen(issue) && !issue.intakeBlockedReason && !running.has(issue.id))
     .filter(({ issue }) => !needle || `${issueKey(issue)} ${issue.title}`.toLowerCase().includes(needle))
     .sort((a, b) => (a.issue.priority || 5) - (b.issue.priority || 5));
   const toggle = (id: string) => setPicked(current => current.includes(id) ? current.filter(one => one !== id) : [...current, id]);
@@ -44,7 +44,7 @@ export function QueueDialog({ onClose, projectId }: { onClose: () => void; proje
   return (
     <Dialog title="Queue an issue for Kor" onClose={onClose} wide>
       <TextInput label="Filter issues" icon={Search} value={filter} onChange={setFilter} placeholder="Filter by key or title…" autoFocus />
-      {issues.some(entry => entry.provenance === 'unavailable') && <ProvenanceChip provenance="unavailable" reason={issues.find(entry => entry.reason)?.reason}>some projects could not be read from Linear</ProvenanceChip>}
+      {issues.some(entry => entry.provenance === 'unavailable') && <ProvenanceChip provenance="unavailable" reason={issues.find(entry => entry.reason)?.reason}>some projects could not be read from their trackers</ProvenanceChip>}
       <div {...stylex.props(styles.list)} role="listbox" aria-multiselectable="true">
         {candidates.map(({ issue, project }) => (
           <div key={issue.id} role="option" aria-selected={picked.includes(issue.id)} onClick={() => toggle(issue.id)} {...stylex.props(styles.row)}>
@@ -56,7 +56,7 @@ export function QueueDialog({ onClose, projectId }: { onClose: () => void; proje
             <Pill tone="ghost" small>readiness checked on start</Pill>
           </div>
         ))}
-        {candidates.length === 0 && <Empty slot="empty-no-issues" title={issues.some(entry => entry.provenance === 'loading') ? 'Reading Linear…' : 'No open issues to queue.'} />}
+        {candidates.length === 0 && <Empty slot="empty-no-issues" title={issues.some(entry => entry.provenance === 'loading') ? 'Reading issues…' : 'No open issues to queue.'} />}
       </div>
       {queue.error && <Notice title={queue.error.message} hint={queue.error instanceof ApiFailure ? queue.error.hint : undefined} />}
       <div {...stylex.props(layout.row)}>

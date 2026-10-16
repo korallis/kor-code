@@ -1,10 +1,10 @@
 import { access } from "node:fs/promises";
 import type { Execution } from "@kor-code/core";
-import { LinearStore, type AssignmentRecord } from "@kor-code/linear";
+import { TrackerStore, type AssignmentRecord } from "@kor-code/tracker";
 import type { WorktreeManager } from "./worktree.js";
 export interface ReconciliationReport { assignments: AssignmentRecord[]; expiredLeases: string[]; resumable: Execution[]; missingWorktrees: string[]; orphanedWorktrees: string[] }
 export class RestartReconciler {
-  constructor(private readonly store: LinearStore, private readonly worktrees: WorktreeManager) {}
+  constructor(private readonly store: TrackerStore, private readonly worktrees: WorktreeManager) {}
   async reconcile(): Promise<ReconciliationReport> {
     const assignments = this.store.listAssignments(); const expiredLeases: string[] = []; const resumable: Execution[] = []; const missingWorktrees: string[] = [];
     for (const assignment of assignments) {

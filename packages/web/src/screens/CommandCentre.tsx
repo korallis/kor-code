@@ -3,7 +3,7 @@ import * as stylex from '@stylexjs/stylex';
 import { Activity as ActivityIcon, ArrowRight, Bot, Check, RotateCcw, BrainCircuit, Coins, Cpu, FolderKanban, Gauge, GitPullRequest, ListTodo, MessageSquare, Play, Send, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import type { MissionRun } from '@kor-code/mission-control';
-import type { LinearIssueSummary } from '@kor-code/linear';
+import type { TrackerIssueSummary } from '@kor-code/tracker';
 import type { DecisionRecord } from '@kor-code/core';
 import { ApiFailure } from '../api/client';
 import { useMissionRuns, useOverrides, usePoolLive, useDecisions } from '../api/data';
@@ -160,7 +160,7 @@ function ReadyToShip({ run, now }: { run: MissionRun; now: number }) {
   );
 }
 
-function NeedsYou({ run, now, linearUrl }: { run: MissionRun | undefined; now: number; linearUrl?: string | undefined }) {
+function NeedsYou({ run, now, issueUrl }: { run: MissionRun | undefined; now: number; issueUrl?: string | undefined }) {
   const [answer, setAnswer] = useState('');
   const message = useRunMessage();
   const action = useRunAction();
@@ -187,7 +187,7 @@ function NeedsYou({ run, now, linearUrl }: { run: MissionRun | undefined; now: n
       </div>
       <h3 {...stylex.props(styles.needsTitle)}>{run.issueTitle ?? run.issueId}</h3>
       <div {...stylex.props(layout.row, text.muted, text.sm, layout.mt1)}>
-        {run.repository && <><span {...stylex.props(layout.none)}><Swatch tone="green" /></span>{run.repository} · </>}Linear: {run.issueState ?? '—'} · {plural(run.attempts, 'attempt')} · {usd(run.costUsd)} so far
+        {run.repository && <><span {...stylex.props(layout.none)}><Swatch tone="green" /></span>{run.repository} · </>}Issue: {run.issueState ?? '—'} · {plural(run.attempts, 'attempt')} · {usd(run.costUsd)} so far
       </div>
       <div {...stylex.props(styles.askQ)}>
         <JevOrb size={18} />
@@ -196,7 +196,7 @@ function NeedsYou({ run, now, linearUrl }: { run: MissionRun | undefined; now: n
       {answerable ? (
         <>
           <TextArea label={`Answer for ${keyOf(run)}`} value={answer} onChange={setAnswer} mono rows={4} placeholder="Answer Jev. ⌘↵ sends." onSubmit={send} style={styles.answerBox} />
-          <div {...stylex.props(styles.caption)}>Kor writes your answer to the Linear issue as a comment, then retries the run.</div>
+          <div {...stylex.props(styles.caption)}>Kor writes your answer to the issue as a comment, then retries the run.</div>
         </>
       ) : <div {...stylex.props(styles.caption)}>This run has no question to answer. Read why in the run, then retry it once the cause is fixed.</div>}
       {error && <div {...stylex.props(layout.mt2)}><Notice title={error.message} hint={error instanceof ApiFailure ? error.hint : undefined} /></div>}
@@ -206,7 +206,7 @@ function NeedsYou({ run, now, linearUrl }: { run: MissionRun | undefined; now: n
         {answerable
           ? <Button variant="primary" icon={Send} busy={message.isPending} disabled={!answer.trim()} onClick={send}>Send and retry</Button>
           : <Button variant="primary" icon={RotateCcw} busy={action.isPending && action.variables?.action === 'retry'} onClick={() => action.mutate({ action: 'retry', executionId: run.executionId })}>Retry</Button>}
-        {answerable ? ((run.issueUrl ?? linearUrl) && <Button brand="linear" href={run.issueUrl ?? linearUrl} external>Open in Linear</Button>) : <Button icon={Bot} onClick={() => navigate('agents', run.executionId)}>Open the run</Button>}
+        {answerable ? ((run.issueUrl ?? issueUrl) && <Button brand={(run.issueUrl ?? issueUrl)?.startsWith("https://github.com/") ? "github" : "linear"} href={run.issueUrl ?? issueUrl} external>Open in its tracker</Button>) : <Button icon={Bot} onClick={() => navigate('agents', run.executionId)}>Open the run</Button>}
         <span {...stylex.props(layout.grow)} />
         <Button variant="danger-ghost" busy={action.isPending && action.variables?.action === 'cancel'} onClick={() => action.mutate({ action: 'cancel', executionId: run.executionId })}>Cancel run</Button>
       </div>
@@ -256,13 +256,13 @@ function cumulative(points: readonly { at: number; value: number }[]): number[] 
   return [0, ...sorted.map(point => (sum += point.value))];
 }
 
-function NextUp({ issues, runs, intakeLabel, unavailable }: { issues: readonly LinearIssueSummary[]; runs: readonly MissionRun[]; intakeLabel: string; unavailable: string | null }) {
+function NextUp({ issues, runs, intakeLabel, unavailable }: { issues: readonly TrackerIssueSummary[]; runs: readonly MissionRun[]; intakeLabel: string; unavailable: string | null }) {
   const queue = useQueue();
   const started = new Set(runs.map(run => run.issueId));
-  const next = issues.filter(issue => isOpen(issue) && issue.stateType !== 'started' && issue.labels.includes(intakeLabel) && !started.has(issue.id))
+  const next = issues.filter(issue => issue.stateType === 'unstarted' && !issue.intakeBlockedReason && issue.labels.includes(intakeLabel) && !started.has(issue.id))
     .sort((a, b) => (a.priority || 5) - (b.priority || 5)).slice(0, 4);
-  if (next.length === 0 && unavailable) return <Empty slot="empty-no-issues" title="Linear issues unavailable.">{unavailable}</Empty>;
-  if (next.length === 0) return <Empty slot="empty-no-issues" title={`No Todo issues labelled ${intakeLabel}.`}>Label an issue <b {...stylex.props(text.violet)}>{intakeLabel}</b> in Linear and it appears here.</Empty>;
+  if (next.length === 0 && unavailable) return <Empty slot="empty-no-issues" title="Issues unavailable.">{unavailable}</Empty>;
+  if (next.length === 0) return <Empty slot="empty-no-issues" title={`No Todo issues labelled ${intakeLabel}.`}>Label an issue <b {...stylex.props(text.violet)}>{intakeLabel}</b> in its tracker and it appears here.</Empty>;
   return (
     <>
       {queue.error && <Notice title={queue.error.message} hint={queue.error instanceof ApiFailure ? queue.error.hint : undefined} />}
@@ -378,7 +378,7 @@ export function CommandCentre() {
                     <div>
                       <div {...stylex.props(styles.projName)}>{project.name}</div>
                       <div {...stylex.props(styles.projSub)}>
-                        {provenance === 'loading' ? 'reading Linear…' : provenance === 'unavailable' ? <span {...stylex.props(text.amber)} title={reason}>Linear unavailable</span> : <>{open} open · {running ? `${running} running` : 'idle'}{blocked ? <> · <span {...stylex.props(text.amber)}>{blocked} blocked</span></> : null}</>} · {project.repository.linearTeam ?? project.id}
+                        {provenance === 'loading' ? 'reading issues…' : provenance === 'unavailable' ? <span {...stylex.props(text.amber)} title={reason}>Issues unavailable</span> : <>{open} open · {running ? `${running} running` : 'idle'}{blocked ? <> · <span {...stylex.props(text.amber)}>{blocked} blocked</span></> : null}</>} · {project.repository.linearTeam ?? project.id}
                       </div>
                     </div>
                     <Bar pct={pct} label={`${project.name} done`} />
@@ -452,7 +452,7 @@ export function CommandCentre() {
           </Card>
           <Card index={11} clip>
             <CardHeader icon={ListTodo} title="Next up" aside={<span {...stylex.props(text.muted, text.mono, text.xs)}>label <span {...stylex.props(text.violet)}>{intakeLabel}</span> · Todo</span>} />
-            <CardBody><NextUp issues={allIssues} runs={runs} intakeLabel={intakeLabel} unavailable={issuesByProject.find(entry => entry.provenance === 'unavailable')?.reason ?? (issuesByProject.some(entry => entry.provenance === 'unavailable') ? 'Linear did not answer for every project.' : null)} /></CardBody>
+            <CardBody><NextUp issues={allIssues} runs={runs} intakeLabel={intakeLabel} unavailable={issuesByProject.find(entry => entry.provenance === 'unavailable')?.reason ?? (issuesByProject.some(entry => entry.provenance === 'unavailable') ? 'The tracker did not answer for every project.' : null)} /></CardBody>
           </Card>
           <Card index={12} variant="insight" style={[styles.insight, styles.spanNarrow]}>
             <div {...stylex.props(layout.row)}><JevOrb size={26} /><span {...stylex.props(text.eyebrow, text.violet)}>Jev learned</span><span {...stylex.props(layout.grow)} />{brain.data && <ProvenanceChip provenance={brain.data.learnings.provenance} reason={brain.data.learnings.reason} />}</div>

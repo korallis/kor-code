@@ -10,6 +10,19 @@ export const repositorySchema = z.strictObject({
   tracker: z.enum(["linear", "github"]).default("linear"),
   path: nonempty,
   remote: nonempty.optional(),
+  github: z.strictObject({
+    repository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
+    project: z.strictObject({
+      owner: nonempty,
+      number: positiveInteger,
+      statusField: nonempty.default("Status"),
+      statuses: z.strictObject({ queued: nonempty.default("Todo"), running: nonempty.default("In Progress"), review: nonempty.default("In Review"), complete: nonempty.default("Done"), canceled: nonempty.default("Canceled") }).prefault({}),
+      priorityField: nonempty.optional(),
+    }).optional(),
+    statuses: z.strictObject({ queued: nonempty.default("kor:todo"), running: nonempty.default("kor:in-progress"), review: nonempty.default("kor:in-review"), complete: nonempty.default("kor:done"), canceled: nonempty.default("kor:canceled") }).prefault({}),
+    priorities: z.array(nonempty).length(4).default(["priority:urgent", "priority:high", "priority:normal", "priority:low"]),
+    pullRequestLink: z.enum(["closes", "refs"]).default("closes"),
+  }).optional(),
   linearTeam: nonempty.optional(),
   linearProject: nonempty.optional(),
   defaultBranch: nonempty.default("main"),
@@ -61,8 +74,16 @@ export type KorRepositoryConfig = z.infer<typeof repositorySchema>;
 export type KorLimits = KorConfig["limits"];
 export type KorConfig = z.infer<typeof korConfigSchema>;
 
-export function repositoryKeyForIssue(issue: { teamKey: string; projectId?: string }, config: KorConfig): string {
-  const entries = Object.entries(config.repos);
+export function trackerScope(key: string, repository: KorRepositoryConfig): string {
+  return repository.tracker === "linear" && !repository.linearProject ? repository.linearTeam ?? key : `project:${key}`;
+}
+
+export function repositoryKeyForIssue(issue: { teamKey: string; projectId?: string; tracker?: "linear" | "github"; repositoryKey?: string }, config: KorConfig): string {
+  if (issue.tracker === "github") {
+    if (issue.repositoryKey && config.repos[issue.repositoryKey]?.tracker === "github") return issue.repositoryKey;
+    throw new Error("No Kor repository mapping for GitHub issue");
+  }
+  const entries = Object.entries(config.repos).filter(([, repo]) => repo.tracker !== "github");
   const projects = entries.filter(([key, repository]) => (repository.linearProject ?? key) === issue.projectId);
   const matches = projects.length ? projects : entries.filter(([key, repository]) => !repository.linearProject && (repository.linearTeam ?? key) === issue.teamKey);
   if (matches.length > 1) throw new Error(`Ambiguous Kor repository mapping for Linear team ${issue.teamKey}: ${matches.map(([key]) => key).join(", ")}. Set a unique linearProject for each repository.`);
@@ -119,6 +140,10 @@ export function parseKorConfig(input: unknown, options: { home?: string; baseDir
   const parsed = korConfigSchema.safeParse(input);
   // No YAML snippets, input values, or upstream error messages in diagnostics.
   if (!parsed.success) throw new Error("Invalid Kor config: expected the documented config schema");
+  for (const repository of Object.values(parsed.data.repos)) {
+    if (repository.tracker === "github" && !repository.github) throw new Error("Invalid Kor config: GitHub tracker requires github.repository");
+    if (repository.tracker === "linear" && repository.github) throw new Error("Invalid Kor config: github settings require tracker: github");
+  }
   const home = options.home ?? homedir();
   const baseDir = options.baseDir ?? process.cwd();
   const resolvePath = (path: string) => resolve(baseDir, path === "~" ? home : path.startsWith("~/") ? join(home, path.slice(2)) : path);

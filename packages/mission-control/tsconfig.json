@@ -20,6 +20,9 @@
     },
     {
       "path": "../calibration"
+    },
+    {
+      "path": "../tracker"
     }
   ]
 }

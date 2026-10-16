@@ -65,7 +65,7 @@ export type ReasoningLevel = "low" | "medium" | "high";
 export interface Route { provider: string; model: string; accountPolicy: AccountPolicy; sessionAffinity: boolean; reasoningLevel?: ReasoningLevel; label?: "jev" | "fallback" | "escalated" | "override"; decisionId?: string }
 export interface CatalogueCapability { name: string; supported: boolean; details?: string }
 export interface CatalogueModel { provider: string; model: string; capabilities: CatalogueCapability[]; available?: boolean; costUsd?: number; durationMs?: number }
-export interface Evidence { id: string; kind: "test" | "review" | "provider" | "git" | "policy" | "linear"; summary: string; source?: string; status: "pass" | "fail" | "unresolved"; acceptanceId?: string; executionId?: string }
+export interface Evidence { id: string; kind: "test" | "review" | "provider" | "git" | "policy" | "tracker" | "linear"; summary: string; source?: string; status: "pass" | "fail" | "unresolved"; acceptanceId?: string; executionId?: string }
 export interface DecisionInput { name: string; value: JsonValue; source?: string }
 export interface DecisionBundle { decisionId: string; executionId: string; question: string; inputs: DecisionInput[]; choice: string; candidates: string[]; confidence: number; reasons: string[]; evidenceRefs: string[]; policyChecks: Array<{ name: string; result: "pass" | "fail" | "unresolved"; reason?: string }> }
 export interface GatewayFacts { models: JsonValue; management: JsonValue | null; usage: JsonValue | null; quota: JsonValue | null; observedAt: string }
@@ -93,7 +93,7 @@ export interface RunStatus {
   issueKey?: string;
   issueTitle?: string;
   issueUrl?: string;
-  /** The Linear workflow state name as the daemon last read it. */
+  /** The tracker workflow state name as the daemon last read it. */
   issueState?: string;
   attemptId?: string;
   route?: Route;
@@ -145,7 +145,7 @@ export interface OverrideRecord {
   policyChecks: DecisionBundle["policyChecks"];
   origin: string;
   recordedAt: string;
-  /** Whether the Linear comment reached the issue; a rejected override is never commented. */
+  /** Whether the tracker comment reached the issue; a rejected override is never commented. */
   linearComment: "written" | "pending" | "failed" | "skipped";
 }
 export interface KorRunSnapshot { schemaVersion: 1; observedAt: string; run: RunStatus }

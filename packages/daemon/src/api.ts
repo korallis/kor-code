@@ -83,10 +83,12 @@ export class MissionApi {
           else send(200, { schemaVersion: 1, run });
           return;
         }
-        if (path === "/api/linear/documents") { send(200, await this.daemon.missionDocuments(url.searchParams.get("project") ?? "")); return; }
-        const issuePath = /^\/api\/linear\/issues\/([^/]+)$/.exec(path);
+        if (path === "/api/documents" || path === "/api/linear/documents") { send(200, await this.daemon.missionDocuments(url.searchParams.get("project") ?? "")); return; }
+        const issuePath = /^\/api\/(?:linear\/)?issues\/([^/]+)$/.exec(path);
+        const imagePath = /^\/api\/issues\/([^/]+)\/images$/.exec(url.pathname);
+        if (imagePath?.[1]) { send(200, await this.daemon.missionIssueImages(decodeURIComponent(imagePath[1]))); return; }
         if (issuePath?.[1]) { send(200, await this.daemon.missionIssue(decodeURIComponent(issuePath[1]))); return; }
-        if (path === "/api/linear/issues") { send(200, await this.daemon.missionIssues(url.searchParams.get("project"))); return; }
+        if (path === "/api/issues" || path === "/api/linear/issues") { send(200, await this.daemon.missionIssues(url.searchParams.get("project"))); return; }
         if (path === "/api/github/pulls") {
           const repository = this.daemon.config.repos[url.searchParams.get("repo") ?? ""];
           if (!repository) throw new ApiFailure(404, "not_found", "Configured repository not found");
@@ -97,7 +99,7 @@ export class MissionApi {
         }
         if (path === "/api/models") { send(200, await this.observations.read(path, "models", () => services.models())); return; }
         if (path === "/api/brain") { send(200, await services.brain(this.daemon.status(), () => this.daemon.skillCatalogue())); return; }
-        if (path === "/api/connections") { send(200, await this.observations.read(path, "connections", () => services.connections(), Infinity)); return; }
+        if (path === "/api/connections") { send(200, await this.observations.read(path, "connections", () => services.connections(this.daemon.config), Infinity)); return; }
         if (path === "/api/config") { send(200, { schemaVersion: 1, config: this.daemon.config, restartRequired: false } satisfies ConfigResponse); return; }
         if (path === "/api/quota" || path === "/api/pool") {
           const pool = this.daemon.pool();
@@ -118,7 +120,7 @@ export class MissionApi {
             }
             for (const [key, repository] of Object.entries(draft.repos)) {
               if (!isAbsolute(repository.path) && repository.path !== "~" && !repository.path.startsWith("~/")) throw new ApiFailure(400, "invalid_request", `Enter the full checkout path for ${key}, starting with / or ~/`, "Relative paths cannot be saved from Mission Control");
-              if (!this.daemon.config.repos[key] && (!repository.linearTeam || !repository.linearProject)) throw new ApiFailure(400, "invalid_request", "New projects need a Linear team and Linear project ID", "Enter both in the Add project form");
+              if (!this.daemon.config.repos[key] && repository.tracker !== "github" && (!repository.linearTeam || !repository.linearProject)) throw new ApiFailure(400, "invalid_request", "New projects need a Linear team and Linear project ID", "Enter both in the Add project form");
             }
             const config = parseKorConfig(draft, { home: this.daemon.paths.home });
             const unknown = await this.daemon.unknownRepositorySkills(config);
@@ -140,8 +142,8 @@ export class MissionApi {
           const executionId = this.daemon.missionRun(decodeURIComponent(actionPath[1])).executionId;
           const action = z.enum(["cancel", "retry", "answer", "approve", "request-changes", "note"]).parse(actionPath[2]);
           const body = ["answer", "request-changes", "note"].includes(action) ? message.parse(input) : z.strictObject({ origin: z.enum(["CLI", "Mission Control"]).optional() }).parse(input);
-          const linearSync = await this.daemon.runAction(executionId, action, "message" in body ? body.message : undefined, "origin" in body ? body.origin : undefined);
-          send(200, { schemaVersion: 1, executionId, accepted: true, run: this.daemon.missionRun(executionId), linearSync } satisfies ActionResponse); return;
+          const trackerSync = await this.daemon.runAction(executionId, action, "message" in body ? body.message : undefined, "origin" in body ? body.origin : undefined);
+          send(200, { schemaVersion: 1, executionId, accepted: true, run: this.daemon.missionRun(executionId), trackerSync, linearSync: trackerSync } satisfies ActionResponse); return;
         }
         if (path === "/api/overrides") {
           const body = z.strictObject({ executionId: id, target: id, choice: id, decisionId: id.optional(), overBudget: z.boolean().optional() }).parse(input);

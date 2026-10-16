@@ -180,7 +180,7 @@ function RunTerminal({ run, decisions, now }: { run: MissionRun; decisions: Deci
         <StatusPill status={run.status} detail={run.stage} />
         <span {...stylex.props(layout.grow)} />
         {run.worktree && <Button size="sm" icon={copied ? CircleCheck : FolderGit2} title={run.worktree} onClick={copyWorktree}>{copied ? 'Copied' : 'Worktree'}</Button>}
-        {run.issueUrl && <Button size="sm" brand="linear" href={run.issueUrl} external>Linear</Button>}
+        {run.issueUrl && <Button size="sm" href={run.issueUrl} external>Issue</Button>}
         {run.pullRequestUrl && <Button size="sm" icon={GitPullRequest} href={run.pullRequestUrl} external>{prNumber(run.pullRequestUrl) ?? 'PR'}</Button>}
         {!finished && <Button size="sm" variant="danger" icon={Square} busy={action.isPending && action.variables?.action === 'cancel'} onClick={() => action.mutate({ action: 'cancel', executionId: run.executionId })}>{run.cancelRequested ? 'Stopping…' : 'Stop run'}</Button>}
       </div>

@@ -22,7 +22,7 @@ The response has `provenance: live`, `stale`, or `unavailable`. A missing snapsh
 is unavailable; an old snapshot is stale and includes its age reason. The daemon
 never treats unavailable data as an empty queue.
 
-Each run in the status carries, when the daemon knows them, the Linear issue
+Each run in the status carries, when the daemon knows them, the tracker issue
 (`issueKey`, `issueTitle`, `issueUrl`, `issueState`), the route in force with its
 `routeSource` (`config`, `jev`, `fallback` when Jev escalated or was unavailable,
 or `override`), and the IDs of its Jev decisions. The snapshot carries those
@@ -406,3 +406,11 @@ rather than editing assignments with an unconfigured SQLite client.
 
 Linear outbox failures retain their writes and per-issue order while independent
 issues continue syncing. Intake and shipping polling continue when a write fails.
+
+## Per-project tracker
+
+Each repository accepts `tracker: linear | github` (default `linear`). GitHub
+requires `github.repository: OWNER/REPO`; `github.project` optionally sets a
+Project v2 owner, number, Status mapping and priority field. No Linear key is
+needed when no project uses Linear. See [tracker integration](specs/tracker-integration.md)
+for the full settings, scopes, workflow and image attachment contract (LEE-1323).

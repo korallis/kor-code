@@ -35,6 +35,9 @@
     },
     {
       "path": "../mission-control"
+    },
+    {
+      "path": "../tracker"
     }
   ]
 }

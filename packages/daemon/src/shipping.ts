@@ -7,7 +7,7 @@ import { z } from "zod";
 import type { DecisionBundle, Evidence, Execution, IndependentReview, Route, ShippingReport, ShippingStage, VerificationAttempt } from "@kor-code/core";
 import type { KorRepositoryConfig } from "@kor-code/config";
 import { redact } from "@kor-code/jev";
-import type { LinearIssue } from "@kor-code/linear";
+import type { TrackerIssue } from "@kor-code/tracker";
 import { githubRequest, type GitHubRequest } from "./github.js";
 
 const exec = promisify(execFile);
@@ -21,7 +21,7 @@ const PR_DIFF_LIMIT = 24_000;
 const PR_TEMPLATE_PATHS = ['.github/pull_request_template.md', '.github/PULL_REQUEST_TEMPLATE.md', 'pull_request_template.md', 'PULL_REQUEST_TEMPLATE.md', 'docs/pull_request_template.md', 'docs/PULL_REQUEST_TEMPLATE.md'];
 export interface ShippingCommandResult { code: number; stdout: string; stderr: string }
 export type ShippingCommand = (file: string, args: string[], cwd: string) => Promise<ShippingCommandResult>;
-export interface ShippingInput { execution: Execution; issue: LinearIssue; repository: KorRepositoryConfig; mergeOverride?: { decisionId: string; choice: string } }
+export interface ShippingInput { execution: Execution; issue: TrackerIssue; repository: KorRepositoryConfig; mergeOverride?: { decisionId: string; choice: string } }
 export type DescribePullRequest = (input: { executionId: string; head: string; prompt: string; route?: Route }) => Promise<string | null | { kind: "fallback"; reason: string }>;
 export interface MergeIntelligence {
   review(input: { executionId: string; head: string; prompt: string; writer: Route; writerModels: string[] }): Promise<IndependentReview>;
@@ -335,7 +335,7 @@ export class GitHubShipping implements ShippingDriver {
     if (!mergeMethod) throw new Error("Repository has no permitted merge method");
     const result = z.object({ merged: z.boolean(), message: z.string() }).parse(await this.github(`/repos/${slug}/pulls/${pr.number}/merge`, { sha: pr.head.sha, merge_method: mergeMethod }, "PUT"));
     if (!result.merged) throw new Error(`GitHub refused merge: ${result.message}`);
-    // Observe the merge on the next poll before completing Linear or cleanup.
+    // Observe the merge on the next poll before completing the issue or cleanup.
     execution.status = "review";
   }
   async cleanup(input: ShippingInput): Promise<Execution> {
@@ -418,7 +418,7 @@ export class GitHubShipping implements ShippingDriver {
     const latest = input.execution.verification?.attempts.at(-1);
     const field = (text: string) => publicText(text, input).slice(0, PR_FIELD_LIMIT);
     const bounded = (text: string, limit: number) => text.length > limit ? `${text.slice(0, limit)}\n\n[Truncated; see local Kor status for the full report.]` : text;
-    const summary = [field(description.summary), field(`${input.issue.identifier ?? input.issue.id}${input.issue.url ? `: ${input.issue.url}` : ''}`)].join('\n\n');
+    const summary = [field(description.summary), ...(input.issue.pullRequestLink ? [input.issue.pullRequestLink] : []), field(`${input.issue.identifier ?? input.issue.id}${input.issue.url ? `: ${input.issue.url}` : ''}`)].join('\n\n');
     const changelog = bounded(description.changelog.map(entry => `- ${entry.kind}: ${field(entry.text).replace(/^(?:(?:Added|Changed|Fixed)\b[\s:–—-]*)+/i, '').replace(/\s+/g, ' ')}`).join('\n') || 'No changelog: maintenance without user-visible changes.', PR_SECTION_LIMIT);
     const checks: string[] = [];
     let checkLength = 0;

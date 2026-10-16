@@ -1,3 +1,4 @@
+import { createInterface } from "node:readline/promises";
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { chmod, cp, lstat, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
@@ -18,6 +19,17 @@ import { addKorSettings, installedPluginSchema, PLUGIN_ID, readObject, writeObje
 const execFileAsync = promisify(execFile);
 const pluginListSchema = z.array(z.object({ id: z.string(), scope: z.string(), installPath: z.string() }));
 export type InstallScope = "local" | "user";
+export interface InstallOptions { scope: InstallScope; pilot?: string; linearTeam?: string; tracker?: "linear" | "github"; githubRepository?: string; githubProjectOwner?: string; githubProjectNumber?: number; systemd: boolean }
+async function selectTracker(options: InstallOptions): Promise<"linear" | "github"> {
+  if (options.tracker) return options.tracker;
+  if (!process.stdin.isTTY || !process.stderr.isTTY) return "linear";
+  const prompt = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    const answer = (await prompt.question("Issue tracker: linear or github [linear]: ")).trim().toLowerCase();
+    if (answer && answer !== "linear" && answer !== "github") throw new Error("Tracker must be linear or github");
+    return answer === "github" ? "github" : "linear";
+  } finally { prompt.close(); }
+}
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 
 async function command(file: string, args: string[], environment: NodeJS.ProcessEnv, cwd: string): Promise<string> {
@@ -61,14 +73,14 @@ function unitFile(environment: NodeJS.ProcessEnv): string {
     XDG_DATA_HOME: dirname(paths.shareDir),
     PATH: [...new Set([join(paths.home, ".local/bin"), join(paths.home, ".npm-global/bin"), dirname(process.execPath), "/usr/local/bin", "/usr/bin", "/bin"])].join(":"),
   };
-  return ["[Unit]", "Description=Kor Code Linear execution daemon", "After=network-online.target", "", "[Service]", "Type=simple",
+  return ["[Unit]", "Description=Kor Code execution daemon", "After=network-online.target", "", "[Service]", "Type=simple",
     `WorkingDirectory=${root.replaceAll("%", "%%")}`,
     `ExecStart=${systemdQuote(process.execPath).replaceAll("$", "$$")} ${systemdQuote(join(root, "packages/cli/dist/cli.js")).replaceAll("$", "$$")} serve`,
     ...Object.entries(variables).map(([key, value]) => `Environment=${systemdQuote(`${key}=${value}`)}`),
     "Restart=on-failure", "RestartSec=3", "NoNewPrivileges=true", "PrivateTmp=true", "", "[Install]", "WantedBy=default.target", ""].join("\n");
 }
 
-async function scaffoldConfig(pilot: string, environment: NodeJS.ProcessEnv, linearTeam: string | undefined): Promise<void> {
+async function scaffoldConfig(pilot: string, environment: NodeJS.ProcessEnv, options: InstallOptions): Promise<void> {
   const paths = runtimePaths(environment);
   const loaded = await loadKorConfig(paths.configFile, { home: paths.home });
   if (loaded.exists) return;
@@ -77,8 +89,15 @@ async function scaffoldConfig(pilot: string, environment: NodeJS.ProcessEnv, lin
     try { await command("git", ["rev-parse", "--verify", "refs/heads/main"], environment, pilot); }
     catch { branch = await command("git", ["symbolic-ref", "--short", "HEAD"], environment, pilot); }
   }
+  const tracker = await selectTracker(options);
+  let githubRepository = options.githubRepository;
+  if (tracker === "github" && !githubRepository) {
+    const remote = await command("git", ["remote", "get-url", "origin"], environment, pilot);
+    githubRepository = /github\.com[:/]([\w.-]+\/[\w.-]+?)(?:\.git)?$/.exec(remote)?.[1];
+    if (!githubRepository) throw new Error("GitHub tracker requires --github-repository OWNER/REPO");
+  }
   const { launchProfile, pollIntervalSeconds, intakeLabel } = loaded.config;
-  const config = { repos: { [basename(pilot)]: { path: pilot, linearTeam: linearTeam ?? "YOUR_TEAM_KEY", defaultBranch: branch, ship: "merge", checks: [], toolAllowlist: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch", "Agent"] } },
+  const config = { repos: { [basename(pilot)]: { path: pilot, tracker, ...(tracker === "github" ? { github: { repository: githubRepository, ...(options.githubProjectNumber ? { project: { owner: options.githubProjectOwner ?? githubRepository?.split("/")[0], number: options.githubProjectNumber } } : {}) } } : { linearTeam: options.linearTeam ?? "YOUR_TEAM_KEY" }), defaultBranch: branch, ship: "merge", checks: [], toolAllowlist: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch", "Agent"] } },
     limits: { total: 6, perRepository: 4 }, launchProfile, pollIntervalSeconds, intakeLabel };
   await writeFile(paths.configFile, stringify(config), { mode: 0o600, flag: "wx" });
 }
@@ -178,7 +197,7 @@ async function undo(manifest: InstallManifest, environment: NodeJS.ProcessEnv, p
 }
 
 /** Refresh installed artifacts while keeping the original uninstall journal and credentials. */
-async function refreshKor(manifest: InstallManifest, options: { scope: InstallScope; pilot?: string; linearTeam?: string; systemd: boolean }): Promise<{ output: string }> {
+async function refreshKor(manifest: InstallManifest, options: InstallOptions): Promise<{ output: string }> {
   const paths = runtimePaths();
   if (manifest.scope !== options.scope || manifest.claudeConfigDir !== resolve(process.env.CLAUDE_CONFIG_DIR || join(paths.home, ".claude")) || options.pilot && await realpath(resolve(options.pilot.replace(/^~\//, `${paths.home}/`))) !== manifest.pilot) {
     throw new Error("Installation scope, Claude directory or pilot changed; uninstall before changing these options");
@@ -218,7 +237,7 @@ async function refreshKor(manifest: InstallManifest, options: { scope: InstallSc
   return { output: "Kor updated; configuration, credentials and original uninstall backups retained.\nDaemon stopped for the update; run kor ui to launch Mission Control.\nCLIProxyAPI addition: existing credential retained (value not printed)." };
 }
 
-export async function installKor(options: { scope: InstallScope; pilot?: string; linearTeam?: string; systemd: boolean }): Promise<{ output: string }> {
+export async function installKor(options: InstallOptions): Promise<{ output: string }> {
   const environment = process.env;
   const paths = runtimePaths(environment);
   const manifestPath = journalPath(environment);
@@ -304,7 +323,7 @@ export async function installKor(options: { scope: InstallScope; pilot?: string;
     // Do not follow an old unit symlink when replacing it.
     await rm(serviceFile, { force: true });
     await writeFile(serviceFile, unit, { mode: 0o600 });
-    await scaffoldConfig(pilot, environment, options.linearTeam);
+    await scaffoldConfig(pilot, environment, options);
     key = await scaffoldGateway(environment);
     await prepareMarketplace(marketplaceDir, options.scope === "local" ? pilot : undefined);
     await installCockpit(manifest, marketplaceDir, stage, environment);
@@ -337,7 +356,7 @@ export async function installKor(options: { scope: InstallScope; pilot?: string;
     `Kor installed (scope: ${options.scope})`, `CLI: ${cliLink}`, `Config: ${paths.configFile}`, `Service: ${serviceFile} (not started${options.systemd ? "" : "; systemd control skipped"})`,
     `Cockpit: ${PLUGIN_ID}${options.scope === "local" ? ` only when Claude starts in ${pilot} (linked worktrees disabled)` : ""}`, `Manifest: ${manifestPath}`,
     ...(key ? [`CLIProxyAPI addition: - ${key}`, `Stored the same new key in ${paths.gatewayEnvFile} (0600). Add the printed line to CLIProxyAPI manually.`] : ["CLIProxyAPI addition: existing credential retained; add its api-keys line manually if needed (value not printed)."]),
-    "Confirm linearTeam (replace YOUR_TEAM_KEY if present), checks and toolAllowlist; run kor doctor before starting the service.",
+    "Confirm tracker settings (replace YOUR_TEAM_KEY for Linear), checks and toolAllowlist; run kor doctor before starting the service.",
   ].join("\n") };
 }
 

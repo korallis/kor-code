@@ -1,10 +1,11 @@
-// Screen 2: one project's workspace. Linear issues with their Kor run, bulk
+import { TrackerSettings, defaultGitHubSettings } from './TrackerSettings';
+// Screen 2: one project's workspace. Tracker issues with their Kor run, bulk
 // queueing, progress, health, pull requests, activity and repository settings.
 import * as stylex from '@stylexjs/stylex';
 import { Activity as ActivityIcon, BookOpen, Check, CircleAlert, CircleCheck, Coins, FileText, FolderKanban, Funnel, GitBranch, GitPullRequest, Layers, ListChecks, Play, Plus, RotateCcw, Route as RouteIcon, Search, Settings as SettingsIcon, ShieldCheck, Sparkles, Square, Timer, Users } from 'lucide-react';
 import { useState } from 'react';
 import type { MissionRun, Project } from '@kor-code/mission-control';
-import type { LinearIssueSummary } from '@kor-code/linear';
+import type { TrackerIssueSummary } from '@kor-code/tracker';
 import type { KorConfig } from '@kor-code/config';
 import { ApiFailure } from '../api/client';
 import { useMissionRuns, useOverrides, useDecisions } from '../api/data';
@@ -77,11 +78,11 @@ const styles = stylex.create({
 type Tab = 'overview' | 'issues' | 'runs' | 'pulls' | 'documents' | 'settings';
 type Filter = 'all' | 'kor' | 'running' | 'needs' | 'ready';
 
-function runFor(issue: LinearIssueSummary, runs: readonly MissionRun[]): MissionRun | undefined {
+function runFor(issue: TrackerIssueSummary, runs: readonly MissionRun[]): MissionRun | undefined {
   return runs.filter(run => run.issueId === issue.id).sort((a, b) => (Date.parse(runUpdatedAt(b) ?? '') || 0) - (Date.parse(runUpdatedAt(a) ?? '') || 0))[0];
 }
 
-function IssueAction({ issue, run, intake, selected }: { issue: LinearIssueSummary; run: MissionRun | undefined; intake: string; selected: boolean }) {
+function IssueAction({ issue, run, intake, selected }: { issue: TrackerIssueSummary; run: MissionRun | undefined; intake: string; selected: boolean }) {
   const queue = useQueue();
   const action = useRunAction();
   const error = queue.error ?? action.error;
@@ -92,19 +93,20 @@ function IssueAction({ issue, run, intake, selected }: { issue: LinearIssueSumma
   if (run?.pullRequestUrl) return <a href={run.pullRequestUrl} target="_blank" rel="noopener noreferrer" {...stylex.props(text.cyan, text.mono, text.sm)}>{prNumber(run.pullRequestUrl)}</a>;
   if (run?.status === 'queued') return <Pill tone="slate" small dot>queued</Pill>;
   if (!isOpen(issue)) return null;
-  if (!issue.labels.includes(intake)) return <Button size="sm" variant="ghost" icon={Plus} href={issue.url} external title={`Label the issue ${intake} in Linear so the daemon picks it up`}>Label</Button>;
+  if (issue.intakeBlockedReason) return <Button size="sm" disabled title={issue.intakeBlockedReason}>Status held</Button>;
+  if (!issue.labels.includes(intake)) return <Button size="sm" variant="ghost" icon={Plus} href={issue.url} external title={`Label the issue ${intake} in its tracker so the daemon picks it up`}>Label</Button>;
   return <Button size="sm" variant={selected ? 'violet' : 'default'} icon={Play} title={title} busy={queue.isPending} onClick={() => queue.mutate({ issueIds: [issue.id] })}>Run with Kor</Button>;
 }
 
-function IssuesTable({ issues, runs, intake, selected, setSelected, filter }: { issues: readonly LinearIssueSummary[]; runs: readonly MissionRun[]; intake: string; selected: readonly string[]; setSelected: (ids: readonly string[]) => void; filter: Filter }) {
+function IssuesTable({ issues, runs, intake, selected, setSelected, filter }: { issues: readonly TrackerIssueSummary[]; runs: readonly MissionRun[]; intake: string; selected: readonly string[]; setSelected: (ids: readonly string[]) => void; filter: Filter }) {
   const decisions = useDecisions();
   const rows = issues.map(issue => ({ issue, run: runFor(issue, runs) }))
-    .filter(({ issue, run }) => filter === 'all' || (filter === 'kor' && issue.labels.includes(intake)) || (filter === 'running' && run && isActive(run)) || (filter === 'needs' && run && (needsYou(run) || run.status === 'waiting')) || (filter === 'ready' && !run && isOpen(issue) && issue.labels.includes(intake)))
+    .filter(({ issue, run }) => filter === 'all' || (filter === 'kor' && issue.labels.includes(intake)) || (filter === 'running' && run && isActive(run)) || (filter === 'needs' && run && (needsYou(run) || run.status === 'waiting')) || (filter === 'ready' && !run && isOpen(issue) && !issue.intakeBlockedReason && issue.labels.includes(intake)))
     .sort((a, b) => (a.run ? 0 : 1) - (b.run ? 0 : 1) || (a.issue.priority || 5) - (b.issue.priority || 5));
   const toggle = (id: string) => setSelected(selected.includes(id) ? selected.filter(one => one !== id) : [...selected, id]);
   return (
     <Table label="Issues">
-      <thead><tr><Th width="34px" /><Th width="26px" /><Th>Issue</Th><Th>Linear</Th><Th>Kor run</Th><Th>Model</Th><Th align="right">Cost</Th><Th>Action</Th></tr></thead>
+      <thead><tr><Th width="34px" /><Th width="26px" /><Th>Issue</Th><Th>Issue status</Th><Th>Kor run</Th><Th>Model</Th><Th align="right">Cost</Th><Th>Action</Th></tr></thead>
       <tbody>
         {rows.map(({ issue, run }) => {
           const sel = selected.includes(issue.id);
@@ -128,7 +130,7 @@ function IssuesTable({ issues, runs, intake, selected, setSelected, filter }: { 
                     {isActive(run) || run.status === 'waiting' ? <StageTrack stage={run.stage} status={run.status} /> : null}
                     {readiness && !isActive(run) && run.status === 'queued' && <span {...stylex.props(text.mono, text.micro, text.muted)}>Jev {prob(readiness.confidence)}</span>}
                   </div>
-                ) : issue.labels.includes(intake) || !isOpen(issue) ? <span {...stylex.props(text.mono, text.xs, text.muted)}>{isOpen(issue) ? 'readiness checked on start' : '—'}</span> : <span {...stylex.props(text.mono, text.xs, text.faint)}>not labelled {intake}</span>}
+                ) : issue.intakeBlockedReason ? <span {...stylex.props(text.mono, text.xs, text.amber)}>{issue.intakeBlockedReason}</span> : issue.labels.includes(intake) || !isOpen(issue) ? <span {...stylex.props(text.mono, text.xs, text.muted)}>{isOpen(issue) ? 'readiness checked on start' : '—'}</span> : <span {...stylex.props(text.mono, text.xs, text.faint)}>not labelled {intake}</span>}
               </Td>
               <Td selected={sel || run?.status === 'waiting'} tall>{run?.route ? <div {...stylex.props(styles.mdl)}><div>{shortModel(run.route.model)}</div><div {...stylex.props(styles.mdlSub)}>{run.accountSlot.value ?? run.routeSource ?? ''}</div></div> : <span {...stylex.props(text.faint)}>—</span>}</Td>
               <Td selected={sel || run?.status === 'waiting'} tall align="right"><span {...stylex.props(text.mono)}>{usd(run?.costUsd)}</span></Td>
@@ -162,8 +164,10 @@ function RepositorySettings({ project }: { project: Project }) {
       <FieldLabel>Checkout path</FieldLabel><TextInput label="Checkout path" value={draft.path} onChange={set('path')} mono />
       <FieldLabel>Remote</FieldLabel><TextInput label="Remote" value={draft.remote ?? ''} onChange={set('remote')} mono placeholder="origin URL (optional)" />
       <FieldLabel>Default branch</FieldLabel><TextInput label="Default branch" value={draft.defaultBranch} onChange={set('defaultBranch')} mono />
+      <FieldLabel>Tracker</FieldLabel><Segmented label="Tracker" value={draft.tracker} onChange={tracker => setDraft(current => { const { github, linearTeam, linearProject, ...rest } = current; return tracker === 'github' ? { ...rest, tracker, github: github ?? defaultGitHubSettings() } : { ...rest, tracker, ...(linearTeam ? { linearTeam } : {}), ...(linearProject ? { linearProject } : {}) }; })} options={[{ value: 'linear', label: 'Linear' }, { value: 'github', label: 'GitHub' }]} />
+      {draft.tracker === 'github' ? <TrackerSettings value={draft.github ?? defaultGitHubSettings()} onChange={github => setDraft(current => ({ ...current, github }))} /> : <>
       <FieldLabel>Linear team</FieldLabel><TextInput label="Linear team" value={draft.linearTeam ?? ''} onChange={set('linearTeam')} mono placeholder="e.g. MAT" />
-      <FieldLabel>Linear project</FieldLabel><TextInput label="Linear project" value={draft.linearProject ?? ''} onChange={set('linearProject')} mono placeholder="project ID (optional)" />
+      <FieldLabel>Linear project</FieldLabel><TextInput label="Linear project" value={draft.linearProject ?? ''} onChange={set('linearProject')} mono placeholder="project ID (optional)" /></>}
       <FieldLabel>Shipping<br /><span {...stylex.props(text.faint, text.xs)}>approve: verified runs wait for your go-ahead</span></FieldLabel>
       <Segmented label="Shipping" value={draft.ship} onChange={value => setDraft(current => ({ ...current, ship: value }))} options={[{ value: 'approve', label: 'Wait for my approval' }, { value: 'auto', label: 'Open PR automatically' }, { value: 'merge', label: 'Review and merge automatically' }]} />
       <FieldLabel>Repository checks<br /><span {...stylex.props(text.faint, text.xs)}>one command per line; every run must pass them</span></FieldLabel><TextArea label="Repository checks" value={checks} onChange={setChecks} mono rows={4} />
@@ -232,13 +236,13 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
   const scores = [checkPass, projectRuns.length ? 1 - failed7 / projectRuns.length : null].filter((value): value is number => value !== null);
   const healthScore = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
   const grade = healthScore === null ? '—' : healthScore >= 0.9 ? 'A' : healthScore >= 0.8 ? 'B' : healthScore >= 0.65 ? 'C' : 'D';
-  const readyIds = issues.filter(issue => isOpen(issue) && !projectRuns.some(run => run.issueId === issue.id && !FINISHED.has(run.status)) && issue.labels.includes(intake)).map(issue => issue.id);
+  const readyIds = issues.filter(issue => isOpen(issue) && !issue.intakeBlockedReason && !projectRuns.some(run => run.issueId === issue.id && !FINISHED.has(run.status)) && issue.labels.includes(intake)).map(issue => issue.id);
   const selectedReady = selected.filter(id => readyIds.includes(id));
   const queueCount = selectedReady.length || readyIds.length;
   const queueSelected = (ids: readonly string[]) => { const [first, ...rest] = ids; if (first) queue.mutate({ issueIds: [first, ...rest] }, { onSuccess: () => setSelected([]) }); };
   const openPulls = pulls.data?.pulls.value.filter(pull => pull.state === 'open') ?? [];
   const activity = buildActivity(projectRuns, overrides.filter(record => projectRuns.some(run => run.executionId === record.executionId))).slice(0, 5);
-  const teamUrl = issues.find(issue => issue.url)?.url?.replace(/\/issue\/.*$/, `/team/${project.repository.linearTeam ?? ''}`);
+  const teamUrl = project.repository.github ? `https://github.com/${project.repository.github.repository}/issues` : issues.find(issue => issue.url)?.url?.replace(/\/issue\/.*$/, `/team/${project.repository.linearTeam ?? ''}`);
   const filters: { value: Filter; label: string; count: number }[] = [
     { value: 'all', label: 'All', count: issues.length },
     { value: 'kor', label: `Labelled ${intake}`, count: issues.filter(issue => issue.labels.includes(intake)).length },
@@ -262,9 +266,9 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
         <TextInput label="Filter issues" icon={Search} value={search} onChange={setSearch} placeholder="Filter issues…" />
         <Button icon={Funnel} onClick={() => openAsk({ prompt: `Which ${project.name} issues should Kor take next, by priority?` })}>Priority</Button>
       </div>
-      {issuesEntry?.provenance === 'unavailable' && <div {...stylex.props(styles.toolbar)}><Notice title={`Linear unavailable: ${issuesEntry.reason ?? 'no reason given'}`} /></div>}
+      {issuesEntry?.provenance === 'unavailable' && <div {...stylex.props(styles.toolbar)}><Notice title={`Issues unavailable: ${issuesEntry.reason ?? 'no reason given'}`} /></div>}
       <div {...stylex.props(styles.tableWrap)}>
-        {issuesEntry?.provenance === 'loading' ? <Empty title="Reading Linear…" /> : <IssuesTable issues={visible} runs={projectRuns} intake={intake} selected={selected} setSelected={setSelected} filter={filter} />}
+        {issuesEntry?.provenance === 'loading' ? <Empty title="Reading issues…" /> : <IssuesTable issues={visible} runs={projectRuns} intake={intake} selected={selected} setSelected={setSelected} filter={filter} />}
       </div>
       {selected.length > 0 && (
         <div {...stylex.props(styles.selbar)}>
@@ -278,7 +282,7 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
         </div>
       )}
       {queue.error && <div {...stylex.props(styles.toolbar)}><Notice title={queue.error.message} hint={queue.error instanceof ApiFailure ? queue.error.hint : undefined} /></div>}
-      <div {...stylex.props(styles.foot)}>{visible.length} of {issues.length} issues · sorted by Kor status<span {...stylex.props(layout.grow)} />{issuesEntry?.observedAt && <ProvenanceChip provenance={issuesEntry.provenance === 'loading' ? 'unavailable' : issuesEntry.provenance}>linear {ago(issuesEntry.observedAt, now)}</ProvenanceChip>}</div>
+      <div {...stylex.props(styles.foot)}>{visible.length} of {issues.length} issues · sorted by Kor status<span {...stylex.props(layout.grow)} />{issuesEntry?.observedAt && <ProvenanceChip provenance={issuesEntry.provenance === 'loading' ? 'unavailable' : issuesEntry.provenance}>issues {ago(issuesEntry.observedAt, now)}</ProvenanceChip>}</div>
     </Card>
   );
   return (
@@ -294,11 +298,11 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
               <span {...stylex.props(styles.metaItem)}><Icon icon={GitBranch} size={13} />{project.repository.defaultBranch}</span>
               {project.repository.linearTeam && <span {...stylex.props(styles.metaItem)}><BrandMark brand="linear" size={13} />team {project.repository.linearTeam}</span>}
               <span {...stylex.props(styles.metaItem)}><Icon icon={ShieldCheck} size={13} />{project.repository.checks.length} checks</span>
-              {issuesEntry && issuesEntry.provenance !== 'loading' && <ProvenanceChip provenance={issuesEntry.provenance} reason={issuesEntry.reason}>{issuesEntry.provenance} · linear {issuesEntry.observedAt ? ago(issuesEntry.observedAt, now) : ''}</ProvenanceChip>}
+              {issuesEntry && issuesEntry.provenance !== 'loading' && <ProvenanceChip provenance={issuesEntry.provenance} reason={issuesEntry.reason}>{issuesEntry.provenance} · issues {issuesEntry.observedAt ? ago(issuesEntry.observedAt, now) : ''}</ProvenanceChip>}
             </div>
           </div>
           <span {...stylex.props(layout.grow)} />
-          {teamUrl && <Button brand="linear" href={teamUrl} external>Open in Linear</Button>}
+          {teamUrl && <Button brand={project.repository.tracker === 'github' ? 'github' : 'linear'} href={teamUrl} external>Open in {project.repository.tracker === 'github' ? 'GitHub' : 'Linear'}</Button>}
           <Button icon={SettingsIcon} onClick={() => setTab('settings')}>Settings</Button>
           <Button variant="primary" icon={Play} busy={queue.isPending} disabled={readyIds.length === 0} onClick={() => queueSelected(selectedReady.length ? selectedReady : readyIds)}>Queue {queueCount} {queueCount === 1 ? 'issue' : 'issues'} for Kor</Button>
         </Card>
@@ -308,7 +312,7 @@ export function ProjectWorkspace({ projectId, tab: tabParam }: { projectId?: str
             {issuesCard}
             <div {...stylex.props(styles.side)}>
               <Card index={2}>
-                <CardHeader icon={FolderKanban} title="Progress" aside={<span {...stylex.props(text.mono, text.xs, text.muted)}>Linear issues</span>} />
+                <CardHeader icon={FolderKanban} title="Progress" aside={<span {...stylex.props(text.mono, text.xs, text.muted)}>Issues</span>} />
                 <CardBody>
                   <div {...stylex.props(layout.row, layout.gap4)}><span {...stylex.props(styles.bigPct, text.grad)}>{issues.length ? `${Math.round(pct)}%` : '—'}</span><div {...stylex.props(layout.grow)}><div {...stylex.props(text.mono, text.xs, text.muted)}>{done} of {issues.length} done</div></div></div>
                   <div {...stylex.props(styles.stats4)}>
