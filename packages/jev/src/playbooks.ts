@@ -10,7 +10,7 @@ const NONE = "none";
 const MAX_CANDIDATES = 254;
 export const PLAYBOOK_BODY_BUDGET = 1_500;
 
-export interface PlaybookInput extends Pick<SkillsInput, "executionId" | "task" | "stage" | "catalogue" | "allowedTools" | "stackTags" | "never"> {
+export interface PlaybookInput extends Pick<SkillsInput, "executionId" | "task" | "stage" | "catalogue" | "allowedTools" | "stackTags" | "never" | "tracker"> {
   attemptId?: string;
   failure?: { classes: string[]; blockers: string[] };
   override?: string;
@@ -25,8 +25,9 @@ export const playbookPlanSchema = z.object({
 export type PlaybookPlan = z.infer<typeof playbookPlanSchema>;
 
 /** Why a catalogue entry cannot be this session's playbook, or undefined when it can. */
-export function playbookProblem(skill: SkillCandidate, input: Pick<PlaybookInput, "stage" | "allowedTools" | "stackTags" | "never">): string | undefined {
+export function playbookProblem(skill: SkillCandidate, input: Pick<PlaybookInput, "stage" | "allowedTools" | "stackTags" | "never" | "tracker">): string | undefined {
   if (skill.kind !== "playbook") return "Not a playbook.";
+  if (skill.trackers?.length && !skill.trackers.includes(input.tracker ?? "linear")) return "Project tracker does not match.";
   if (input.never?.includes(skill.name)) return "Denied by repository policy.";
   if (skill.stages.length && !skill.stages.includes(input.stage)
     && !(input.stage === "execute" && skill.stages.some(stage => stage === "plan" || stage === "project-setup"))) return "Not available at this stage.";
@@ -50,7 +51,7 @@ export async function decidePlaybook(input: PlaybookInput, client: Pick<JevClien
       ? { what: "Private guidance (local-only)." }
       : { what: skill.summary, not_for: skill.anti, examples: skill.triggers };
   criteria[NONE] = { what: "No session procedure is needed for this task." };
-  const state = { task: input.task, stage: input.stage, catalogueHash: input.catalogue.hash,
+  const state = { task: input.task, stage: input.stage, tracker: input.tracker ?? "linear", catalogueHash: input.catalogue.hash,
     ...(input.attemptId ? { attemptId: input.attemptId } : {}), ...(input.failure ? { failure: input.failure } : {}) };
   const revision = createHash("sha256").update(JSON.stringify({ state, criteria, costs: candidates.map(skill => [skill.name, skill.cost.bodyTokens]), override: input.override })).digest("hex").slice(0, 16);
   const baseId = `playbook-${input.executionId}-${revision}`;

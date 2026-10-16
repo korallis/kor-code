@@ -61,10 +61,20 @@ or guidance are a recorded gap; a filename alone is no proof of a rendered image
 
 ## 4. Prepare delivery work
 
-Inspect the authorised Linear workspace and existing project before changes.
-Use `using-linear`, `writing-linear-tickets` and `attaching-screens-to-tickets`
-when available for the matching work. Create or update the authorised project,
-milestones and dependency-ordered tickets, reusing existing records. Each ticket
+Use the tracker named in session context or its offered tracker skill; if neither
+is known, resolve the authorised project mapping before writing. Inspect its
+existing project.
+For Linear use `using-linear` and `writing-linear-tickets`; for GitHub Issues/
+Projects v2 use `using-github` and `writing-github-tickets`, including its Project
+setup reference. Use `attaching-screens-to-tickets` for either tracker. Create or
+update the authorised project,
+milestones and small dependency-ordered tickets, reusing existing records.
+For GitHub discover Status options, add Priority and numeric Order fields when
+needed, link the repository, and link versioned docs from the Project README.
+Use repository milestones and native sub-issues/blocking where supported; record
+manual dependency gates explicitly when unsupported. For Issues-only projects,
+use configured workflow/priority labels and an ordered plan; create a Project
+only when requested. Each ticket
 has an outcome, requirement IDs, checkable acceptance and dependencies. Each UI
 ticket carries its relevant images and captions; read it back to verify them and
 record ticket IDs against inventory rows.
@@ -79,7 +89,7 @@ publication blocked. Local plans are not published tickets.
 Within the authorised setup scope, add the repository's PR template (use
 `pr-standard` if available), README entry points, CI and check commands. Derive
 commands from the actual stack and run them before labelling them verified.
-Prepare the Kor repository mapping, least-privilege tool allowlist and Linear
+Prepare the Kor repository mapping, least-privilege tool allowlist and the chosen tracker's
 intake label; apply configuration only when authorised. Keep credentials outside
 the repository. Leave unapproved configuration as a proposal.
 
@@ -90,8 +100,10 @@ and remaining integration requirements are recorded.
 
 Read the resulting files and tracker records. Check links, requirement coverage,
 screen coverage, ticket image coverage, dependency order and open decisions. If
-`kor linear lint` is available, run it and address its findings; otherwise record
-that readiness check as unavailable, never as passed. For non-UI work, report
+the chosen tracker has an installed readiness command, run it and address its
+findings (`kor linear lint` for Linear). For GitHub also read back Project fields,
+milestones and dependencies; never substitute Linear lint or invent a GitHub
+command. Record unavailable automated checks and perform the manual gates above. For non-UI work, report
 screen and image coverage as N/A with the reason, not an empty 100%.
 
 Exit: the implementation plan names the next actionable work and every unmet

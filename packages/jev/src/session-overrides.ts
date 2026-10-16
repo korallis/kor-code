@@ -17,7 +17,7 @@ export type SessionEdit =
  * and a later unconfirmed edit to a skill withdraws its confirmation.
  */
 export interface SessionOverrides { skills: Map<string, SkillTier | "auto">; confirmed: Set<string>; playbook?: string; tools: Map<string, boolean> }
-export type SkillOverridePolicy = Pick<SkillsInput, "stage" | "allowedTools" | "stackTags" | "never" | "always" | "pins" | "bodyBudget">;
+export type SkillOverridePolicy = Pick<SkillsInput, "stage" | "allowedTools" | "stackTags" | "never" | "always" | "pins" | "bodyBudget" | "tracker">;
 type PolicyCheck = DecisionBundle["policyChecks"][number];
 
 const NAME = "[a-z0-9][a-z0-9-]{0,63}";

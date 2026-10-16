@@ -3,6 +3,7 @@ name: writing-linear-tickets
 description: Writes buildable Linear tickets. Use when creating, refining, splitting or reviewing issues and their acceptance criteria.
 license: MIT
 metadata:
+  kor.trackers: linear
   kor.kind: skill
   kor.stages: plan,review,project-setup
   kor.triggers: create ticket; split issue; acceptance criteria; review ticket readiness

@@ -343,7 +343,7 @@ decision audit, calibration and what Jev has learned about skills.
 
 ### Skills and your private pack
 
-Kor ships skills (coding and PR standards, Linear and ticket guidance, project
+Kor ships skills (coding and PR standards, Linear/GitHub tracker guidance, project
 setup, principles) and playbooks (procedures such as `fix-bug` or
 `change-docs`). Before each session Jev picks the skills and at most one
 playbook within a token budget; the run's **Plan** tab shows what each attempt
@@ -351,6 +351,15 @@ received. The bundled [`hard-problem-resolution`](skills/hard-problem-resolution
 playbook handles accuracy, speed and competing technical approaches with measured
 research, an independent challenge and a recorded Jev decision before implementation
 and re-measurement. See [how it works](docs/pstack-playbooks.md#resolve-hard-technical-problems).
+Project setup shares the same documentation, screen mockups and image-coverage
+gates across trackers. Set `repos.<key>.tracker` to `github` for GitHub guidance;
+omitted values default to `linear`. GitHub projects use `using-github` and
+`writing-github-tickets`; Linear projects use their Linear counterparts. Jev
+filters tracker-specific guidance by the repository's tracker, including pins and
+overrides. The shared screen attachment skill supports both. See
+[GitHub project planning](docs/github-project-skills.md) for Projects v2 fields,
+milestones, dependencies and verified issue images (LEE-1323).
+
 Keep your own guidance in a private pack outside the repository:
 
 ```sh

@@ -1066,3 +1066,18 @@ Private skill names in `guard` match complete names; `deny.txt` entries remain
 literal substrings. Generic complete words can still collide with public prose.
 Managed imports report local-source restrictions and missing upstream subpaths
 directly; update diff summaries replace staging paths with installed/upstream labels.
+
+## Per-project tracker guidance
+
+`metadata.kor.trackers` is an optional comma/semicolon-separated list of `linear`
+and `github`. Omit it for shared guidance. The catalogue validates this field
+and carries it as `trackers`; Jev's skill and playbook filters reject entries
+that do not match the repository's tracker. Missing tracker context retains the
+legacy Linear default. Tracker is included in decision state/revision, so a
+tracker switch cannot replay a decision made for the other provider. Repository
+pins, outage fallback and operator overrides obey the same eligibility gate.
+
+`using-github` and `writing-github-tickets` mirror the Linear-specific skills.
+`setting-up-a-project`, `writing-project-docs`, `designing-screen-mockups` and
+`attaching-screens-to-tickets` share the same coverage and readiness gates. See
+[GitHub planning and image verification](github-project-skills.md).
