@@ -222,11 +222,12 @@ intakeLabel: kor
   session needs shell, web, browser or sub-agent tools; web tools and `Agent`
   need a Jev probability of at least 0.8 and a matching allowlist entry. Jev
   never widens your command permissions.
-- **`ship`** defaults to `merge`: open the verified PR and merge after independent
-  review, green GitHub checks and a Jev merge probability of at least 0.90.
+- **`ship: merge`** is written by the installer for a fresh config: open the
+  verified PR and merge after independent review, green GitHub checks and a Jev
+  merge probability of at least 0.90.
   Choose `auto` to publish automatically but merge yourself, or `approve` to
-  approve publication first and then merge yourself. Projects added in Mission
-  Control also start as `merge`.
+  approve publication first and then merge yourself. Omitted `ship` retains
+  `auto`; projects added in Mission Control retain `approve`.
 - **`remote`** (optional) is the GitHub URL; `kor doctor` then checks that
   `origin` matches.
 - **`limits`** cap concurrent runs (`total`, `perRepository`, optional
@@ -249,7 +250,8 @@ writes the first. Add more in either of two ways:
 
 - **Mission Control → Settings → Projects:** enter a project key, the checkout
   path and the Linear team, then **Add project** and **Save configuration**. The
-  new project starts as `ship: merge`; set its checks and tool allowlist under
+  new project starts as `ship: approve` with an empty tool allowlist; choose
+  `merge` explicitly for automatic merging and set checks and tool access under
   the project's **Repository settings**.
 - **`config.yaml`:** add another entry under `repos:` and restart the daemon.
 

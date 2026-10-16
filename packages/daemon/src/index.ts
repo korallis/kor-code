@@ -340,6 +340,10 @@ export class KorDaemon {
         let execution = await shipping.advance({ execution: previous, issue, repository, ...(mergeOverride ? { mergeOverride: { decisionId: mergeOverride.target, choice: mergeOverride.choice } } : {}) });
         const report = execution.shipping;
         if (!report) throw new Error('Shipping driver lost its durable report');
+        const canRepair = Boolean(report.repairReason && this.options.controller?.canRepair(execution));
+        const heldReason = report.repairReason ? `${report.repairReason}; repair budget exhausted or repair controller unavailable. PR remains open; review in Mission Control.` : undefined;
+        // Keep the final held reason stable even when a previous queue attempt failed.
+        if (heldReason && (!canRepair || previous.shipping.error === heldReason)) report.error = heldReason;
         const changed = previous.shipping.stage.kind !== report.stage.kind || previous.status !== execution.status || previous.shipping.error !== report.error || JSON.stringify(previous.shipping.evidence) !== JSON.stringify(report.evidence);
         const writes: LinearWrite[] = [];
         if (changed) {
@@ -356,11 +360,11 @@ export class KorDaemon {
           this.options.controller?.recordTerminalOutcome(execution.id, { status: report.stage.kind === 'merged' ? 'merged' : 'rejected', recordedAt: new Date(this.now()).toISOString(), source: 'shipping.github-observed' });
         }
         this.store.updateShipping(execution, writes);
-        if (report.repairReason && this.options.controller?.canRepair(execution) && this.store.requestChanges(execution.id, { withinBudget: true })) {
+        if (report.repairReason && canRepair && this.store.requestChanges(execution.id, { withinBudget: true })) {
           this.store.operatorMessage(execution.id, "request-changes", `Automatic merge gate repair: ${report.repairReason}`);
           await this.log(execution.id, "merge gate requested a repair within the existing verification budget");
-        } else if (report.repairReason) {
-          report.error = `${report.repairReason}; repair budget exhausted or repair controller unavailable. PR remains open; review in Mission Control.`;
+        } else if (heldReason && report.error !== heldReason) {
+          report.error = heldReason;
           this.store.updateShipping(execution);
         }
         try { await writer.flush(); } catch (error) { await this.reportError(error); }

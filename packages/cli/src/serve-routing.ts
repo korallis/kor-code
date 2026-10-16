@@ -130,7 +130,12 @@ export function createServeRouting(options: {
       const reviewFamily = modelFamily(selected.model);
       if (!reviewFamily || families.includes(reviewFamily)) throw new Error("Reviewer is not independent of the writer");
       const output = await options.complete(prompt, { ...options.defaultRoute, provider: selected.provider, model: selected.model, label: "jev", decisionId });
-      const parsed = reviewSchema.parse(JSON.parse(output.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '')));
+      let parsed: z.infer<typeof reviewSchema>;
+      try { parsed = reviewSchema.parse(JSON.parse(output.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, ''))); }
+      catch {
+        // Persist a blocking verdict at this head rather than paying for a retry every poll.
+        parsed = { verdict: "changes-requested", summary: "Independent reviewer returned an invalid response.", findings: ["Independent review did not return the required structured verdict; a valid review is required before merging."] };
+      }
       return { ...parsed, head, model: selected.model, family: reviewFamily, decisionId };
     },
     async decide({ executionId, head, review, checks, summary }) {

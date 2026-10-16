@@ -3,7 +3,7 @@
 import * as stylex from '@stylexjs/stylex';
 import { Check, FolderPlus, KeyRound, Network, Plug, Settings as SettingsIcon, Sparkles, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { repositorySchema, type KorConfig } from '@kor-code/config';
+import type { KorConfig } from '@kor-code/config';
 import type { Connection, ConnectRequest } from '@kor-code/mission-control';
 import { ApiFailure } from '../api/client';
 import { useConfig, useConnect, useConnections, useSaveConfig } from '../api/queries';
@@ -82,7 +82,7 @@ function GeneralSettings({ config }: { config: KorConfig }) {
   const numberField = (value: string, apply: (n: number) => KorConfig) => { const n = Number(value); if (Number.isInteger(n) && n > 0) setDraft(apply(n)); };
   const addRepo = () => {
     if (!repoKey.trim() || !repoPath.trim()) return;
-    setDraft(current => ({ ...current, repos: { ...current.repos, [repoKey.trim()]: repositorySchema.parse({ path: repoPath.trim(), ...(repoTeam.trim() ? { linearTeam: repoTeam.trim() } : {}) }) } }));
+    setDraft(current => ({ ...current, repos: { ...current.repos, [repoKey.trim()]: { path: repoPath.trim(), defaultBranch: 'main', checks: [], toolAllowlist: [], ship: 'approve', ...(repoTeam.trim() ? { linearTeam: repoTeam.trim() } : {}) } } }));
     setRepoKey(''); setRepoPath(''); setRepoTeam('');
   };
   const removeRepo = (key: string) => setDraft(current => { const repos = { ...current.repos }; delete repos[key]; return { ...current, repos }; });

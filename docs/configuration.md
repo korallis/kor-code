@@ -325,7 +325,14 @@ calibration:
     reasoningLevel: medium
 ```
 
-`defaultBranch` defaults to `main`, `checks` defaults to an empty list, `toolAllowlist` defaults to `[Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Agent]`, `ship` defaults to `merge`, and concurrency limits default to 6 total / 4 per repository, `tools` is derived when omitted, and the default route is `anthropic / claude-sonnet-5-5` with fill-first account selection. Unknown fields and invalid values fail before a configuration reaches the controller.
+Omitted fields retain the existing defaults: `defaultBranch: main`, `checks: []`,
+`toolAllowlist: []`, `ship: auto`, and limits of 2 total / 1 per repository.
+Only fresh installer scaffolds explicitly select `ship: merge`, the unscoped
+`[Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Agent]` allowlist,
+and limits of 6 total / 4 per repository. Existing configs retain their meaning.
+`tools` is derived when omitted, and the default route is
+`anthropic / claude-sonnet-5-5` with fill-first account selection. Unknown fields
+and invalid values fail before a configuration reaches the controller.
 
 Each repository can also carry a `skills` block (`always`, `pins`, `never`, `budget`); see [skill selection](skills.md#skill-selection). Mission Control edits it under **Repository settings** and refuses skill names the catalogue does not hold.
 

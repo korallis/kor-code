@@ -1,8 +1,8 @@
 # Shipping verified issues
 
 `kor serve` owns delivery after the controller's checks and acceptance judgments pass.
-The default `ship: merge` commits the verified files, publishes directly, and uses
-Kor’s independent review and GitHub checks as the delivery gate. In `ship: approve`
+The fresh installer scaffold’s `ship: merge` commits the verified files, publishes
+directly, and uses Kor’s independent review and GitHub checks as the delivery gate. In `ship: approve`
 and `ship: auto`, it commits on `kor/<issue identifier>`, then chooses the gate
 from `no-mistakes axi status` in that worktree:
 
@@ -280,8 +280,10 @@ one pass, so command output containing template syntax remains literal.
 
 ## Guarded automatic merge
 
-New installs and omitted `ship` settings use `merge`. Explicit `auto` publishes
-without merging; explicit `approve` also waits for publication approval.
+Fresh installer configs explicitly use `merge`. Omitted `ship` retains `auto`,
+an omitted tool allowlist retains `[]`, and omitted limits retain 2 total / 1 per
+repository. Mission Control adds projects with `approve` and an empty allowlist.
+Explicit `auto` publishes without merging; explicit `approve` also waits for publication approval.
 New scaffolds allow Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch and
 Agent without command scoping, with limits of 6 total / 4 per repository.
 Installation preserves existing config files.
@@ -290,9 +292,12 @@ Jev selects one available, verified reviewer whose model family differs from
 every writer recorded for the run. Unknown families, unavailable reviewers,
 binary or incomplete PR diffs fail closed. The reviewer sees the current PR’s
 complete textual patches and returns an approve/changes-requested verdict,
-findings and change summary. The review is persisted before further decisions.
+findings and change summary. An invalid structured response becomes a blocking
+verdict, so idle polls do not repeat the paid review at the same head. The review
+is persisted before further decisions.
 
-GitHub must report the PR clean and mergeable. Every reported check must pass;
+GitHub must report the PR clean and mergeable. Completed checks with success,
+neutral or skipped conclusions satisfy the check gate, matching GitHub rules;
 pending, red, missing or truncated evidence prevents merging. A PR with no
 reported checks can proceed only when GitHub reports clean mergeability.
 Jev then receives the review verdict, findings, check evidence and change summary
@@ -311,11 +316,3 @@ Reviews and decisions are bound to the head SHA. GitHub’s ordinary merge API
 receives that SHA, with no admin or bypass option. Kor observes the merge on the
 next poll before writing Done or cleaning up. Red checks still prevent a merge
 when the owner overrides Jev’s probability decision.
-
-A scratch proof exercised the real daemon, SQLite audit, Git commits, local
-pushes, merge commits, and Linear Done synchronization in throwaway local
-repositories. GitHub, Jev, reviewer completions and Linear were deterministic
-adapters. It covered pending/red checks, blocked branch rules, rejected reviews,
-0.85 decisions exhausting exactly two repairs, a 0.96 automatic merge, and owner
-merge/wait overrides. This is local end-to-end evidence, not a hosted-service or
-live-model witness.

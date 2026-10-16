@@ -5,7 +5,7 @@ acceptance criteria. Kor plans it, runs [Claude Code](https://code.claude.com/do
 on it in an isolated git worktree, checks the result against your repository's
 checks and your acceptance criteria, and reports progress on the Linear issue.
 You run it from Mission Control, a web app the Kor daemon serves on your own
-machine. With the default `ship: merge`, Kor independently reviews and merges
+machine. With a fresh installer config’s `ship: merge`, Kor independently reviews and merges
 verified pull requests when GitHub checks are green and Jev gives at least 90%
 probability of a safe merge. You can choose manual approval and merging instead.
 

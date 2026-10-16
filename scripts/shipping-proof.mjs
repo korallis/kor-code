@@ -100,7 +100,7 @@ for(const mode of ['direct','no-mistakes']) {
   await exec('git',['init','-q','-b','kor/LEE-600',cwd]);
   await exec('git',['config','user.name','Kor shipping proof'],{cwd}); await exec('git',['config','user.email','kor@example.invalid'],{cwd});
   await writeFile(join(cwd,'README.md'),'shipping proof\n'); await exec('git',['add','--','README.md'],{cwd}); await exec('git',['commit','-qm','fixture root'],{cwd});
-  const repository={ship:'auto',path:cwd,remote:'https://github.com/example/kor-fixture.git',defaultBranch:'main',checks:['node hello.js'],toolAllowlist:[],linearTeam:'LEE'};
+  const repository={path:cwd,remote:'https://github.com/example/kor-fixture.git',defaultBranch:'main',checks:['node hello.js'],toolAllowlist:[],linearTeam:'LEE'};
   const config=parseKorConfig({repos:{LEE:repository},pollIntervalSeconds:3600});
   await writeFile(`${cwd}.kor-worktree.json`,JSON.stringify({executionId:queued.executionId,issueId:issue.id,path:cwd,repository:cwd}));
   let head, published=false, merged=false, closed=false, dirty=false, mismatched=false, removed=0, launches=0, starts=0, gate=true, check='none', daemonUp=true, creates=0;
